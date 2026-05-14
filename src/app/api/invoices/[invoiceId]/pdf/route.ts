@@ -4,6 +4,9 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { InvoicePdf } from "@/lib/pdf/invoice-template";
 import React from "react";
 
+// @react-pdf/renderer は Node.js API に依存するため Edge Runtime 不可
+export const runtime = "nodejs";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> }

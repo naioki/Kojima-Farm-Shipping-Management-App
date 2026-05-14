@@ -11,7 +11,6 @@ export function useTapState(taskId: string) {
   return useMutation({
     mutationFn: async () => {
       if (!navigator.onLine) {
-        // オフライン: アウトボックスへ積む
         await fieldDb.outbox.add({
           task_id: taskId,
           type: "tap",
@@ -27,27 +26,29 @@ export function useTapState(taskId: string) {
       if (!res.ok) throw new Error("tap failed");
     },
     onMutate: async () => {
+      // ["shipping-matrix", tenantId, date] の形式に前方一致でキャンセル
       await qc.cancelQueries({ queryKey: ["shipping-matrix"] });
-      const previous = qc.getQueryData<MatrixData>(["shipping-matrix"]);
 
-      // Optimistic Update: ローカルで即座に状態を更新
-      qc.setQueryData<MatrixData>(["shipping-matrix"], (old) => {
+      // 全マトリックスクエリのスナップショットを保存
+      const previousEntries = qc.getQueriesData<MatrixData>({
+        queryKey: ["shipping-matrix"],
+      });
+
+      // Optimistic Update: 全マトリックスクエリを更新
+      qc.setQueriesData<MatrixData>({ queryKey: ["shipping-matrix"] }, (old) => {
         if (!old) return old;
         return {
           ...old,
-          rows: old.rows.map((r) =>
-            r.task_id === taskId
-              ? {
-                  ...r,
-                  tap_state: nextTapState(r.tap_state, r.is_partial),
-                  is_partial: r.tap_state === 1 ? false : r.is_partial,
-                  packed_qty:
-                    nextTapState(r.tap_state, r.is_partial) === 0
-                      ? null
-                      : r.packed_qty,
-                }
-              : r
-          ),
+          rows: old.rows.map((r) => {
+            if (r.task_id !== taskId) return r;
+            const newState = nextTapState(r.tap_state, r.is_partial);
+            return {
+              ...r,
+              tap_state: newState,
+              is_partial: newState === 0 ? false : r.is_partial,
+              packed_qty: newState === 0 ? null : r.packed_qty,
+            };
+          }),
         };
       });
 
@@ -61,12 +62,13 @@ export function useTapState(taskId: string) {
         }
       });
 
-      return { previous };
+      return { previousEntries };
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(["shipping-matrix"], context.previous);
-      }
+      // ロールバック
+      context?.previousEntries?.forEach(([key, data]) => {
+        qc.setQueryData(key, data);
+      });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["shipping-matrix"] });

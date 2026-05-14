@@ -18,6 +18,7 @@ export default function BackofficeLayout({ children }: { children: ReactNode }) 
               { href: "/(backoffice)/orders", label: "📋 受注一覧" },
               { href: "/(backoffice)/verification-queue", label: "🔍 検証キュー" },
               { href: "/(backoffice)/invoices", label: "🧾 請求書" },
+              { href: "/(backoffice)/unit-conversions", label: "⚖️ 単位換算" },
             ].map((item) => (
               <li key={item.href}>
                 <Link

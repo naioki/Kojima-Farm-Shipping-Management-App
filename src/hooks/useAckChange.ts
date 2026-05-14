@@ -26,9 +26,12 @@ export function useAckChange(taskId: string) {
     },
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ["shipping-matrix"] });
-      const previous = qc.getQueryData<MatrixData>(["shipping-matrix"]);
 
-      qc.setQueryData<MatrixData>(["shipping-matrix"], (old) => {
+      const previousEntries = qc.getQueriesData<MatrixData>({
+        queryKey: ["shipping-matrix"],
+      });
+
+      qc.setQueriesData<MatrixData>({ queryKey: ["shipping-matrix"] }, (old) => {
         if (!old) return old;
         return {
           ...old,
@@ -45,12 +48,12 @@ export function useAckChange(taskId: string) {
         t.unack_delta = null;
       });
 
-      return { previous };
+      return { previousEntries };
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        qc.setQueryData(["shipping-matrix"], context.previous);
-      }
+      context?.previousEntries?.forEach(([key, data]) => {
+        qc.setQueryData(key, data);
+      });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["shipping-matrix"] });
