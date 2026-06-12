@@ -1,0 +1,125 @@
+import 'server-only'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { z } from 'zod'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+/**
+ * Gemini 解析（features.md §4）。通常モード（画像/テキスト → items[]）と
+ * 差分モード（前回確定 items を注入 → added/modified/removed）を提供する。
+ * 全項目に self-confidence(0..1) を採点させ、呼び出しごとに gemini_usage_log を記録する。
+ *
+ * モデル: gemini-2.0-flash（無料枠 ~1500req/日）。APIキーは Secret Manager 由来の環境変数。
+ */
+
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+
+export const parsedItemSchema = z.object({
+  raw_name: z.string(),
+  product_name: z.string().nullable(),
+  quantity: z.string(), // 生表記（"15c2" 等）。換算は lib/calculations/parse-quantity に委譲
+  unit: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+})
+export type ParsedItem = z.infer<typeof parsedItemSchema>
+
+const normalResultSchema = z.object({ items: z.array(parsedItemSchema) })
+
+export const diffResultSchema = z.object({
+  added: z.array(parsedItemSchema),
+  modified: z.array(parsedItemSchema),
+  removed: z.array(parsedItemSchema),
+})
+export type DiffResult = z.infer<typeof diffResultSchema>
+
+function client(): GoogleGenerativeAI {
+  const key = process.env.GEMINI_API_KEY
+  if (!key) throw new Error('GEMINI_API_KEY が未設定です（Secret Manager を確認）')
+  return new GoogleGenerativeAI(key)
+}
+
+const BASE_INSTRUCTION = `あなたは農産物の注文票を読み取る専門家です。
+各明細を {raw_name, product_name, quantity, unit, confidence} の配列で返してください。
+- quantity は読み取った生の表記をそのまま入れる（"15c2" や "x58" を勝手に計算しない）
+- confidence は読み取り確信度を 0..1 で自己採点
+JSON のみを返し、説明文は付けないこと。`
+
+async function logUsage(mode: string, channel: string, success: boolean, tokens?: number) {
+  try {
+    await createAdminClient()
+      .from('gemini_usage_log')
+      .insert({ mode, channel, success, tokens_used: tokens ?? null })
+  } catch {
+    // 記録失敗で本処理は止めない（無料枠管理は best-effort）
+  }
+}
+
+/** 通常モード：画像（base64）またはテキストから items を抽出。 */
+export async function analyzeNormal(
+  input: { imageBase64?: string; mimeType?: string; text?: string },
+  channel: string,
+): Promise<ParsedItem[]> {
+  const model = client().getGenerativeModel({ model: MODEL })
+  const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
+    { text: BASE_INSTRUCTION },
+  ]
+  if (input.imageBase64) {
+    parts.push({
+      inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' },
+    })
+  }
+  if (input.text) parts.push({ text: `注文テキスト:\n${input.text}` })
+
+  try {
+    const res = await model.generateContent(parts)
+    const json = extractJson(res.response.text())
+    const parsed = normalResultSchema.parse(json)
+    await logUsage('normal', channel, true, res.response.usageMetadata?.totalTokenCount)
+    return parsed.items
+  } catch (e) {
+    await logUsage('normal', channel, false)
+    throw e
+  }
+}
+
+/** 差分モード：前回確定 items を注入し、追加/変更/削除を返す（丸ごと再送対応）。 */
+export async function analyzeDiff(
+  input: { imageBase64?: string; mimeType?: string; text?: string },
+  previousItems: ParsedItem[],
+  channel: string,
+): Promise<DiffResult> {
+  const model = client().getGenerativeModel({ model: MODEL })
+  const instruction = `${BASE_INSTRUCTION}
+これは再送（追記）された注文です。前回確定の明細との差分を
+{added:[], modified:[], removed:[]} の形で返してください。
+前回確定明細: ${JSON.stringify(previousItems)}`
+  const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
+    { text: instruction },
+  ]
+  if (input.imageBase64) {
+    parts.push({
+      inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' },
+    })
+  }
+  if (input.text) parts.push({ text: `注文テキスト:\n${input.text}` })
+
+  try {
+    const res = await model.generateContent(parts)
+    const json = extractJson(res.response.text())
+    const parsed = diffResultSchema.parse(json)
+    await logUsage('diff', channel, true, res.response.usageMetadata?.totalTokenCount)
+    return parsed
+  } catch (e) {
+    await logUsage('diff', channel, false)
+    throw e
+  }
+}
+
+/** ```json フェンスや前後ノイズを取り除いて JSON を取り出す。 */
+function extractJson(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const raw = fenced ? fenced[1]! : text
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start === -1 || end === -1) throw new Error('Gemini 応答に JSON が見つかりません')
+  return JSON.parse(raw.slice(start, end + 1))
+}
