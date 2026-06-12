@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/supabase'
 
 /**
  * service_role キーを使う管理クライアント（RLS バイパス）。
@@ -16,7 +17,7 @@ export function createAdminClient() {
   if (!url || !serviceKey) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY / URL が未設定です（Secret Manager を確認）')
   }
-  return createSupabaseClient(url, serviceKey, {
+  return createSupabaseClient<Database>(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 }

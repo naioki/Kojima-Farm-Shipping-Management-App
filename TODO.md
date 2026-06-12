@@ -41,4 +41,6 @@
 - Phase F: PWA / IndexedDB / Realtime はブラウザ実機での確認が必要。
 
 ## メモ
-- 全体 typecheck/lint/test はローカル clone で実行のこと（上記ブロッカー参照）。
+- 全体 typecheck/lint/test/build はローカル clone で実行のこと（上記ブロッカー参照）。
+  → 2026-06-13 に C:\dev\kojima-noen で4工程すべて green を確認済み（HANDOFF.md 参照）。
+    supabase-js は 2.47.10 に固定（2.108 は型破壊的変更で行が never になる）。

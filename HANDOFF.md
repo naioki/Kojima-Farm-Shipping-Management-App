@@ -2,6 +2,24 @@
 
 ブランチ: `kn/farm-app-phase-a-g`（main から分岐）。Phase A〜G を1フェーズ1コミットで実装。
 
+## ✅ フル検証パス済み（2026-06-13 追記）
+
+ローカルミラー `C:\dev\kojima-noen`（Drive外・clone）で `npm install` 後、**全工程green**:
+- `npm run typecheck` … clean（0 errors）
+- `npm run lint` … No ESLint warnings or errors
+- `npm run test` … 80 passed
+- `npm run build` … ✓ Compiled successfully（10ルート＋middleware 生成）
+
+このとき行った修正（コミット済み）:
+- **Supabase 型付け**: `types/supabase.ts`（Database型・手書き）を追加し3クライアントに generic を付与。
+  これで Route Handler の `.select()/.insert()` が型検査される。
+- **supabase-js を 2.47.10 に固定**: 最新 2.108 は型ジェネリクスが破壊的変更で行が `never` に
+  なるため。`@supabase/ssr` も 0.5.2 固定。`package-lock.json` をコミット（再現性確保）。
+- googleapis の auth 型、invoices!inner のネスト配列、eslint の `next/typescript` 追加を修正。
+
+➡ 以降、ローカル clone では素直に `npm install` → 上記4コマンドが通る。下の「ブロッカー」は
+Drive 直下で作業する場合のみ該当（node_modules を Drive に置けない件は変わらず）。
+
 ---
 
 ## ⛔ 明日いちばん最初に見てほしいこと（ブロッカー）

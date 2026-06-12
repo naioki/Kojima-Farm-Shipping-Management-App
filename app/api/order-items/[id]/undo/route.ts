@@ -35,15 +35,15 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     .maybeSingle()
   if (!lastChange) return NextResponse.json({ error: 'nothing_to_undo' }, { status: 404 })
 
-  // 請求確定の有無（紐づく order の請求書 finalized 判定は簡易に order 経由で確認）
-  const { data: invoice } = await supabase
+  // 請求確定の有無（この明細が確定済み請求書に載っていれば Undo 不可）
+  const { data: invoiceRows } = await supabase
     .from('invoice_items')
-    .select('invoice_id, invoices!inner(status)')
+    .select('invoices!inner(status)')
     .eq('order_item_id', params.id)
-    .limit(1)
-    .maybeSingle()
-  const isInvoiceFinalized =
-    !!invoice && ['finalized', 'sent', 'paid'].includes((invoice as { invoices: { status: string } }).invoices.status)
+  // invoices!inner はネスト配列で返るため flat にして判定する
+  const isInvoiceFinalized = (invoiceRows ?? [])
+    .flatMap((row) => row.invoices)
+    .some((iv) => ['finalized', 'sent', 'paid'].includes(iv.status))
 
   const eligibility = determineUndoEligibility({
     changeCreatedAt: new Date(lastChange.created_at),

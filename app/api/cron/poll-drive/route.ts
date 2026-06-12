@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   if (!folderId) return NextResponse.json({ error: 'DRIVE_FOLDER_ID 未設定' }, { status: 500 })
 
   const supabase = createAdminClient()
-  const drive = google.drive({ version: 'v3', auth: await driveAuth() })
+  const drive = google.drive({ version: 'v3', auth: driveAuth() })
 
   // 前回ポーリング時刻（簡易にメタ保存。実運用は専用テーブル/設定に置く）
   const since = process.env.DRIVE_POLL_SINCE // ISO。未設定なら全件（初回）
@@ -101,10 +101,12 @@ export async function GET(req: Request) {
   return NextResponse.json({ processed: results.length, results })
 }
 
-/** Drive 認証。Cloud Run のサービスアカウント（ADC）またはサービスアカウントJSONを使用。 */
-async function driveAuth() {
-  const auth = new google.auth.GoogleAuth({
+/**
+ * Drive 認証。Cloud Run のサービスアカウント（ADC）またはサービスアカウントJSONを使用。
+ * GoogleAuth インスタンスをそのまま google.drive({auth}) に渡す（googleapis 推奨の型）。
+ */
+function driveAuth() {
+  return new google.auth.GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/drive.readonly'],
   })
-  return auth.getClient()
 }
