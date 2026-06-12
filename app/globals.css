@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Kojima Noen デザインシステム「大地と信頼」
+   土の温度 × 収穫の緑 × 信頼の藍。CSS Variables が唯一の色の出所。
+   ============================================================ */
+
+:root {
+  /* Earth — 土・プライマリ */
+  --earth-50: #faf8f5;
+  --earth-100: #f2ece2;
+  --earth-200: #e5d7c3;
+  --earth-300: #d3bc9c;
+  --earth-400: #c3a378;
+  --earth-500: #b8935d;
+  --earth-600: #9d7742;
+  --earth-700: #7e5e35;
+  --earth-800: #614829;
+  --earth-900: #45331d;
+
+  /* Harvest — 収穫・成功 */
+  --harvest-50: #f0fdf4;
+  --harvest-100: #dcfce7;
+  --harvest-400: #4ade80;
+  --harvest-500: #22c55e;
+  --harvest-600: #16a34a;
+  --harvest-700: #15803d;
+
+  /* Trust — 藍・フォーカス/リンク */
+  --trust-50: #eff8ff;
+  --trust-100: #dbeefe;
+  --trust-400: #38bdf8;
+  --trust-500: #0c8ce9;
+  --trust-600: #0270c4;
+  --trust-700: #075a9b;
+
+  /* Functional */
+  --alert: #d92d20;
+  --alert-bg: #fef3f2;
+  --warning: #dc6803;
+  --warning-bg: #fffaeb;
+
+  /* Surface（暖色グレー — 純グレー禁止） */
+  --bg: #fdfcfa;
+  --bg-soft: #f7f4ef;
+  --bg-card: #ffffff;
+  --ink: #211a12;
+  --ink-soft: #6f6354;
+  --ink-faint: #a89a87;
+  --line: #e9e1d4;
+  --line-strong: #d6c9b4;
+
+  /* Elevation（土の影＝暖色シャドウ） */
+  --shadow-sm: 0 1px 2px rgb(69 51 29 / 0.06);
+  --shadow-md: 0 2px 8px rgb(69 51 29 / 0.08), 0 1px 2px rgb(69 51 29 / 0.06);
+  --shadow-lg: 0 8px 24px rgb(69 51 29 / 0.12), 0 2px 6px rgb(69 51 29 / 0.06);
+  --shadow-xl: 0 20px 48px rgb(69 51 29 / 0.16);
+
+  /* Motion */
+  --ease-organic: cubic-bezier(0.34, 1.3, 0.64, 1);
+  --dur-fast: 150ms;
+  --dur: 280ms;
+  --dur-slow: 480ms;
+
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+
+.dark {
+  --bg: #171310;
+  --bg-soft: #1f1a15;
+  --bg-card: #261f18;
+  --ink: #f4ede2;
+  --ink-soft: #b3a692;
+  --ink-faint: #7d7060;
+  --line: #3a3128;
+  --line-strong: #4d4234;
+  --alert-bg: #3a1512;
+  --warning-bg: #3a2a08;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.55);
+  --shadow-xl: 0 20px 48px rgb(0 0 0 / 0.6);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-feature-settings: "palt"; /* 日本語の詰め組み */
+  }
+  ::selection {
+    background: var(--earth-200);
+    color: var(--earth-900);
+  }
+  /* 金額・数値は必ず桁を揃える */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer utilities {
+  /* ページ/カード出現 — 「芽が出る」モーション */
+  @keyframes grow-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.985); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .animate-grow-in {
+    animation: grow-in var(--dur-slow) var(--ease-organic) both;
+  }
+  /* リスト用ステゴード（親に .stagger、子が順に出現） */
+  .stagger > * { animation: grow-in var(--dur-slow) var(--ease-organic) both; }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(n + 6) { animation-delay: 300ms; }
+
+  /* プログレスバーの満ちる動き */
+  @keyframes fill-bar {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  .animate-fill { transform-origin: left; animation: fill-bar 700ms var(--ease-organic) both; }
+
+  /* スケルトンの呼吸 */
+  @keyframes breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+  .animate-breathe { animation: breathe 1.8s ease-in-out infinite; }
+
+  /* リアルタイム差分セルの注意喚起（音なし・赤点滅） */
+  @keyframes pulse-alert {
+    0%, 100% { background-color: var(--alert-bg); }
+    50% { background-color: transparent; }
+  }
+  .animate-pulse-alert { animation: pulse-alert 1.2s ease-in-out infinite; }
+
+  /* 紙の質感（経営ダッシュボードの背景に薄く） */
+  .texture-paper {
+    background-image: radial-gradient(rgb(69 51 29 / 0.035) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+}
+
+/* 動きを減らす設定の尊重（アクセシビリティ必須） */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -4,6 +4,11 @@ node_modules/
 # Build output
 dist/
 build/
+.next/
+out/
+next-env.d.ts
+coverage/
+*.tsbuildinfo
 
 # Environment
 .env
@@ -24,4 +29,6 @@ Thumbs.db
 .claude/settings.local.json
 .claude/user-team-info.json
 .claude/tasks/
+.claude/worktrees/
+.claire/
 CLAUDE.local.md

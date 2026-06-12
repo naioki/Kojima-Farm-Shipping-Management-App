@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.github
+.claude
+.claire
+**/*.test.ts
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+coverage
+TODO.md
+HANDOFF.md
+README.md
+PROMPT.md
