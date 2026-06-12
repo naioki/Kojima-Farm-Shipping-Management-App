@@ -95,8 +95,11 @@ notify, shipping, offline）。
       長押しリセットUIは未実装（tap-loop/shortage のロジックは完成・テスト済）。
 - [ ] Phase G: @react-pdf/renderer での請求書PDF生成→R2保存、出荷指示書のUI/PDF、
       前日17時の不足予測バッチ(notify)。invoices/generate は draft 作成まで。
-- [ ] ログイン画面 `(auth)/login` と Magic Link `/portal/login` 画面が未作成（middleware と
-      認証ガードは実装済みだが入口UIが無い）。
+- [x] ~~ログイン画面 `(auth)/login` と Magic Link `/portal/login`~~ → **完了**。
+      社内=email/password、ポータル=Magic Link、`/auth/callback`（session交換）・
+      `/auth/signout`、ルート `/` で role/customer_id による振り分け、admin ランディング。
+      build 通過済み。※ 実際のログイン疎通は Supabase Auth 設定（SMTP・app_metadata.role/
+      customer_id 付与）後に要確認。
 - [ ] PWA Service Worker 本体（public/sw.js）と icons は未配置（manifest のみ）。
 
 ---

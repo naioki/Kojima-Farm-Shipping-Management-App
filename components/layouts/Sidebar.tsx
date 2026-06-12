@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Inbox, LayoutDashboard, Sprout, FileText, Users } from 'lucide-react'
+import { Inbox, LayoutDashboard, Sprout, FileText, Users, LogOut } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 interface NavItem {
@@ -30,10 +30,10 @@ export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
   return (
     <nav
       aria-label="サイドメニュー"
-      className="hidden w-60 shrink-0 border-r border-line bg-bg-soft p-4 lg:block"
+      className="hidden w-60 shrink-0 flex-col border-r border-line bg-bg-soft p-4 lg:flex"
     >
       <div className="mb-6 px-2 font-display text-xl font-bold text-earth-700">小島農園</div>
-      <ul className="space-y-1">
+      <ul className="flex-1 space-y-1">
         {nav.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`)
           return (
@@ -55,6 +55,16 @@ export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
           )
         })}
       </ul>
+      {/* サインアウト（POST で session 破棄→/login） */}
+      <form action="/auth/signout" method="post">
+        <button
+          type="submit"
+          className="flex h-11 w-full items-center gap-3 rounded px-3 text-sm font-medium text-ink-soft transition-colors hover:bg-bg-card hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+        >
+          <LogOut className="h-5 w-5" aria-hidden />
+          ログアウト
+        </button>
+      </form>
     </nav>
   )
 }

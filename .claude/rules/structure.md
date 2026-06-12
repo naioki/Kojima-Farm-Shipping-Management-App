@@ -45,7 +45,7 @@ kojima-noen/
 ## Phase 2: DB・認証基盤
 - [x] migrations/ DDL（10テーブル + RLS + 生成列）
 - [x] lib/supabase/（client / server / admin）
-- [ ] (auth)/login + middleware.ts
+- [x] (auth)/login + middleware.ts（社内=password・ポータル=Magic Link・role別振り分け）
 
 ## Phase 3: 経営陣ダッシュボード
 - [ ] admin/ ページ、KPICard、SalesChart（dynamic import）、InvoicesTable
