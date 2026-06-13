@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   // 取引先×商品ルール（P/C＝c記法換算の基準値）
   const { data: rule } = await supabase
     .from('customer_product_rules')
-    .select('id, packs_per_case')
+    .select('id, packs_per_case, spec, container_type, has_card')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
@@ -95,6 +95,10 @@ export async function POST(req: Request) {
       rule_id: rule?.id ?? null,
       confidence: 1.0,
       field_status: 'not_started',
+      // 荷姿を規則から自動補完（出荷ごとにアコーディオンで上書き可）
+      spec: rule?.spec ?? null,
+      container_type: rule?.container_type ?? null,
+      has_card: rule?.has_card ?? null,
     })
     .select()
     .single()

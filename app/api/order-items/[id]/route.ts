@@ -54,6 +54,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.unit_price != null) updates.unit_price = input.unit_price
     if (input.tax_rate != null) updates.tax_rate = input.tax_rate
     if (input.fraction_note !== undefined) updates.fraction_note = input.fraction_note
+    if (input.spec !== undefined) updates.spec = input.spec
+    if (input.container_type !== undefined) updates.container_type = input.container_type
+    if (input.has_card !== undefined) updates.has_card = input.has_card
+    if (input.line_note !== undefined) updates.line_note = input.line_note
   }
 
   // 楽観ロック：version 一致時のみ更新。version++ も同時に行う。

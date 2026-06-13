@@ -52,7 +52,7 @@ export default async function ShipmentsPage({
     ? (
         await supabase
           .from('order_items')
-          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version')
+          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note')
           .in('order_id', orderIds)
           .order('product_name')
       ).data ?? []
@@ -130,6 +130,10 @@ export default async function ShipmentsPage({
                   quantityText={formatQty(it.quantity, capacityById.get(it.product_id) ?? null)}
                   initialStatus={it.field_status}
                   initialVersion={it.version}
+                  initialSpec={it.spec}
+                  initialContainer={it.container_type}
+                  initialHasCard={it.has_card}
+                  initialLineNote={it.line_note}
                 />
               ))}
             </Card>

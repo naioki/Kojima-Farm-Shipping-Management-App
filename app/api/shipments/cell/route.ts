@@ -37,7 +37,7 @@ export async function PUT(req: Request) {
   // P/C ルール
   const { data: rule } = await supabase
     .from('customer_product_rules')
-    .select('id, packs_per_case')
+    .select('id, packs_per_case, spec, container_type, has_card')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
@@ -149,6 +149,9 @@ export async function PUT(req: Request) {
       rule_id: rule?.id ?? null,
       confidence: 1.0,
       field_status: 'not_started',
+      spec: rule?.spec ?? null,
+      container_type: rule?.container_type ?? null,
+      has_card: rule?.has_card ?? null,
     })
     .select()
     .single()

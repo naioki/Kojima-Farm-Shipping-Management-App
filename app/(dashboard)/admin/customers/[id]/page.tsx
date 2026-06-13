@@ -22,7 +22,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
       supabase
         .from('customer_product_rules')
-        .select('product_id, packs_per_case, container_type, is_default_set, default_quantity, fraction_policy')
+        .select('product_id, packs_per_case, container_type, spec, has_card, is_default_set, default_quantity, fraction_policy')
         .eq('customer_id', params.id),
     ])
   if (custErr) return <ErrorState message={custErr.message} />
@@ -34,6 +34,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     initialRules[r.product_id] = {
       packs_per_case: r.packs_per_case,
       container_type: r.container_type,
+      spec: r.spec,
+      has_card: r.has_card,
       is_default_set: r.is_default_set,
       default_quantity: r.default_quantity,
       fraction_policy: r.fraction_policy as FractionPolicy,

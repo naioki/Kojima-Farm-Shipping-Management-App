@@ -10,6 +10,8 @@ import type { FractionPolicy } from '@/types/database'
 export interface RuleRow {
   packs_per_case: number | null
   container_type: string | null
+  spec: string | null
+  has_card: boolean
   is_default_set: boolean
   default_quantity: number | null
   fraction_policy: FractionPolicy
@@ -31,6 +33,8 @@ const FRACTION_OPTIONS: { value: FractionPolicy; label: string }[] = [
 const EMPTY: RuleRow = {
   packs_per_case: null,
   container_type: null,
+  spec: null,
+  has_card: false,
   is_default_set: false,
   default_quantity: null,
   fraction_policy: 'confirm',
@@ -74,6 +78,8 @@ export function CustomerRulesEditor({ customerId, products, initialRules }: Cust
           product_id: productId,
           packs_per_case: row.packs_per_case,
           container_type: row.container_type || null,
+          spec: row.spec || null,
+          has_card: row.has_card,
           is_default_set: row.is_default_set,
           default_quantity: row.default_quantity,
           fraction_policy: row.fraction_policy,
@@ -102,7 +108,9 @@ export function CustomerRulesEditor({ customerId, products, initialRules }: Cust
           <tr className="text-left text-ink-soft">
             <th className="px-2 py-2 font-medium">品目</th>
             <th className="px-2 py-2 font-medium">P/C（1ケース入数）</th>
-            <th className="px-2 py-2 font-medium">コンテナ</th>
+            <th className="px-2 py-2 font-medium">荷姿</th>
+            <th className="px-2 py-2 font-medium">規格</th>
+            <th className="px-2 py-2 font-medium">カード</th>
             <th className="px-2 py-2 font-medium">いつものセット</th>
             <th className="px-2 py-2 font-medium">既定数量</th>
             <th className="px-2 py-2 font-medium">端数</th>
@@ -135,7 +143,25 @@ export function CustomerRulesEditor({ customerId, products, initialRules }: Cust
                     value={row.container_type ?? ''}
                     onChange={(e) => patch(p.id, { container_type: e.target.value })}
                     className={cn(cellInput, 'w-28')}
-                    placeholder="ケース/箱"
+                    placeholder="ケース/箱/化粧箱"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    type="text"
+                    value={row.spec ?? ''}
+                    onChange={(e) => patch(p.id, { spec: e.target.value })}
+                    className={cn(cellInput, 'w-24')}
+                    placeholder="L/200g 等"
+                  />
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={row.has_card}
+                    onChange={(e) => patch(p.id, { has_card: e.target.checked })}
+                    aria-label={`${p.name} のカード同梱`}
+                    className="h-5 w-5 accent-earth-600"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">

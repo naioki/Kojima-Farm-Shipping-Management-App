@@ -105,6 +105,10 @@ export interface Database {
             shipped_at?: string | null
             field_status?: OrderItem['field_status']
             fraction_note?: string | null
+            spec?: string | null
+            container_type?: string | null
+            has_card?: boolean | null
+            line_note?: string | null
           },
           Generated
         >,
@@ -214,6 +218,8 @@ export interface Database {
           fraction_policy?: CustomerProductRule['fraction_policy']
           is_default_set?: boolean
           default_quantity?: number | null
+          spec?: string | null
+          has_card?: boolean
         },
         Partial<CustomerProductRule>
       >

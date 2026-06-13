@@ -138,6 +138,11 @@ export interface OrderItem {
   shipped_at: ISODateTime | null
   field_status: FieldStatus
   fraction_note: string | null
+  /** 荷姿まわり（規則から自動補完＋出荷ごとに上書き可・migrations/0005） */
+  spec: string | null
+  container_type: string | null
+  has_card: boolean | null
+  line_note: string | null
   created_at: ISODateTime
   updated_at: ISODateTime
 }
@@ -237,6 +242,8 @@ export interface CustomerProductRule {
   fraction_policy: FractionPolicy
   is_default_set: boolean
   default_quantity: number | null
+  spec: string | null
+  has_card: boolean
   created_at: ISODateTime
 }
 
@@ -313,6 +320,11 @@ export const orderItemPatchSchema = z.object({
   unit_price: z.number().nonnegative().optional(),
   tax_rate: taxRateSchema.optional(),
   fraction_note: z.string().nullish(),
+  /** 荷姿まわり（アコーディオンで編集・migrations/0005） */
+  spec: z.string().nullish(),
+  container_type: z.string().nullish(),
+  has_card: z.boolean().nullish(),
+  line_note: z.string().nullish(),
   /** 期待 version。不一致は 409（競合） */
   version: z.number().int().positive(),
 })
@@ -417,6 +429,8 @@ export const customerProductRuleUpsertSchema = z.object({
   fraction_policy: z.enum(['carry_over', 'loose', 'round_down', 'confirm']).optional(),
   is_default_set: z.boolean().optional(),
   default_quantity: z.number().nonnegative().nullish(),
+  spec: z.string().nullish(),
+  has_card: z.boolean().optional(),
 })
 export type CustomerProductRuleUpsert = z.infer<typeof customerProductRuleUpsertSchema>
 
