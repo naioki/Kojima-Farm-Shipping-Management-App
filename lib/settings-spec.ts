@@ -4,7 +4,7 @@
  * 実値の解決は lib/settings.ts（サーバ専用・DB→env フォールバック）が行う。
  */
 
-export type SettingSection = 'ai' | 'ingest' | 'storage' | 'notify' | 'ops'
+export type SettingSection = 'issuer' | 'ai' | 'ingest' | 'storage' | 'notify' | 'ops'
 export type SettingKind = 'text' | 'textarea' | 'toggle'
 
 export interface SettingSpec {
@@ -18,6 +18,7 @@ export interface SettingSpec {
 }
 
 export const SECTION_LABELS: Record<SettingSection, string> = {
+  issuer: '発行者（自社）情報 — 請求書・納品書に印字',
   ai: 'AI解析（Gemini）',
   ingest: '取り込み（Drive / メール）',
   storage: '保管（Cloudflare R2）',
@@ -25,9 +26,15 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
   ops: '運用',
 }
 
-export const SECTION_ORDER: SettingSection[] = ['ai', 'ingest', 'storage', 'notify', 'ops']
+export const SECTION_ORDER: SettingSection[] = ['issuer', 'ai', 'ingest', 'storage', 'notify', 'ops']
 
 export const SETTINGS_SPEC: SettingSpec[] = [
+  // 発行者（自社）情報 — 請求書・納品書のヘッダーに印字
+  { key: 'FARM_NAME', label: '事業者名', section: 'issuer', secret: false, kind: 'text', placeholder: '小島農園' },
+  { key: 'FARM_INVOICE_REG_NUM', label: '適格請求書発行事業者 登録番号', section: 'issuer', secret: false, kind: 'text', placeholder: 'T1234567890123', hint: 'インボイス制度の登録番号（T＋13桁）' },
+  { key: 'FARM_ADDRESS', label: '住所', section: 'issuer', secret: false, kind: 'text' },
+  { key: 'FARM_TEL', label: '電話番号', section: 'issuer', secret: false, kind: 'text' },
+  { key: 'FARM_PAYMENT_INFO', label: '振込先', section: 'issuer', secret: false, kind: 'textarea', hint: '請求書に印字する振込先口座' },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },
   { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.0-flash' },

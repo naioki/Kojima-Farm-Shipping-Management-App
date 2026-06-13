@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Inbox, LayoutDashboard, Sprout, FileText, Users, LogOut, PackageCheck, Carrot, Settings } from 'lucide-react'
+import { Inbox, LayoutDashboard, Sprout, FileText, Users, LogOut, PackageCheck, Carrot, Settings, ClipboardList } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 interface NavItem {
@@ -16,6 +16,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/admin/inbox', label: '承認待ち', icon: Inbox },
   { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
   { href: '/admin/invoices', label: '請求', icon: FileText },
+  { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },
   { href: '/admin/customers', label: '取引先', icon: Users },
   { href: '/admin/products', label: '商品', icon: Carrot },
   { href: '/admin/settings', label: '設定', icon: Settings },
@@ -34,7 +35,7 @@ export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
   return (
     <nav
       aria-label="サイドメニュー"
-      className="hidden w-60 shrink-0 flex-col border-r border-line bg-bg-soft p-4 lg:flex"
+      className="hidden w-60 shrink-0 flex-col border-r border-line bg-bg-soft p-4 lg:flex print:!hidden"
     >
       <div className="mb-6 px-2 font-display text-xl font-bold text-earth-700">小島農園</div>
       <ul className="flex-1 space-y-1">

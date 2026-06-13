@@ -343,6 +343,12 @@ export const productCreateSchema = z.object({
 })
 export type ProductCreateInput = z.infer<typeof productCreateSchema>
 
+/** 請求書のステータス更新（draft→finalized など）。 */
+export const invoiceStatusPatchSchema = z.object({
+  status: z.enum(['draft', 'finalized', 'sent', 'paid', 'void']),
+})
+export type InvoiceStatusPatch = z.infer<typeof invoiceStatusPatchSchema>
+
 /** 商品の更新（編集・在庫調整）。すべて任意。 */
 export const productUpdateSchema = z.object({
   name: z.string().min(1).optional(),
