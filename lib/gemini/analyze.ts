@@ -58,15 +58,21 @@ async function logUsage(mode: string, channel: string, success: boolean, tokens?
   }
 }
 
-/** 通常モード：画像（base64）またはテキストから items を抽出。 */
+/**
+ * 通常モード：画像（base64）またはテキストから items を抽出。
+ * hintText（取引先ごとの学習・lib/ingestion/learning.buildCustomerHintText）があれば
+ * few-shot としてプロンプトに注入し、その取引先の表記の癖に合わせる。
+ */
 export async function analyzeNormal(
   input: { imageBase64?: string; mimeType?: string; text?: string },
   channel: string,
+  hintText?: string,
 ): Promise<ParsedItem[]> {
   const model = (await client()).getGenerativeModel({ model: await getModel() })
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
     { text: BASE_INSTRUCTION },
   ]
+  if (hintText && hintText.trim() !== '') parts.push({ text: hintText })
   if (input.imageBase64) {
     parts.push({
       inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' },
@@ -91,10 +97,11 @@ export async function analyzeDiff(
   input: { imageBase64?: string; mimeType?: string; text?: string },
   previousItems: ParsedItem[],
   channel: string,
+  hintText?: string,
 ): Promise<DiffResult> {
   const model = (await client()).getGenerativeModel({ model: await getModel() })
   const instruction = `${BASE_INSTRUCTION}
-これは再送（追記）された注文です。前回確定の明細との差分を
+${hintText && hintText.trim() !== '' ? hintText + '\n' : ''}これは再送（追記）された注文です。前回確定の明細との差分を
 {added:[], modified:[], removed:[]} の形で返してください。
 前回確定明細: ${JSON.stringify(previousItems)}`
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [

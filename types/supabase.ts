@@ -13,6 +13,7 @@ import type {
   HarvestEstimate,
   GeminiUsageLog,
   AppSetting,
+  CustomerParseHint,
 } from './database'
 
 /**
@@ -127,6 +128,8 @@ export interface Database {
           invoice_number: string
           customer_id: string
           billing_month: string
+          period_start?: string | null
+          period_end?: string | null
           issue_date?: string | null
           due_date?: string | null
           invoice_reg_num?: string | null
@@ -243,6 +246,19 @@ export interface Database {
         AppSetting,
         { key: string; value?: string | null; is_secret?: boolean; updated_by?: string | null },
         Partial<AppSetting>
+      >
+      customer_parse_hints: Table<
+        CustomerParseHint,
+        {
+          customer_id: string
+          raw_name: string
+          product_id?: string | null
+          corrected_name?: string | null
+          note?: string | null
+          hit_count?: number
+          created_by?: string | null
+        },
+        Partial<CustomerParseHint>
       >
     }
     Views: Record<string, never>

@@ -69,7 +69,11 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
           <div className="text-right text-sm">
             <p className="num font-bold text-ink">{invoice.invoice_number}</p>
             {invoice.issue_date && <p className="text-ink-soft">発行日: {invoice.issue_date}</p>}
-            <p className="text-ink-soft">対象月: {invoice.billing_month}</p>
+            <p className="text-ink-soft">
+              {invoice.period_start && invoice.period_end
+                ? `対象期間: ${invoice.period_start} 〜 ${invoice.period_end}`
+                : `対象月: ${invoice.billing_month}`}
+            </p>
           </div>
         </header>
 

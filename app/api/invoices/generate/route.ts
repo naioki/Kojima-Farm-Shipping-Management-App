@@ -6,14 +6,21 @@ import { writeAudit } from '@/lib/audit/log'
 
 export const runtime = 'nodejs'
 
-const inputSchema = z.object({
-  customer_id: z.string().uuid(),
-  billing_month: z.string().regex(/^\d{4}-\d{2}$/), // 'YYYY-MM'
-})
+const inputSchema = z
+  .object({
+    customer_id: z.string().uuid(),
+    period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    period_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .refine((v) => v.period_start <= v.period_end, {
+    message: '開始日は終了日以前である必要があります',
+    path: ['period_end'],
+  })
 
 /**
- * 月末請求書生成（tax.md 厳守）。features.md Phase G の請求接続。
- *   approved/shipped の order_items を集計 → 税率別合計 → 欠番なし採番 → invoices/invoice_items。
+ * 請求書生成（tax.md 厳守・任意期間対応）。features.md Phase G の請求接続。
+ *   指定期間（period_start〜period_end）の approved/shipped の order_items を集計 →
+ *   税率別合計 → 欠番なし採番（終了日の月で番号払い出し）→ invoices/invoice_items。
  *   税率は order_items.tax_rate（冗長保持値）を使う。products.default_tax_rate では計算しない。
  *   生成は audit_log に記録（7年保存）。
  */
@@ -25,17 +32,19 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { customer_id, billing_month } = parsed.data
+  const { customer_id, period_start, period_end } = parsed.data
+  // 採番・表示は終了日の月を採用（20日締め等でも一意な番号が振れる）
+  const billing_month = period_end.slice(0, 7)
   const supabase = createClient()
 
-  // 対象期間の注文明細（締めルールの厳密な期間決定は今後 customers.closing_rule で精緻化）
-  const monthStart = `${billing_month}-01`
+  // 対象期間の注文明細（delivery_date が期間内）
   const { data: rows, error } = await supabase
     .from('order_items')
     .select('id, product_name, quantity, unit, unit_price, tax_rate, orders!inner(customer_id, status, delivery_date)')
     .eq('orders.customer_id', customer_id)
     .in('orders.status', ['approved', 'shipped'])
-    .gte('orders.delivery_date', monthStart)
+    .gte('orders.delivery_date', period_start)
+    .lte('orders.delivery_date', period_end)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!rows?.length) return NextResponse.json({ error: 'no_billable_items' }, { status: 404 })
 
@@ -63,6 +72,8 @@ export async function POST(req: Request) {
       invoice_number: invoiceNumber,
       customer_id,
       billing_month,
+      period_start,
+      period_end,
       issue_date: new Date().toISOString().slice(0, 10),
       invoice_reg_num: customer?.invoice_reg_num ?? null,
       subtotal_8: totals.reduced.subtotal.toNumber(),

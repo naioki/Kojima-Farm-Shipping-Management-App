@@ -4,7 +4,7 @@
  * 実値の解決は lib/settings.ts（サーバ専用・DB→env フォールバック）が行う。
  */
 
-export type SettingSection = 'issuer' | 'ai' | 'ingest' | 'storage' | 'notify' | 'ops'
+export type SettingSection = 'issuer' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
 export type SettingKind = 'text' | 'textarea' | 'toggle'
 
 export interface SettingSpec {
@@ -15,18 +15,21 @@ export interface SettingSpec {
   kind: SettingKind
   placeholder?: string
   hint?: string
+  /** toggle の未設定時の既定（安全側に倒すため auto-approve は 'off'）。 */
+  toggleDefault?: 'on' | 'off'
 }
 
 export const SECTION_LABELS: Record<SettingSection, string> = {
   issuer: '発行者（自社）情報 — 請求書・納品書に印字',
   ai: 'AI解析（Gemini）',
+  automation: '自動承認（識字率が高い受信の自動入力）',
   ingest: '取り込み（Drive / メール）',
   storage: '保管（Cloudflare R2）',
   notify: '通知（Discord / LINE WORKS）',
   ops: '運用',
 }
 
-export const SECTION_ORDER: SettingSection[] = ['issuer', 'ai', 'ingest', 'storage', 'notify', 'ops']
+export const SECTION_ORDER: SettingSection[] = ['issuer', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
 
 export const SETTINGS_SPEC: SettingSpec[] = [
   // 発行者（自社）情報 — 請求書・納品書のヘッダーに印字
@@ -38,6 +41,9 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },
   { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.0-flash' },
+  // 自動承認（既定OFF。安全のため確信度＋取引先一致＋納品日確定＋品目一致を全部満たした時だけ自動）
+  { key: 'AUTO_APPROVE_ENABLED', label: '自動承認を有効にする', section: 'automation', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'ONでも下の確信度しきい値・取引先一致・納品日確定・品目一致を満たした受信のみ自動承認します' },
+  { key: 'AUTO_APPROVE_THRESHOLD', label: '自動承認の確信度しきい値（0〜1）', section: 'automation', secret: false, kind: 'text', placeholder: '1.0', hint: '1.0＝識字率100%のみ。0.95 等に下げると自動範囲が広がります（リスク増）' },
   // 取り込み
   { key: 'DRIVE_FOLDER_ID', label: 'Drive フォルダID', section: 'ingest', secret: false, kind: 'text', hint: 'FAX画像が入る Google Drive フォルダのID' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_JSON', label: 'Drive サービスアカウント鍵(JSON)', section: 'ingest', secret: true, kind: 'textarea', hint: 'Drive API 用サービスアカウントの鍵JSON全文' },

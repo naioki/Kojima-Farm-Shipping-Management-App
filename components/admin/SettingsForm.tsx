@@ -16,6 +16,7 @@ export interface SettingItem {
   kind: SettingKind
   placeholder?: string
   hint?: string
+  toggleDefault?: 'on' | 'off'
   isSet: boolean
   /** 非秘密のみ現在値を持つ。秘密は常に undefined（書き込み専用）。 */
   value?: string
@@ -31,7 +32,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {}
     for (const it of items) {
-      v[it.key] = it.secret ? '' : it.kind === 'toggle' ? it.value ?? 'on' : it.value ?? ''
+      v[it.key] = it.secret ? '' : it.kind === 'toggle' ? it.value ?? it.toggleDefault ?? 'on' : it.value ?? ''
     }
     return v
   })

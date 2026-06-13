@@ -49,7 +49,7 @@ export default async function InvoicesPage() {
         <h2 className="font-display text-base font-bold text-ink">請求書を作成</h2>
         <GenerateInvoiceForm customers={(activeCustomers ?? []).map((c) => ({ id: c.id, name: c.name }))} />
         <p className="text-sm text-ink-faint">
-          対象月の承認/出荷済み明細を税率別に集計し、欠番なしで採番します（インボイス制度対応・tax.md）。
+          対象期間（開始日〜終了日）の承認/出荷済み明細を税率別に集計し、欠番なしで採番します（インボイス制度対応・tax.md）。
         </p>
       </Card>
 

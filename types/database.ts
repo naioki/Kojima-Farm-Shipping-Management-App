@@ -158,7 +158,9 @@ export interface Invoice {
   id: UUID
   invoice_number: string
   customer_id: UUID
-  billing_month: string // 'YYYY-MM'
+  billing_month: string // 'YYYY-MM'（採番・表示用。任意期間でも period_end の月を入れる）
+  period_start: ISODate | null
+  period_end: ISODate | null
   issue_date: ISODate | null
   due_date: ISODate | null
   invoice_reg_num: string | null
@@ -252,6 +254,20 @@ export interface HarvestEstimate {
   updated_at: ISODateTime
 }
 
+/** 取引先ごとの表記学習（few-shot の素）。 */
+export interface CustomerParseHint {
+  id: UUID
+  customer_id: UUID
+  raw_name: string
+  product_id: UUID | null
+  corrected_name: string | null
+  note: string | null
+  hit_count: number
+  created_by: UUID | null
+  created_at: ISODateTime
+  updated_at: ISODateTime
+}
+
 export interface GeminiUsageLog {
   id: UUID
   called_at: ISODateTime
@@ -342,6 +358,16 @@ export const productCreateSchema = z.object({
   default_unit_price: z.number().nonnegative().nullish(),
 })
 export type ProductCreateInput = z.infer<typeof productCreateSchema>
+
+/** 取引先の表記学習を1件保存（承認画面の修正時）。 */
+export const customerParseHintSchema = z.object({
+  customer_id: z.string().uuid(),
+  raw_name: z.string().min(1),
+  product_id: z.string().uuid().nullish(),
+  corrected_name: z.string().nullish(),
+  note: z.string().nullish(),
+})
+export type CustomerParseHintInput = z.infer<typeof customerParseHintSchema>
 
 /** 請求書のステータス更新（draft→finalized など）。 */
 export const invoiceStatusPatchSchema = z.object({
