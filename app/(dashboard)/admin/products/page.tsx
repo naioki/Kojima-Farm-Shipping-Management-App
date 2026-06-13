@@ -2,23 +2,37 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { AddProductForm } from '@/components/admin/AddProductForm'
+import { ProductsTable, type ProductRow } from '@/components/admin/ProductsTable'
+import type { TaxRate } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * 商品（品目）設定。週間マトリックスの品目タブ・スマート追加の選択肢になる品目をここで追加する。
- * （Laravel版 画面4の「在庫・バーコード」は対象外。当面は品目マスタの追加・一覧のみ）
+ * 商品（品目）設定。週間マトリックスの品目タブ・スマート追加の選択肢になる品目を追加・編集する。
+ * 在庫数（stock_qty）もここで調整できる（Laravel版 画面4の在庫管理に対応）。バーコードは対象外。
  */
 export default async function ProductsPage() {
   const supabase = createClient()
   const { data: products, error } = await supabase
     .from('products')
-    .select('id, name, name_kana, unit, default_tax_rate, container_capacity, default_unit_price, is_active')
+    .select('id, name, name_kana, unit, default_tax_rate, container_capacity, default_unit_price, stock_qty, is_active')
     .order('name')
   if (error) return <ErrorState message={error.message} />
 
+  const rows: ProductRow[] = (products ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    name_kana: p.name_kana,
+    unit: p.unit,
+    default_tax_rate: p.default_tax_rate as TaxRate,
+    container_capacity: p.container_capacity,
+    default_unit_price: p.default_unit_price,
+    stock_qty: p.stock_qty,
+    is_active: p.is_active,
+  }))
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">商品（品目）設定</h1>
 
       <Card className="space-y-3">
@@ -26,41 +40,12 @@ export default async function ProductsPage() {
         <AddProductForm />
       </Card>
 
-      {!products?.length ? (
+      {!rows.length ? (
         <EmptyState title="品目がありません" description="上のフォームから追加してください。" />
       ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="text-left text-ink-soft">
-                  <th className="px-2 py-2 font-medium">品目</th>
-                  <th className="px-2 py-2 font-medium">単位</th>
-                  <th className="px-2 py-2 font-medium">税率</th>
-                  <th className="num px-2 py-2 text-right font-medium">コンテナ容量</th>
-                  <th className="num px-2 py-2 text-right font-medium">既定単価</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.map((p) => (
-                  <tr key={p.id} className="border-t border-line">
-                    <td className="px-2 py-2 font-medium text-ink">
-                      {p.name}
-                      {!p.is_active && <span className="ml-2 text-xs text-ink-faint">（停止中）</span>}
-                    </td>
-                    <td className="px-2 py-2 text-ink-soft">{p.unit}</td>
-                    <td className="px-2 py-2 text-ink-soft">{p.default_tax_rate}%</td>
-                    <td className="num px-2 py-2 text-right tabular-nums text-ink-soft">
-                      {p.container_capacity ?? '—'}
-                    </td>
-                    <td className="num px-2 py-2 text-right tabular-nums text-ink-soft">
-                      {p.default_unit_price != null ? `¥${p.default_unit_price.toLocaleString()}` : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <Card className="space-y-3">
+          <h2 className="font-display text-base font-bold text-ink">品目一覧・在庫</h2>
+          <ProductsTable products={rows} />
         </Card>
       )}
     </div>

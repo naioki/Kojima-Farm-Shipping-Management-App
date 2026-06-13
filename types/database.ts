@@ -85,9 +85,19 @@ export interface Product {
   default_tax_rate: TaxRate
   container_capacity: number | null
   default_unit_price: number | null
+  stock_qty: number
   is_active: boolean
   created_at: ISODateTime
   updated_at: ISODateTime
+}
+
+/** 設定（app_settings）。is_secret=true の値は画面に返さない（書き込み専用扱い）。 */
+export interface AppSetting {
+  key: string
+  value: string | null
+  is_secret: boolean
+  updated_at: ISODateTime
+  updated_by: UUID | null
 }
 
 export interface Order {
@@ -332,6 +342,25 @@ export const productCreateSchema = z.object({
   default_unit_price: z.number().nonnegative().nullish(),
 })
 export type ProductCreateInput = z.infer<typeof productCreateSchema>
+
+/** 商品の更新（編集・在庫調整）。すべて任意。 */
+export const productUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  name_kana: z.string().nullish(),
+  unit: z.string().min(1).optional(),
+  default_tax_rate: taxRateSchema.optional(),
+  container_capacity: z.number().positive().nullish(),
+  default_unit_price: z.number().nonnegative().nullish(),
+  stock_qty: z.number().optional(),
+  is_active: z.boolean().optional(),
+})
+export type ProductUpdateInput = z.infer<typeof productUpdateSchema>
+
+/** 設定の一括更新（設定画面）。キーは SETTINGS_SPEC で検証する。空文字の秘密値は「変更なし」。 */
+export const settingsUpdateSchema = z.object({
+  entries: z.array(z.object({ key: z.string().min(1), value: z.string() })).min(1),
+})
+export type SettingsUpdateInput = z.infer<typeof settingsUpdateSchema>
 
 /** 取引先の新規作成（Laravel版 画面5） */
 export const customerCreateSchema = z.object({

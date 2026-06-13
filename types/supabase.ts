@@ -12,6 +12,7 @@ import type {
   CustomerProductRule,
   HarvestEstimate,
   GeminiUsageLog,
+  AppSetting,
 } from './database'
 
 /**
@@ -63,6 +64,7 @@ export interface Database {
           default_tax_rate?: Product['default_tax_rate']
           container_capacity?: number | null
           default_unit_price?: number | null
+          stock_qty?: number
           is_active?: boolean
         },
         Partial<Product>
@@ -236,6 +238,11 @@ export interface Database {
           success?: boolean | null
         },
         Partial<GeminiUsageLog>
+      >
+      app_settings: Table<
+        AppSetting,
+        { key: string; value?: string | null; is_secret?: boolean; updated_by?: string | null },
+        Partial<AppSetting>
       >
     }
     Views: Record<string, never>

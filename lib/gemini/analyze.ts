@@ -2,6 +2,7 @@ import 'server-only'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getSetting } from '@/lib/settings'
 
 /**
  * Gemini 解析（features.md §4）。通常モード（画像/テキスト → items[]）と
@@ -11,7 +12,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * モデル: gemini-2.0-flash（無料枠 ~1500req/日）。APIキーは Secret Manager 由来の環境変数。
  */
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+/** モデル名は設定（DB→env）→ 既定 gemini-2.0-flash。 */
+async function getModel(): Promise<string> {
+  return (await getSetting('GEMINI_MODEL')) || 'gemini-2.0-flash'
+}
 
 export const parsedItemSchema = z.object({
   raw_name: z.string(),
@@ -31,9 +35,10 @@ export const diffResultSchema = z.object({
 })
 export type DiffResult = z.infer<typeof diffResultSchema>
 
-function client(): GoogleGenerativeAI {
-  const key = process.env.GEMINI_API_KEY
-  if (!key) throw new Error('GEMINI_API_KEY が未設定です（Secret Manager を確認）')
+/** APIキーは設定（DB→env）。設定画面 or Secret Manager で投入する。 */
+async function client(): Promise<GoogleGenerativeAI> {
+  const key = await getSetting('GEMINI_API_KEY')
+  if (!key) throw new Error('GEMINI_API_KEY が未設定です（設定画面 または Secret Manager で投入）')
   return new GoogleGenerativeAI(key)
 }
 
@@ -58,7 +63,7 @@ export async function analyzeNormal(
   input: { imageBase64?: string; mimeType?: string; text?: string },
   channel: string,
 ): Promise<ParsedItem[]> {
-  const model = client().getGenerativeModel({ model: MODEL })
+  const model = (await client()).getGenerativeModel({ model: await getModel() })
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
     { text: BASE_INSTRUCTION },
   ]
@@ -87,7 +92,7 @@ export async function analyzeDiff(
   previousItems: ParsedItem[],
   channel: string,
 ): Promise<DiffResult> {
-  const model = client().getGenerativeModel({ model: MODEL })
+  const model = (await client()).getGenerativeModel({ model: await getModel() })
   const instruction = `${BASE_INSTRUCTION}
 これは再送（追記）された注文です。前回確定の明細との差分を
 {added:[], modified:[], removed:[]} の形で返してください。

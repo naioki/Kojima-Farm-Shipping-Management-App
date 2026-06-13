@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Inbox, LayoutDashboard, Sprout, FileText, Users, LogOut, PackageCheck, Carrot } from 'lucide-react'
+import { Inbox, LayoutDashboard, Sprout, FileText, Users, LogOut, PackageCheck, Carrot, Settings } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 interface NavItem {
@@ -18,6 +18,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/admin/invoices', label: '請求', icon: FileText },
   { href: '/admin/customers', label: '取引先', icon: Users },
   { href: '/admin/products', label: '商品', icon: Carrot },
+  { href: '/admin/settings', label: '設定', icon: Settings },
 ]
 
 const STAFF_NAV: NavItem[] = [

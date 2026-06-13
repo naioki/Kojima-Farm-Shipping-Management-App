@@ -3,7 +3,8 @@ import crypto from 'node:crypto'
 import { google } from 'googleapis'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { putReceiptOriginal } from '@/lib/r2'
-import { parseFaxFilename, verifyCronRequest } from '@/lib/config/ingestion'
+import { parseFaxFilename, verifyCronRequest, getDriveFolderId } from '@/lib/config/ingestion'
+import { getSetting } from '@/lib/settings'
 import { buildSenderDateKey, decideReceiptDisposition } from '@/lib/receipts/dedupe'
 
 // Cloud Run 上で重い処理も可（stack.md）。Node ランタイムを明示。
@@ -19,15 +20,15 @@ export const dynamic = 'force-dynamic'
  *  5. 重複・再送判定（§3）。再送は差分モードのフラグを立てる
  */
 export async function GET(req: Request) {
-  if (!verifyCronRequest(req.headers)) {
+  if (!(await verifyCronRequest(req.headers))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const folderId = process.env.DRIVE_FOLDER_ID
+  const folderId = await getDriveFolderId()
   if (!folderId) return NextResponse.json({ error: 'DRIVE_FOLDER_ID 未設定' }, { status: 500 })
 
   const supabase = createAdminClient()
-  const drive = google.drive({ version: 'v3', auth: driveAuth() })
+  const drive = google.drive({ version: 'v3', auth: await driveAuth() })
 
   // 前回ポーリング時刻（簡易にメタ保存。実運用は専用テーブル/設定に置く）
   const since = process.env.DRIVE_POLL_SINCE // ISO。未設定なら全件（初回）
@@ -58,7 +59,7 @@ export async function GET(req: Request) {
       .eq('exact_hash', exactHash)
       .maybeSingle()
 
-    const parsed = parseFaxFilename(f.name)
+    const parsed = await parseFaxFilename(f.name)
     const senderDateKey = parsed
       ? buildSenderDateKey('fax', parsed.faxNumber, new Date(f.createdTime ?? Date.now()))
       : null
@@ -102,11 +103,19 @@ export async function GET(req: Request) {
 }
 
 /**
- * Drive 認証。Cloud Run のサービスアカウント（ADC）またはサービスアカウントJSONを使用。
+ * Drive 認証。設定（GOOGLE_SERVICE_ACCOUNT_JSON）があればそれを使い、
+ * 無ければ Cloud Run のサービスアカウント（ADC）にフォールバックする。
  * GoogleAuth インスタンスをそのまま google.drive({auth}) に渡す（googleapis 推奨の型）。
  */
-function driveAuth() {
-  return new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-  })
+async function driveAuth() {
+  const scopes = ['https://www.googleapis.com/auth/drive.readonly']
+  const saJson = await getSetting('GOOGLE_SERVICE_ACCOUNT_JSON')
+  if (saJson) {
+    try {
+      return new google.auth.GoogleAuth({ credentials: JSON.parse(saJson), scopes })
+    } catch {
+      // 不正な JSON は ADC にフォールバック
+    }
+  }
+  return new google.auth.GoogleAuth({ scopes })
 }

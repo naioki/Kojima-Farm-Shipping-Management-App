@@ -3,6 +3,7 @@ import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyCronRequest, looksLikeOrder } from '@/lib/config/ingestion'
+import { getSetting } from '@/lib/settings'
 import { buildSenderDateKey } from '@/lib/receipts/dedupe'
 
 export const runtime = 'nodejs'
@@ -15,13 +16,15 @@ export const dynamic = 'force-dynamic'
  *  - 処理後 "processed" ラベル付与（ダブルチェック）
  */
 export async function GET(req: Request) {
-  if (!verifyCronRequest(req.headers)) {
+  if (!(await verifyCronRequest(req.headers))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const host = process.env.IMAP_HOST
-  const user = process.env.IMAP_USER
-  const pass = process.env.IMAP_PASSWORD
+  const [host, user, pass] = await Promise.all([
+    getSetting('IMAP_HOST'),
+    getSetting('IMAP_USER'),
+    getSetting('IMAP_PASSWORD'),
+  ])
   if (!host || !user || !pass) {
     return NextResponse.json({ error: 'IMAP 認証情報未設定' }, { status: 500 })
   }
@@ -50,7 +53,7 @@ export async function GET(req: Request) {
         const parsedMail = await simpleParser(msg.source as Buffer)
         const text = parsedMail.text ?? parsedMail.html?.toString() ?? ''
         const from = parsedMail.from?.value?.[0]?.address ?? null
-        const isOrder = looksLikeOrder(`${parsedMail.subject ?? ''}\n${text}`)
+        const isOrder = await looksLikeOrder(`${parsedMail.subject ?? ''}\n${text}`)
         const senderDateKey = buildSenderDateKey('email', from, parsedMail.date ?? new Date())
 
         await supabase.from('order_receipts').insert({
