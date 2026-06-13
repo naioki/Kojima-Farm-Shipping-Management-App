@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, FileDown } from 'lucide-react'
+import { CheckCircle2, FileDown, Table } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { PrintButton } from '@/components/admin/PrintButton'
@@ -44,6 +44,14 @@ export function InvoiceActions({ invoiceId, status }: { invoiceId: string; statu
       >
         <FileDown className="h-4 w-4" aria-hidden />
         PDF
+      </a>
+      <a
+        href={`/api/invoices/${invoiceId}/csv`}
+        className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-3 text-sm font-medium text-trust-700 hover:bg-trust-50"
+        title="マネーフォワード / freee 取り込み用 CSV"
+      >
+        <Table className="h-4 w-4" aria-hidden />
+        CSV
       </a>
       <PrintButton />
       {status === 'draft' && (

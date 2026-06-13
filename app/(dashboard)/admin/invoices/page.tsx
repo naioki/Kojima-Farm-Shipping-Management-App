@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
 import { BulkInvoiceForm } from '@/components/admin/BulkInvoiceForm'
+import { InvoiceCsvExport } from '@/components/admin/InvoiceCsvExport'
 import { formatYen } from '@/lib/calculations/tax'
 import type { InvoiceStatus } from '@/types/database'
 
@@ -57,6 +58,13 @@ export default async function InvoicesPage() {
           <BulkInvoiceForm />
           <p className="mt-2 text-sm text-ink-faint">
             対象明細が無い取引先・同期間で作成済みの取引先は自動スキップします。
+          </p>
+        </div>
+        <div className="border-t border-line pt-3">
+          <p className="mb-2 text-sm font-medium text-ink">会計ソフト取り込み（CSV）</p>
+          <InvoiceCsvExport />
+          <p className="mt-2 text-sm text-ink-faint">
+            発行日が期間内の全請求書の明細を1ファイルに出力します（UTF-8 BOM・税率別）。マネーフォワード / freee の取り込みウィザードで列を対応づけてください。各請求書の詳細からは1件ずつの CSV も出せます。
           </p>
         </div>
       </Card>
