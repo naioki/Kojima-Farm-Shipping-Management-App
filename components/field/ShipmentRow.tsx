@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus } from '@/types/database'
@@ -23,6 +23,8 @@ export interface ShipmentRowProps {
   customerName: string
   /** 総数表示（"120" や "6c0" など、呼び出し側で整形） */
   quantityText: string
+  /** 受注総数（中断時の「できた数」との比較・部分完了判定に使う） */
+  orderedQty: number
   initialStatus: FieldStatus
   initialVersion: number
   /** 荷姿まわり（規則から自動補完済みの初期値） */
@@ -30,6 +32,9 @@ export interface ShipmentRowProps {
   initialContainer: string | null
   initialHasCard: boolean | null
   initialLineNote: string | null
+  /** 現場の記録（中断時の部分完了数・現場メモ） */
+  initialShippedQty: number | null
+  initialFieldNote: string | null
 }
 
 /**
@@ -42,12 +47,15 @@ export function ShipmentRow({
   itemId,
   customerName,
   quantityText,
+  orderedQty,
   initialStatus,
   initialVersion,
   initialSpec,
   initialContainer,
   initialHasCard,
   initialLineNote,
+  initialShippedQty,
+  initialFieldNote,
 }: ShipmentRowProps) {
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
@@ -61,11 +69,18 @@ export function ShipmentRow({
   const [container, setContainer] = useState(initialContainer ?? '')
   const [hasCard, setHasCard] = useState(Boolean(initialHasCard))
   const [lineNote, setLineNote] = useState(initialLineNote ?? '')
+  // 現場の記録（中断時の部分完了数・現場メモ）
+  const [shippedQty, setShippedQty] = useState(initialShippedQty == null ? '' : String(initialShippedQty))
+  const [fieldNote, setFieldNote] = useState(initialFieldNote ?? '')
   const [savingDetails, setSavingDetails] = useState(false)
 
   const meta = FIELD_STATUS_META[status]
   const Icon = ICONS[meta.icon]
   const hasDetails = spec || container || hasCard || lineNote
+  // 「途中で止まった」= できた数が受注総数に満たない。出荷前でも記録できる。
+  const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
+  const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
+  const hasFieldRecord = isPartial || Boolean(fieldNote)
 
   async function advance() {
     if (!canAdvance(status) || busy) return
@@ -136,6 +151,8 @@ export function ShipmentRow({
           container_type: container || null,
           has_card: hasCard,
           line_note: lineNote || null,
+          shipped_qty: shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null,
+          field_note: fieldNote || null,
           version,
         }),
       })
@@ -147,7 +164,7 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
-      toast.success('荷姿を保存しました')
+      toast.success('記録を保存しました')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
@@ -176,6 +193,13 @@ export function ShipmentRow({
             <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-soft">
               {hasCard && <IdCard className="h-3 w-3" aria-hidden />}
               {[container, spec].filter(Boolean).join(' / ') || '荷姿あり'}
+            </span>
+          )}
+          {hasFieldRecord && (
+            // 何か起きた行はひと目で分かるよう琥珀色（design.md: 色だけに頼らずアイコン併用）
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-harvest-50 px-2 py-0.5 text-xs font-medium text-earth-700">
+              {isPartial ? <PauseCircle className="h-3 w-3" aria-hidden /> : <StickyNote className="h-3 w-3" aria-hidden />}
+              {isPartial ? `途中 ${shippedNum}/${orderedQty}` : 'メモ'}
             </span>
           )}
         </button>
@@ -232,9 +256,42 @@ export function ShipmentRow({
               placeholder="この出荷だけの指示（例: 今日は化粧箱で）"
             />
           </label>
+
+          {/* 現場の記録（中断・トラブル時に残す。事務へ伝わる） */}
+          <div className="space-y-3 rounded border border-line bg-bg-card/60 p-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-ink-soft">
+              <PauseCircle className="h-3.5 w-3.5" aria-hidden />
+              現場の記録（中断・気づき）
+            </p>
+            <label className="space-y-1 block">
+              <span className="text-xs font-medium text-ink-soft">
+                できた数 <span className="text-ink-faint">／ 受注 {orderedQty}（中断時に入力）</span>
+              </span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                className={cn(fieldInput, 'num tabular-nums')}
+                value={shippedQty}
+                onChange={(e) => setShippedQty(e.target.value)}
+                placeholder="例: 20（途中まで）"
+              />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-xs font-medium text-ink-soft">現場メモ</span>
+              <textarea
+                className={cn(fieldInput, 'h-auto py-2')}
+                rows={2}
+                value={fieldNote}
+                onChange={(e) => setFieldNote(e.target.value)}
+                placeholder="何かあれば（例: 第3ハウス不調で20個で中断・続きは明日）"
+              />
+            </label>
+          </div>
+
           <div className="flex justify-end">
             <Button size="sm" onClick={saveDetails} isLoading={savingDetails}>
-              荷姿を保存
+              保存
             </Button>
           </div>
         </div>

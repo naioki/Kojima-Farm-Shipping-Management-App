@@ -109,6 +109,7 @@ export interface Database {
             container_type?: string | null
             has_card?: boolean | null
             line_note?: string | null
+            field_note?: string | null
           },
           Generated
         >,

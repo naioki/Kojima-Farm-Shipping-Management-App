@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
@@ -8,7 +7,14 @@ import { nextFieldStatus } from '@/lib/field/tap-loop'
 export const runtime = 'nodejs'
 
 // quantity/価格変更（admin）と field_status タップ（圃場）を同じ PATCH で受ける。
-const patchSchema = z.union([orderItemPatchSchema, fieldStatusPatchSchema])
+// ※ z.union は先頭スキーマが緩い（全項目 optional）と field_status を持つ body も
+//   orderItemPatchSchema 側で成立して field_status が落ちてしまう（タップが永続化されない）。
+//   そのため body.field_status の有無で明示的に振り分ける。
+function parsePatch(body: unknown) {
+  const isFieldTap =
+    typeof body === 'object' && body !== null && 'field_status' in body
+  return isFieldTap ? fieldStatusPatchSchema.safeParse(body) : orderItemPatchSchema.safeParse(body)
+}
 
 /**
  * 数量変更・タップ更新（features.md §6/§7）。楽観ロック必須。
@@ -20,7 +26,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const body = await req.json().catch(() => null)
-  const parsed = patchSchema.safeParse(body)
+  const parsed = parsePatch(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
@@ -58,6 +64,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.container_type !== undefined) updates.container_type = input.container_type
     if (input.has_card !== undefined) updates.has_card = input.has_card
     if (input.line_note !== undefined) updates.line_note = input.line_note
+    // 現場の記録（中断時の部分完了数・現場メモ）
+    if (input.shipped_qty !== undefined) updates.shipped_qty = input.shipped_qty
+    if (input.field_note !== undefined) updates.field_note = input.field_note
   }
 
   // 楽観ロック：version 一致時のみ更新。version++ も同時に行う。

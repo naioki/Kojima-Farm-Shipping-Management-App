@@ -143,6 +143,8 @@ export interface OrderItem {
   container_type: string | null
   has_card: boolean | null
   line_note: string | null
+  /** 現場メモ（中断理由・気づき等。現場→事務の報告・migrations/0006） */
+  field_note: string | null
   created_at: ISODateTime
   updated_at: ISODateTime
 }
@@ -325,6 +327,9 @@ export const orderItemPatchSchema = z.object({
   container_type: z.string().nullish(),
   has_card: z.boolean().nullish(),
   line_note: z.string().nullish(),
+  /** 現場の記録（中断時の部分完了数・現場メモ・migrations/0006） */
+  shipped_qty: z.number().nonnegative().nullish(),
+  field_note: z.string().nullish(),
   /** 期待 version。不一致は 409（競合） */
   version: z.number().int().positive(),
 })
