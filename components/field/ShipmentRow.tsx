@@ -83,7 +83,8 @@ export function ShipmentRow({
   // 「途中で止まった」= できた数が受注総数に満たない。出荷前でも記録できる。
   const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
   const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
-  const hasFieldRecord = isPartial || Boolean(fieldNote)
+  // 中断＝できた数が受注未満で、まだ出荷していない。梱包完了（全量）と明確に区別する。
+  const interrupted = isPartial && status !== 'shipped'
 
   async function advance() {
     if (!canAdvance(status) || busy) return
@@ -227,11 +228,11 @@ export function ShipmentRow({
               {[container, spec].filter(Boolean).join(' / ') || '荷姿あり'}
             </span>
           )}
-          {hasFieldRecord && (
-            // 何か起きた行はひと目で分かるよう琥珀色（design.md: 色だけに頼らずアイコン併用）
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-harvest-50 px-2 py-0.5 text-xs font-medium text-earth-700">
-              {isPartial ? <PauseCircle className="h-3 w-3" aria-hidden /> : <StickyNote className="h-3 w-3" aria-hidden />}
-              {isPartial ? `途中 ${shippedNum}/${orderedQty}` : 'メモ'}
+          {Boolean(fieldNote) && (
+            // 現場メモがある行はメモアイコンで明示（中断は右のステータス欄で色分け表示）
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+              <StickyNote className="h-3 w-3" aria-hidden />
+              メモ
             </span>
           )}
         </button>
@@ -247,8 +248,18 @@ export function ShipmentRow({
             <ChevronLeft className="h-5 w-5" aria-hidden />
           </button>
           <span className="flex w-20 flex-col items-center gap-0.5">
-            <Icon className={cn('h-5 w-5', STATUS_TEXT[status])} aria-hidden />
-            <span className="text-xs text-ink-soft">{meta.label}</span>
+            {interrupted ? (
+              <>
+                <PauseCircle className="h-5 w-5 text-warning" aria-hidden />
+                <span className="text-xs font-medium text-warning">中断</span>
+                <span className="num text-[10px] tabular-nums text-warning">{shippedNum}/{orderedQty}</span>
+              </>
+            ) : (
+              <>
+                <Icon className={cn('h-5 w-5', STATUS_TEXT[status])} aria-hidden />
+                <span className="text-xs text-ink-soft">{meta.label}</span>
+              </>
+            )}
           </span>
           <button
             type="button"

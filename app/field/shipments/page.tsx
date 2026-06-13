@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { decomposeByContainer } from '@/lib/calculations/parse-quantity'
-import type { FieldStatus } from '@/types/database'
 import { ShipmentStatusSummary } from '@/components/field/ShipmentStatusSummary'
 import { ShipmentRow } from '@/components/field/ShipmentRow'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
@@ -72,9 +71,15 @@ export default async function ShipmentsPage({
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
 
-  // ステータス集計
-  const counts: Record<FieldStatus, number> = { not_started: 0, packed: 0, shipped: 0 }
-  for (const it of items) counts[it.field_status as FieldStatus]++
+  // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）
+  const counts = { not_started: 0, interrupted: 0, packed: 0, shipped: 0 }
+  for (const it of items) {
+    const partial = it.shipped_qty != null && it.shipped_qty < it.quantity
+    if (it.field_status === 'shipped') counts.shipped++
+    else if (partial) counts.interrupted++
+    else if (it.field_status === 'packed') counts.packed++
+    else counts.not_started++
+  }
 
   // 品目ごとにグループ化
   const groups = new Map<string, typeof items>()
