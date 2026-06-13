@@ -40,7 +40,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   { key: 'FARM_PAYMENT_INFO', label: '振込先', section: 'issuer', secret: false, kind: 'textarea', hint: '請求書に印字する振込先口座' },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },
-  { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.0-flash' },
+  { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.5-flash', hint: '無料枠なら gemini-2.5-flash か gemini-2.0-flash' },
   // 自動承認（既定OFF。安全のため確信度＋取引先一致＋納品日確定＋品目一致を全部満たした時だけ自動）
   { key: 'AUTO_APPROVE_ENABLED', label: '自動承認を有効にする', section: 'automation', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'ONでも下の確信度しきい値・取引先一致・納品日確定・品目一致を満たした受信のみ自動承認します' },
   { key: 'AUTO_APPROVE_THRESHOLD', label: '自動承認の確信度しきい値（0〜1）', section: 'automation', secret: false, kind: 'text', placeholder: '1.0', hint: '1.0＝識字率100%のみ。0.95 等に下げると自動範囲が広がります（リスク増）' },

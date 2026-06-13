@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
+import { BulkInvoiceForm } from '@/components/admin/BulkInvoiceForm'
 import { formatYen } from '@/lib/calculations/tax'
 import type { InvoiceStatus } from '@/types/database'
 
@@ -51,6 +52,13 @@ export default async function InvoicesPage() {
         <p className="text-sm text-ink-faint">
           対象期間（開始日〜終了日）の承認/出荷済み明細を税率別に集計し、欠番なしで採番します（インボイス制度対応・tax.md）。
         </p>
+        <div className="border-t border-line pt-3">
+          <p className="mb-2 text-sm font-medium text-ink">月次一括（全取引先まとめて）</p>
+          <BulkInvoiceForm />
+          <p className="mt-2 text-sm text-ink-faint">
+            対象明細が無い取引先・同期間で作成済みの取引先は自動スキップします。
+          </p>
+        </div>
       </Card>
 
       {!invoices?.length ? (

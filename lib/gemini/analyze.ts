@@ -12,9 +12,9 @@ import { getSetting } from '@/lib/settings'
  * モデル: gemini-2.0-flash（無料枠 ~1500req/日）。APIキーは Secret Manager 由来の環境変数。
  */
 
-/** モデル名は設定（DB→env）→ 既定 gemini-2.0-flash。 */
+/** モデル名は設定（DB→env）→ 既定 gemini-2.5-flash（無料枠）。 */
 async function getModel(): Promise<string> {
-  return (await getSetting('GEMINI_MODEL')) || 'gemini-2.0-flash'
+  return (await getSetting('GEMINI_MODEL')) || 'gemini-2.5-flash'
 }
 
 export const parsedItemSchema = z.object({
