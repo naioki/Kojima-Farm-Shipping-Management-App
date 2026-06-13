@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, FileDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
@@ -66,7 +66,20 @@ export default async function DeliveryNoteView({
           <ChevronLeft className="h-4 w-4" aria-hidden />
           納品書
         </Link>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <a
+              href={`/api/delivery-notes/pdf?customer=${customerId}&date=${date}`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-3 text-sm font-medium text-earth-700 hover:bg-earth-50"
+            >
+              <FileDown className="h-4 w-4" aria-hidden />
+              PDF
+            </a>
+          )}
+          <PrintButton />
+        </div>
       </div>
 
       {items.length === 0 ? (

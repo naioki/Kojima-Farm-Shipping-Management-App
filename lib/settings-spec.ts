@@ -64,6 +64,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   { key: 'NOTIFY_LINE_WORKS', label: 'LINE WORKS通知', section: 'notify', secret: false, kind: 'toggle', hint: 'on / off' },
   // 運用
   { key: 'CRON_SECRET', label: 'cron 共有シークレット', section: 'ops', secret: true, kind: 'text', hint: 'Cloud Scheduler からの取り込み呼び出しを検証' },
+  { key: 'PDF_FONT_URL', label: 'PDF 日本語フォントURL', section: 'ops', secret: false, kind: 'text', hint: '空なら Noto Sans JP を既定使用。社内フォント等に差し替え可（otf/ttf）' },
 ]
 
 export const SETTINGS_BY_KEY: Record<string, SettingSpec> = Object.fromEntries(
