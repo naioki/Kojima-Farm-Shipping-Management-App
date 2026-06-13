@@ -73,6 +73,9 @@ export function ShipmentRow({
   const [shippedQty, setShippedQty] = useState(initialShippedQty == null ? '' : String(initialShippedQty))
   const [fieldNote, setFieldNote] = useState(initialFieldNote ?? '')
   const [savingDetails, setSavingDetails] = useState(false)
+  // 行から開かずに「できた数」を素早く記録するクイック入力
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [savingQuick, setSavingQuick] = useState(false)
 
   const meta = FIELD_STATUS_META[status]
   const Icon = ICONS[meta.icon]
@@ -172,6 +175,35 @@ export function ShipmentRow({
     }
   }
 
+  /** クイック入力：できた数（shipped_qty）だけを即保存。荷姿・メモは触らない。 */
+  async function saveQuick() {
+    setSavingQuick(true)
+    try {
+      const res = await fetch(`/api/order-items/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          shipped_qty: shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null,
+          version,
+        }),
+      })
+      if (res.status === 409) {
+        setConflict(true)
+        toast.error('競合しました。画面を更新してください')
+        return
+      }
+      if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
+      const json = (await res.json()) as { item: { version: number } }
+      setVersion(json.item.version)
+      toast.success('できた数を記録しました')
+      setQuickOpen(false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+    } finally {
+      setSavingQuick(false)
+    }
+  }
+
   const fieldInput =
     'h-10 w-full rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
 
@@ -227,8 +259,55 @@ export function ShipmentRow({
           >
             <ChevronRight className="h-5 w-5" aria-hidden />
           </button>
+          <button
+            type="button"
+            onClick={() => setQuickOpen((v) => !v)}
+            aria-expanded={quickOpen}
+            aria-label="中断・できた数を記録"
+            title="中断・できた数を記録"
+            className={cn(
+              'flex h-12 w-10 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
+              isPartial
+                ? 'border-harvest-200 bg-harvest-50 text-earth-700'
+                : 'border-line text-ink-soft hover:bg-bg-soft',
+            )}
+          >
+            <PauseCircle className="h-5 w-5" aria-hidden />
+          </button>
         </div>
       </div>
+
+      {quickOpen && (
+        // 行から開かずに「できた数」だけを素早く記録（中断時）。荷姿/メモは下のアコーディオン。
+        <div className="flex items-center gap-2 border-t border-line bg-harvest-50/40 px-3 py-2">
+          <span className="shrink-0 text-xs font-medium text-ink-soft">できた数</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            autoFocus
+            className={cn(fieldInput, 'num h-10 w-24 tabular-nums')}
+            value={shippedQty}
+            onChange={(e) => setShippedQty(e.target.value)}
+            placeholder="例: 20"
+          />
+          <span className="shrink-0 text-xs text-ink-faint">／ 受注 {orderedQty}</span>
+          <div className="ml-auto flex items-center gap-1.5">
+            {shippedQty !== '' && (
+              <button
+                type="button"
+                onClick={() => setShippedQty('')}
+                className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft"
+              >
+                クリア
+              </button>
+            )}
+            <Button size="sm" onClick={saveQuick} isLoading={savingQuick}>
+              保存
+            </Button>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="space-y-3 border-t border-line bg-bg-soft/40 px-3 py-3">
@@ -257,36 +336,23 @@ export function ShipmentRow({
             />
           </label>
 
-          {/* 現場の記録（中断・トラブル時に残す。事務へ伝わる） */}
-          <div className="space-y-3 rounded border border-line bg-bg-card/60 p-3">
+          {/* 現場メモ（中断・トラブル時に残す。事務へ伝わる）。できた数は ⏸ ボタンから素早く入力。 */}
+          <div className="space-y-2 rounded border border-line bg-bg-card/60 p-3">
             <p className="flex items-center gap-1.5 text-xs font-medium text-ink-soft">
-              <PauseCircle className="h-3.5 w-3.5" aria-hidden />
-              現場の記録（中断・気づき）
+              <StickyNote className="h-3.5 w-3.5" aria-hidden />
+              現場メモ（中断・気づき）
             </p>
-            <label className="space-y-1 block">
-              <span className="text-xs font-medium text-ink-soft">
-                できた数 <span className="text-ink-faint">／ 受注 {orderedQty}（中断時に入力）</span>
-              </span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                className={cn(fieldInput, 'num tabular-nums')}
-                value={shippedQty}
-                onChange={(e) => setShippedQty(e.target.value)}
-                placeholder="例: 20（途中まで）"
-              />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-xs font-medium text-ink-soft">現場メモ</span>
-              <textarea
-                className={cn(fieldInput, 'h-auto py-2')}
-                rows={2}
-                value={fieldNote}
-                onChange={(e) => setFieldNote(e.target.value)}
-                placeholder="何かあれば（例: 第3ハウス不調で20個で中断・続きは明日）"
-              />
-            </label>
+            <textarea
+              className={cn(fieldInput, 'h-auto py-2')}
+              rows={2}
+              value={fieldNote}
+              onChange={(e) => setFieldNote(e.target.value)}
+              placeholder="何かあれば（例: 第3ハウス不調で20個で中断・続きは明日）"
+            />
+            <p className="text-xs text-ink-faint">
+              <PauseCircle className="mr-1 inline h-3 w-3" aria-hidden />
+              「できた数（中断時）」は右の ⏸ ボタンから開かずに入力できます。
+            </p>
           </div>
 
           <div className="flex justify-end">
