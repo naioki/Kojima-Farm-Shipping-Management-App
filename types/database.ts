@@ -300,6 +300,78 @@ export const fieldStatusPatchSchema = z.object({
 })
 export type FieldStatusPatch = z.infer<typeof fieldStatusPatchSchema>
 
+/**
+ * 出荷一覧の「スマート追加」入力（Laravel版 画面2）。
+ * 数量はスマートパース対象の生文字列（"15c2" 等）をそのまま受け、サーバ側で
+ * customer_product_rules.packs_per_case を使って総数に確定する（features.md §5）。
+ */
+export const shipmentAddSchema = z.object({
+  customer_id: z.string().uuid(),
+  product_id: z.string().uuid(),
+  delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  quantity_raw: z.string().min(1),
+})
+export type ShipmentAddInput = z.infer<typeof shipmentAddSchema>
+
+/** field_status を1段戻すリセット（features.md §7：長押し＋確認で実行）。version 必須。 */
+export const fieldStatusResetSchema = z.object({
+  version: z.number().int().positive(),
+})
+export type FieldStatusReset = z.infer<typeof fieldStatusResetSchema>
+
+/**
+ * 商品（品目）の新規作成（設定から追加）。
+ * 週間マトリックスの品目タブ・スマート追加の選択肢になる。税率は 8（軽減）/10（標準）のみ（tax.md）。
+ */
+export const productCreateSchema = z.object({
+  name: z.string().min(1),
+  name_kana: z.string().nullish(),
+  unit: z.string().min(1).default('個'),
+  default_tax_rate: taxRateSchema.default(8),
+  container_capacity: z.number().positive().nullish(),
+  default_unit_price: z.number().nonnegative().nullish(),
+})
+export type ProductCreateInput = z.infer<typeof productCreateSchema>
+
+/** 取引先の新規作成（Laravel版 画面5） */
+export const customerCreateSchema = z.object({
+  name: z.string().min(1),
+  name_kana: z.string().nullish(),
+  payment_terms: z.string().nullish(),
+})
+export type CustomerCreateInput = z.infer<typeof customerCreateSchema>
+
+/**
+ * 取引先×商品の取引ルール upsert（Laravel版 画面5：P/C・荷姿・いつものセット）。
+ * (customer_id, product_id) で一意。スマートパース/OCR検証の基準値 packs_per_case を持つ。
+ */
+export const customerProductRuleUpsertSchema = z.object({
+  customer_id: z.string().uuid(),
+  product_id: z.string().uuid(),
+  packs_per_case: z.number().positive().nullish(),
+  container_type: z.string().nullish(),
+  label_spec: z.string().nullish(),
+  tape_color: z.string().nullish(),
+  packing_notes: z.string().nullish(),
+  fraction_policy: z.enum(['carry_over', 'loose', 'round_down', 'confirm']).optional(),
+  is_default_set: z.boolean().optional(),
+  default_quantity: z.number().nonnegative().nullish(),
+})
+export type CustomerProductRuleUpsert = z.infer<typeof customerProductRuleUpsertSchema>
+
+/**
+ * 週間マトリックスのセル更新（Laravel版 画面3）。
+ * quantity_raw が空文字なら「その日の出荷レコードを削除」（features.md §5 の空欄=削除仕様）。
+ * 空以外は customer_product_rules.packs_per_case でスマートパースして総数に確定する。
+ */
+export const matrixCellSchema = z.object({
+  customer_id: z.string().uuid(),
+  product_id: z.string().uuid(),
+  delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  quantity_raw: z.string(), // 空文字＝削除
+})
+export type MatrixCellInput = z.infer<typeof matrixCellSchema>
+
 /** ポータル発注（features.md §2-3：confidence は常に 1.0、delivery_date 必須） */
 export const portalOrderInputSchema = z.object({
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
