@@ -31,9 +31,9 @@ paths:
 
 ## フォント（next/font で自己ホスト、CDN <link> 禁止）
 ```
---font-display: 'Zen Old Mincho', serif      → 大見出し・金額の強調（和の風格）
---font-body:    'Noto Sans JP', sans-serif   → 本文・h2以下
---font-mono:    'JetBrains Mono', monospace  → 数字・金額・テーブル・コード
+--font-display: 'M PLUS Rounded 1c', sans-serif → 大見出し（丸ゴシックでポップ・親しみやすさ。業務感は本文/数字で担保）
+--font-body:    'Noto Sans JP', sans-serif      → 本文・h2以下
+--font-mono:    'JetBrains Mono', monospace     → 数字・金額・テーブル・コード
 ```
 Inter / Arial / Roboto / system-ui デフォルト単体禁止。
 金額表示は必ず font-mono + tabular-nums（桁が揃いスキャンしやすい）。
