@@ -40,6 +40,8 @@ export default async function SettingsPage() {
       placeholder: spec.placeholder,
       hint: spec.hint,
       toggleDefault: spec.toggleDefault,
+      options: spec.options,
+      selectDefault: spec.selectDefault,
       isSet,
       // 秘密は値を返さない。非秘密のみ現在値（DB→env）を渡す。
       value: spec.secret ? undefined : dbVal ?? envVal ?? '',

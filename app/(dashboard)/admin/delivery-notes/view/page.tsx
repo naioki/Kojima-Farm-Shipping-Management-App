@@ -5,17 +5,22 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
 import { getSetting } from '@/lib/settings'
 import { sumInvoiceTotals, formatYen, type TaxRate } from '@/lib/calculations/tax'
+import {
+  DELIVERY_AMOUNT_MODES,
+  parseAmountMode,
+  amountVisibility,
+} from '@/lib/delivery-notes/amount-mode'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * 納品書 印刷ビュー（取引先×納品日）。その日の明細から1枚にまとめる。
- * 金額の正は請求書（invoices）。ここは納品の控えとして税率別合計も併記する。
+ * 金額の正は請求書（invoices）。納品書は「金額あり／後から手書き／金額なし」を切替可能。
  */
 export default async function DeliveryNoteView({
   searchParams,
 }: {
-  searchParams: { customer?: string; date?: string }
+  searchParams: { customer?: string; date?: string; amount?: string }
 }) {
   const customerId = searchParams.customer ?? ''
   const date = searchParams.date ?? ''
@@ -49,27 +54,51 @@ export default async function DeliveryNoteView({
       ).data ?? []
     : []
 
-  const [farmName, farmAddr, farmTel] = await Promise.all([
+  const [farmName, farmAddr, farmTel, amountDefault] = await Promise.all([
     getSetting('FARM_NAME'),
     getSetting('FARM_ADDRESS'),
     getSetting('FARM_TEL'),
+    getSetting('DELIVERY_NOTE_AMOUNT_MODE'),
   ])
+
+  // 金額表示モード（クエリ優先・無ければ設定の既定）
+  const mode = parseAmountMode(searchParams.amount, parseAmountMode(amountDefault))
+  const v = amountVisibility(mode)
 
   const totals = sumInvoiceTotals(
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
   )
 
+  const baseQs = `customer=${customerId}&date=${date}`
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3 print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Link href="/admin/delivery-notes" className="inline-flex items-center gap-1 text-sm text-trust-600 hover:underline">
           <ChevronLeft className="h-4 w-4" aria-hidden />
           納品書
         </Link>
         <div className="flex items-center gap-2">
+          {/* 金額表示の切替（その場で再表示。PDFリンクも追従） */}
+          <div className="inline-flex rounded-lg border border-line-strong p-0.5">
+            {DELIVERY_AMOUNT_MODES.map((m) => (
+              <Link
+                key={m.value}
+                href={`/admin/delivery-notes/view?${baseQs}&amount=${m.value}`}
+                title={m.hint}
+                className={
+                  m.value === mode
+                    ? 'rounded-md bg-earth-600 px-3 py-1 text-xs font-medium text-white'
+                    : 'rounded-md px-3 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft'
+                }
+              >
+                {m.label}
+              </Link>
+            ))}
+          </div>
           {items.length > 0 && (
             <a
-              href={`/api/delivery-notes/pdf?customer=${customerId}&date=${date}`}
+              href={`/api/delivery-notes/pdf?${baseQs}&amount=${mode}`}
               target="_blank"
               rel="noopener"
               className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-3 text-sm font-medium text-earth-700 hover:bg-earth-50"
@@ -112,9 +141,9 @@ export default async function DeliveryNoteView({
               <tr className="border-b border-line-strong text-left text-ink-soft">
                 <th className="py-2 font-medium">品目</th>
                 <th className="num py-2 text-right font-medium">数量</th>
-                <th className="num py-2 text-right font-medium">単価</th>
-                <th className="num py-2 text-right font-medium">金額(税抜)</th>
-                <th className="py-2 text-center font-medium">税率</th>
+                {v.showAmountCols && <th className="num py-2 text-right font-medium">単価</th>}
+                {v.showAmountCols && <th className="num py-2 text-right font-medium">金額(税抜)</th>}
+                {v.showTaxCol && <th className="py-2 text-center font-medium">税率</th>}
               </tr>
             </thead>
             <tbody>
@@ -125,23 +154,49 @@ export default async function DeliveryNoteView({
                     {it.quantity}
                     <span className="ml-0.5 text-xs text-ink-faint">{it.unit}</span>
                   </td>
-                  <td className="num py-1.5 text-right tabular-nums text-ink-soft">{formatYen(it.unit_price)}</td>
-                  <td className="num py-1.5 text-right tabular-nums text-ink">{formatYen(it.subtotal)}</td>
-                  <td className="py-1.5 text-center text-ink-soft">{it.tax_rate}%{it.tax_rate === 8 ? ' ※' : ''}</td>
+                  {v.showAmountCols && (
+                    <td className="num py-1.5 text-right tabular-nums text-ink-soft">
+                      {v.fillAmounts ? formatYen(it.unit_price) : ''}
+                    </td>
+                  )}
+                  {v.showAmountCols && (
+                    <td className="num py-1.5 text-right tabular-nums text-ink">
+                      {v.fillAmounts ? formatYen(it.subtotal) : ''}
+                    </td>
+                  )}
+                  {v.showTaxCol && (
+                    <td className="py-1.5 text-center text-ink-soft">
+                      {it.tax_rate}%{it.tax_rate === 8 ? ' ※' : ''}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
 
-          <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-ink-soft">8%対象 税抜</span><span className="num tabular-nums text-ink">{formatYen(totals.reduced.subtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-ink-soft">10%対象 税抜</span><span className="num tabular-nums text-ink">{formatYen(totals.standard.subtotal)}</span></div>
-            <div className="mt-1 flex justify-between border-t border-ink pt-1">
-              <span className="font-bold text-ink">合計（税込）</span>
-              <span className="num text-lg font-bold tabular-nums text-ink">{formatYen(totals.total)}</span>
+          {v.showTotals && (
+            <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-ink-soft">8%対象 税抜</span>
+                <span className="num tabular-nums text-ink">{v.fillTotals ? formatYen(totals.reduced.subtotal) : ''}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-ink-soft">10%対象 税抜</span>
+                <span className="num tabular-nums text-ink">{v.fillTotals ? formatYen(totals.standard.subtotal) : ''}</span>
+              </div>
+              <div className="mt-1 flex justify-between border-t border-ink pt-1">
+                <span className="font-bold text-ink">合計（税込）</span>
+                <span className="num text-lg font-bold tabular-nums text-ink">
+                  {v.fillTotals ? formatYen(totals.total) : ''}
+                </span>
+              </div>
             </div>
-          </div>
-          <p className="text-xs text-ink-faint">※ は軽減税率（8%）対象品目です。</p>
+          )}
+
+          {v.showTaxCol && <p className="text-xs text-ink-faint">※ は軽減税率（8%）対象品目です。</p>}
+          {mode === 'none' && (
+            <p className="text-xs text-ink-faint">※ 金額は別途、請求書にてご案内いたします。</p>
+          )}
         </article>
       )}
     </div>

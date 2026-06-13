@@ -17,6 +17,8 @@ export interface SettingItem {
   placeholder?: string
   hint?: string
   toggleDefault?: 'on' | 'off'
+  options?: { value: string; label: string }[]
+  selectDefault?: string
   isSet: boolean
   /** 非秘密のみ現在値を持つ。秘密は常に undefined（書き込み専用）。 */
   value?: string
@@ -32,7 +34,13 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {}
     for (const it of items) {
-      v[it.key] = it.secret ? '' : it.kind === 'toggle' ? it.value ?? it.toggleDefault ?? 'on' : it.value ?? ''
+      v[it.key] = it.secret
+        ? ''
+        : it.kind === 'toggle'
+          ? it.value ?? it.toggleDefault ?? 'on'
+          : it.kind === 'select'
+            ? it.value || it.selectDefault || it.options?.[0]?.value || ''
+            : it.value ?? ''
     }
     return v
   })
@@ -104,6 +112,19 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                     >
                       <option value="on">ON</option>
                       <option value="off">OFF</option>
+                    </select>
+                  ) : it.kind === 'select' ? (
+                    <select
+                      id={`set-${it.key}`}
+                      value={values[it.key] ?? it.selectDefault ?? ''}
+                      onChange={(e) => set(it.key, e.target.value)}
+                      className={cn(inputCls, 'sm:w-72')}
+                    >
+                      {(it.options ?? []).map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
                     </select>
                   ) : it.kind === 'textarea' ? (
                     <textarea

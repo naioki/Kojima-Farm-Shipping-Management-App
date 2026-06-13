@@ -5,6 +5,7 @@ import { DeliveryNotePdf } from '@/lib/pdf/DeliveryNotePdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
+import { parseAmountMode } from '@/lib/delivery-notes/amount-mode'
 
 export const runtime = 'nodejs'
 
@@ -39,12 +40,15 @@ export async function GET(req: Request) {
       ).data ?? []
     : []
 
-  const [name, address, tel, fontUrl] = await Promise.all([
+  const [name, address, tel, fontUrl, amountDefault] = await Promise.all([
     getSetting('FARM_NAME'),
     getSetting('FARM_ADDRESS'),
     getSetting('FARM_TEL'),
     getSetting('PDF_FONT_URL'),
+    getSetting('DELIVERY_NOTE_AMOUNT_MODE'),
   ])
+
+  const mode = parseAmountMode(searchParams.get('amount'), parseAmountMode(amountDefault))
 
   const t = sumInvoiceTotals(
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
@@ -55,6 +59,7 @@ export async function GET(req: Request) {
     <DeliveryNotePdf
       customerName={customer?.name ?? '—'}
       date={date}
+      mode={mode}
       issuer={{ name: name ?? '小島農園', address, tel }}
       items={items}
       totals={{ subtotal8: t.reduced.subtotal.toNumber(), subtotal10: t.standard.subtotal.toNumber(), total: t.total.toNumber() }}

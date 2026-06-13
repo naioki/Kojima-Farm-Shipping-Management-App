@@ -1,11 +1,14 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 import { formatYen } from '@/lib/calculations/tax'
+import { amountVisibility, type DeliveryAmountMode } from '@/lib/delivery-notes/amount-mode'
 
-/** 納品書 PDF（@react-pdf・A4 固定デザイン）。数量主体＋税率別合計を併記。 */
+/** 納品書 PDF（@react-pdf・A4 固定デザイン）。金額あり／後から手書き／金額なしを切替。 */
 
 export interface DeliveryNotePdfProps {
   customerName: string
   date: string
+  /** 金額表示モード（既定 full） */
+  mode?: DeliveryAmountMode
   issuer: { name: string; address: string | null; tel: string | null }
   items: { product_name: string; quantity: number; unit: string; unit_price: number; subtotal: number; tax_rate: number }[]
   totals: { subtotal8: number; subtotal10: number; total: number }
@@ -37,7 +40,8 @@ const s = StyleSheet.create({
   foot: { marginTop: 10, color: C.faint, fontSize: 8 },
 })
 
-export function DeliveryNotePdf({ customerName, date, issuer, items, totals }: DeliveryNotePdfProps) {
+export function DeliveryNotePdf({ customerName, date, mode = 'full', issuer, items, totals }: DeliveryNotePdfProps) {
+  const v = amountVisibility(mode)
   return (
     <Document>
       <Page size="A4" style={s.page}>
@@ -63,9 +67,9 @@ export function DeliveryNotePdf({ customerName, date, issuer, items, totals }: D
           <View style={s.th}>
             <Text style={s.cName}>品目</Text>
             <Text style={s.cQty}>数量</Text>
-            <Text style={s.cPrice}>単価</Text>
-            <Text style={s.cAmt}>金額(税抜)</Text>
-            <Text style={s.cTax}>税率</Text>
+            {v.showAmountCols && <Text style={s.cPrice}>単価</Text>}
+            {v.showAmountCols && <Text style={s.cAmt}>金額(税抜)</Text>}
+            {v.showTaxCol && <Text style={s.cTax}>税率</Text>}
           </View>
           {items.map((it, i) => (
             <View key={i} style={s.tr}>
@@ -74,30 +78,35 @@ export function DeliveryNotePdf({ customerName, date, issuer, items, totals }: D
                 {it.quantity}
                 {it.unit}
               </Text>
-              <Text style={s.cPrice}>{formatYen(it.unit_price)}</Text>
-              <Text style={s.cAmt}>{formatYen(it.subtotal)}</Text>
-              <Text style={s.cTax}>
-                {it.tax_rate}%{it.tax_rate === 8 ? '※' : ''}
-              </Text>
+              {v.showAmountCols && <Text style={s.cPrice}>{v.fillAmounts ? formatYen(it.unit_price) : ''}</Text>}
+              {v.showAmountCols && <Text style={s.cAmt}>{v.fillAmounts ? formatYen(it.subtotal) : ''}</Text>}
+              {v.showTaxCol && (
+                <Text style={s.cTax}>
+                  {it.tax_rate}%{it.tax_rate === 8 ? '※' : ''}
+                </Text>
+              )}
             </View>
           ))}
         </View>
 
-        <View style={s.sumWrap}>
-          <View style={s.sumRow}>
-            <Text style={{ color: C.soft }}>8%対象 税抜</Text>
-            <Text>{formatYen(totals.subtotal8)}</Text>
+        {v.showTotals && (
+          <View style={s.sumWrap}>
+            <View style={s.sumRow}>
+              <Text style={{ color: C.soft }}>8%対象 税抜</Text>
+              <Text>{v.fillTotals ? formatYen(totals.subtotal8) : ''}</Text>
+            </View>
+            <View style={s.sumRow}>
+              <Text style={{ color: C.soft }}>10%対象 税抜</Text>
+              <Text>{v.fillTotals ? formatYen(totals.subtotal10) : ''}</Text>
+            </View>
+            <View style={s.sumTotal}>
+              <Text style={{ fontWeight: 'bold' }}>合計（税込）</Text>
+              <Text style={{ fontWeight: 'bold', fontSize: 12 }}>{v.fillTotals ? formatYen(totals.total) : ''}</Text>
+            </View>
           </View>
-          <View style={s.sumRow}>
-            <Text style={{ color: C.soft }}>10%対象 税抜</Text>
-            <Text>{formatYen(totals.subtotal10)}</Text>
-          </View>
-          <View style={s.sumTotal}>
-            <Text style={{ fontWeight: 'bold' }}>合計（税込）</Text>
-            <Text style={{ fontWeight: 'bold', fontSize: 12 }}>{formatYen(totals.total)}</Text>
-          </View>
-        </View>
-        <Text style={s.foot}>※ は軽減税率（8%）対象品目です。</Text>
+        )}
+        {v.showTaxCol && <Text style={s.foot}>※ は軽減税率（8%）対象品目です。</Text>}
+        {mode === 'none' && <Text style={s.foot}>※ 金額は別途、請求書にてご案内いたします。</Text>}
       </Page>
     </Document>
   )

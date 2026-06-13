@@ -4,8 +4,10 @@
  * 実値の解決は lib/settings.ts（サーバ専用・DB→env フォールバック）が行う。
  */
 
+import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
+
 export type SettingSection = 'issuer' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
-export type SettingKind = 'text' | 'textarea' | 'toggle'
+export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select'
 
 export interface SettingSpec {
   key: string
@@ -17,6 +19,9 @@ export interface SettingSpec {
   hint?: string
   /** toggle の未設定時の既定（安全側に倒すため auto-approve は 'off'）。 */
   toggleDefault?: 'on' | 'off'
+  /** kind==='select' の選択肢と未設定時の既定。 */
+  options?: { value: string; label: string }[]
+  selectDefault?: string
 }
 
 export const SECTION_LABELS: Record<SettingSection, string> = {
@@ -38,6 +43,16 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   { key: 'FARM_ADDRESS', label: '住所', section: 'issuer', secret: false, kind: 'text' },
   { key: 'FARM_TEL', label: '電話番号', section: 'issuer', secret: false, kind: 'text' },
   { key: 'FARM_PAYMENT_INFO', label: '振込先', section: 'issuer', secret: false, kind: 'textarea', hint: '請求書に印字する振込先口座' },
+  {
+    key: 'DELIVERY_NOTE_AMOUNT_MODE',
+    label: '納品書の金額表示（既定）',
+    section: 'issuer',
+    secret: false,
+    kind: 'select',
+    options: DELIVERY_AMOUNT_MODES.map((m) => ({ value: m.value, label: m.label })),
+    selectDefault: 'full',
+    hint: '納品書発行時の初期値。発行ごとに切り替えもできます（金額あり／後から手書き／金額なし）',
+  },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },
   { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.5-flash', hint: '無料枠なら gemini-2.5-flash か gemini-2.0-flash' },
