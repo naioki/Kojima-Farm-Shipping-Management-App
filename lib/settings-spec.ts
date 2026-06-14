@@ -5,9 +5,11 @@
  */
 
 import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
+import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from '@/lib/gemini/prompts'
 
 export type SettingSection = 'issuer' | 'rules' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
-export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select'
+/** 'prompt' は専用エディタで描画（保存に確認フレーズ入力が必要）。 */
+export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select' | 'prompt'
 
 export interface SettingSpec {
   key: string
@@ -22,6 +24,8 @@ export interface SettingSpec {
   /** kind==='select' の選択肢と未設定時の既定。 */
   options?: { value: string; label: string }[]
   selectDefault?: string
+  /** kind==='prompt' のデフォルト値。「デフォルトに戻す」で使われる。 */
+  defaultPrompt?: string
 }
 
 export const SECTION_LABELS: Record<SettingSection, string> = {
@@ -85,6 +89,38 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },
   { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.5-flash', hint: '無料枠なら gemini-2.5-flash か gemini-2.0-flash' },
+  {
+    key: 'GEMINI_PROMPT_NORMAL',
+    label: '解析プロンプト（通常モード — FAX・メール）',
+    section: 'ai',
+    secret: false,
+    kind: 'prompt',
+    defaultPrompt: DEFAULT_GEMINI_PROMPT_NORMAL,
+    hint: 'FAX/メールの画像・テキストから注文明細を抽出する際の指示。変更すると解析結果が変わります。',
+  },
+  {
+    key: 'GEMINI_PROMPT_DIFF',
+    label: '解析プロンプト（差分モード — 再送検知）',
+    section: 'ai',
+    secret: false,
+    kind: 'prompt',
+    defaultPrompt: DEFAULT_GEMINI_PROMPT_DIFF,
+    hint: '「同じFAXに追記して再送」された場合の差分抽出指示。通常モードプロンプトに追記されます。',
+  },
+  // 数量入力モード（ケース入力⇔総数自動換算）
+  {
+    key: 'QTY_INPUT_MODE',
+    label: '数量の入力単位（既定）',
+    section: 'ai',
+    secret: false,
+    kind: 'select',
+    options: [
+      { value: 'total', label: '総数（個・本・枚 etc.）← 推奨' },
+      { value: 'cases', label: 'ケース数（P/C で総数に自動換算）' },
+    ],
+    selectDefault: 'total',
+    hint: '「ケース数」にすると、入力したケース数 × P/C = 総数 を自動計算します。総数で入力済みのデータには影響しません。注文入力画面で個別に切替も可。',
+  },
   // 自動承認（既定OFF。安全のため確信度＋取引先一致＋納品日確定＋品目一致を全部満たした時だけ自動）
   { key: 'AUTO_APPROVE_ENABLED', label: '自動承認を有効にする', section: 'automation', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'ONでも下の確信度しきい値・取引先一致・納品日確定・品目一致を満たした受信のみ自動承認します' },
   { key: 'AUTO_APPROVE_THRESHOLD', label: '自動承認の確信度しきい値（0〜1）', section: 'automation', secret: false, kind: 'text', placeholder: '1.0', hint: '1.0＝識字率100%のみ。0.95 等に下げると自動範囲が広がります（リスク増）' },

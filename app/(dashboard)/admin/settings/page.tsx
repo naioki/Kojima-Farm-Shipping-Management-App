@@ -45,6 +45,7 @@ export default async function SettingsPage() {
       isSet,
       // 秘密は値を返さない。非秘密のみ現在値（DB→env）を渡す。
       value: spec.secret ? undefined : dbVal ?? envVal ?? '',
+      defaultPrompt: spec.defaultPrompt,
     }
   })
 

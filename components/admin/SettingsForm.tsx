@@ -6,6 +6,7 @@ import { Check, ShieldCheck, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { PromptEditor } from '@/components/admin/PromptEditor'
 import { SECTION_LABELS, SECTION_ORDER, type SettingSection, type SettingKind } from '@/lib/settings-spec'
 
 export interface SettingItem {
@@ -19,6 +20,7 @@ export interface SettingItem {
   toggleDefault?: 'on' | 'off'
   options?: { value: string; label: string }[]
   selectDefault?: string
+  defaultPrompt?: string
   isSet: boolean
   /** 非秘密のみ現在値を持つ。秘密は常に undefined（書き込み専用）。 */
   value?: string
@@ -31,9 +33,12 @@ export interface SettingItem {
  */
 export function SettingsForm({ items }: { items: SettingItem[] }) {
   const router = useRouter()
+  // kind==='prompt' は PromptEditor が独立して保存するのでグローバル save から除外。
+  const nonPromptItems = items.filter((i) => i.kind !== 'prompt')
+
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {}
-    for (const it of items) {
+    for (const it of nonPromptItems) {
       v[it.key] = it.secret
         ? ''
         : it.kind === 'toggle'
@@ -51,7 +56,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
   async function save() {
     setSaving(true)
     try {
-      const entries = items.map((it) => ({ key: it.key, value: values[it.key] ?? '' }))
+      const entries = nonPromptItems.map((it) => ({ key: it.key, value: values[it.key] ?? '' }))
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -82,73 +87,91 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
         return (
           <div key={section} className="space-y-3">
             <h2 className="font-display text-base font-bold text-ink">{SECTION_LABELS[section]}</h2>
-            <div className="space-y-4">
-              {sectionItems.map((it) => (
-                <div key={it.key} className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <label htmlFor={`set-${it.key}`} className="text-sm font-medium text-ink">
-                      {it.label}
-                    </label>
-                    {it.secret &&
-                      (it.isSet ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-harvest-50 px-2 py-0.5 text-xs font-medium text-harvest-700">
-                          <ShieldCheck className="h-3 w-3" aria-hidden />
-                          設定済み
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
-                          <AlertCircle className="h-3 w-3" aria-hidden />
-                          未設定
-                        </span>
-                      ))}
+            <div className="space-y-6">
+              {sectionItems.map((it) => {
+                // プロンプト設定は独自エディタで描画（グローバル保存から除外）
+                if (it.kind === 'prompt') {
+                  return (
+                    <div key={it.key} className="rounded border border-line bg-bg-soft px-4 py-4">
+                      <PromptEditor
+                        settingKey={it.key}
+                        label={it.label}
+                        hint={it.hint}
+                        currentValue={it.value ?? ''}
+                        defaultPrompt={it.defaultPrompt ?? ''}
+                        onSaved={router.refresh}
+                      />
+                    </div>
+                  )
+                }
+
+                return (
+                  <div key={it.key} className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <label htmlFor={`set-${it.key}`} className="text-sm font-medium text-ink">
+                        {it.label}
+                      </label>
+                      {it.secret &&
+                        (it.isSet ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-harvest-50 px-2 py-0.5 text-xs font-medium text-harvest-700">
+                            <ShieldCheck className="h-3 w-3" aria-hidden />
+                            設定済み
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+                            <AlertCircle className="h-3 w-3" aria-hidden />
+                            未設定
+                          </span>
+                        ))}
+                    </div>
+
+                    {it.kind === 'toggle' ? (
+                      <select
+                        id={`set-${it.key}`}
+                        value={values[it.key] ?? 'on'}
+                        onChange={(e) => set(it.key, e.target.value)}
+                        className={cn(inputCls, 'w-32')}
+                      >
+                        <option value="on">ON</option>
+                        <option value="off">OFF</option>
+                      </select>
+                    ) : it.kind === 'select' ? (
+                      <select
+                        id={`set-${it.key}`}
+                        value={values[it.key] ?? it.selectDefault ?? ''}
+                        onChange={(e) => set(it.key, e.target.value)}
+                        className={cn(inputCls, 'sm:w-72')}
+                      >
+                        {(it.options ?? []).map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : it.kind === 'textarea' ? (
+                      <textarea
+                        id={`set-${it.key}`}
+                        value={values[it.key] ?? ''}
+                        onChange={(e) => set(it.key, e.target.value)}
+                        placeholder={it.secret ? (it.isSet ? '••••（変更する場合のみ入力）' : it.placeholder) : it.placeholder}
+                        rows={3}
+                        className={cn(inputCls, 'h-auto py-2 font-mono text-xs')}
+                      />
+                    ) : (
+                      <input
+                        id={`set-${it.key}`}
+                        type="text"
+                        value={values[it.key] ?? ''}
+                        onChange={(e) => set(it.key, e.target.value)}
+                        placeholder={it.secret ? (it.isSet ? '••••（変更する場合のみ入力）' : it.placeholder) : it.placeholder}
+                        className={inputCls}
+                      />
+                    )}
+
+                    {it.hint && <p className="text-xs text-ink-faint">{it.hint}</p>}
                   </div>
-
-                  {it.kind === 'toggle' ? (
-                    <select
-                      id={`set-${it.key}`}
-                      value={values[it.key] ?? 'on'}
-                      onChange={(e) => set(it.key, e.target.value)}
-                      className={cn(inputCls, 'w-32')}
-                    >
-                      <option value="on">ON</option>
-                      <option value="off">OFF</option>
-                    </select>
-                  ) : it.kind === 'select' ? (
-                    <select
-                      id={`set-${it.key}`}
-                      value={values[it.key] ?? it.selectDefault ?? ''}
-                      onChange={(e) => set(it.key, e.target.value)}
-                      className={cn(inputCls, 'sm:w-72')}
-                    >
-                      {(it.options ?? []).map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : it.kind === 'textarea' ? (
-                    <textarea
-                      id={`set-${it.key}`}
-                      value={values[it.key] ?? ''}
-                      onChange={(e) => set(it.key, e.target.value)}
-                      placeholder={it.secret ? (it.isSet ? '••••（変更する場合のみ入力）' : it.placeholder) : it.placeholder}
-                      rows={3}
-                      className={cn(inputCls, 'h-auto py-2 font-mono text-xs')}
-                    />
-                  ) : (
-                    <input
-                      id={`set-${it.key}`}
-                      type="text"
-                      value={values[it.key] ?? ''}
-                      onChange={(e) => set(it.key, e.target.value)}
-                      placeholder={it.secret ? (it.isSet ? '••••（変更する場合のみ入力）' : it.placeholder) : it.placeholder}
-                      className={inputCls}
-                    />
-                  )}
-
-                  {it.hint && <p className="text-xs text-ink-faint">{it.hint}</p>}
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )

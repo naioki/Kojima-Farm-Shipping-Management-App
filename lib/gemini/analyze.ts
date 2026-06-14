@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
+import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from './prompts'
 
 /**
  * Gemini 解析（features.md §4）。通常モード（画像/テキスト → items[]）と
@@ -42,11 +43,15 @@ async function client(): Promise<GoogleGenerativeAI> {
   return new GoogleGenerativeAI(key)
 }
 
-const BASE_INSTRUCTION = `あなたは農産物の注文票を読み取る専門家です。
-各明細を {raw_name, product_name, quantity, unit, confidence} の配列で返してください。
-- quantity は読み取った生の表記をそのまま入れる（"15c2" や "x58" を勝手に計算しない）
-- confidence は読み取り確信度を 0..1 で自己採点
-JSON のみを返し、説明文は付けないこと。`
+/** 通常モードの基本指示。設定 GEMINI_PROMPT_NORMAL があればそちらを優先する。 */
+async function getBaseInstruction(): Promise<string> {
+  return (await getSetting('GEMINI_PROMPT_NORMAL')) || DEFAULT_GEMINI_PROMPT_NORMAL
+}
+
+/** 差分モードの追加指示。設定 GEMINI_PROMPT_DIFF があればそちらを優先する。 */
+async function getDiffInstruction(): Promise<string> {
+  return (await getSetting('GEMINI_PROMPT_DIFF')) || DEFAULT_GEMINI_PROMPT_DIFF
+}
 
 async function logUsage(mode: string, channel: string, success: boolean, tokens?: number) {
   try {
@@ -70,7 +75,7 @@ export async function analyzeNormal(
 ): Promise<ParsedItem[]> {
   const model = (await client()).getGenerativeModel({ model: await getModel() })
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-    { text: BASE_INSTRUCTION },
+    { text: await getBaseInstruction() },
   ]
   if (hintText && hintText.trim() !== '') parts.push({ text: hintText })
   if (input.imageBase64) {
@@ -100,9 +105,9 @@ export async function analyzeDiff(
   hintText?: string,
 ): Promise<DiffResult> {
   const model = (await client()).getGenerativeModel({ model: await getModel() })
-  const instruction = `${BASE_INSTRUCTION}
-${hintText && hintText.trim() !== '' ? hintText + '\n' : ''}これは再送（追記）された注文です。前回確定の明細との差分を
-{added:[], modified:[], removed:[]} の形で返してください。
+  const diffExtra = await getDiffInstruction()
+  const instruction = `${await getBaseInstruction()}
+${hintText && hintText.trim() !== '' ? hintText + '\n' : ''}${diffExtra}
 前回確定明細: ${JSON.stringify(previousItems)}`
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
     { text: instruction },
