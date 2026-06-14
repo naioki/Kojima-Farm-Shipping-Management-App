@@ -4,6 +4,7 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid } from '@/components/field/MatrixGrid'
+import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,7 +87,10 @@ export default async function MatrixPage({
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-ink">週間マトリックス</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-display text-2xl font-bold text-ink">週間マトリックス</h1>
+          <FieldViewSwitch active="week" date={week} />
+        </div>
         <div className="flex items-center gap-2">
           <Link
             href={`${PATH}?week=${shift(week, -7)}&product=${selected.id}`}

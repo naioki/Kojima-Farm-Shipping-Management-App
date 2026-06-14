@@ -7,6 +7,7 @@ import { ShipmentStatusSummary } from '@/components/field/ShipmentStatusSummary'
 import { ShipmentRow } from '@/components/field/ShipmentRow'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
+import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,7 +102,10 @@ export default async function ShipmentsPage({
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold text-ink">出荷一覧</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-display text-2xl font-bold text-ink">出荷一覧</h1>
+          <FieldViewSwitch active="day" date={date} />
+        </div>
         <DateNav date={date} basePath={PATH} />
       </div>
 
