@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { CustomerRulesEditor, type RuleRow } from '@/components/admin/CustomerRulesEditor'
+import { CustomerManage } from '@/components/admin/CustomerManage'
 import type { FractionPolicy } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +19,11 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
 
   const [{ data: customer, error: custErr }, { data: products, error: prodErr }, { data: rules }] =
     await Promise.all([
-      supabase.from('customers').select('id, name, name_kana').eq('id', params.id).maybeSingle(),
+      supabase
+        .from('customers')
+        .select('id, name, name_kana, payment_terms, is_active')
+        .eq('id', params.id)
+        .maybeSingle(),
       supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
       supabase
         .from('customer_product_rules')
@@ -53,9 +58,25 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       </Link>
 
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">{customer.name}</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">
+          {customer.name}
+          {!customer.is_active && <span className="ml-2 align-middle text-sm font-normal text-ink-faint">（停止中）</span>}
+        </h1>
         {customer.name_kana && <p className="text-sm text-ink-faint">{customer.name_kana}</p>}
       </div>
+
+      <Card className="space-y-3">
+        <h2 className="font-display text-base font-bold text-ink">取引先情報・操作</h2>
+        <CustomerManage
+          customer={{
+            id: customer.id,
+            name: customer.name,
+            name_kana: customer.name_kana,
+            payment_terms: customer.payment_terms,
+            is_active: customer.is_active,
+          }}
+        />
+      </Card>
 
       <Card className="space-y-3">
         <div>

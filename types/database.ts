@@ -460,6 +460,15 @@ export const customerCreateSchema = z.object({
 })
 export type CustomerCreateInput = z.infer<typeof customerCreateSchema>
 
+/** 取引先の更新（情報編集・有効/無効）。全項目任意。 */
+export const customerUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  name_kana: z.string().nullish(),
+  payment_terms: z.string().nullish(),
+  is_active: z.boolean().optional(),
+})
+export type CustomerUpdateInput = z.infer<typeof customerUpdateSchema>
+
 /**
  * 取引先×商品の取引ルール upsert（Laravel版 画面5：P/C・荷姿・いつものセット）。
  * (customer_id, product_id) で一意。スマートパース/OCR検証の基準値 packs_per_case を持つ。
