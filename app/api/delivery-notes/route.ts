@@ -1,0 +1,123 @@
+import { NextResponse } from 'next/server'
+import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { deliveryNoteCreateSchema } from '@/types/database'
+import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
+import { getSetting } from '@/lib/settings'
+import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
+import { writeAudit } from '@/lib/audit/log'
+
+export const runtime = 'nodejs'
+
+/**
+ * 納品書を発行（スナップショット保存）。取引先×納品日のその日の明細を凍結して履歴に残す。
+ *   - 明細・取引先名・自社情報・金額モード・税率別合計を delivery_notes に保存
+ *   - 以後、元注文(order_items)を編集しても保存済み納品書は不変（再印刷・確認用）
+ *   - 番号は月別連番 D{YYYYMM}-{seq}（参照用・欠番許容）
+ */
+export async function POST(req: Request) {
+  const user = await getAuthedUser()
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const parsed = deliveryNoteCreateSchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
+  }
+  const { customer_id, delivery_date, amount_mode } = parsed.data
+  const supabase = createClient()
+
+  // 取引先（名前スナップショット用）
+  const { data: customer, error: custErr } = await supabase
+    .from('customers')
+    .select('name')
+    .eq('id', customer_id)
+    .maybeSingle()
+  if (custErr) return NextResponse.json({ error: custErr.message }, { status: 500 })
+  if (!customer) return NextResponse.json({ error: 'unknown_customer' }, { status: 400 })
+
+  // その日の明細（orders→order_items）
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('customer_id', customer_id)
+    .eq('delivery_date', delivery_date)
+  const orderIds = (orders ?? []).map((o) => o.id)
+  const items = orderIds.length
+    ? (
+        await supabase
+          .from('order_items')
+          .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
+          .in('order_id', orderIds)
+          .order('product_name')
+      ).data ?? []
+    : []
+  if (items.length === 0) {
+    return NextResponse.json({ error: 'no_items' }, { status: 400 })
+  }
+
+  // 自社情報スナップショット
+  const [issuerName, issuerAddress, issuerTel] = await Promise.all([
+    getSetting('FARM_NAME'),
+    getSetting('FARM_ADDRESS'),
+    getSetting('FARM_TEL'),
+  ])
+
+  const t = sumInvoiceTotals(
+    items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
+  )
+
+  // 採番（月別連番）
+  const monthKey = deliveryNoteMonthKey(delivery_date)
+  const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', { p_month: monthKey })
+  if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
+  const note_number = formatDeliveryNoteNumber(monthKey, seq as number)
+
+  // ヘッダー作成
+  const { data: note, error: noteErr } = await supabase
+    .from('delivery_notes')
+    .insert({
+      note_number,
+      customer_id,
+      customer_name: customer.name,
+      delivery_date,
+      amount_mode,
+      issuer_name: issuerName ?? null,
+      issuer_address: issuerAddress ?? null,
+      issuer_tel: issuerTel ?? null,
+      subtotal_8: t.reduced.subtotal.toNumber(),
+      subtotal_10: t.standard.subtotal.toNumber(),
+      total_amount: t.total.toNumber(),
+      issued_by: user.id,
+    })
+    .select('id, note_number')
+    .single()
+  if (noteErr) return NextResponse.json({ error: noteErr.message }, { status: 500 })
+
+  // 明細スナップショット
+  const itemRows = items.map((it, i) => ({
+    delivery_note_id: note.id,
+    product_name: it.product_name,
+    quantity: it.quantity,
+    unit: it.unit,
+    unit_price: it.unit_price,
+    tax_rate: it.tax_rate as TaxRate,
+    subtotal: it.subtotal,
+    sort_order: i,
+  }))
+  const { error: itemsErr } = await supabase.from('delivery_note_items').insert(itemRows)
+  if (itemsErr) {
+    // ヘッダーだけ残らないよう後始末
+    await supabase.from('delivery_notes').delete().eq('id', note.id)
+    return NextResponse.json({ error: itemsErr.message }, { status: 500 })
+  }
+
+  await writeAudit(supabase, {
+    entityType: 'delivery_notes',
+    entityId: note.id,
+    action: 'INSERT',
+    oldValues: null,
+    newValues: note,
+    userId: user.id,
+  })
+
+  return NextResponse.json({ id: note.id, note_number: note.note_number }, { status: 201 })
+}

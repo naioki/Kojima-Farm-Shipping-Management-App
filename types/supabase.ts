@@ -14,6 +14,8 @@ import type {
   GeminiUsageLog,
   AppSetting,
   CustomerParseHint,
+  DeliveryNote,
+  DeliveryNoteItem,
 } from './database'
 
 /**
@@ -183,6 +185,44 @@ export interface Database {
         { month: string; last_seq?: number },
         { month?: string; last_seq?: number }
       >
+      delivery_notes: Table<
+        DeliveryNote,
+        {
+          note_number: string
+          customer_id: string
+          customer_name: string
+          delivery_date: string
+          amount_mode?: DeliveryNote['amount_mode']
+          issuer_name?: string | null
+          issuer_address?: string | null
+          issuer_tel?: string | null
+          subtotal_8?: number
+          subtotal_10?: number
+          total_amount?: number
+          issued_by?: string | null
+          issued_at?: string
+        },
+        Partial<DeliveryNote>
+      >
+      delivery_note_items: Table<
+        DeliveryNoteItem,
+        {
+          delivery_note_id: string
+          product_name: string
+          quantity: number
+          unit?: string
+          unit_price?: number
+          tax_rate: DeliveryNoteItem['tax_rate']
+          subtotal?: number
+          sort_order?: number
+        },
+        Partial<DeliveryNoteItem>
+      >
+      delivery_note_counters: Table<
+        { month: string; last_seq: number },
+        { month: string; last_seq?: number },
+        { month?: string; last_seq?: number }
+      >
       order_receipts: Table<
         OrderReceipt,
         {
@@ -271,6 +311,10 @@ export interface Database {
     Views: Record<string, never>
     Functions: {
       get_next_invoice_number: {
+        Args: { p_month: string }
+        Returns: number
+      }
+      get_next_delivery_note_number: {
         Args: { p_month: string }
         Returns: number
       }

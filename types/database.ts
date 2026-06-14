@@ -198,6 +198,39 @@ export interface InvoiceItem {
   created_at: ISODateTime
 }
 
+/** 納品書ヘッダー（発行時スナップショット・migrations/0007） */
+export interface DeliveryNote {
+  id: UUID
+  note_number: string
+  customer_id: UUID
+  customer_name: string
+  delivery_date: ISODate
+  amount_mode: 'full' | 'blank' | 'none'
+  issuer_name: string | null
+  issuer_address: string | null
+  issuer_tel: string | null
+  subtotal_8: number
+  subtotal_10: number
+  total_amount: number
+  issued_by: UUID | null
+  issued_at: ISODateTime
+  created_at: ISODateTime
+}
+
+/** 納品書明細（発行時スナップショット・subtotal は凍結値） */
+export interface DeliveryNoteItem {
+  id: UUID
+  delivery_note_id: UUID
+  product_name: string
+  quantity: number
+  unit: string
+  unit_price: number
+  tax_rate: TaxRate
+  subtotal: number
+  sort_order: number
+  created_at: ISODateTime
+}
+
 export interface AuditLog {
   id: UUID
   entity_type: string
@@ -361,6 +394,14 @@ export const fieldStatusResetSchema = z.object({
   version: z.number().int().positive(),
 })
 export type FieldStatusReset = z.infer<typeof fieldStatusResetSchema>
+
+/** 納品書の発行（スナップショット保存）。取引先×納品日のその日の明細を凍結する。 */
+export const deliveryNoteCreateSchema = z.object({
+  customer_id: z.string().uuid(),
+  delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amount_mode: z.enum(['full', 'blank', 'none']).default('full'),
+})
+export type DeliveryNoteCreateInput = z.infer<typeof deliveryNoteCreateSchema>
 
 /**
  * 商品（品目）の新規作成（設定から追加）。
