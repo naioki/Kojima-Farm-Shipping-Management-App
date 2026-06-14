@@ -22,6 +22,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const autoId = useId()
     const id = idProp ?? autoId
     const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
+    // value（制御）と defaultValue（非制御）の同時指定は React 警告になる。
+    // 制御時は defaultValue を付けず、非制御＋placeholder のときだけ空選択を既定にする。
+    const isControlled = props.value !== undefined
+    const defaultValue = !isControlled && placeholder ? '' : undefined
 
     return (
       <div className="space-y-1.5">
@@ -42,7 +46,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             required={required}
             aria-invalid={error ? true : undefined}
             aria-describedby={describedBy}
-            defaultValue={placeholder ? '' : undefined}
+            defaultValue={defaultValue}
             className={cn(
               'h-10 w-full appearance-none rounded border bg-bg-card pl-3.5 pr-10 text-sm text-ink',
               'transition-[border-color,box-shadow] duration-150',
