@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Check } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Check, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { ConfirmModal } from '@/components/ui/Modal'
 import type { TaxRate } from '@/types/database'
 
 export interface ProductRow {
@@ -27,15 +29,21 @@ const numOrNull = (s: string): number | null => {
 }
 
 /**
- * 商品マスタの編集テーブル（編集＋在庫）。
+ * 商品マスタの編集テーブル（編集＋在庫＋削除）。
  * 各行で品目名・単位・税率・コンテナ容量・既定単価・在庫数・有効を編集して保存（PATCH）。
+ * 削除（DELETE）は未使用の品目のみ。使用中（注文・取引ルール・収穫見込み）は履歴保護のため
+ * 不可で、「有効」オフ（非表示化）に誘導する。
  */
 export function ProductsTable({ products }: { products: ProductRow[] }) {
+  const router = useRouter()
   const [rows, setRows] = useState<Record<string, ProductRow>>(() =>
     Object.fromEntries(products.map((p) => [p.id, { ...p }])),
   )
+  const [ids, setIds] = useState<string[]>(() => products.map((p) => p.id))
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   function patch(id: string, fields: Partial<ProductRow>) {
     setRows((prev) => ({ ...prev, [id]: { ...prev[id]!, ...fields } }))
@@ -77,7 +85,32 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
     }
   }
 
+  async function remove(id: string) {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: 'DELETE' })
+      if (res.status === 409) {
+        const j = (await res.json().catch(() => ({}))) as { message?: string }
+        toast.error(j.message ?? '使用中のため削除できません。「有効」をオフにしてください。', { duration: 6000 })
+        return
+      }
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(j.error ?? `削除に失敗 (${res.status})`)
+      }
+      setIds((prev) => prev.filter((x) => x !== id))
+      toast.success('品目を削除しました')
+      router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '削除に失敗しました')
+    } finally {
+      setDeleting(false)
+      setConfirmId(null)
+    }
+  }
+
   const inp = 'h-9 rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
+  const confirmRow = confirmId ? rows[confirmId] : null
 
   return (
     <div className="overflow-x-auto">
@@ -95,21 +128,21 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {products.map((p) => {
-            const r = rows[p.id]!
+          {ids.map((id) => {
+            const r = rows[id]!
             return (
-              <tr key={p.id} className="border-t border-line">
+              <tr key={id} className="border-t border-line">
                 <td className="px-2 py-2">
-                  <input className={cn(inp, 'w-32')} value={r.name} onChange={(e) => patch(p.id, { name: e.target.value })} />
+                  <input className={cn(inp, 'w-32')} value={r.name} onChange={(e) => patch(id, { name: e.target.value })} />
                 </td>
                 <td className="px-2 py-2">
-                  <input className={cn(inp, 'w-14')} value={r.unit} onChange={(e) => patch(p.id, { unit: e.target.value })} />
+                  <input className={cn(inp, 'w-14')} value={r.unit} onChange={(e) => patch(id, { unit: e.target.value })} />
                 </td>
                 <td className="px-2 py-2">
                   <select
                     className={cn(inp, 'w-16')}
                     value={String(r.default_tax_rate)}
-                    onChange={(e) => patch(p.id, { default_tax_rate: Number(e.target.value) as TaxRate })}
+                    onChange={(e) => patch(id, { default_tax_rate: Number(e.target.value) as TaxRate })}
                   >
                     <option value="8">8%</option>
                     <option value="10">10%</option>
@@ -120,7 +153,7 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                     className={cn(inp, 'num w-20 tabular-nums')}
                     inputMode="numeric"
                     value={r.container_capacity ?? ''}
-                    onChange={(e) => patch(p.id, { container_capacity: numOrNull(e.target.value) })}
+                    onChange={(e) => patch(id, { container_capacity: numOrNull(e.target.value) })}
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -128,7 +161,7 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                     className={cn(inp, 'num w-24 tabular-nums')}
                     inputMode="numeric"
                     value={r.default_unit_price ?? ''}
-                    onChange={(e) => patch(p.id, { default_unit_price: numOrNull(e.target.value) })}
+                    onChange={(e) => patch(id, { default_unit_price: numOrNull(e.target.value) })}
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -136,7 +169,7 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                     className={cn(inp, 'num w-20 tabular-nums')}
                     inputMode="numeric"
                     value={r.stock_qty}
-                    onChange={(e) => patch(p.id, { stock_qty: numOrNull(e.target.value) ?? 0 })}
+                    onChange={(e) => patch(id, { stock_qty: numOrNull(e.target.value) ?? 0 })}
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -144,21 +177,42 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                     type="checkbox"
                     className="h-5 w-5 accent-earth-600"
                     checked={r.is_active}
-                    onChange={(e) => patch(p.id, { is_active: e.target.checked })}
-                    aria-label={`${p.name} を有効にする`}
+                    onChange={(e) => patch(id, { is_active: e.target.checked })}
+                    aria-label={`${r.name} を有効にする`}
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <Button variant="secondary" size="sm" onClick={() => save(p.id)} isLoading={savingId === p.id}>
-                    {savedId === p.id ? <Check className="h-4 w-4 text-harvest-600" aria-hidden /> : null}
-                    保存
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="secondary" size="sm" onClick={() => save(id)} isLoading={savingId === id}>
+                      {savedId === id ? <Check className="h-4 w-4 text-harvest-600" aria-hidden /> : null}
+                      保存
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmId(id)}
+                      aria-label={`${r.name} を削除`}
+                      title="削除（未使用の品目のみ）"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-line text-ink-faint hover:border-alert hover:bg-alert/5 hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                    </button>
+                  </div>
                 </td>
               </tr>
             )
           })}
         </tbody>
       </table>
+
+      <ConfirmModal
+        open={confirmId !== null}
+        onClose={() => setConfirmId(null)}
+        onConfirm={() => confirmId && remove(confirmId)}
+        title="品目を削除しますか？"
+        message={`「${confirmRow?.name ?? ''}」を削除します。注文・取引ルール・収穫見込みで使われている品目は削除できません（その場合は「有効」をオフにして非表示にしてください）。`}
+        confirmLabel="削除する"
+        isLoading={deleting}
+      />
     </div>
   )
 }
