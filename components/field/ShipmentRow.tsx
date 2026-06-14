@@ -35,6 +35,8 @@ export interface ShipmentRowProps {
   /** 現場の記録（中断時の部分完了数・現場メモ） */
   initialShippedQty: number | null
   initialFieldNote: string | null
+  /** 出荷済みに前進した瞬間に呼ばれる（親が一定時間後に末尾へ並べ替えるため） */
+  onShipped?: (itemId: string) => void
 }
 
 /**
@@ -56,6 +58,7 @@ export function ShipmentRow({
   initialLineNote,
   initialShippedQty,
   initialFieldNote,
+  onShipped,
 }: ShipmentRowProps) {
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
@@ -108,6 +111,8 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setConflict(false)
+      // 出荷済みに到達したら、親に通知（一定時間後に末尾へ並べ替え）
+      if (target === 'shipped') onShipped?.(itemId)
     } catch (e) {
       setStatus(prev)
       toast.error(e instanceof Error ? e.message : '更新に失敗しました')

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layouts/Sidebar'
+import { MobileNav } from '@/components/layouts/MobileNav'
 
 /**
  * 圃場（staff）画面の認証ガード＋サイドバー。
@@ -18,7 +19,10 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen">
       <Sidebar role={role} />
-      <main className="flex-1 p-4 lg:p-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileNav role={role} />
+        <main className="flex-1 p-4 lg:p-8">{children}</main>
+      </div>
     </div>
   )
 }

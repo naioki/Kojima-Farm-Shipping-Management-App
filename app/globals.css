@@ -144,6 +144,13 @@
   }
   .animate-pulse-alert { animation: pulse-alert 1.2s ease-in-out infinite; }
 
+  /* モバイルナビのドロワー（左からスライドイン） */
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  .animate-slide-in-left { animation: slide-in-left 180ms var(--ease-organic) both; }
+
   /* 紙の質感（経営ダッシュボードの背景に薄く） */
   .texture-paper {
     background-image: radial-gradient(rgb(69 51 29 / 0.035) 1px, transparent 1px);

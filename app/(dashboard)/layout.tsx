@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layouts/Sidebar'
+import { MobileNav } from '@/components/layouts/MobileNav'
 
 /**
  * 認証チェック＋サイドバー（structure.md）。
@@ -17,7 +18,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex min-h-screen">
       <Sidebar role={role} />
-      <main className="flex-1 p-4 lg:p-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileNav role={role} />
+        <main className="flex-1 p-4 lg:p-8">{children}</main>
+      </div>
     </div>
   )
 }

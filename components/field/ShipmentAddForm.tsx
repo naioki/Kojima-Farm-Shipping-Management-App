@@ -1,8 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus } from 'lucide-react'
+import { Plus, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -50,7 +51,8 @@ export function ShipmentAddForm({ deliveryDate, customers, products, packsByPair
   const previewText = (() => {
     if (!preview) return null
     if (preview.type === 'delete') return null
-    if (preview.type === 'error') return { kind: 'error' as const, text: ADD_ERRORS[preview.reason] ?? '解釈できません' }
+    if (preview.type === 'error')
+      return { kind: 'error' as const, text: ADD_ERRORS[preview.reason] ?? '解釈できません', reason: preview.reason }
     const parts = [`合計 ${preview.total.toString()} ${unit}`]
     if (preview.interpretation === 'cases' && preview.cases != null) {
       parts.push(`（${preview.cases}ケース × ${packsPerCase} + 端数${preview.loose}）`)
@@ -124,6 +126,15 @@ export function ShipmentAddForm({ deliveryDate, customers, products, packsByPair
       {previewText && (
         <p className={`text-sm ${previewText.kind === 'error' ? 'text-alert' : 'text-ink-soft'}`}>
           {previewText.text}
+          {previewText.kind === 'error' && previewText.reason === 'packs_per_case_required' && customerId && (
+            <Link
+              href={`/admin/customers/${customerId}`}
+              className="ml-1 inline-flex items-center gap-0.5 font-medium text-trust-600 underline underline-offset-2 hover:text-trust-700"
+            >
+              取引先設定を開く
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          )}
         </p>
       )}
     </Card>

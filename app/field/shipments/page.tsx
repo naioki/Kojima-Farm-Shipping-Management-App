@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { decomposeByContainer } from '@/lib/calculations/parse-quantity'
 import { ShipmentStatusSummary } from '@/components/field/ShipmentStatusSummary'
-import { ShipmentRow } from '@/components/field/ShipmentRow'
+import { ShipmentGroupRows } from '@/components/field/ShipmentGroupRows'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
@@ -131,23 +131,22 @@ export default async function ShipmentsPage({
                 {productName}
                 <span className="ml-2 text-sm font-normal text-ink-soft">{rows.length}件</span>
               </h2>
-              {rows.map((it) => (
-                <ShipmentRow
-                  key={it.id}
-                  itemId={it.id}
-                  customerName={customerName.get(orderToCustomer.get(it.order_id) ?? '') ?? '—'}
-                  quantityText={formatQty(it.quantity, capacityById.get(it.product_id) ?? null)}
-                  orderedQty={it.quantity}
-                  initialStatus={it.field_status}
-                  initialVersion={it.version}
-                  initialSpec={it.spec}
-                  initialContainer={it.container_type}
-                  initialHasCard={it.has_card}
-                  initialLineNote={it.line_note}
-                  initialShippedQty={it.shipped_qty}
-                  initialFieldNote={it.field_note}
-                />
-              ))}
+              <ShipmentGroupRows
+                rows={rows.map((it) => ({
+                  itemId: it.id,
+                  customerName: customerName.get(orderToCustomer.get(it.order_id) ?? '') ?? '—',
+                  quantityText: formatQty(it.quantity, capacityById.get(it.product_id) ?? null),
+                  orderedQty: it.quantity,
+                  initialStatus: it.field_status,
+                  initialVersion: it.version,
+                  initialSpec: it.spec,
+                  initialContainer: it.container_type,
+                  initialHasCard: it.has_card,
+                  initialLineNote: it.line_note,
+                  initialShippedQty: it.shipped_qty,
+                  initialFieldNote: it.field_note,
+                }))}
+              />
             </Card>
           ))}
         </div>

@@ -2,35 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Inbox, LayoutDashboard, Sprout, FileText, Users, LogOut, PackageCheck, Carrot, Settings, ClipboardList } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { navFor } from '@/components/layouts/nav-items'
 
-interface NavItem {
-  href: string
-  label: string
-  icon: typeof Inbox
-}
-
-const ADMIN_NAV: NavItem[] = [
-  { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
-  { href: '/admin/inbox', label: '承認待ち', icon: Inbox },
-  { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
-  { href: '/admin/invoices', label: '請求', icon: FileText },
-  { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },
-  { href: '/admin/customers', label: '取引先', icon: Users },
-  { href: '/admin/products', label: '商品', icon: Carrot },
-  { href: '/admin/settings', label: '設定', icon: Settings },
-]
-
-const STAFF_NAV: NavItem[] = [
-  { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
-  { href: '/field/matrix', label: '圃場マトリックス', icon: Sprout },
-]
-
-/** lg 以上で固定表示、それ以下はハンバーガー想定（design.md）。色は CSS Variables。 */
+/** lg 以上で固定表示。それ以下は MobileNav（ハンバーガー）が担う（design.md）。色は CSS Variables。 */
 export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
   const pathname = usePathname()
-  const nav = role === 'admin' ? ADMIN_NAV : STAFF_NAV
+  const nav = navFor(role)
 
   return (
     <nav
