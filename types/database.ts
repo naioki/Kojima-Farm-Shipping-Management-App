@@ -64,6 +64,8 @@ export interface Customer {
   payment_terms: string | null
   is_active: boolean
   channel_identifiers: ChannelIdentifiers
+  /** タスク画面での識別用カラー（hex）。null = 名前から自動割り当て（migrations/0008） */
+  display_color: string | null
   created_at: ISODateTime
   updated_at: ISODateTime
 }
@@ -87,6 +89,8 @@ export interface Product {
   default_unit_price: number | null
   stock_qty: number
   is_active: boolean
+  /** 商品識別サムネイルURL（40×40px）。migrations/0008 */
+  photo_url: string | null
   created_at: ISODateTime
   updated_at: ISODateTime
 }
@@ -145,8 +149,15 @@ export interface OrderItem {
   line_note: string | null
   /** 現場メモ（中断理由・気づき等。現場→事務の報告・migrations/0006） */
   field_note: string | null
+  /** 梱包時注意事項 [{type:'forbidden'|'required', text:string}]（migrations/0008） */
+  spec_warnings: SpecWarning[] | null
   created_at: ISODateTime
   updated_at: ISODateTime
+}
+
+export interface SpecWarning {
+  type: 'forbidden' | 'required'
+  text: string
 }
 
 export interface HarvestTask {
@@ -466,6 +477,8 @@ export const customerUpdateSchema = z.object({
   name_kana: z.string().nullish(),
   payment_terms: z.string().nullish(),
   is_active: z.boolean().optional(),
+  /** タスク画面の識別色（hex or null でリセット）*/
+  display_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 })
 export type CustomerUpdateInput = z.infer<typeof customerUpdateSchema>
 

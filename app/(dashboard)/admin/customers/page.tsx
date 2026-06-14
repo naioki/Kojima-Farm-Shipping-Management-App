@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { AddCustomerForm } from '@/components/admin/AddCustomerForm'
+import { ColorDot } from '@/components/ui/ColorDot'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,7 @@ export default async function CustomersPage() {
   const supabase = createClient()
   const { data: customers, error } = await supabase
     .from('customers')
-    .select('id, name, name_kana, payment_terms, is_active')
+    .select('id, name, name_kana, payment_terms, is_active, display_color')
     .order('name')
   if (error) return <ErrorState message={error.message} />
 
@@ -35,12 +36,15 @@ export default async function CustomersPage() {
           {customers.map((c) => (
             <Link key={c.id} href={`/admin/customers/${c.id}`}>
               <Card variant="elevated" interactive className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-ink">
-                    {c.name}
-                    {!c.is_active && <span className="ml-2 text-xs text-ink-faint">（停止中）</span>}
-                  </p>
-                  {c.name_kana && <p className="text-xs text-ink-faint">{c.name_kana}</p>}
+                <div className="flex items-center gap-2.5">
+                  <ColorDot color={c.display_color} name={c.name} size="md" />
+                  <div>
+                    <p className="font-medium text-ink">
+                      {c.name}
+                      {!c.is_active && <span className="ml-2 text-xs text-ink-faint">（停止中）</span>}
+                    </p>
+                    {c.name_kana && <p className="text-xs text-ink-faint">{c.name_kana}</p>}
+                  </div>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-ink-soft">
                   {c.payment_terms && <span>{c.payment_terms}</span>}

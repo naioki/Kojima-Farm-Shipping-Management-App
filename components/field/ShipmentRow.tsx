@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
-import type { FieldStatus } from '@/types/database'
+import type { FieldStatus, SpecWarning } from '@/types/database'
+import { ColorDot } from '@/components/ui/ColorDot'
 import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -21,6 +22,8 @@ const STATUS_TEXT: Record<FieldStatus, string> = {
 export interface ShipmentRowProps {
   itemId: string
   customerName: string
+  /** 取引先の識別色（hex or null → 名前から自動生成） */
+  customerColor?: string | null
   /** 総数表示（"120" や "6c0" など、呼び出し側で整形） */
   quantityText: string
   /** 受注総数（中断時の「できた数」との比較・部分完了判定に使う） */
@@ -35,6 +38,8 @@ export interface ShipmentRowProps {
   /** 現場の記録（中断時の部分完了数・現場メモ） */
   initialShippedQty: number | null
   initialFieldNote: string | null
+  /** 梱包時注意事項（禁止事項・必須事項）。常時表示 */
+  specWarnings?: SpecWarning[] | null
   /** 出荷済みに前進した瞬間に呼ばれる（親が一定時間後に末尾へ並べ替えるため） */
   onShipped?: (itemId: string) => void
 }
@@ -48,6 +53,7 @@ export interface ShipmentRowProps {
 export function ShipmentRow({
   itemId,
   customerName,
+  customerColor,
   quantityText,
   orderedQty,
   initialStatus,
@@ -58,6 +64,7 @@ export function ShipmentRow({
   initialLineNote,
   initialShippedQty,
   initialFieldNote,
+  specWarnings,
   onShipped,
 }: ShipmentRowProps) {
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
@@ -224,7 +231,10 @@ export function ShipmentRow({
         >
           <ChevronDown className={cn('h-4 w-4 shrink-0 text-ink-faint transition-transform', open && 'rotate-180')} aria-hidden />
           <span className="min-w-0">
-            <span className="block truncate text-sm font-medium text-ink">{customerName}</span>
+            <span className="flex items-center gap-1.5">
+              <ColorDot color={customerColor} name={customerName} />
+              <span className="truncate text-sm font-medium text-ink">{customerName}</span>
+            </span>
             <span className="num block text-base font-bold tabular-nums text-ink">{quantityText}</span>
           </span>
           {hasDetails && (
@@ -292,6 +302,25 @@ export function ShipmentRow({
           </button>
         </div>
       </div>
+
+      {/* 規格警告（禁止事項・必須事項）— 常時1行表示。アコーディオンを開かずに確認できる */}
+      {specWarnings && specWarnings.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-warning-bg/30 px-3 py-1.5">
+          {specWarnings.map((w, i) =>
+            w.type === 'forbidden' ? (
+              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-alert bg-alert/10">
+                <AlertTriangle className="h-3 w-3" aria-hidden />
+                {w.text}
+              </span>
+            ) : (
+              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-harvest-700 bg-harvest-50">
+                <ShieldCheck className="h-3 w-3" aria-hidden />
+                {w.text}
+              </span>
+            ),
+          )}
+        </div>
+      )}
 
       {quickOpen && (
         // 行から開かずに「できた数」だけを素早く記録（中断時）。荷姿/メモは下のアコーディオン。

@@ -20,6 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (d.name_kana !== undefined) updates.name_kana = d.name_kana
   if (d.payment_terms !== undefined) updates.payment_terms = d.payment_terms
   if (d.is_active !== undefined) updates.is_active = d.is_active
+  if ('display_color' in d) updates.display_color = d.display_color ?? null
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 })
   }

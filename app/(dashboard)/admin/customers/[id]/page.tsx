@@ -6,6 +6,7 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { CustomerRulesEditor, type RuleRow } from '@/components/admin/CustomerRulesEditor'
 import { CustomerManage } from '@/components/admin/CustomerManage'
 import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHistory'
+import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
 import { getSetting } from '@/lib/settings'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
@@ -32,7 +33,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
   ] = await Promise.all([
     supabase
       .from('customers')
-      .select('id, name, name_kana, payment_terms, is_active')
+      .select('id, name, name_kana, payment_terms, is_active, display_color')
       .eq('id', params.id)
       .maybeSingle(),
     supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
@@ -124,6 +125,18 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
             payment_terms: customer.payment_terms,
             is_active: customer.is_active,
           }}
+        />
+      </Card>
+
+      <Card className="space-y-3">
+        <div>
+          <h2 className="font-display text-base font-bold text-ink">識別色</h2>
+          <p className="text-sm text-ink-soft">出荷一覧・注文入力でこの取引先を色で瞬時に識別できます。</p>
+        </div>
+        <CustomerColorPicker
+          customerId={customer.id}
+          customerName={customer.name}
+          initialColor={customer.display_color}
         />
       </Card>
 

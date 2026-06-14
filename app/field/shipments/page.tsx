@@ -8,6 +8,7 @@ import { ShipmentGroupRows } from '@/components/field/ShipmentGroupRows'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import type { SpecWarning } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,29 +48,30 @@ export default async function ShipmentsPage({
   const orderIds = (orders ?? []).map((o) => o.id)
   const orderToCustomer = new Map((orders ?? []).map((o) => [o.id, o.customer_id]))
 
-  // ② 明細（出荷対象）
+  // ② 明細（出荷対象）— spec_warnings も取得して常時表示
   const items = orderIds.length
     ? (
         await supabase
           .from('order_items')
-          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note')
+          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings')
           .in('order_id', orderIds)
           .order('product_name')
       ).data ?? []
     : []
 
-  // ③ 取引先名・商品の荷姿容量（表示用）
+  // ③ 取引先名・識別色・商品の荷姿容量（表示用）
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const [{ data: custRows }, { data: prodRows }] = await Promise.all([
     customerIds.length
-      ? supabase.from('customers').select('id, name').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[] }),
   ])
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
+  const customerColor = new Map((custRows ?? []).map((c) => [c.id, c.display_color]))
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
 
   // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）
@@ -132,20 +134,25 @@ export default async function ShipmentsPage({
                 <span className="ml-2 text-sm font-normal text-ink-soft">{rows.length}件</span>
               </h2>
               <ShipmentGroupRows
-                rows={rows.map((it) => ({
-                  itemId: it.id,
-                  customerName: customerName.get(orderToCustomer.get(it.order_id) ?? '') ?? '—',
-                  quantityText: formatQty(it.quantity, capacityById.get(it.product_id) ?? null),
-                  orderedQty: it.quantity,
-                  initialStatus: it.field_status,
-                  initialVersion: it.version,
-                  initialSpec: it.spec,
-                  initialContainer: it.container_type,
-                  initialHasCard: it.has_card,
-                  initialLineNote: it.line_note,
-                  initialShippedQty: it.shipped_qty,
-                  initialFieldNote: it.field_note,
-                }))}
+                rows={rows.map((it) => {
+                  const custId = orderToCustomer.get(it.order_id) ?? ''
+                  return {
+                    itemId: it.id,
+                    customerName: customerName.get(custId) ?? '—',
+                    customerColor: customerColor.get(custId) ?? null,
+                    quantityText: formatQty(it.quantity, capacityById.get(it.product_id) ?? null),
+                    orderedQty: it.quantity,
+                    initialStatus: it.field_status,
+                    initialVersion: it.version,
+                    initialSpec: it.spec,
+                    initialContainer: it.container_type,
+                    initialHasCard: it.has_card,
+                    initialLineNote: it.line_note,
+                    initialShippedQty: it.shipped_qty,
+                    initialFieldNote: it.field_note,
+                    specWarnings: (it.spec_warnings as SpecWarning[] | null),
+                  }
+                })}
               />
             </Card>
           ))}

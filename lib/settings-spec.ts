@@ -145,6 +145,15 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   // 運用
   { key: 'CRON_SECRET', label: 'cron 共有シークレット', section: 'ops', secret: true, kind: 'text', hint: 'Cloud Scheduler からの取り込み呼び出しを検証' },
   { key: 'PDF_FONT_URL', label: 'PDF 日本語フォントURL', section: 'ops', secret: false, kind: 'text', hint: '空なら Noto Sans JP を既定使用。社内フォント等に差し替え可（otf/ttf）' },
+  {
+    key: 'ORDER_ANOMALY_THRESHOLD',
+    label: '数量異常値の倍率しきい値',
+    section: 'ops',
+    secret: false,
+    kind: 'text',
+    placeholder: '2.5',
+    hint: '注文入力時、過去90日の最大値 × この倍率を超えると警告を表示します（デフォルト: 2.5）。保存は通過します。',
+  },
 ]
 
 export const SETTINGS_BY_KEY: Record<string, SettingSpec> = Object.fromEntries(
