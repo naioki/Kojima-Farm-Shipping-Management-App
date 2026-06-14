@@ -1,14 +1,17 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 import { formatYen } from '@/lib/calculations/tax'
 import { amountVisibility, type DeliveryAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { docTypeMeta, type DeliveryDocType } from '@/lib/delivery-notes/doc-type'
 
-/** 納品書 PDF（@react-pdf・A4 固定デザイン）。金額あり／後から手書き／金額なしを切替。 */
+/** 納品書 / ご注文確認書 PDF（@react-pdf・A4）。金額あり／後から手書き／金額なしを切替。 */
 
 export interface DeliveryNotePdfProps {
   customerName: string
   date: string
   /** 金額表示モード（既定 full） */
   mode?: DeliveryAmountMode
+  /** 書面の種類（納品書 / ご注文確認書）。既定は納品書。 */
+  docType?: DeliveryDocType
   issuer: { name: string; address: string | null; tel: string | null }
   items: { product_name: string; quantity: number; unit: string; unit_price: number; subtotal: number; tax_rate: number }[]
   totals: { subtotal8: number; subtotal10: number; total: number }
@@ -40,15 +43,16 @@ const s = StyleSheet.create({
   foot: { marginTop: 10, color: C.faint, fontSize: 8 },
 })
 
-export function DeliveryNotePdf({ customerName, date, mode = 'full', issuer, items, totals }: DeliveryNotePdfProps) {
+export function DeliveryNotePdf({ customerName, date, mode = 'full', docType = 'delivery', issuer, items, totals }: DeliveryNotePdfProps) {
   const v = amountVisibility(mode)
+  const meta = docTypeMeta(docType)
   return (
     <Document>
       <Page size="A4" style={s.page}>
         <View style={s.headerRow}>
-          <Text style={s.title}>納品書</Text>
+          <Text style={s.title}>{meta.title}</Text>
           <View style={s.metaR}>
-            <Text>納品日: {date}</Text>
+            <Text>{meta.dateLabel}: {date}</Text>
           </View>
         </View>
 
@@ -61,7 +65,7 @@ export function DeliveryNotePdf({ customerName, date, mode = 'full', issuer, ite
           </View>
         </View>
 
-        <Text style={s.lead}>下記のとおり納品いたしました。</Text>
+        <Text style={s.lead}>{meta.lead}</Text>
 
         <View style={s.table}>
           <View style={s.th}>

@@ -8,17 +8,19 @@ import { DeliveryNoteIssueButton } from '@/components/admin/DeliveryNoteIssueBut
 import { getSetting } from '@/lib/settings'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 import { DELIVERY_AMOUNT_MODES, parseAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { DELIVERY_DOC_TYPES, parseDocType, docTypeMeta } from '@/lib/delivery-notes/doc-type'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * 納品書 印刷ビュー（取引先×納品日）。その日の明細から1枚にまとめる。
- * 金額の正は請求書（invoices）。納品書は「金額あり／後から手書き／金額なし」を切替可能。
+ * 納品書 / ご注文確認書 の印刷ビュー（取引先×納品日）。その日の明細から1枚にまとめる。
+ * 金額の正は請求書（invoices）。金額表示（あり／後から手書き／なし）と書面の種類を切替可能。
+ * 履歴保存（発行）は納品書のみ。ご注文確認書はオンデマンド印刷／PDF（運用の手間なし）。
  */
 export default async function DeliveryNoteView({
   searchParams,
 }: {
-  searchParams: { customer?: string; date?: string; amount?: string }
+  searchParams: { customer?: string; date?: string; amount?: string; type?: string }
 }) {
   const customerId = searchParams.customer ?? ''
   const date = searchParams.date ?? ''
@@ -61,6 +63,8 @@ export default async function DeliveryNoteView({
 
   // 金額表示モード（クエリ優先・無ければ設定の既定）
   const mode = parseAmountMode(searchParams.amount, parseAmountMode(amountDefault))
+  // 書面の種類（納品書 / ご注文確認書）
+  const docType = parseDocType(searchParams.type)
 
   const t = sumInvoiceTotals(
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
@@ -80,13 +84,29 @@ export default async function DeliveryNoteView({
           <ChevronLeft className="h-4 w-4" aria-hidden />
           納品書
         </Link>
-        <div className="flex items-center gap-2">
-          {/* 金額表示の切替（その場で再表示。PDFリンクも追従） */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 書面の種類の切替（納品書 / ご注文確認書）。金額モードは維持。 */}
+          <div className="inline-flex rounded-lg border border-line-strong p-0.5">
+            {DELIVERY_DOC_TYPES.map((d) => (
+              <Link
+                key={d.value}
+                href={`/admin/delivery-notes/view?${baseQs}&amount=${mode}&type=${d.value}`}
+                className={
+                  d.value === docType
+                    ? 'rounded-md bg-trust-600 px-3 py-1 text-xs font-medium text-white'
+                    : 'rounded-md px-3 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft'
+                }
+              >
+                {d.label}
+              </Link>
+            ))}
+          </div>
+          {/* 金額表示の切替（その場で再表示。PDFリンクも追従）。書面の種類は維持。 */}
           <div className="inline-flex rounded-lg border border-line-strong p-0.5">
             {DELIVERY_AMOUNT_MODES.map((m) => (
               <Link
                 key={m.value}
-                href={`/admin/delivery-notes/view?${baseQs}&amount=${m.value}`}
+                href={`/admin/delivery-notes/view?${baseQs}&amount=${m.value}&type=${docType}`}
                 title={m.hint}
                 className={
                   m.value === mode
@@ -100,7 +120,7 @@ export default async function DeliveryNoteView({
           </div>
           {items.length > 0 && (
             <a
-              href={`/api/delivery-notes/pdf?${baseQs}&amount=${mode}`}
+              href={`/api/delivery-notes/pdf?${baseQs}&amount=${mode}&type=${docType}`}
               target="_blank"
               rel="noopener"
               className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-3 text-sm font-medium text-earth-700 hover:bg-earth-50"
@@ -110,7 +130,10 @@ export default async function DeliveryNoteView({
             </a>
           )}
           <PrintButton />
-          {items.length > 0 && <DeliveryNoteIssueButton customerId={customerId} date={date} mode={mode} />}
+          {/* 履歴保存（発行）は納品書のみ。ご注文確認書はオンデマンド印刷／PDF。 */}
+          {items.length > 0 && docType === 'delivery' && (
+            <DeliveryNoteIssueButton customerId={customerId} date={date} mode={mode} />
+          )}
         </div>
       </div>
 
@@ -122,7 +145,9 @@ export default async function DeliveryNoteView({
       ) : (
         <>
           <p className="text-sm text-ink-soft print:hidden">
-            プレビューです。「発行して保存」を押すと、この内容で履歴に残り、後から再印刷・確認できます。
+            {docType === 'delivery'
+              ? 'プレビューです。「発行して保存」を押すと、この内容で履歴に残り、後から再印刷・確認できます。'
+              : `${docTypeMeta(docType).title}のプレビューです。印刷／PDFで相手方にお渡しできます（履歴保存はありません）。`}
           </p>
           <DeliveryNoteDocument
             customerName={customer?.name ?? '—'}
@@ -131,6 +156,7 @@ export default async function DeliveryNoteView({
             items={items}
             totals={totals}
             mode={mode}
+            docType={docType}
           />
         </>
       )}

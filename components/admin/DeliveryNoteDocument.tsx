@@ -1,5 +1,6 @@
 import { formatYen } from '@/lib/calculations/tax'
 import { amountVisibility, type DeliveryAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { docTypeMeta, type DeliveryDocType } from '@/lib/delivery-notes/doc-type'
 
 export interface DeliveryNoteDocumentProps {
   /** 保存済み納品書なら番号を表示（ライブプレビューでは省略） */
@@ -11,6 +12,8 @@ export interface DeliveryNoteDocumentProps {
   items: { product_name: string; quantity: number; unit: string; unit_price: number; subtotal: number; tax_rate: number }[]
   totals: { subtotal8: number; subtotal10: number; total: number }
   mode: DeliveryAmountMode
+  /** 書面の種類（納品書 / ご注文確認書）。既定は納品書。 */
+  docType?: DeliveryDocType
 }
 
 /**
@@ -25,16 +28,18 @@ export function DeliveryNoteDocument({
   items,
   totals,
   mode,
+  docType = 'delivery',
 }: DeliveryNoteDocumentProps) {
   const v = amountVisibility(mode)
+  const meta = docTypeMeta(docType)
 
   return (
     <article className="space-y-6 rounded-lg border border-line bg-bg-card p-8 print:border-0 print:p-0">
       <header className="flex items-start justify-between">
-        <h1 className="font-display text-2xl font-bold text-ink">納品書</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">{meta.title}</h1>
         <div className="text-right text-sm text-ink-soft">
           {noteNumber && <p className="num font-bold text-ink">{noteNumber}</p>}
-          <p>納品日: <span className="num">{date}</span></p>
+          <p>{meta.dateLabel}: <span className="num">{date}</span></p>
         </div>
       </header>
 
@@ -47,7 +52,7 @@ export function DeliveryNoteDocument({
         </div>
       </div>
 
-      <p className="text-sm text-ink-soft">下記のとおり納品いたしました。</p>
+      <p className="text-sm text-ink-soft">{meta.lead}</p>
 
       <table className="w-full border-collapse text-sm">
         <thead>

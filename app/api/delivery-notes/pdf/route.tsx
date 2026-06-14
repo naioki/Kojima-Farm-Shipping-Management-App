@@ -6,10 +6,11 @@ import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 import { parseAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { parseDocType } from '@/lib/delivery-notes/doc-type'
 
 export const runtime = 'nodejs'
 
-/** 納品書PDF（@react-pdf）。取引先×納品日の明細から生成。 */
+/** 納品書 / ご注文確認書 PDF（@react-pdf）。取引先×納品日の明細から生成。 */
 export async function GET(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -49,6 +50,7 @@ export async function GET(req: Request) {
   ])
 
   const mode = parseAmountMode(searchParams.get('amount'), parseAmountMode(amountDefault))
+  const docType = parseDocType(searchParams.get('type'))
 
   const t = sumInvoiceTotals(
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
@@ -60,16 +62,18 @@ export async function GET(req: Request) {
       customerName={customer?.name ?? '—'}
       date={date}
       mode={mode}
+      docType={docType}
       issuer={{ name: name ?? '小島農園', address, tel }}
       items={items}
       totals={{ subtotal8: t.reduced.subtotal.toNumber(), subtotal10: t.standard.subtotal.toNumber(), total: t.total.toNumber() }}
     />,
   )
 
+  const fileBase = docType === 'delivery' ? 'delivery' : 'order_confirmation'
   return new Response(new Uint8Array(buffer), {
     headers: {
       'content-type': 'application/pdf',
-      'content-disposition': `inline; filename="delivery_${date}.pdf"`,
+      'content-disposition': `inline; filename="${fileBase}_${date}.pdf"`,
     },
   })
 }
