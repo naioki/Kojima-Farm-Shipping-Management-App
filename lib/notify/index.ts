@@ -13,6 +13,7 @@ export type NotifyEvent =
   | 'unmatched_receipt' // 取引先未紐付け
   | 'edit_conflict' // 楽観ロック競合
   | 'shortage_forecast' // 翌日以降の不足予測
+  | 'rule_changed' // 取引先の規格（取引ルール）の追加・変更
 
 export interface NotifyMessage {
   event: NotifyEvent

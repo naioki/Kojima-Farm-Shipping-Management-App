@@ -21,6 +21,8 @@ export interface CustomerRulesEditorProps {
   customerId: string
   products: { id: string; name: string; unit: string }[]
   initialRules: Record<string, RuleRow>
+  /** false なら閲覧のみ（規格ロック中・非マスター）。既定 true。 */
+  canEdit?: boolean
 }
 
 const FRACTION_OPTIONS: { value: FractionPolicy; label: string }[] = [
@@ -52,7 +54,7 @@ const numOrNull = (s: string): number | null => {
  * 品目ごとに P/C（スマートパースの基準）・コンテナ・いつものセット・既定数量・端数ポリシーを
  * 編集して行単位で保存（upsert）。P/C はケース記法 "15c2" 換算の要となる数値。
  */
-export function CustomerRulesEditor({ customerId, products, initialRules }: CustomerRulesEditorProps) {
+export function CustomerRulesEditor({ customerId, products, initialRules, canEdit = true }: CustomerRulesEditorProps) {
   const [rows, setRows] = useState<Record<string, RuleRow>>(() => {
     const r: Record<string, RuleRow> = {}
     for (const p of products) r[p.id] = initialRules[p.id] ?? { ...EMPTY }
@@ -102,7 +104,7 @@ export function CustomerRulesEditor({ customerId, products, initialRules }: Cust
     'h-10 w-full rounded border border-line-strong bg-bg-card px-2.5 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
 
   return (
-    <div className="overflow-x-auto">
+    <fieldset disabled={!canEdit} className="overflow-x-auto disabled:opacity-60">
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="text-left text-ink-soft">
@@ -213,6 +215,6 @@ export function CustomerRulesEditor({ customerId, products, initialRules }: Cust
           })}
         </tbody>
       </table>
-    </div>
+    </fieldset>
   )
 }

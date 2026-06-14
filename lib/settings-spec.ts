@@ -6,7 +6,7 @@
 
 import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
 
-export type SettingSection = 'issuer' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
+export type SettingSection = 'issuer' | 'rules' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
 export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select'
 
 export interface SettingSpec {
@@ -26,6 +26,7 @@ export interface SettingSpec {
 
 export const SECTION_LABELS: Record<SettingSection, string> = {
   issuer: '発行者（自社）情報 — 請求書・納品書に印字',
+  rules: '規格（取引ルール）の変更管理 — 誰が変えられるか・通知',
   ai: 'AI解析（Gemini）',
   automation: '自動承認（識字率が高い受信の自動入力）',
   ingest: '取り込み（Drive / メール）',
@@ -34,7 +35,7 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
   ops: '運用',
 }
 
-export const SECTION_ORDER: SettingSection[] = ['issuer', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
+export const SECTION_ORDER: SettingSection[] = ['issuer', 'rules', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
 
 export const SETTINGS_SPEC: SettingSpec[] = [
   // 発行者（自社）情報 — 請求書・納品書のヘッダーに印字
@@ -52,6 +53,34 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     options: DELIVERY_AMOUNT_MODES.map((m) => ({ value: m.value, label: m.label })),
     selectDefault: 'full',
     hint: '納品書発行時の初期値。発行ごとに切り替えもできます（金額あり／後から手書き／金額なし）',
+  },
+  // 規格（取引ルール）の変更管理
+  {
+    key: 'RULES_EDIT_LOCK',
+    label: '規格の編集をロック（マスターのみ変更可）',
+    section: 'rules',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'off',
+    hint: 'ONにすると、下のマスターに指定した人だけが取引先の規格（P/C・荷姿・規格・端数等）を変更できます。それ以外は閲覧のみ。',
+  },
+  {
+    key: 'RULES_MASTER_EMAILS',
+    label: 'マスターのメール（規格を変更できる人）',
+    section: 'rules',
+    secret: false,
+    kind: 'textarea',
+    placeholder: 'naoki@example.com, master2@example.com',
+    hint: 'カンマまたは改行区切り。空のままロックONにした場合は管理者全員が変更できます（総ロックアウト回避）。',
+  },
+  {
+    key: 'RULES_CHANGE_NOTIFY',
+    label: '規格の追加・変更を通知する',
+    section: 'rules',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: '規格が変わったら Discord / LINE WORKS（通知設定の送信先）へ知らせます。変更履歴は常に保存され、取引先ページで参照できます。',
   },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },

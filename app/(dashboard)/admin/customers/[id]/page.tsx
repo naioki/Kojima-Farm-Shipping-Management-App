@@ -1,10 +1,14 @@
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { ChevronLeft, Lock } from 'lucide-react'
+import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { CustomerRulesEditor, type RuleRow } from '@/components/admin/CustomerRulesEditor'
 import { CustomerManage } from '@/components/admin/CustomerManage'
+import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHistory'
+import { getSetting } from '@/lib/settings'
+import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
+import { formatRuleChanges } from '@/lib/rules/format'
 import type { FractionPolicy } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -12,27 +16,45 @@ export const dynamic = 'force-dynamic'
 /**
  * 取引先 詳細（Laravel版 画面5）。
  * 品目ごとの P/C・荷姿・「いつものセット」・端数ポリシーを編集する。
- * P/C はスマートパース（"15c2" 換算）と出荷指示書の基準値。
+ * 規格はロック中ならマスターのみ変更可。変更は履歴（audit_log）に残り参照できる。
  */
 export default async function CustomerDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
+  const user = await getAuthedUser()
 
-  const [{ data: customer, error: custErr }, { data: products, error: prodErr }, { data: rules }] =
-    await Promise.all([
-      supabase
-        .from('customers')
-        .select('id, name, name_kana, payment_terms, is_active')
-        .eq('id', params.id)
-        .maybeSingle(),
-      supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
-      supabase
-        .from('customer_product_rules')
-        .select('product_id, packs_per_case, container_type, spec, has_card, is_default_set, default_quantity, fraction_policy')
-        .eq('customer_id', params.id),
-    ])
+  const [
+    { data: customer, error: custErr },
+    { data: products, error: prodErr },
+    { data: rules },
+    { data: auditRows },
+    lockRaw,
+    masterRaw,
+  ] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('id, name, name_kana, payment_terms, is_active')
+      .eq('id', params.id)
+      .maybeSingle(),
+    supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
+    supabase
+      .from('customer_product_rules')
+      .select('product_id, packs_per_case, container_type, spec, has_card, is_default_set, default_quantity, fraction_policy')
+      .eq('customer_id', params.id),
+    supabase
+      .from('audit_log')
+      .select('action, old_values, new_values, user_id, created_at')
+      .eq('entity_type', 'customer_product_rules')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    getSetting('RULES_EDIT_LOCK'),
+    getSetting('RULES_MASTER_EMAILS'),
+  ])
   if (custErr) return <ErrorState message={custErr.message} />
   if (prodErr) return <ErrorState message={prodErr.message} />
   if (!customer) return <ErrorState title="取引先が見つかりません" message="削除されたか、IDが不正です。" />
+
+  const lock = lockRaw === 'on'
+  const canEdit = canEditRules({ lock, masterEmails: parseMasterEmails(masterRaw), userEmail: user?.email })
 
   const initialRules: Record<string, RuleRow> = {}
   for (const r of rules ?? []) {
@@ -46,6 +68,33 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       fraction_policy: r.fraction_policy as FractionPolicy,
     }
   }
+  const productName = new Map((products ?? []).map((p) => [p.id, p.name]))
+
+  // この取引先の規格変更履歴（audit_log を customer_id でJSフィルタ→整形）
+  type Vals = Record<string, unknown> | null
+  const relevant = (auditRows ?? []).filter((a) => {
+    const nv = a.new_values as Vals
+    const ov = a.old_values as Vals
+    return nv?.customer_id === params.id || ov?.customer_id === params.id
+  })
+  const editorIds = [...new Set(relevant.map((a) => a.user_id).filter(Boolean))] as string[]
+  const { data: editors } = editorIds.length
+    ? await supabase.from('users').select('id, email, full_name').in('id', editorIds)
+    : { data: [] as { id: string; email: string | null; full_name: string | null }[] }
+  const editorById = new Map((editors ?? []).map((u) => [u.id, u.full_name || u.email || '不明']))
+
+  const history: RuleHistoryEntry[] = relevant.slice(0, 30).map((a) => {
+    const nv = a.new_values as Vals
+    const ov = a.old_values as Vals
+    const pid = String((nv?.product_id ?? ov?.product_id) ?? '')
+    return {
+      at: a.created_at,
+      productName: productName.get(pid) ?? '（削除された品目）',
+      who: a.user_id ? editorById.get(a.user_id) ?? '不明' : '不明',
+      isNew: a.action === 'INSERT',
+      changes: formatRuleChanges(ov, nv),
+    }
+  })
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -80,11 +129,20 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
 
       <Card className="space-y-3">
         <div>
-          <h2 className="font-display text-base font-bold text-ink">取引ルール（品目別）</h2>
+          <h2 className="font-display text-base font-bold text-ink">取引ルール（品目別・規格）</h2>
           <p className="text-sm text-ink-soft">
             P/C はケース記法（例 <span className="num">15c2</span>）の換算基準。「いつものセット」はポータルの初期表示に使われます。
           </p>
         </div>
+        {lock && !canEdit && (
+          <div className="flex items-start gap-2 rounded border border-warning/40 bg-warning-bg px-3 py-2 text-sm text-ink-soft">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+            <span>
+              規格はロック中です。変更は<strong className="text-ink">マスターに指定された人のみ</strong>可能です（閲覧はできます）。
+              担当の変更は設定 →「規格（取引ルール）の変更管理」で調整します。
+            </span>
+          </div>
+        )}
         {!products?.length ? (
           <EmptyState title="商品がありません" description="商品マスタを登録すると編集できます。" />
         ) : (
@@ -92,8 +150,14 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
             customerId={customer.id}
             products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit }))}
             initialRules={initialRules}
+            canEdit={canEdit}
           />
         )}
+      </Card>
+
+      <Card className="space-y-3">
+        <h2 className="font-display text-base font-bold text-ink">規格の変更履歴</h2>
+        <RulesHistory entries={history} />
       </Card>
     </div>
   )
