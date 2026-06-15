@@ -151,6 +151,14 @@ export interface OrderItem {
   field_note: string | null
   /** 梱包時注意事項 [{type:'forbidden'|'required', text:string}]（migrations/0008） */
   spec_warnings: SpecWarning[] | null
+  /** 価格ライフサイクル・請求数量（後決め対応・migrations/0010） */
+  price_status: PriceStatus
+  billable_qty: number | null
+  billable_reason: string | null
+  pricing_reference_date: ISODate | null
+  priced_at: ISODateTime | null
+  priced_by: UUID | null
+  pack_config_id: UUID | null
   created_at: ISODateTime
   updated_at: ISODateTime
 }
@@ -563,3 +571,82 @@ export const specReportUpdateSchema = z.object({
   status: z.enum(['handled', 'dismissed']),
 })
 export type SpecReportUpdateInput = z.infer<typeof specReportUpdateSchema>
+
+// ============================================================
+// 荷姿・価格・後決め請求（migrations/0010）
+// ============================================================
+export type PriceStatus = 'unpriced' | 'provisional' | 'confirmed'
+export type PriceUnit = 'base' | 'pack'
+
+export interface PackConfig {
+  id: UUID
+  product_id: UUID
+  customer_id: UUID | null
+  label: string
+  inner_unit_label: string | null
+  inner_per: number | null
+  outer_unit_label: string | null
+  outer_per: number | null
+  selling_unit_label: string
+  base_per_selling: number
+  needs_manual_confirm: boolean
+  is_active: boolean
+  created_at: ISODateTime
+}
+
+export interface PriceRuleRow {
+  id: UUID
+  product_id: UUID
+  customer_id: UUID | null
+  pack_config_id: UUID | null
+  channel: Channel | null
+  price_unit: PriceUnit
+  unit_price: number
+  tax_rate: TaxRate
+  effective_from: ISODate
+  effective_to: ISODate | null
+  note: string | null
+  created_by: UUID | null
+  created_at: ISODateTime
+}
+
+/** 荷姿の作成・更新。base_per_selling は換算の真実（販売単位1あたりの基準単位数）。 */
+export const packConfigUpsertSchema = z.object({
+  product_id: z.string().uuid(),
+  customer_id: z.string().uuid().nullish(),
+  label: z.string().min(1),
+  inner_unit_label: z.string().nullish(),
+  inner_per: z.number().positive().nullish(),
+  outer_unit_label: z.string().nullish(),
+  outer_per: z.number().positive().nullish(),
+  selling_unit_label: z.string().min(1),
+  base_per_selling: z.number().positive(),
+  needs_manual_confirm: z.boolean().optional(),
+  is_active: z.boolean().optional(),
+})
+export type PackConfigUpsertInput = z.infer<typeof packConfigUpsertSchema>
+
+/** 価格ルールの作成。期間は effective_from（開始日）＋最新優先。 */
+export const priceRuleCreateSchema = z.object({
+  product_id: z.string().uuid(),
+  customer_id: z.string().uuid().nullish(),
+  pack_config_id: z.string().uuid().nullish(),
+  channel: z.enum(['fax', 'email', 'portal', 'manual']).nullish(),
+  price_unit: z.enum(['base', 'pack']).default('base'),
+  unit_price: z.number().nonnegative(),
+  tax_rate: taxRateSchema,
+  effective_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  effective_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  note: z.string().nullish(),
+})
+export type PriceRuleCreateInput = z.infer<typeof priceRuleCreateSchema>
+
+/** 価格確定（個別）。billable_qty は請求対象数量（赤点なら下げる）。 */
+export const itemPricingSchema = z.object({
+  unit_price: z.number().nonnegative(),
+  tax_rate: taxRateSchema,
+  billable_qty: z.number().nonnegative().nullish(),
+  billable_reason: z.string().nullish(),
+  status: z.enum(['provisional', 'confirmed']).default('confirmed'),
+})
+export type ItemPricingInput = z.infer<typeof itemPricingSchema>
