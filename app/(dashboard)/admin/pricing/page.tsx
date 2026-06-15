@@ -3,7 +3,7 @@ import { Coins } from 'lucide-react'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PricingPrep } from '@/components/admin/PricingPrep'
-import { getItemsNeedingPricing } from '@/lib/pricing/pending'
+import { getPricingItemsFlat } from '@/lib/pricing/pending'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +22,7 @@ export default async function PricingPage() {
     return <ErrorState title="権限がありません" message="価格確定は管理者のみです。" />
   }
 
-  const groups = await getItemsNeedingPricing()
+  const items = await getPricingItemsFlat()
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -34,10 +34,10 @@ export default async function PricingPage() {
         出荷済みで単価が未確定の明細です。価格表から一括確定、または個別に単価・請求数量（赤点は数量減）を入れて確定します。
       </p>
 
-      {groups.length === 0 ? (
+      {items.length === 0 ? (
         <EmptyState title="価格確定が必要な明細はありません" description="出荷後に未確定の明細が出るとここに表示されます。" />
       ) : (
-        <PricingPrep groups={groups} />
+        <PricingPrep items={items} />
       )}
     </div>
   )
