@@ -139,7 +139,10 @@ export default async function MatrixPage({
         <EmptyState title="取引先が登録されていません" description="取引先設定で登録すると行が表示されます。" />
       ) : (
         <Card>
+          {/* key で品目・週ごとに再マウント。これがないとタブ/週を変えても
+              MatrixGrid の入力 state が初回のまま据え置かれ、別品目に前の値が残る。 */}
           <MatrixGrid
+            key={`${selected.id}:${week}`}
             productId={selected.id}
             productName={selected.name}
             productUnit={selected.unit}
