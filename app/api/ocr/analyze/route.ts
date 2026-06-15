@@ -9,8 +9,9 @@ export const maxDuration = 60
 
 const bodySchema = z
   .object({
-    /** 画像（FAX/スキャン）の base64（data URL の接頭辞は除いたもの）。 */
+    /** 画像（FAX/スキャン）またはPDFの base64（data URL の接頭辞は除いたもの）。 */
     imageBase64: z.string().min(1).optional(),
+    /** image/png, image/jpeg, application/pdf 等。Gemini がネイティブに解釈する。 */
     mimeType: z.string().optional(),
     /** メール本文などのテキスト。 */
     text: z.string().min(1).optional(),

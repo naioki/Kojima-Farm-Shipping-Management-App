@@ -35,7 +35,7 @@ export default async function ManualOcrPage() {
         <div>
           <h1 className="font-display text-2xl font-bold text-ink">手動OCR読み取り</h1>
           <p className="text-sm text-ink-soft">
-            FAX画像・スキャン・メール本文をAIで読み取ります。管理者専用（取引先・スタッフは利用不可）。
+            FAX画像・スキャン・PDF・メール本文をAIで読み取ります。管理者専用（取引先・スタッフは利用不可）。
           </p>
         </div>
       </div>

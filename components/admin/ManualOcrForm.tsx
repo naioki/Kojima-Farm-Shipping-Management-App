@@ -2,14 +2,14 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Image as ImageIcon, FileText, Upload, Sparkles, X, ChevronDown, ChevronUp, AlertTriangle, Save } from 'lucide-react'
+import { Image as ImageIcon, FileText, Upload, Sparkles, X, ChevronDown, ChevronUp, AlertTriangle, Save, FileType } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 
 const SAVE_PHRASE = '変更を理解しました'
-const MAX_IMAGE_MB = 8
+const MAX_FILE_MB = 10
 
 interface ParsedItem {
   raw_name: string
@@ -40,6 +40,7 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
   const [text, setText] = useState('')
   const [imageBase64, setImageBase64] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [isPdf, setIsPdf] = useState(false)
   const [mimeType, setMimeType] = useState<string>('image/png')
   const [fileName, setFileName] = useState<string>('')
 
@@ -61,23 +62,26 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
   const canAnalyze = (mode === 'image' ? Boolean(imageBase64) : text.trim() !== '') && !analyzing
 
   function handleFile(file: File) {
-    if (!file.type.startsWith('image/')) {
-      toast.error('画像ファイルを選択してください（JPEG/PNG等）')
+    const pdf = file.type === 'application/pdf'
+    if (!file.type.startsWith('image/') && !pdf) {
+      toast.error('画像（JPEG/PNG等）またはPDFを選択してください')
       return
     }
-    if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
-      toast.error(`画像は${MAX_IMAGE_MB}MB以下にしてください`)
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      toast.error(`ファイルは${MAX_FILE_MB}MB以下にしてください`)
       return
     }
     const reader = new FileReader()
     reader.onload = () => {
       const dataUrl = reader.result as string
-      setImagePreview(dataUrl)
-      // data:image/png;base64,XXXX → XXXX 部分だけ
+      // data:<mime>;base64,XXXX → XXXX 部分だけ
       const comma = dataUrl.indexOf(',')
       setImageBase64(dataUrl.slice(comma + 1))
       setMimeType(file.type)
       setFileName(file.name)
+      setIsPdf(pdf)
+      // PDF は <img> で表示できないのでプレビューはファイルカードで代替
+      setImagePreview(pdf ? null : dataUrl)
     }
     reader.readAsDataURL(file)
   }
@@ -85,6 +89,7 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
   function clearImage() {
     setImageBase64(null)
     setImagePreview(null)
+    setIsPdf(false)
     setFileName('')
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -164,7 +169,7 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
           )}
         >
           <ImageIcon className="h-4 w-4" aria-hidden />
-          画像（FAX/スキャン）
+          画像・PDF（FAX/スキャン）
         </button>
         <button
           type="button"
@@ -182,24 +187,44 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
       {/* 入力エリア */}
       {mode === 'image' ? (
         <div>
-          {imagePreview ? (
-            <div className="relative inline-block">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imagePreview}
-                alt={fileName}
-                className="max-h-80 rounded-lg border border-line"
-              />
-              <button
-                type="button"
-                onClick={clearImage}
-                aria-label="画像を削除"
-                className="absolute -right-2 -top-2 rounded-full bg-alert p-1 text-white shadow-md hover:bg-alert/90"
-              >
-                <X className="h-4 w-4" aria-hidden />
-              </button>
-              <p className="mt-1 text-xs text-ink-faint">{fileName}</p>
-            </div>
+          {imageBase64 ? (
+            isPdf ? (
+              <div className="relative flex items-center gap-3 rounded-lg border border-line bg-bg-soft px-4 py-4">
+                <div className="rounded-lg bg-alert/10 p-3">
+                  <FileType className="h-7 w-7 text-alert" aria-hidden />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">{fileName}</p>
+                  <p className="text-xs text-ink-faint">PDF — AIが全ページを読み取ります</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearImage}
+                  aria-label="PDFを削除"
+                  className="absolute -right-2 -top-2 rounded-full bg-alert p-1 text-white shadow-md hover:bg-alert/90"
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+            ) : (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imagePreview!}
+                  alt={fileName}
+                  className="max-h-80 rounded-lg border border-line"
+                />
+                <button
+                  type="button"
+                  onClick={clearImage}
+                  aria-label="画像を削除"
+                  className="absolute -right-2 -top-2 rounded-full bg-alert p-1 text-white shadow-md hover:bg-alert/90"
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+                <p className="mt-1 text-xs text-ink-faint">{fileName}</p>
+              </div>
+            )
           ) : (
             <button
               type="button"
@@ -207,14 +232,14 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
               className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line py-12 text-ink-soft transition-colors hover:border-earth-400 hover:bg-bg-soft"
             >
               <Upload className="h-8 w-8" aria-hidden />
-              <span className="text-sm font-medium">クリックして画像を選択</span>
-              <span className="text-xs text-ink-faint">FAX・スキャン画像（{MAX_IMAGE_MB}MBまで・JPEG/PNG）</span>
+              <span className="text-sm font-medium">クリックして画像・PDFを選択</span>
+              <span className="text-xs text-ink-faint">FAX・スキャン（{MAX_FILE_MB}MBまで・JPEG/PNG/PDF）</span>
             </button>
           )}
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
