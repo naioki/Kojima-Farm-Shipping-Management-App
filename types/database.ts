@@ -528,3 +528,38 @@ export const portalOrderInputSchema = z.object({
     .min(1),
 })
 export type PortalOrderInput = z.infer<typeof portalOrderInputSchema>
+
+// ============================================================
+// 規格の現場報告（spec_reports・migrations/0009）
+// ============================================================
+export type SpecReportStatus = 'pending' | 'handled' | 'dismissed'
+
+export interface SpecReport {
+  id: UUID
+  customer_id: UUID | null
+  product_id: UUID | null
+  note: string
+  photo_url: string | null
+  status: SpecReportStatus
+  reported_by: UUID | null
+  handled_by: UUID | null
+  handled_at: ISODateTime | null
+  created_at: ISODateTime
+}
+
+/** 現場からの規格変更報告（写真＋メモ。直接編集ではない）。photo は base64（任意）。 */
+export const specReportCreateSchema = z.object({
+  customer_id: z.string().uuid().nullish(),
+  product_id: z.string().uuid().nullish(),
+  note: z.string().min(1).max(2000),
+  /** 写真（任意）。data URL の接頭辞を除いた base64。 */
+  photoBase64: z.string().min(1).optional(),
+  photoMimeType: z.string().optional(),
+})
+export type SpecReportCreateInput = z.infer<typeof specReportCreateSchema>
+
+/** 管理者による報告の処理（対応済み/却下）。 */
+export const specReportUpdateSchema = z.object({
+  status: z.enum(['handled', 'dismissed']),
+})
+export type SpecReportUpdateInput = z.infer<typeof specReportUpdateSchema>
