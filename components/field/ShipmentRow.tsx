@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus, SpecWarning } from '@/types/database'
@@ -42,6 +42,8 @@ export interface ShipmentRowProps {
   specWarnings?: SpecWarning[] | null
   /** 出荷済みに前進した瞬間に呼ばれる（親が一定時間後に末尾へ並べ替えるため） */
   onShipped?: (itemId: string) => void
+  /** 削除された瞬間に呼ばれる（親が並びから除く） */
+  onDeleted?: (itemId: string) => void
 }
 
 /**
@@ -66,12 +68,16 @@ export function ShipmentRow({
   initialFieldNote,
   specWarnings,
   onShipped,
+  onDeleted,
 }: ShipmentRowProps) {
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // 削除確認
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // アコーディオン（荷姿）
   const [open, setOpen] = useState(false)
@@ -153,6 +159,24 @@ export function ShipmentRow({
     } finally {
       setBusy(false)
       setConfirmOpen(false)
+    }
+  }
+
+  async function deleteItem() {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/order-items/${itemId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(j.error ?? `削除に失敗 (${res.status})`)
+      }
+      toast.success('明細を削除しました')
+      setDeleteOpen(false)
+      onDeleted?.(itemId)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '削除に失敗しました')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -400,7 +424,15 @@ export function ShipmentRow({
             </p>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-alert hover:bg-alert/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              この明細を削除
+            </button>
             <Button size="sm" onClick={saveDetails} isLoading={savingDetails}>
               保存
             </Button>
@@ -416,6 +448,16 @@ export function ShipmentRow({
         message={`「${customerName} / ${quantityText}」を ${meta.label} から1段戻します。出荷済みを戻す場合、出荷実績は取り消されます。`}
         confirmLabel="戻す"
         isLoading={busy}
+      />
+
+      <ConfirmModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={deleteItem}
+        title="この明細を削除しますか？"
+        message={`「${customerName} / ${quantityText}」を削除します。この操作は取り消せません。出荷済み・請求確定済みの明細は削除できません。`}
+        confirmLabel="削除する"
+        isLoading={deleting}
       />
     </div>
   )

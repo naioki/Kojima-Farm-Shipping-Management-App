@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
@@ -93,4 +94,52 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   })
 
   return NextResponse.json({ item: updated })
+}
+
+/**
+ * 明細の削除（出荷一覧の詳細から・誤追加の取消）。admin/staff 可。
+ * 安全ガード：出荷済み・価格確定済み・請求済み注文の明細は削除不可（履歴/税務保護）。
+ * 紐づく収穫タスクは FK の ON DELETE CASCADE で消える。変更は audit_log に記録。
+ */
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const user = await getAuthedUser()
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const supabase = createClient()
+  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
+    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
+  }
+
+  const admin = createAdminClient()
+  const { data: item } = await admin
+    .from('order_items')
+    .select('*, orders!inner(status)')
+    .eq('id', params.id)
+    .maybeSingle()
+  if (!item) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+
+  const orderStatus = (item.orders as unknown as { status: string }).status
+  if (item.field_status === 'shipped' || item.shipped_at != null) {
+    return NextResponse.json({ error: '出荷済みの明細は削除できません' }, { status: 409 })
+  }
+  if (item.price_status === 'confirmed' || orderStatus === 'invoiced') {
+    return NextResponse.json({ error: '請求確定済みのため削除できません' }, { status: 409 })
+  }
+
+  const { error } = await admin.from('order_items').delete().eq('id', params.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // 監査用スナップショット（埋め込んだ orders を除く）
+  const snapshot: Record<string, unknown> = { ...(item as Record<string, unknown>) }
+  delete snapshot.orders
+  await writeAudit(admin, {
+    entityType: 'order_items',
+    entityId: params.id,
+    action: 'DELETE',
+    oldValues: snapshot,
+    userId: user.id,
+  })
+
+  return NextResponse.json({ deleted: true })
 }
