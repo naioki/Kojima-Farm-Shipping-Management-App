@@ -16,6 +16,7 @@ const display = M_PLUS_Rounded_1c({
   weight: ['700', '800'],
   variable: '--font-display',
   display: 'swap',
+  adjustFontFallback: false,
 })
 const mono = JetBrains_Mono({
   subsets: ['latin'],

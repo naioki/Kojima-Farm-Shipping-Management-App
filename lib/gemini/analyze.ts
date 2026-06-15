@@ -72,10 +72,14 @@ export async function analyzeNormal(
   input: { imageBase64?: string; mimeType?: string; text?: string },
   channel: string,
   hintText?: string,
+  /** この解析だけに使う一回限りのプロンプト上書き（手動OCR画面用）。設定は変更しない。 */
+  promptOverride?: string,
 ): Promise<ParsedItem[]> {
   const model = (await client()).getGenerativeModel({ model: await getModel() })
+  const baseInstruction =
+    promptOverride && promptOverride.trim() !== '' ? promptOverride : await getBaseInstruction()
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-    { text: await getBaseInstruction() },
+    { text: baseInstruction },
   ]
   if (hintText && hintText.trim() !== '') parts.push({ text: hintText })
   if (input.imageBase64) {
