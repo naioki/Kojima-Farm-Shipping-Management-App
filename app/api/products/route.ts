@@ -20,12 +20,15 @@ export async function POST(req: Request) {
   }
   const supabase = createClient()
 
+  // 基準単位（base_unit）を正とし、旧 unit も同値で揃える（二重単位を解消）。
+  const baseUnit = parsed.data.base_unit
   const { data, error } = await supabase
     .from('products')
     .insert({
       name: parsed.data.name,
       name_kana: parsed.data.name_kana ?? null,
-      unit: parsed.data.unit,
+      base_unit: baseUnit,
+      unit: parsed.data.unit ?? baseUnit,
       default_tax_rate: parsed.data.default_tax_rate,
       container_capacity: parsed.data.container_capacity ?? null,
       default_unit_price: parsed.data.default_unit_price ?? null,

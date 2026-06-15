@@ -22,7 +22,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const d = parsed.data
   if (d.name !== undefined) updates.name = d.name
   if (d.name_kana !== undefined) updates.name_kana = d.name_kana
-  if (d.unit !== undefined) updates.unit = d.unit
+  // 基準単位を正とし、旧 unit も同値で揃える（二重単位の解消）
+  if (d.base_unit !== undefined) {
+    updates.base_unit = d.base_unit
+    updates.unit = d.base_unit
+  } else if (d.unit !== undefined) {
+    updates.unit = d.unit
+  }
   if (d.default_tax_rate !== undefined) updates.default_tax_rate = d.default_tax_rate
   if (d.container_capacity !== undefined) updates.container_capacity = d.container_capacity
   if (d.default_unit_price !== undefined) updates.default_unit_price = d.default_unit_price

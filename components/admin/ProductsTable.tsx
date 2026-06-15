@@ -2,21 +2,19 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Trash2 } from 'lucide-react'
+import { Check, Trash2, Combine } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
-import { ConfirmModal } from '@/components/ui/Modal'
+import { ConfirmModal, Modal } from '@/components/ui/Modal'
 import type { TaxRate } from '@/types/database'
 
 export interface ProductRow {
   id: string
   name: string
   name_kana: string | null
-  unit: string
+  base_unit: string
   default_tax_rate: TaxRate
-  container_capacity: number | null
-  default_unit_price: number | null
   stock_qty: number
   is_active: boolean
 }
@@ -29,10 +27,10 @@ const numOrNull = (s: string): number | null => {
 }
 
 /**
- * 商品マスタの編集テーブル（編集＋在庫＋削除）。
- * 各行で品目名・単位・税率・コンテナ容量・既定単価・在庫数・有効を編集して保存（PATCH）。
- * 削除（DELETE）は未使用の品目のみ。使用中（注文・取引ルール・収穫見込み）は履歴保護のため
- * 不可で、「有効」オフ（非表示化）に誘導する。
+ * 商品（品目）マスタの編集テーブル（新モデル）。
+ * 品目＝WHAT（基準単位）。荷姿・価格は「価格・荷姿」マスタへ分離した。
+ * 「統合」＝重複品目（例トマト箱）を別品目の荷姿に寄せて重複を解消する。
+ * 削除は未使用のみ。使用中は履歴保護のため「有効」オフに誘導。
  */
 export function ProductsTable({ products }: { products: ProductRow[] }) {
   const router = useRouter()
@@ -44,6 +42,13 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
   const [savedId, setSavedId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // 統合モーダル
+  const [mergeId, setMergeId] = useState<string | null>(null)
+  const [mergeTarget, setMergeTarget] = useState('')
+  const [mergeSellingLabel, setMergeSellingLabel] = useState('')
+  const [mergeBasePer, setMergeBasePer] = useState('')
+  const [merging, setMerging] = useState(false)
 
   function patch(id: string, fields: Partial<ProductRow>) {
     setRows((prev) => ({ ...prev, [id]: { ...prev[id]!, ...fields } }))
@@ -64,10 +69,8 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
         body: JSON.stringify({
           name: r.name,
           name_kana: r.name_kana || null,
-          unit: r.unit || '個',
+          base_unit: r.base_unit || '個',
           default_tax_rate: r.default_tax_rate,
-          container_capacity: r.container_capacity,
-          default_unit_price: r.default_unit_price,
           stock_qty: r.stock_qty,
           is_active: r.is_active,
         }),
@@ -109,8 +112,47 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
     }
   }
 
+  function openMerge(id: string) {
+    setMergeId(id)
+    setMergeTarget('')
+    setMergeSellingLabel(rows[id]?.base_unit ?? '')
+    setMergeBasePer('')
+  }
+
+  async function doMerge() {
+    if (!mergeId) return
+    const base = parseFloat(mergeBasePer)
+    if (!mergeTarget || !mergeSellingLabel || !(base > 0)) {
+      toast.error('統合先・販売単位・換算数（正の数）は必須です')
+      return
+    }
+    setMerging(true)
+    try {
+      const res = await fetch(`/api/products/${mergeId}/merge`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          target_product_id: mergeTarget,
+          selling_unit_label: mergeSellingLabel,
+          base_per_selling: base,
+        }),
+      })
+      const json = (await res.json()) as { merged?: boolean; deleted?: boolean; targetName?: string; error?: string }
+      if (!res.ok) throw new Error(json.error ?? `統合失敗 (${res.status})`)
+      toast.success(`「${json.targetName}」の荷姿に統合しました${json.deleted ? '（重複品目は削除）' : '（重複品目は無効化）'}`)
+      setMergeId(null)
+      router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '統合に失敗しました')
+    } finally {
+      setMerging(false)
+    }
+  }
+
   const inp = 'h-9 rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
   const confirmRow = confirmId ? rows[confirmId] : null
+  const mergeRow = mergeId ? rows[mergeId] : null
+  const targetOptions = ids.filter((x) => x !== mergeId).map((x) => rows[x]!)
 
   return (
     <div className="overflow-x-auto">
@@ -118,10 +160,8 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
         <thead>
           <tr className="text-left text-ink-soft">
             <th className="px-2 py-2 font-medium">品目名</th>
-            <th className="px-2 py-2 font-medium">単位</th>
+            <th className="px-2 py-2 font-medium">基準単位</th>
             <th className="px-2 py-2 font-medium">税率</th>
-            <th className="px-2 py-2 font-medium">容量</th>
-            <th className="px-2 py-2 font-medium">既定単価</th>
             <th className="px-2 py-2 font-medium">在庫</th>
             <th className="px-2 py-2 font-medium">有効</th>
             <th className="px-2 py-2"></th>
@@ -136,7 +176,7 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                   <input className={cn(inp, 'w-32')} value={r.name} onChange={(e) => patch(id, { name: e.target.value })} />
                 </td>
                 <td className="px-2 py-2">
-                  <input className={cn(inp, 'w-14')} value={r.unit} onChange={(e) => patch(id, { unit: e.target.value })} />
+                  <input className={cn(inp, 'w-16')} value={r.base_unit} onChange={(e) => patch(id, { base_unit: e.target.value })} />
                 </td>
                 <td className="px-2 py-2">
                   <select
@@ -147,22 +187,6 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                     <option value="8">8%</option>
                     <option value="10">10%</option>
                   </select>
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    className={cn(inp, 'num w-20 tabular-nums')}
-                    inputMode="numeric"
-                    value={r.container_capacity ?? ''}
-                    onChange={(e) => patch(id, { container_capacity: numOrNull(e.target.value) })}
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    className={cn(inp, 'num w-24 tabular-nums')}
-                    inputMode="numeric"
-                    value={r.default_unit_price ?? ''}
-                    onChange={(e) => patch(id, { default_unit_price: numOrNull(e.target.value) })}
-                  />
                 </td>
                 <td className="px-2 py-2">
                   <input
@@ -189,6 +213,15 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
                     </Button>
                     <button
                       type="button"
+                      onClick={() => openMerge(id)}
+                      aria-label={`${r.name} を他品目の荷姿に統合`}
+                      title="統合（重複品目を別品目の荷姿へ）"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-line text-ink-faint hover:border-trust-400 hover:bg-trust-50 hover:text-trust-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                    >
+                      <Combine className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setConfirmId(id)}
                       aria-label={`${r.name} を削除`}
                       title="削除（未使用の品目のみ）"
@@ -213,6 +246,47 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
         confirmLabel="削除する"
         isLoading={deleting}
       />
+
+      {/* 統合モーダル */}
+      <Modal
+        open={mergeId !== null}
+        onClose={() => setMergeId(null)}
+        title="品目を統合（荷姿に寄せる）"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setMergeId(null)} disabled={merging}>キャンセル</Button>
+            <Button variant="primary" onClick={doMerge} isLoading={merging}>統合する</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-ink-soft">
+            「<span className="font-medium text-ink">{mergeRow?.name}（{mergeRow?.base_unit}）</span>」を
+            別の品目の<strong className="text-ink">荷姿</strong>として登録し、この重複品目は無効化します。
+            既存の注文履歴はそのまま残ります。
+          </p>
+          <label className="block space-y-1 text-sm">
+            <span className="text-ink-soft">統合先の品目</span>
+            <select className={cn(inp, 'w-full')} value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+              <option value="">選択…</option>
+              {targetOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block space-y-1 text-sm">
+              <span className="text-ink-soft">販売単位名</span>
+              <input className={cn(inp, 'w-full')} placeholder="箱 / ケース" value={mergeSellingLabel} onChange={(e) => setMergeSellingLabel(e.target.value)} />
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span className="text-ink-soft">1単位＝基準単位いくつ</span>
+              <input type="number" inputMode="decimal" min={0} className={cn(inp, 'num w-full')} placeholder="例: 20" value={mergeBasePer} onChange={(e) => setMergeBasePer(e.target.value)} />
+            </label>
+          </div>
+          <p className="text-xs text-ink-faint">
+            例：トマトの「箱」を統合先＝トマト、販売単位＝箱、1箱＝20個 とすると、トマトに「箱」荷姿が追加されます。
+          </p>
+        </div>
+      </Modal>
     </div>
   )
 }

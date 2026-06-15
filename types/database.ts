@@ -429,7 +429,9 @@ export type DeliveryNoteCreateInput = z.infer<typeof deliveryNoteCreateSchema>
 export const productCreateSchema = z.object({
   name: z.string().min(1),
   name_kana: z.string().nullish(),
-  unit: z.string().min(1).default('個'),
+  /** 基準単位（個・本・束・kg 等）。荷姿・価格は pack_configs / price_rules で管理。 */
+  base_unit: z.string().min(1).default('個'),
+  unit: z.string().min(1).optional(),
   default_tax_rate: taxRateSchema.default(8),
   container_capacity: z.number().positive().nullish(),
   default_unit_price: z.number().nonnegative().nullish(),
@@ -456,6 +458,7 @@ export type InvoiceStatusPatch = z.infer<typeof invoiceStatusPatchSchema>
 export const productUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   name_kana: z.string().nullish(),
+  base_unit: z.string().min(1).optional(),
   unit: z.string().min(1).optional(),
   default_tax_rate: taxRateSchema.optional(),
   container_capacity: z.number().positive().nullish(),
@@ -463,6 +466,15 @@ export const productUpdateSchema = z.object({
   stock_qty: z.number().optional(),
   is_active: z.boolean().optional(),
 })
+
+/** 品目の統合（重複品目を別品目の「荷姿」に寄せる）。 */
+export const productMergeSchema = z.object({
+  target_product_id: z.string().uuid(),
+  selling_unit_label: z.string().min(1),
+  base_per_selling: z.number().positive(),
+  label: z.string().nullish(),
+})
+export type ProductMergeInput = z.infer<typeof productMergeSchema>
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>
 
 /** 設定の一括更新（設定画面）。キーは SETTINGS_SPEC で検証する。空文字の秘密値は「変更なし」。 */
