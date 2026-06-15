@@ -33,12 +33,21 @@ export interface DefaultSetItem {
   label_spec: string | null
 }
 
+export interface PackOption {
+  id: string
+  label: string
+  selling_unit_label: string
+  base_per_selling: number
+}
+
 export interface OrderNewFormProps {
   customers: CustomerOption[]
   products: ProductOption[]
   /** 取引先ごとのデフォルトセット { [customer_id]: DefaultSetItem[] } */
   defaultSets: Record<string, DefaultSetItem[]>
-  /** 設定: 'total' | 'cases' */
+  /** 商品ごとの荷姿 { [product_id]: PackOption[] }（共通＋取引先別） */
+  packsByProduct: Record<string, PackOption[]>
+  /** 設定: 'total' | 'cases'（後方互換。現在は per-item 荷姿選択を使う） */
   qtyInputMode: 'total' | 'cases'
 }
 
@@ -50,7 +59,9 @@ interface FormItem {
   unit_price: string
   tax_rate: 8 | 10
   photo_url: string | null
-  packs_per_case: number | null
+  /** 選択中の荷姿（null=総数=基準単位そのまま） */
+  pack_config_id: string | null
+  base_per_selling: number | null
 }
 
 interface ProductStats {
@@ -85,14 +96,13 @@ function AnomalyBadge({ qty, stats }: { qty: number; stats: ProductStats }) {
  * 3. 過去90日の数量と比較して異常値を警告（保存は通す）
  * 4. 確認画面 → 保存
  */
-export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }: OrderNewFormProps) {
+export function OrderNewForm({ customers, products, defaultSets, packsByProduct }: OrderNewFormProps) {
   const router = useRouter()
   const [customerId, setCustomerId] = useState('')
   const [deliveryDate, setDeliveryDate] = useState(todayStr())
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('')
   const [note, setNote] = useState('')
   const [items, setItems] = useState<FormItem[]>([])
-  const [inputMode, setInputMode] = useState<'total' | 'cases'>(qtyInputMode)
   const [stats, setStats] = useState<Record<string, ProductStats>>({})
   const [step, setStep] = useState<'entry' | 'confirm'>('entry')
   const [saving, setSaving] = useState(false)
@@ -122,7 +132,8 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
             unit_price: String(p?.default_unit_price ?? 0),
             tax_rate: p?.default_tax_rate ?? 8,
             photo_url: p?.photo_url ?? null,
-            packs_per_case: d.packs_per_case,
+            pack_config_id: null,
+            base_per_selling: null,
           }
         }),
       )
@@ -149,8 +160,6 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
     if (!addProductId) return
     const p = productById.get(addProductId)
     if (!p) return
-    const defaults = defaultSets[customerId] ?? []
-    const rule = defaults.find((d) => d.product_id === addProductId)
     setItems((prev) => [
       ...prev,
       {
@@ -161,21 +170,34 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
         unit_price: String(p.default_unit_price ?? 0),
         tax_rate: p.default_tax_rate,
         photo_url: p.photo_url,
-        packs_per_case: rule?.packs_per_case ?? null,
+        pack_config_id: null,
+        base_per_selling: null,
       },
     ])
     setAddProductId('')
     setShowAddProduct(false)
   }
 
-  /** ケース入力の場合は総数に変換 */
+  /** 荷姿選択時は「販売単位数 × base_per_selling」で総数（基準単位）に換算。総数モードはそのまま。 */
   function resolveQuantity(it: FormItem): number {
     const raw = parseFloat(it.quantity)
     if (isNaN(raw) || raw <= 0) return 0
-    if (inputMode === 'cases' && it.packs_per_case && it.packs_per_case > 0) {
-      return Math.round(raw * it.packs_per_case)
+    if (it.pack_config_id && it.base_per_selling && it.base_per_selling > 0) {
+      return Math.round(raw * it.base_per_selling)
     }
     return raw
+  }
+
+  /** 行の荷姿を切り替える（pack_config_id と base_per_selling を更新）。 */
+  function setItemPack(idx: number, packId: string) {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== idx) return it
+        if (!packId) return { ...it, pack_config_id: null, base_per_selling: null }
+        const opt = (packsByProduct[it.product_id] ?? []).find((o) => o.id === packId)
+        return { ...it, pack_config_id: packId, base_per_selling: opt?.base_per_selling ?? null }
+      }),
+    )
   }
 
   const canProceed =
@@ -202,6 +224,7 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
             unit: it.unit,
             unit_price: parseFloat(it.unit_price) || 0,
             tax_rate: it.tax_rate,
+            pack_config_id: it.pack_config_id ?? undefined,
           })),
         }),
       })
@@ -334,20 +357,6 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
             <option value="pm">午後</option>
           </select>
         </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-ink" htmlFor="order-qty-mode">
-            数量入力モード
-          </label>
-          <select
-            id="order-qty-mode"
-            value={inputMode}
-            onChange={(e) => setInputMode(e.target.value as 'total' | 'cases')}
-            className={cn(inputCls, 'w-48')}
-          >
-            <option value="total">総数（個）</option>
-            <option value="cases">ケース数（P/C換算）</option>
-          </select>
-        </div>
       </div>
 
       {/* 商品リスト */}
@@ -390,11 +399,23 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
                       </div>
                     )}
 
-                    {/* 商品名 */}
+                    {/* 商品名＋荷姿選択 */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">{it.product_name}</p>
-                      {inputMode === 'cases' && it.packs_per_case && (
-                        <p className="text-xs text-ink-faint">P/C: {it.packs_per_case}</p>
+                      {(packsByProduct[it.product_id]?.length ?? 0) > 0 && (
+                        <select
+                          value={it.pack_config_id ?? ''}
+                          onChange={(e) => setItemPack(idx, e.target.value)}
+                          className="mt-0.5 h-7 rounded border border-line bg-bg-card px-1.5 text-xs text-ink-soft focus:outline-none focus:border-trust-500"
+                          aria-label={`${it.product_name}の荷姿`}
+                        >
+                          <option value="">総数（{it.unit}）</option>
+                          {(packsByProduct[it.product_id] ?? []).map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.selling_unit_label}（×{o.base_per_selling}）
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
 
@@ -410,7 +431,9 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
                         aria-label={`${it.product_name}の数量`}
                       />
                       <span className="text-sm text-ink-soft shrink-0">
-                        {inputMode === 'cases' ? 'c' : it.unit}
+                        {it.pack_config_id
+                          ? (packsByProduct[it.product_id] ?? []).find((o) => o.id === it.pack_config_id)?.selling_unit_label ?? it.unit
+                          : it.unit}
                       </span>
                     </div>
 
@@ -424,10 +447,10 @@ export function OrderNewForm({ customers, products, defaultSets, qtyInputMode }:
                     </button>
                   </div>
 
-                  {/* 総数表示（ケースモード時）+ 異常値警告 */}
-                  {(inputMode === 'cases' && qty > 0 && it.packs_per_case) || (st && qty > 0) ? (
+                  {/* 総数表示（荷姿選択時）+ 異常値警告 */}
+                  {(it.pack_config_id && qty > 0) || (st && qty > 0) ? (
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-[52px]">
-                      {inputMode === 'cases' && qty > 0 && it.packs_per_case && (
+                      {it.pack_config_id && qty > 0 && (
                         <span className="text-xs text-ink-soft">
                           = <span className="num font-bold text-ink tabular-nums">{qty}</span> {it.unit}
                         </span>

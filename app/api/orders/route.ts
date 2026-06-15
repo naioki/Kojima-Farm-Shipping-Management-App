@@ -7,10 +7,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 const itemSchema = z.object({
   product_id: z.string().uuid(),
   product_name: z.string().min(1),
+  /** 総数（基準単位）。荷姿選択時は呼び出し側で base 換算済み。 */
   quantity: z.number().positive(),
   unit: z.string().min(1),
   unit_price: z.number().min(0).default(0),
   tax_rate: z.union([z.literal(8), z.literal(10)]).default(8),
+  /** 荷姿（pack_config）。出荷表示・後の価格解決に使う。 */
+  pack_config_id: z.string().uuid().nullish(),
 })
 
 const orderSchema = z.object({
@@ -125,6 +128,7 @@ export async function POST(req: NextRequest) {
       unit: it.unit,
       unit_price: it.unit_price,
       tax_rate: it.tax_rate,
+      pack_config_id: it.pack_config_id ?? null,
     })),
   )
 

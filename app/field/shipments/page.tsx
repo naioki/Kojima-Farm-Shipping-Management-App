@@ -17,12 +17,27 @@ export const dynamic = 'force-dynamic'
 const PATH = '/field/shipments'
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
-/** 総数を「総数 / ケース表記」に整形（products.container_capacity で分解） */
-function formatQty(quantity: number, capacity: number | null): string {
+/**
+ * 総数を「総数 / 荷姿表記」に整形。
+ * 荷姿(pack_config)があれば「総数 / N{販売単位}+端数」、無ければ container_capacity で分解。
+ * ケース数が0のときは端数表記（0c10 等）を出さず総数のみにする（見やすさ）。
+ */
+function formatQty(quantity: number, capacity: number | null, pack?: { base: number; unit: string } | null): string {
   const total = new Decimal(quantity)
+  // 荷姿優先
+  if (pack && pack.base > 0) {
+    const b = decomposeByContainer(total, pack.base)
+    if (b && b.containers >= 1) {
+      const rem = b.remainder.isZero() ? '' : `+${b.remainder.toString()}`
+      return `${total.toString()} / ${b.containers}${pack.unit}${rem}`
+    }
+    return total.toString()
+  }
+  // 旧 container_capacity フォールバック（0ケースなら総数のみ）
   const b = decomposeByContainer(total, capacity)
-  if (!b) return total.toString()
-  return `${total.toString()} / ${b.containers}c${b.remainder.toString()}`
+  if (!b || b.containers < 1) return total.toString()
+  const rem = b.remainder.isZero() ? '' : `+${b.remainder.toString()}`
+  return `${total.toString()} / ${b.containers}c${rem}`
 }
 
 /**
@@ -55,7 +70,7 @@ export default async function ShipmentsPage({
     ? (
         await supabase
           .from('order_items')
-          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings')
+          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings, pack_config_id')
           .in('order_id', orderIds)
           .order('product_name')
       ).data ?? []
@@ -75,6 +90,15 @@ export default async function ShipmentsPage({
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const customerColor = new Map((custRows ?? []).map((c) => [c.id, c.display_color]))
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
+
+  // 荷姿（明細に紐づく pack_config）を取得して表示に使う
+  const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
+  const { data: packRows } = packIds.length
+    ? await supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
+    : { data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[] }
+  const packById = new Map(
+    (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
+  )
 
   // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）
   const counts = { not_started: 0, interrupted: 0, packed: 0, shipped: 0 }
@@ -168,7 +192,11 @@ export default async function ShipmentsPage({
                     itemId: it.id,
                     customerName: customerName.get(custId) ?? '—',
                     customerColor: customerColor.get(custId) ?? null,
-                    quantityText: formatQty(it.quantity, capacityById.get(it.product_id) ?? null),
+                    quantityText: formatQty(
+                      it.quantity,
+                      capacityById.get(it.product_id) ?? null,
+                      it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
+                    ),
                     orderedQty: it.quantity,
                     initialStatus: it.field_status,
                     initialVersion: it.version,

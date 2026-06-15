@@ -49,6 +49,23 @@ export default async function OrderNewPage() {
     return <ErrorState message="マスタデータの取得に失敗しました" />
   }
 
+  // 商品ごとの荷姿（共通＝customer_id null）を構築。注文入力の単位選択に使う。
+  const { data: packRows } = await supabase
+    .from('pack_configs')
+    .select('id, product_id, label, selling_unit_label, base_per_selling')
+    .is('customer_id', null)
+    .eq('is_active', true)
+  const packsByProduct: Record<string, { id: string; label: string; selling_unit_label: string; base_per_selling: number }[]> = {}
+  for (const p of packRows ?? []) {
+    const arr = (packsByProduct[p.product_id] ??= [])
+    arr.push({
+      id: p.id,
+      label: p.label,
+      selling_unit_label: p.selling_unit_label,
+      base_per_selling: Number(p.base_per_selling),
+    })
+  }
+
   // 取引先ごとのデフォルトセットを構築
   const productNameById = new Map((products ?? []).map((p) => [p.id, p.name]))
   const defaultSets: Record<string, {
@@ -106,6 +123,7 @@ export default async function OrderNewPage() {
             default_unit_price: p.default_unit_price != null ? Number(p.default_unit_price) : null,
           }))}
           defaultSets={defaultSets}
+          packsByProduct={packsByProduct}
           qtyInputMode={qtyInputMode}
         />
       </Card>
