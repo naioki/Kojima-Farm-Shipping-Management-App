@@ -11,6 +11,7 @@ import {
   ScanLine,
   Camera,
   CheckCircle2,
+  Tag,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -31,6 +32,7 @@ export const ADMIN_NAV: NavItem[] = [
   { href: '/admin/customers', label: '取引先', icon: Users },
   { href: '/admin/spec-reports', label: '規格報告', icon: Camera },
   { href: '/admin/products', label: '商品', icon: Carrot },
+  { href: '/admin/pricing-master', label: '価格・荷姿', icon: Tag },
   { href: '/admin/settings', label: '設定', icon: Settings },
 ]
 
