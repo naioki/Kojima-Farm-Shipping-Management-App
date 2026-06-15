@@ -30,6 +30,9 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   if (canStaffUse('reportSpec', role, features)) {
     actions.push({ key: 'report', label: '規格を ほうこく', href: '/field/report-spec', icon: 'report' })
   }
+  if (canStaffUse('approve', role, features)) {
+    actions.push({ key: 'approve', label: '承認', href: '/field/approvals', icon: 'approve' })
+  }
 
   return (
     <div className="flex min-h-screen">

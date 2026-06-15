@@ -10,6 +10,7 @@ import {
   ClipboardList,
   ScanLine,
   Camera,
+  CheckCircle2,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -21,7 +22,8 @@ export interface NavItem {
 
 export const ADMIN_NAV: NavItem[] = [
   { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
-  { href: '/admin/inbox', label: '承認待ち', icon: Inbox },
+  { href: '/admin/approvals', label: '注文の承認', icon: CheckCircle2 },
+  { href: '/admin/inbox', label: '承認待ち（受信）', icon: Inbox },
   { href: '/admin/ocr', label: '手動OCR', icon: ScanLine },
   { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
   { href: '/admin/invoices', label: '請求', icon: FileText },

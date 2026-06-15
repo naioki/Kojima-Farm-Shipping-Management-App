@@ -23,10 +23,12 @@ export default async function AdminHome() {
     { data: todayOrders, error: todayErr },
     { count: pendingCount, error: pendingErr },
     { count: failedCount },
+    { count: pendingOrderCount },
   ] = await Promise.all([
     supabase.from('orders').select('id').eq('delivery_date', today).in('status', ['approved', 'shipped']),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).in('status', ['ai_failed', 'unmatched']),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
   ])
 
   if (todayErr || pendingErr) {
@@ -53,7 +55,7 @@ export default async function AdminHome() {
   const totalItems = (todayItems ?? []).length
   const progressPct = totalItems > 0 ? Math.round((statusCounts.shipped / totalItems) * 100) : 0
 
-  const alertCount = (pendingCount ?? 0) + (failedCount ?? 0)
+  const alertCount = (pendingCount ?? 0) + (failedCount ?? 0) + (pendingOrderCount ?? 0)
 
   return (
     <div className="space-y-6">
@@ -133,12 +135,25 @@ export default async function AdminHome() {
             </span>
           </h2>
           <div className="space-y-2">
+            {(pendingOrderCount ?? 0) > 0 && (
+              <Link href="/admin/approvals">
+                <Card variant="elevated" interactive className="flex items-center justify-between gap-3 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-ink">承認待ちの注文</p>
+                    <p className="text-xs text-ink-soft">確認して承認 → 収穫タスク生成</p>
+                  </div>
+                  <span className="num shrink-0 rounded-full bg-earth-100 px-3 py-1 text-sm font-bold text-earth-700">
+                    {pendingOrderCount}件
+                  </span>
+                </Card>
+              </Link>
+            )}
             {(pendingCount ?? 0) > 0 && (
               <Link href="/admin/inbox">
                 <Card variant="elevated" interactive className="flex items-center justify-between gap-3 py-3">
                   <div>
-                    <p className="text-sm font-medium text-ink">承認待ちの注文</p>
-                    <p className="text-xs text-ink-soft">AI解析済み・要確認</p>
+                    <p className="text-sm font-medium text-ink">未処理の受信</p>
+                    <p className="text-xs text-ink-soft">AI解析済み・要確認（受信ログ）</p>
                   </div>
                   <span className="num shrink-0 rounded-full bg-earth-100 px-3 py-1 text-sm font-bold text-earth-700">
                     {pendingCount}件
