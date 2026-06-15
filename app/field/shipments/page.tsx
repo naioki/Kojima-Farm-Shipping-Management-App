@@ -1,4 +1,6 @@
 import Decimal from 'decimal.js'
+import { CheckCircle2 } from 'lucide-react'
+import { cn } from '@/lib/cn'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
@@ -101,6 +103,10 @@ export default async function ShipmentsPage({
   const packsByPair: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
 
+  // 「のこり」= まだ出荷していない件数（未着手＋中断＋梱包完了）。現場が今やることの数。
+  const remaining = counts.not_started + counts.interrupted + counts.packed
+  const allDone = items.length > 0 && remaining === 0
+
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -110,6 +116,28 @@ export default async function ShipmentsPage({
         </div>
         <DateNav date={date} basePath={PATH} />
       </div>
+
+      {/* やさしい日本語の「のこり」表示。今やることの数を一目で。 */}
+      {items.length > 0 && (
+        <div
+          className={cn(
+            'flex items-center justify-between rounded-xl border px-4 py-3',
+            allDone ? 'border-harvest-200 bg-harvest-50' : 'border-earth-200 bg-earth-50',
+          )}
+        >
+          <span className="text-sm font-medium text-ink-soft">きょう やること</span>
+          {allDone ? (
+            <span className="flex items-center gap-1.5 text-base font-bold text-harvest-700">
+              <CheckCircle2 className="h-5 w-5" aria-hidden />
+              ぜんぶ おわり
+            </span>
+          ) : (
+            <span className="text-ink-soft">
+              のこり <span className="num text-2xl font-bold tabular-nums text-earth-700">{remaining}</span> 件
+            </span>
+          )}
+        </div>
+      )}
 
       <ShipmentStatusSummary counts={counts} />
 

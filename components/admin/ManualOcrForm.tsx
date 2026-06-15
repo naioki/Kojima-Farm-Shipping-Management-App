@@ -24,17 +24,26 @@ interface ManualOcrFormProps {
   currentPrompt: string
   /** コード埋め込みのデフォルトプロンプト。 */
   defaultPrompt: string
+  /** プロンプトを開いて編集できるか（スタッフは false ＝既定プロンプトで読むだけ）。 */
+  allowPromptEdit?: boolean
+  /** 既定プロンプトとして恒久保存できるか（管理者のみ true）。 */
+  allowPromptSave?: boolean
 }
 
 type Mode = 'image' | 'text'
 
 /**
- * 手動OCR入力フォーム（管理者専用）。
- * FAX画像・スキャン・メール本文を貼り付けてAIに読ませ、明細を確認する。
- * プロンプトは「この解析だけ」その場で編集可（保存されない）。
- * カスタムプロンプトで実行する際は確認、既定として保存する際はフレーズ確認を出す。
+ * 手動OCR入力フォーム。
+ * FAX画像・スキャン・PDF・メール本文を AI に読ませ、明細を確認する（プレビュー、DB保存なし）。
+ * 管理者: プロンプトを「この解析だけ」編集可＋既定として保存可（フレーズ確認）。
+ * スタッフ: 既定プロンプトで読むだけ（編集・保存は不可）。
  */
-export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormProps) {
+export function ManualOcrForm({
+  currentPrompt,
+  defaultPrompt,
+  allowPromptEdit = true,
+  allowPromptSave = true,
+}: ManualOcrFormProps) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('image')
   const [text, setText] = useState('')
@@ -257,7 +266,8 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
         />
       )}
 
-      {/* プロンプト（折りたたみ） */}
+      {/* プロンプト（折りたたみ・管理者のみ） */}
+      {allowPromptEdit && (
       <div className="rounded-lg border border-line">
         <button
           type="button"
@@ -297,14 +307,17 @@ export function ManualOcrForm({ currentPrompt, defaultPrompt }: ManualOcrFormPro
               <Button variant="secondary" size="sm" onClick={() => setPrompt(defaultPrompt)} disabled={prompt.trim() === defaultPrompt.trim()}>
                 初期値に戻す
               </Button>
-              <Button variant="primary" size="sm" onClick={() => setSaveModalOpen(true)} disabled={!isCustomPrompt}>
-                <Save className="h-3.5 w-3.5" aria-hidden />
-                既定として保存
-              </Button>
+              {allowPromptSave && (
+                <Button variant="primary" size="sm" onClick={() => setSaveModalOpen(true)} disabled={!isCustomPrompt}>
+                  <Save className="h-3.5 w-3.5" aria-hidden />
+                  既定として保存
+                </Button>
+              )}
             </div>
           </div>
         )}
       </div>
+      )}
 
       {/* 実行 */}
       <div className="flex justify-end">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronUp, ShoppingCart, Check } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle, ShoppingCart, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
 import { cn } from '@/lib/cn'

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { analyzeNormal } from '@/lib/gemini/analyze'
+import { getStaffFeatures } from '@/lib/field/features'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -23,8 +24,9 @@ const bodySchema = z
   })
 
 /**
- * 手動OCR解析（管理者専用）。
- * 取引先には公開しない（トークン消費抑制）。画像 or テキストを Gemini に通し、
+ * 手動OCR解析（社内のみ）。
+ * 管理者は常時可。スタッフは設定「STAFF_CAN_OCR」がONのときのみ可（既定OFF）。
+ * 取引先には公開しない（トークン消費抑制）。画像/PDF or テキストを Gemini に通し、
  * 抽出した明細を返すだけ（DBには保存しない＝プレビュー）。
  * promptOverride を渡すとこの解析だけ別プロンプトを使う（保存はされない）。
  */
@@ -32,11 +34,15 @@ export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-  // 管理者のみ（取引先・スタッフは不可）
+  // 管理者は常時可。スタッフはフラグONのときのみ。取引先（portal）は不可。
   const supabase = createClient()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: '手動OCRは管理者のみ利用できます' }, { status: 403 })
+  const role = profile?.role
+  if (role !== 'admin') {
+    const features = await getStaffFeatures()
+    if (role !== 'staff' || !features.ocr) {
+      return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
+    }
   }
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
@@ -48,13 +54,15 @@ export async function POST(req: Request) {
   }
 
   const { imageBase64, mimeType, text, promptOverride } = parsed.data
+  // プロンプト上書きは管理者のみ（スタッフは既定プロンプト固定）。
+  const effectiveOverride = role === 'admin' ? promptOverride : undefined
 
   try {
     const items = await analyzeNormal(
       { imageBase64, mimeType, text },
       'manual',
       undefined,
-      promptOverride,
+      effectiveOverride,
     )
     return NextResponse.json({ items })
   } catch (e) {

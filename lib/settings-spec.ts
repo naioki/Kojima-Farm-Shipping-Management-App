@@ -7,7 +7,7 @@
 import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
 import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from '@/lib/gemini/prompts'
 
-export type SettingSection = 'issuer' | 'rules' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
+export type SettingSection = 'issuer' | 'rules' | 'field' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
 /** 'prompt' は専用エディタで描画（保存に確認フレーズ入力が必要）。 */
 export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select' | 'prompt'
 
@@ -31,6 +31,7 @@ export interface SettingSpec {
 export const SECTION_LABELS: Record<SettingSection, string> = {
   issuer: '発行者（自社）情報 — 請求書・納品書に印字',
   rules: '規格（取引ルール）の変更管理 — 誰が変えられるか・通知',
+  field: '現場（スタッフ）機能の解放 — 段階的にON',
   ai: 'AI解析（Gemini）',
   automation: '自動承認（識字率が高い受信の自動入力）',
   ingest: '取り込み（Drive / メール）',
@@ -39,7 +40,16 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
   ops: '運用',
 }
 
-export const SECTION_ORDER: SettingSection[] = ['issuer', 'rules', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
+export const SECTION_ORDER: SettingSection[] = ['issuer', 'rules', 'field', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
+
+/** 現場（スタッフ）機能トグルのキー。サーバ/クライアントで共有して可視性・権限を判定する。 */
+export const STAFF_FEATURE_KEYS = {
+  ocr: 'STAFF_CAN_OCR',
+  createOrder: 'STAFF_CAN_CREATE_ORDER',
+  reportSpec: 'STAFF_CAN_REPORT_SPEC',
+  approve: 'STAFF_CAN_APPROVE',
+} as const
+export type StaffFeatureKey = (typeof STAFF_FEATURE_KEYS)[keyof typeof STAFF_FEATURE_KEYS]
 
 export const SETTINGS_SPEC: SettingSpec[] = [
   // 発行者（自社）情報 — 請求書・納品書のヘッダーに印字
@@ -85,6 +95,43 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     kind: 'toggle',
     toggleDefault: 'on',
     hint: '規格が変わったら Discord / LINE WORKS（通知設定の送信先）へ知らせます。変更履歴は常に保存され、取引先ページで参照できます。',
+  },
+  // 現場（スタッフ）機能の解放 — 既定はすべてOFF。出荷ステータス更新は常時可（トグル不要）。
+  {
+    key: 'STAFF_CAN_OCR',
+    label: 'スタッフもOCR読み取りを使える',
+    section: 'field',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'off',
+    hint: 'ONにすると現場の「その他」からFAX/PDF/メールのAI読み取りが使えます（社内利用のみ。取引先には公開されません）。',
+  },
+  {
+    key: 'STAFF_CAN_CREATE_ORDER',
+    label: 'スタッフも注文を新規入力できる',
+    section: 'field',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'off',
+    hint: 'ONにすると現場から手動の注文入力ができます。',
+  },
+  {
+    key: 'STAFF_CAN_REPORT_SPEC',
+    label: 'スタッフが規格の変更を「報告」できる',
+    section: 'field',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'off',
+    hint: '現場が「箱・規格が変わったかも」を写真＋メモで報告できます。反映は管理者が確認してから（直接編集はできません）。',
+  },
+  {
+    key: 'STAFF_CAN_APPROVE',
+    label: 'スタッフも承認できる（高確信のみ）',
+    section: 'field',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'off',
+    hint: '取引先が自動一致・全明細が高確信・納品日確定の受信だけスタッフが承認できます。低確信・未紐付け・差分は管理者専用のまま。家族など信頼できる人が居る時だけONを推奨。',
   },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },

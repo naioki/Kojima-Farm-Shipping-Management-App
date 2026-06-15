@@ -17,5 +17,6 @@ export default async function Home() {
 
   const supabase = createClient()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  redirect(profile?.role === 'admin' ? '/admin' : '/field/matrix')
+  // スタッフはログイン直後に「今日の出荷」へ直行（即業務）。週次計画(matrix)は脇役。
+  redirect(profile?.role === 'admin' ? '/admin' : '/field/shipments')
 }

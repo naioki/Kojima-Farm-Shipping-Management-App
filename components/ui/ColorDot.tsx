@@ -9,7 +9,7 @@ const PALETTE = [
 export function colorFromName(name: string): string {
   let hash = 0
   for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0
-  return PALETTE[hash % PALETTE.length]
+  return PALETTE[hash % PALETTE.length] ?? PALETTE[0]!
 }
 
 interface ColorDotProps {
