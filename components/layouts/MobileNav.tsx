@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X, LogOut } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { navFor } from '@/components/layouts/nav-items'
+import { navFor, navGroupsFor } from '@/components/layouts/nav-items'
 
 /**
  * モバイル用ナビ（lg 未満）。上部バー＋ハンバーガー → スライドドロワー。
@@ -16,6 +16,7 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const nav = navFor(role)
+  const groups = navGroupsFor(role)
 
   // ルート変更で自動的に閉じる
   useEffect(() => {
@@ -77,26 +78,37 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
                 <X className="h-6 w-6" aria-hidden />
               </button>
             </div>
-            <ul className="flex-1 space-y-1 overflow-y-auto">
-              {nav.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`)
-                return (
-                  <li key={href}>
-                    <Link
-                      href={href}
-                      aria-current={active ? 'page' : undefined}
-                      className={cn(
-                        'flex h-14 items-center gap-3 rounded px-3 text-base font-medium transition-colors',
-                        active ? 'bg-earth-100 text-earth-800' : 'text-ink hover:bg-bg-card',
-                      )}
-                    >
-                      <Icon className="h-6 w-6 shrink-0" aria-hidden />
-                      {label}
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
+            <div className="flex-1 space-y-3 overflow-y-auto">
+              {groups.map((group, gi) => (
+                <div key={group.label ?? `g${gi}`} className="space-y-1">
+                  {group.label && (
+                    <p className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+                      {group.label}
+                    </p>
+                  )}
+                  <ul className="space-y-1">
+                    {group.items.map(({ href, label, icon: Icon }) => {
+                      const active = pathname === href || pathname.startsWith(`${href}/`)
+                      return (
+                        <li key={href}>
+                          <Link
+                            href={href}
+                            aria-current={active ? 'page' : undefined}
+                            className={cn(
+                              'flex h-12 items-center gap-3 rounded px-3 text-base font-medium transition-colors',
+                              active ? 'bg-earth-100 text-earth-800' : 'text-ink hover:bg-bg-card',
+                            )}
+                          >
+                            <Icon className="h-6 w-6 shrink-0" aria-hidden />
+                            {label}
+                          </Link>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
             <form action="/auth/signout" method="post" className="pt-2">
               <button
                 type="submit"
