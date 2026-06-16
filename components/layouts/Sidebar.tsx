@@ -1,15 +1,29 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogOut } from 'lucide-react'
+import { LogOut, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navGroupsFor } from '@/components/layouts/nav-items'
+
+const isActiveHref = (pathname: string, href: string) =>
+  pathname === href || pathname.startsWith(`${href}/`)
 
 /** lg 以上で固定表示。それ以下は MobileNav（ハンバーガー）が担う（design.md）。色は CSS Variables。 */
 export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
   const pathname = usePathname()
   const groups = navGroupsFor(role)
+
+  // アコーディオン開閉。初期は「現在地を含むグループだけ開く」（見出し無しは常に表示）。
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const g of groups) {
+      if (!g.label) continue
+      init[g.label] = g.items.some((it) => isActiveHref(pathname, it.href))
+    }
+    return init
+  })
 
   return (
     <nav
@@ -17,17 +31,12 @@ export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
       className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-bg-soft p-4 lg:flex print:!hidden"
     >
       <div className="mb-5 px-2 font-display text-xl font-bold text-earth-700">小島農園</div>
-      <div className="flex-1 space-y-4">
-        {groups.map((group, gi) => (
-          <div key={group.label ?? `g${gi}`} className="space-y-1">
-            {group.label && (
-              <p className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-                {group.label}
-              </p>
-            )}
+      <div className="flex-1 space-y-2">
+        {groups.map((group, gi) => {
+          const items = (
             <ul className="space-y-1">
               {group.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`)
+                const active = isActiveHref(pathname, href)
                 return (
                   <li key={href}>
                     <Link
@@ -47,8 +56,29 @@ export function Sidebar({ role }: { role: 'admin' | 'staff' }) {
                 )
               })}
             </ul>
-          </div>
-        ))}
+          )
+
+          // 見出し無し（ダッシュボード・設定）は折りたたまず常に表示
+          if (!group.label) {
+            return <div key={`g${gi}`}>{items}</div>
+          }
+
+          const open = openGroups[group.label] ?? false
+          return (
+            <div key={group.label}>
+              <button
+                type="button"
+                onClick={() => setOpenGroups((p) => ({ ...p, [group.label!]: !open }))}
+                aria-expanded={open}
+                className="flex w-full items-center justify-between rounded px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint hover:text-ink-soft"
+              >
+                {group.label}
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+              </button>
+              {open && <div className="mt-1">{items}</div>}
+            </div>
+          )
+        })}
       </div>
       {/* サインアウト（POST で session 破棄→/login） */}
       <form action="/auth/signout" method="post">

@@ -3,9 +3,12 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LogOut } from 'lucide-react'
+import { Menu, X, LogOut, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navFor, navGroupsFor } from '@/components/layouts/nav-items'
+
+const isActiveHref = (pathname: string, href: string) =>
+  pathname === href || pathname.startsWith(`${href}/`)
 
 /**
  * モバイル用ナビ（lg 未満）。上部バー＋ハンバーガー → スライドドロワー。
@@ -17,6 +20,15 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
   const [open, setOpen] = useState(false)
   const nav = navFor(role)
   const groups = navGroupsFor(role)
+  // アコーディオン開閉（初期は現在地のグループだけ開く）
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const g of groups) {
+      if (!g.label) continue
+      init[g.label] = g.items.some((it) => isActiveHref(pathname, it.href))
+    }
+    return init
+  })
 
   // ルート変更で自動的に閉じる
   useEffect(() => {
@@ -78,17 +90,12 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
                 <X className="h-6 w-6" aria-hidden />
               </button>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto">
-              {groups.map((group, gi) => (
-                <div key={group.label ?? `g${gi}`} className="space-y-1">
-                  {group.label && (
-                    <p className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-                      {group.label}
-                    </p>
-                  )}
+            <div className="flex-1 space-y-2 overflow-y-auto">
+              {groups.map((group, gi) => {
+                const items = (
                   <ul className="space-y-1">
                     {group.items.map(({ href, label, icon: Icon }) => {
-                      const active = pathname === href || pathname.startsWith(`${href}/`)
+                      const active = isActiveHref(pathname, href)
                       return (
                         <li key={href}>
                           <Link
@@ -106,8 +113,24 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
                       )
                     })}
                   </ul>
-                </div>
-              ))}
+                )
+                if (!group.label) return <div key={`g${gi}`}>{items}</div>
+                const gOpen = openGroups[group.label] ?? false
+                return (
+                  <div key={group.label}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenGroups((p) => ({ ...p, [group.label!]: !gOpen }))}
+                      aria-expanded={gOpen}
+                      className="flex w-full items-center justify-between rounded px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint"
+                    >
+                      {group.label}
+                      <ChevronDown className={cn('h-4 w-4 transition-transform', gOpen && 'rotate-180')} aria-hidden />
+                    </button>
+                    {gOpen && <div className="mt-1">{items}</div>}
+                  </div>
+                )
+              })}
             </div>
             <form action="/auth/signout" method="post" className="pt-2">
               <button
