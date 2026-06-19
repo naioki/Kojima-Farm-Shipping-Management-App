@@ -1,0 +1,50 @@
+# Cloud Build: NEXT_PUBLIC_* をビルド時に注入してイメージを作り、Cloud Run へデプロイする。
+# 手順とワンライナーは DEPLOY.md を参照。
+#
+# 設計:
+#   - NEXT_PUBLIC_SUPABASE_URL / ANON は --build-arg でビルド時に焼き込む（RLS前提の非秘匿値）。
+#   - SUPABASE_SERVICE_ROLE_KEY だけ Secret Manager（--set-secrets）で実行時に渡す。
+#   - GEMINI_API_KEY・R2・通知 等の残りは /admin/settings から入力（lib/settings.ts が DB→env 解決）。
+
+substitutions:
+  _REGION: asia-northeast1
+  _SERVICE: kojima-noen
+  _NEXT_PUBLIC_SUPABASE_URL: ''
+  _NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg=NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}
+      - --build-arg=NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - -t=${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, '${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest']
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest
+      - --region=${_REGION}
+      - --memory=1Gi
+      - --cpu=1
+      - --min-instances=0
+      - --max-instances=3
+      - --timeout=300
+      - --allow-unauthenticated
+      - --set-secrets=SUPABASE_SERVICE_ROLE_KEY=supabase-service-role:latest
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
