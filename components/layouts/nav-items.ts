@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Tag,
   Coins,
+  Images,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -60,6 +61,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
   {
     label: 'マスタ',
     items: [
+      { href: '/admin/master-import', label: '写真で一括登録', icon: Images },
       { href: '/admin/customers', label: '取引先', icon: Users },
       { href: '/admin/products', label: '商品', icon: Carrot },
       { href: '/admin/pricing-master', label: '価格・荷姿', icon: Tag },
