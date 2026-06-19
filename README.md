@@ -1,944 +1,239 @@
-# Claude Code Project Configuration Showcase
+# 小島農園 受注・圃場・請求アプリ（kojima-noen）
 
-> Most software engineers are seriously sleeping on how good LLM agents are right now, especially something like Claude Code.
+紙のFAX・メール・電話に散らばっていた農産物の受注を一本化し、**受注 → 検証 → 圃場（収穫・出荷）→ 請求**までを
+1つの画面でつなぐ、小島農園のための業務アプリです。Google Cloud Run 上の Next.js 一体型で動きます。
 
-Once you've got Claude Code set up, you can point it at your codebase, have it learn your conventions, pull in best practices, and refine everything until it's basically operating like a super-powered teammate. **The real unlock is building a solid set of reusable "[skills](#skills---domain-knowledge)" plus a few "[agents](#agents---specialized-assistants)" for the stuff you do all the time.**
-
-### What This Looks Like in Practice
-
-**Custom UI Library?** We have a [skill that explains exactly how to use it](.claude/skills/core-components/SKILL.md). Same for [how we write tests](.claude/skills/testing-patterns/SKILL.md), [how we structure GraphQL](.claude/skills/graphql-schema/SKILL.md), and basically how we want everything done in our repo. So when Claude generates code, it already matches our patterns and standards out of the box.
-
-**Automated Quality Gates?** We use [hooks](.claude/settings.json) to auto-format code, run tests when test files change, type-check TypeScript, and even [block edits on the main branch](.claude/settings.md). Claude Code also created a bunch of ESLint automation, including custom rules and lint checks that catch issues before they hit review.
-
-**Deep Code Review?** We have a [code review agent](.claude/agents/code-reviewer.md) that Claude runs after changes are made. It follows a detailed checklist covering TypeScript strict mode, error handling, loading states, mutation patterns, and more. When a PR goes up, we have a [GitHub Action](.github/workflows/pr-claude-code-review.yml) that does a full PR review automatically.
-
-**Scheduled Maintenance?** We've got GitHub workflow agents that run on a schedule:
-- [Monthly docs sync](.github/workflows/scheduled-claude-code-docs-sync.yml) - Reads commits from the last month and makes sure docs are still aligned
-- [Weekly code quality](.github/workflows/scheduled-claude-code-quality.yml) - Reviews random directories and auto-fixes issues
-- [Biweekly dependency audit](.github/workflows/scheduled-claude-code-dependency-audit.yml) - Safe dependency updates with test verification
-
-**Intelligent Skill Suggestions?** We built a [skill evaluation system](#skill-evaluation-hooks) that analyzes every prompt and automatically suggests which skills Claude should activate based on keywords, file paths, and intent patterns.
-
-A ton of maintenance and quality work is just... automated. It runs ridiculously smoothly.
-
-**JIRA/Linear Integration?** We connect Claude Code to our ticket system via [MCP servers](.mcp.json). Now Claude can read the ticket, understand the requirements, implement the feature, update the ticket status, and even create new tickets if it finds bugs along the way. The [`/ticket` command](.claude/commands/ticket.md) handles the entire workflow—from reading acceptance criteria to linking the PR back to the ticket.
-
-We even use Claude Code for ticket triage. It reads the ticket, digs into the codebase, and leaves a comment with what it thinks should be done. So when an engineer picks it up, they're basically starting halfway through already.
-
-**There is so much low-hanging fruit here that it honestly blows my mind people aren't all over it.**
+> 設計の中心思想：**「OCRが必要なのは紙とメール画像だけ」**。B2Bポータルと手動入力は最初から構造化データなので
+> AIを通しません。これが Gemini 無料枠の枯渇対策の核であり、ポータルが普及するほどコストが下がります。
 
 ---
 
-## Table of Contents
+## 目次
 
-- [Directory Structure](#directory-structure)
-- [Quick Start](#quick-start)
-- [Configuration Reference](#configuration-reference)
-  - [CLAUDE.md - Project Memory](#claudemd---project-memory)
-  - [settings.json - Hooks & Environment](#settingsjson---hooks--environment)
-  - [MCP Servers - External Integrations](#mcp-servers---external-integrations)
-  - [LSP Servers - Real-Time Code Intelligence](#lsp-servers---real-time-code-intelligence)
-  - [Skill Evaluation Hooks](#skill-evaluation-hooks)
-  - [Skills - Domain Knowledge](#skills---domain-knowledge)
-  - [Agents - Specialized Assistants](#agents---specialized-assistants)
-  - [Commands - Slash Commands](#commands---slash-commands)
-- [GitHub Actions Workflows](#github-actions-workflows)
-- [Best Practices](#best-practices)
-- [Examples in This Repository](#examples-in-this-repository)
+- [何ができるか](#何ができるか)
+- [画面構成（3つのサーフェス）](#画面構成3つのサーフェス)
+- [ホーム画面（管理ダッシュボード）](#ホーム画面管理ダッシュボード)
+- [写真からマスタ一括取込（OCR）](#写真からマスタ一括取込ocr)
+- [技術スタック / アーキテクチャ](#技術スタック--アーキテクチャ)
+- [ディレクトリ構成](#ディレクトリ構成)
+- [セットアップ（ローカル開発）](#セットアップローカル開発)
+- [環境変数・シークレット](#環境変数シークレット)
+- [よく使うコマンド](#よく使うコマンド)
+- [デプロイ（Cloud Run）](#デプロイcloud-run)
+- [セキュリティ方針](#セキュリティ方針)
+- [テスト](#テスト)
 
 ---
 
-## Directory Structure
+## 何ができるか
+
+| 業務フェーズ | 機能 |
+|---|---|
+| **受注** | 4チャネル受信（FAX→Drive / メール IMAP / B2Bポータル / 手動入力）→ Gemini解析 → 承認待ちキュー |
+| **検証** | 確信度ハイライト・差分（再送）検知・取引先名寄せ・承認・Undo（楽観ロック付き） |
+| **圃場** | 圃場マトリックス（タップループ安全版・部分完了・不足アラート・オフラインoutbox） |
+| **請求** | 出荷確定 → 価格確定（後決め）→ 請求書（インボイス対応・欠番なし採番）・納品書 PDF |
+| **マスタ** | 取引先・品目・価格/荷姿（P/C・換算）管理、**写真からの一括取込（OCR）** |
+| **設定** | 自社情報・規格ロック・現場機能の段階解放・AIモデル・取り込み・通知（Discord/LINE WORKS）など |
+
+金額・税率・請求番号は `.claude/rules/tax.md` のルールを厳守（税率冗長保持・GENERATED列・Decimal.js・欠番なし採番）。
+
+---
+
+## 画面構成（3つのサーフェス）
+
+| サーフェス | ルート | 対象 | 特徴 |
+|---|---|---|---|
+| 管理（経営） | `/admin` | 経営陣 | 高密度・俯瞰。サイドバーは業務フェーズでグルーピング |
+| 現場（スタッフ） | `/field` | 現場 | スマホ/タブレット最優先。タップ操作・大きいターゲット |
+| B2Bポータル | `/portal` | 取引先 | Magic Link 認証・「いつものセット」・RLSで自社分のみ |
+
+---
+
+## ホーム画面（管理ダッシュボード）
+
+`/admin` を開くと最初に表示される、その日の経営判断の起点になる画面です（[app/(dashboard)/admin/page.tsx](app/(dashboard)/admin/page.tsx)）。
+上から **「今日の状況」→「いま手を打つこと」→「次の操作」** の順に、視線が自然に流れるよう構成しています。
+
+1. **ヘッダー**：「ダッシュボード」見出しと、右上の常設ボタン **［注文を新規入力］**（電話注文などをその場で入力）。
+
+2. **本日の出荷状況**（KPIカード4枚・当日 `delivery_date` 基準で集計）
+   - **未着手** / **梱包完了**（青）/ **出荷済み**（緑）の件数
+   - **進捗 %**（出荷済み ÷ 全明細）をプログレスバー付きで表示
+   - 明細があれば「出荷一覧で詳細確認 →」で当日の現場画面へ
+
+3. **要対応**（該当があるときだけ赤バッジ付きで出現）
+   - **承認待ちの注文** → 承認すると収穫タスクを生成（`/admin/approvals`）
+   - **未処理の受信** → AI解析済み・要確認の受信ログ（`/admin/inbox`）
+   - **解析失敗 / 取引先未紐付け** → 手動で確認・紐付け（`/admin/inbox?status=ai_failed`）
+   - 0件のときはこのセクション自体を出さず、ノイズを減らします。
+
+4. **よく使う操作**：注文の新規入力 / 取引先・規格管理 / 請求書 へのショートカット。
+
+> 設計意図：朝イチで開いたとき「今日どれだけ出るか」「放置してはいけないものは何か」が一目で分かり、
+> 次のアクションにワンタップで移れること。数値は等幅数字（tabular-nums）で桁を揃え、色だけでなくアイコン＋
+> テキストで状態を伝えています（WCAG AA）。
+
+---
+
+## 写真からマスタ一括取込（OCR）
+
+紙の取引先一覧・品目台帳・規格表を**撮影するだけ**で、店舗（取引先）・品目・規格/荷姿をまとめて登録できます
+（管理者専用 `/admin/master-import`）。受注明細OCRとは独立した専用モジュールです。
 
 ```
-your-project/
-├── CLAUDE.md                      # Project memory (alternative location)
-├── .mcp.json                      # MCP server configuration (JIRA, GitHub, etc.)
-├── .claude/
-│   ├── settings.json              # Hooks, environment, permissions
-│   ├── settings.local.json        # Personal overrides (gitignored)
-│   ├── settings.md                # Human-readable hook documentation
-│   ├── .gitignore                 # Ignore local/personal files
-│   │
-│   ├── agents/                    # Custom AI agents
-│   │   └── code-reviewer.md       # Proactive code review agent
-│   │
-│   ├── commands/                  # Slash commands (/command-name)
-│   │   ├── onboard.md             # Deep task exploration
-│   │   ├── pr-review.md           # PR review workflow
-│   │   └── ...
-│   │
-│   ├── hooks/                     # Hook scripts
-│   │   ├── skill-eval.sh          # Skill matching on prompt submit
-│   │   ├── skill-eval.js          # Node.js skill matching engine
-│   │   └── skill-rules.json       # Pattern matching configuration
-│   │
-│   ├── skills/                    # Domain knowledge documents
-│   │   ├── README.md              # Skills overview
-│   │   ├── testing-patterns/
-│   │   │   └── SKILL.md
-│   │   ├── graphql-schema/
-│   │   │   └── SKILL.md
-│   │   └── ...
-│   │
-│   └── rules/                     # Modular instructions (optional)
-│       ├── code-style.md
-│       └── security.md
-│
-└── .github/
-    └── workflows/
-        ├── pr-claude-code-review.yml           # Auto PR review
-        ├── scheduled-claude-code-docs-sync.yml # Monthly docs sync
-        ├── scheduled-claude-code-quality.yml   # Weekly quality review
-        └── scheduled-claude-code-dependency-audit.yml
+写真を選ぶ(最大6枚) → AIで読み取る → 確認・編集（重複は折りたたみ）→ チェックした分だけ登録
+```
+
+- **AI**：Gemini を生 `fetch` で呼び、`responseSchema` + `temperature:0` で構造化抽出。
+  設定の **AIモデル** を最優先に、混雑(429/503)・未提供(404)時のみ新→古の順で自動フォールバック。
+- **取り込み前圧縮**：ブラウザ側で最大1600px / JPEG品質0.8に圧縮してから送信（通信量・トークン節約）。
+- **重複判定（名寄せ）**：NFKC正規化＋空白除去＋小文字化で、表記ゆれ（全角半角・かな/カナ）を吸収。
+  既存マスタと重複しそうなものは **チェックOFF＋折りたたみ**、新規は **チェックON＋展開** で提示。
+- **Human-in-the-loop**：全項目その場で編集可。確信度60%未満は ⚠要確認 を明示。各セクションに「すべて選択/解除」。
+- **安全に登録**：品目 → 規格（必要なら品目を自動作成）→ 取引先 の順。ユニーク制約違反はスキップ扱い、
+  想定外エラーは全体を止めず `errors[]` に記録して継続（部分登録の混乱を防止）。
+
+関連：[lib/gemini/master-import.ts](lib/gemini/master-import.ts) / [lib/master-import/dedupe.ts](lib/master-import/dedupe.ts) /
+[components/admin/MasterImportWizard.tsx](components/admin/MasterImportWizard.tsx)
+
+---
+
+## 技術スタック / アーキテクチャ
+
+```
+ユーザー
+  ↓
+Cloudflare DNS + CDN + WAF
+  ↓
+Google Cloud Run（asia-northeast1）
+  └─ Next.js 14 standalone コンテナ 1つ
+     ├─ 画面（Server / Client Components）
+     └─ API（Route Handlers）← PDF生成・OCR等の重い処理もここ
+  ↓
+Supabase (PostgreSQL + RLS) + Cloudflare R2（ファイル原本）
+```
+
+- **フレームワーク**：Next.js 14（App Router・`output:'standalone'`）/ TypeScript strict
+- **DB/認証**：Supabase（`@supabase/supabase-js` は **2.47.10 固定**。最新系は型が壊れるため上げない）
+- **データ取得**：@tanstack/react-query 5 / フォーム react-hook-form 7 + zod 3
+- **計算**：decimal.js（金額・税は浮動小数点禁止）/ 日付 date-fns 3
+- **UI**：Tailwind（CSS Variables・デザイントークン）/ lucide-react / recharts / react-hot-toast
+- **AI**：Gemini（受注OCRは SDK、マスタ一括取込は生fetch+responseSchema）
+- **PDF**：@react-pdf/renderer（Route Handler 内）
+
+詳細は `.claude/rules/`（stack.md / structure.md / security.md / design.md / features.md / tax.md）を参照。
+
+---
+
+## ディレクトリ構成
+
+```
+app/
+  (auth)/login/                 ログイン（社内=password / ポータル=Magic Link）
+  (dashboard)/
+    admin/                      経営サーフェス（ダッシュボード・承認・請求・マスタ・設定…）
+    field/                      現場サーフェス（出荷一覧・圃場マトリックス）
+  portal/                       B2Bポータル（取引先）
+  api/                          Route Handlers（OCR・差分・PDF・cron・各CRUD）
+components/  ui/ admin/ field/ layouts/ …
+lib/         supabase/(client/server/admin)  gemini/  calculations/  pricing/
+             master-import/  settings(-spec).ts  notify/  validators/ …
+migrations/  DDL（基盤10テーブル + 受注4テーブル + RLS + 生成列）
+types/       database.ts（Zod）/ supabase.ts（手書き Database 型）
+Dockerfile / .dockerignore / next.config.js
 ```
 
 ---
 
-## Quick Start
+## セットアップ（ローカル開発）
 
-### 1. Create the `.claude` directory
+> ⚠️ **重要**：このリポジトリは Google ドライブ上にあり、ドライブ直下では `npm install` / `build` / `lint` が
+> ファイルロック等で失敗します。**ローカルにクローンして検証してください**（例：`C:\dev\kojima-noen`）。
 
 ```bash
-mkdir -p .claude/{agents,commands,hooks,skills}
+git clone https://github.com/naioki/kojima-farm-task-manager.git
+cd kojima-farm-task-manager
+npm ci
+cp .env.example .env.local   # 値を埋める（なければ下記キーを手で作成）
+npm run dev                   # http://localhost:3000
 ```
-
-### 2. Add a CLAUDE.md file
-
-Create `CLAUDE.md` in your project root with your project's key information. See [CLAUDE.md](CLAUDE.md) for a complete example.
-
-```markdown
-# Project Name
-
-## Quick Facts
-- **Stack**: React, TypeScript, Node.js
-- **Test Command**: `npm run test`
-- **Lint Command**: `npm run lint`
-
-## Key Directories
-- `src/components/` - React components
-- `src/api/` - API layer
-- `tests/` - Test files
-
-## Code Style
-- TypeScript strict mode
-- Prefer interfaces over types
-- No `any` - use `unknown`
-```
-
-### 3. Add settings.json with hooks
-
-Create `.claude/settings.json`. See [settings.json](.claude/settings.json) for a full example with auto-formatting, testing, and more.
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"Cannot edit on main branch\"}' >&2; exit 2; }",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### 4. Add your first skill
-
-Create `.claude/skills/testing-patterns/SKILL.md`. See [testing-patterns/SKILL.md](.claude/skills/testing-patterns/SKILL.md) for a comprehensive example.
-
-```markdown
----
-name: testing-patterns
-description: Jest testing patterns for this project. Use when writing tests, creating mocks, or following TDD workflow.
----
-
-# Testing Patterns
-
-## Test Structure
-- Use `describe` blocks for grouping
-- Use `it` for individual tests
-- Follow AAA pattern: Arrange, Act, Assert
-
-## Mocking
-- Use factory functions: `getMockUser(overrides)`
-- Mock external dependencies, not internal modules
-```
-
-> **Tip:** The `description` field is critical—Claude uses it to decide when to apply the skill. Include keywords users would naturally mention.
 
 ---
 
-## Configuration Reference
+## 環境変数・シークレット
 
-### CLAUDE.md - Project Memory
+秘密情報は **コードに直書きせず**、本番は **Secret Manager**、ローカルは `.env.local` に置きます。
 
-CLAUDE.md is Claude's persistent memory that loads automatically at session start.
+```
+# 公開可
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-**Locations (in order of precedence):**
-1. `.claude/CLAUDE.md` (project, in .claude folder)
-2. `./CLAUDE.md` (project root)
-3. `~/.claude/CLAUDE.md` (user-level, all projects)
+# サーバ専用（秘密）
+SUPABASE_SERVICE_ROLE_KEY
+R2_ENDPOINT / R2_BUCKET / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+GEMINI_API_KEY
+CRON_SECRET
+DISCORD_WEBHOOK_URL / LINE_WORKS_WEBHOOK_URL
+```
 
-**What to include:**
-- Project stack and architecture overview
-- Key commands (test, build, lint, deploy)
-- Code style guidelines
-- Important directories and their purposes
-- Critical rules and constraints
-
-**📄 Example:** [CLAUDE.md](CLAUDE.md)
+多くの設定は **設定画面（`/admin/settings`）からDBに保存**でき、解決は「DB → 環境変数」の順
+（[lib/settings.ts](lib/settings.ts) / [lib/settings-spec.ts](lib/settings-spec.ts)）。
+APIキーなど `secret` 指定の項目は、画面では値を返さず「設定済み/未設定」だけ表示します。
+**AIモデル**は設定画面のプルダウンから選択でき、「自動」で新しいモデルから順に試します。
 
 ---
 
-### settings.json - Hooks & Environment
+## よく使うコマンド
 
-The main configuration file for hooks, environment variables, and permissions.
-
-**Location:** `.claude/settings.json`
-
-**📄 Example:** [settings.json](.claude/settings.json) | [Human-readable docs](.claude/settings.md)
-
-#### Hook Events
-
-| Event | When It Fires | Use Case |
-|-------|---------------|----------|
-| `PreToolUse` | Before tool execution | Block edits on main, validate commands |
-| `PostToolUse` | After tool completes | Auto-format, run tests, lint |
-| `UserPromptSubmit` | User submits prompt | Add context, suggest skills |
-| `Stop` | Agent finishes | Decide if Claude should continue |
-
-#### Hook Response Format
-
-```json
-{
-  "block": true,           // Block the action (PreToolUse only)
-  "message": "Reason",     // Message to show user
-  "feedback": "Info",      // Non-blocking feedback
-  "suppressOutput": true,  // Hide command output
-  "continue": false        // Whether to continue
-}
-```
-
-#### Exit Codes
-- `0` - Success
-- `2` - Blocking error (PreToolUse only, blocks the tool)
-- Other - Non-blocking error
-
----
-
-### MCP Servers - External Integrations
-
-MCP (Model Context Protocol) servers let Claude Code connect to external tools like JIRA, GitHub, Slack, databases, and more. This is how you enable workflows like "read a ticket, implement it, and update the ticket status."
-
-**Location:** `.mcp.json` (project root, committed to git for team sharing)
-
-**📄 Example:** [.mcp.json](.mcp.json)
-
-#### How MCP Works
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Claude Code   │────▶│   MCP Server    │────▶│  External API   │
-│                 │◀────│  (local bridge) │◀────│  (JIRA, GitHub) │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-```
-
-MCP servers run locally and provide Claude with tools to interact with external services. When you configure a JIRA MCP server, Claude gets tools like `jira_get_issue`, `jira_update_issue`, `jira_create_issue`, etc.
-
-#### .mcp.json Format
-
-```json
-{
-  "mcpServers": {
-    "server-name": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-name"],
-      "env": {
-        "API_KEY": "${API_KEY}"
-      }
-    }
-  }
-}
-```
-
-**Fields:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `type` | Yes | Server type: `stdio` (local process) or `http` (remote) |
-| `command` | For stdio | Executable to run (e.g., `npx`, `python`) |
-| `args` | No | Command-line arguments |
-| `env` | No | Environment variables (supports `${VAR}` expansion) |
-| `url` | For http | Remote server URL |
-| `headers` | For http | HTTP headers for authentication |
-
-#### Example: JIRA Integration
-
-```json
-{
-  "mcpServers": {
-    "jira": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-jira"],
-      "env": {
-        "JIRA_HOST": "${JIRA_HOST}",
-        "JIRA_EMAIL": "${JIRA_EMAIL}",
-        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-**What this enables:**
-- Read ticket details, acceptance criteria, and comments
-- Update ticket status (To Do → In Progress → In Review)
-- Add comments with progress updates
-- Create new tickets for bugs found during development
-- Link PRs to tickets
-
-**Example workflow with [`/ticket` command](.claude/commands/ticket.md):**
-```
-You: /ticket PROJ-123
-
-Claude:
-1. Fetching PROJ-123 from JIRA...
-   "Add user profile avatar upload"
-
-2. Reading acceptance criteria...
-   - Upload button on profile page
-   - Support JPG/PNG up to 5MB
-   - Show loading state
-
-3. Searching codebase for related files...
-   Found: src/screens/Profile/ProfileScreen.tsx
-
-4. Creating branch: cw/PROJ-123-avatar-upload
-
-5. [Implements feature...]
-
-6. Updating JIRA status to "In Review"
-   Adding comment: "PR #456 ready for review"
-
-7. Creating PR linked to PROJ-123...
-```
-
-#### Common MCP Server Configurations
-
-**Issue Tracking:**
-```json
-{
-  "jira": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-jira"],
-    "env": {
-      "JIRA_HOST": "${JIRA_HOST}",
-      "JIRA_EMAIL": "${JIRA_EMAIL}",
-      "JIRA_API_TOKEN": "${JIRA_API_TOKEN}"
-    }
-  },
-  "linear": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-linear"],
-    "env": { "LINEAR_API_KEY": "${LINEAR_API_KEY}" }
-  }
-}
-```
-
-**Code & DevOps:**
-```json
-{
-  "github": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-github"],
-    "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
-  },
-  "sentry": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-sentry"],
-    "env": {
-      "SENTRY_AUTH_TOKEN": "${SENTRY_AUTH_TOKEN}",
-      "SENTRY_ORG": "${SENTRY_ORG}"
-    }
-  }
-}
-```
-
-**Communication:**
-```json
-{
-  "slack": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-slack"],
-    "env": {
-      "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
-      "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
-    }
-  }
-}
-```
-
-**Databases:**
-```json
-{
-  "postgres": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@anthropic/mcp-postgres"],
-    "env": { "DATABASE_URL": "${DATABASE_URL}" }
-  }
-}
-```
-
-#### Environment Variables
-
-MCP configs support variable expansion:
-- `${VAR}` - Expands to environment variable (fails if not set)
-- `${VAR:-default}` - Uses default if VAR is not set
-
-Set these in your shell profile or `.env` file (don't commit secrets!):
 ```bash
-export JIRA_HOST="https://yourcompany.atlassian.net"
-export JIRA_EMAIL="you@company.com"
-export JIRA_API_TOKEN="your-api-token"
-```
-
-#### Settings for MCP
-
-In `settings.json`, you can auto-approve MCP servers:
-
-```json
-{
-  "enableAllProjectMcpServers": true
-}
-```
-
-Or approve specific servers:
-```json
-{
-  "enabledMcpjsonServers": ["jira", "github", "slack"]
-}
+npm run dev          # 開発サーバ
+npm run build        # 本番ビルド（standalone）
+npm run lint         # ESLint（CIは --max-warnings=0）
+npx tsc --noEmit     # 型チェック
+npx vitest run       # ユニットテスト
 ```
 
 ---
 
-### LSP Servers - Real-Time Code Intelligence
+## デプロイ（Cloud Run）
 
-LSP (Language Server Protocol) gives Claude real-time understanding of your code—type information, errors, completions, and navigation. Instead of just reading text, Claude can "see" your code the way your IDE does.
-
-**Why this matters:** When you edit TypeScript, Claude immediately knows if you introduced a type error. When you reference a function, Claude can jump to its definition. This dramatically improves code generation quality.
-
-#### Enabling LSP
-
-LSP support is enabled through plugins in `settings.json`:
-
-```json
-{
-  "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true
-  }
-}
+```bash
+gcloud run deploy kojima-noen \
+  --source . \
+  --region asia-northeast1 \
+  --memory 1Gi --cpu 1 \
+  --min-instances 0 --max-instances 3 \
+  --allow-unauthenticated \
+  --set-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-key:latest,GEMINI_API_KEY=gemini-key:latest"
 ```
 
-#### What Claude Gets from LSP
+- リポジトリルートの `Dockerfile`（マルチステージ・node:20-slim・非root `USER node`）でビルドします。
+- タイムアウトは既定300秒（請求書一括生成・OCRも余裕）。シークレットは必ず Secret Manager 経由で。
+- 取り込み cron（Drive/メール）は Cloud Scheduler から OIDC + `CRON_SECRET` で呼び出します。
 
-| Feature | Description |
-|---------|-------------|
-| **Diagnostics** | Real-time errors and warnings after every edit |
-| **Type Information** | Hover info, function signatures, type definitions |
-| **Code Navigation** | Go to definition, find references |
-| **Completions** | Context-aware symbol suggestions |
+---
 
-#### Available LSP Plugins
+## セキュリティ方針
 
-| Plugin | Language | Install Binary First |
-|--------|----------|---------------------|
-| `typescript-lsp` | TypeScript/JavaScript | `npm install -g typescript-language-server typescript` |
-| `pyright-lsp` | Python | `pip install pyright` |
-| `rust-lsp` | Rust | `rustup component add rust-analyzer` |
+- 全テーブルに **RLS** を有効化。新テーブルはポリシーも同時作成。
+- すべての Route Handler で **Zod バリデーション** ＋ `getUser()` 認証チェック（`getSession` 単独は信用しない）。
+- `service_role` キーは **`lib/supabase/admin.ts` のみ**。`'use client'` から import 禁止。
+- Gemini APIキーは URL クエリではなく `x-goog-api-key` ヘッダで送信（ログ漏洩防止）。
+- セキュリティヘッダー（`X-Content-Type-Options` / `X-Frame-Options` / HSTS）は middleware で付与。
 
-#### Custom LSP Configuration
+詳細は [.claude/rules/security.md](.claude/rules/security.md)。
 
-For advanced setups, create `.lsp.json`:
+---
 
-```json
-{
-  "typescript": {
-    "command": "typescript-language-server",
-    "args": ["--stdio"],
-    "extensionToLanguage": {
-      ".ts": "typescript",
-      ".tsx": "typescriptreact"
-    },
-    "initializationOptions": {
-      "preferences": {
-        "quotePreference": "single"
-      }
-    }
-  }
-}
+## テスト
+
+判定・計算の核は純粋関数に切り出し、ユニットテストで固定しています
+（スマートパース・税計算・名寄せ・重複判定・Undo・タップループ・不足・通知・出荷指示・オフラインなど）。
+
+```bash
+npx vitest run     # 全テスト
 ```
 
-#### Troubleshooting
-
-If LSP isn't working:
-
-1. **Check binary is installed:**
-   ```bash
-   which typescript-language-server  # Should return a path
-   ```
-
-2. **Enable debug logging:**
-   ```bash
-   claude --enable-lsp-logging
-   ```
-
-3. **Check plugin status:**
-   ```bash
-   claude /plugin  # View Errors tab
-   ```
-
----
-
-### Skill Evaluation Hooks
-
-One of our most powerful automations is the **skill evaluation system**. It runs on every prompt submission and intelligently suggests which skills Claude should activate.
-
-**📄 Files:** [skill-eval.sh](.claude/hooks/skill-eval.sh) | [skill-eval.js](.claude/hooks/skill-eval.js) | [skill-rules.json](.claude/hooks/skill-rules.json)
-
-#### How It Works
-
-When you submit a prompt, the `UserPromptSubmit` hook triggers our skill evaluation engine:
-
-1. **Prompt Analysis** - The engine analyzes your prompt for:
-   - **Keywords**: Simple word matching (`test`, `form`, `graphql`, `bug`)
-   - **Patterns**: Regex matching (`\btest(?:s|ing)?\b`, `\.stories\.`)
-   - **File Paths**: Extracts mentioned files (`src/components/Button.tsx`)
-   - **Intent**: Detects what you're trying to do (`create.*test`, `fix.*bug`)
-
-2. **Directory Mapping** - File paths are mapped to relevant skills:
-   ```json
-   {
-     "src/components/core": "core-components",
-     "src/graphql": "graphql-schema",
-     ".github/workflows": "github-actions",
-     "src/hooks": "react-ui-patterns"
-   }
-   ```
-
-3. **Confidence Scoring** - Each trigger type has a point value:
-   ```json
-   {
-     "keyword": 2,
-     "keywordPattern": 3,
-     "pathPattern": 4,
-     "directoryMatch": 5,
-     "intentPattern": 4
-   }
-   ```
-
-4. **Skill Suggestion** - Skills exceeding the confidence threshold are suggested with reasons:
-   ```
-   SKILL ACTIVATION REQUIRED
-
-   Detected file paths: src/components/UserForm.tsx
-
-   Matched skills (ranked by relevance):
-   1. formik-patterns (HIGH confidence)
-      Matched: keyword "form", path "src/components/UserForm.tsx"
-   2. react-ui-patterns (MEDIUM confidence)
-      Matched: directory mapping, keyword "component"
-   ```
-
-#### Configuration
-
-Skills are defined in [skill-rules.json](.claude/hooks/skill-rules.json):
-
-```json
-{
-  "testing-patterns": {
-    "description": "Jest testing patterns and TDD workflow",
-    "priority": 9,
-    "triggers": {
-      "keywords": ["test", "jest", "spec", "tdd", "mock"],
-      "keywordPatterns": ["\\btest(?:s|ing)?\\b", "\\bspec\\b"],
-      "pathPatterns": ["**/*.test.ts", "**/*.test.tsx"],
-      "intentPatterns": [
-        "(?:write|add|create|fix).*(?:test|spec)",
-        "(?:test|spec).*(?:for|of|the)"
-      ]
-    },
-    "excludePatterns": ["e2e", "maestro", "end-to-end"]
-  }
-}
-```
-
-#### Adding to Your Project
-
-1. Copy the hooks to your project:
-   ```bash
-   cp -r .claude/hooks/ your-project/.claude/hooks/
-   ```
-
-2. Add the hook to your `settings.json`:
-   ```json
-   {
-     "hooks": {
-       "UserPromptSubmit": [
-         {
-           "hooks": [
-             {
-               "type": "command",
-               "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/skill-eval.sh",
-               "timeout": 5
-             }
-           ]
-         }
-       ]
-     }
-   }
-   ```
-
-3. Customize [skill-rules.json](.claude/hooks/skill-rules.json) with your project's skills and triggers.
-
----
-
-### Skills - Domain Knowledge
-
-Skills are markdown documents that teach Claude project-specific patterns and conventions.
-
-**Location:** `.claude/skills/{skill-name}/SKILL.md`
-
-**📄 Examples:**
-- [testing-patterns](.claude/skills/testing-patterns/SKILL.md) - TDD, factory functions, mocking
-- [systematic-debugging](.claude/skills/systematic-debugging/SKILL.md) - Four-phase debugging methodology
-- [react-ui-patterns](.claude/skills/react-ui-patterns/SKILL.md) - Loading states, error handling
-- [graphql-schema](.claude/skills/graphql-schema/SKILL.md) - Queries, mutations, codegen
-- [core-components](.claude/skills/core-components/SKILL.md) - Design system, tokens
-- [formik-patterns](.claude/skills/formik-patterns/SKILL.md) - Form handling, validation
-
-#### SKILL.md Frontmatter Fields
-
-| Field | Required | Max Length | Description |
-|-------|----------|------------|-------------|
-| `name` | **Yes** | 64 chars | Lowercase letters, numbers, and hyphens only. Should match directory name. |
-| `description` | **Yes** | 1024 chars | What the skill does and when to use it. Claude uses this to decide when to apply the skill. |
-| `allowed-tools` | No | - | Comma-separated list of tools Claude can use (e.g., `Read, Grep, Bash(npm:*)`). |
-| `model` | No | - | Specific model to use (e.g., `claude-sonnet-4-20250514`). |
-
-#### SKILL.md Format
-
-```markdown
----
-name: skill-name
-description: What this skill does and when to use it. Include keywords users would mention.
-allowed-tools: Read, Grep, Glob
-model: claude-sonnet-4-20250514
----
-
-# Skill Title
-
-## When to Use
-- Trigger condition 1
-- Trigger condition 2
-
-## Core Patterns
-
-### Pattern Name
-```typescript
-// Example code
-```
-
-## Anti-Patterns
-
-### What NOT to Do
-```typescript
-// Bad example
-```
-
-## Integration
-- Related skill: `other-skill`
-```
-
-#### Best Practices for Skills
-
-1. **Keep SKILL.md focused** - Under 500 lines; put detailed docs in separate referenced files
-2. **Write trigger-rich descriptions** - Claude uses semantic matching on descriptions to decide when to apply skills
-3. **Include examples** - Show both good and bad patterns with code
-4. **Reference other skills** - Show how skills work together
-5. **Use exact filename** - Must be `SKILL.md` (case-sensitive)
-
----
-
-### Agents - Specialized Assistants
-
-Agents are AI assistants with focused purposes and their own prompts.
-
-**Location:** `.claude/agents/{agent-name}.md`
-
-**📄 Examples:**
-- [code-reviewer.md](.claude/agents/code-reviewer.md) - Comprehensive code review with checklist
-- [github-workflow.md](.claude/agents/github-workflow.md) - Git commits, branches, PRs
-
-#### Agent Format
-
-```markdown
----
-name: code-reviewer
-description: Reviews code for quality, security, and conventions. Use after writing or modifying code.
-model: opus
----
-
-# Agent System Prompt
-
-You are a senior code reviewer...
-
-## Your Process
-1. Run `git diff` to see changes
-2. Apply review checklist
-3. Provide feedback
-
-## Checklist
-- [ ] No TypeScript `any`
-- [ ] Error handling present
-- [ ] Tests included
-```
-
-#### Agent Configuration Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Lowercase with hyphens |
-| `description` | Yes | When/why to use (max 1024 chars) |
-| `model` | No | `sonnet`, `opus`, or `haiku` |
-| `tools` | No | Comma-separated tool list |
-
----
-
-### Commands - Slash Commands
-
-Custom commands invoked with `/command-name`.
-
-**Location:** `.claude/commands/{command-name}.md`
-
-**📄 Examples:**
-- [onboard.md](.claude/commands/onboard.md) - Deep task exploration
-- [pr-review.md](.claude/commands/pr-review.md) - PR review workflow
-- [pr-summary.md](.claude/commands/pr-summary.md) - Generate PR description
-- [code-quality.md](.claude/commands/code-quality.md) - Quality checks
-- [docs-sync.md](.claude/commands/docs-sync.md) - Documentation alignment
-
-#### Command Format
-
-```markdown
----
-description: Brief description shown in command list
-allowed-tools: Bash(git:*), Read, Grep
----
-
-# Command Instructions
-
-Your task is to: $ARGUMENTS
-
-## Steps
-1. Do this first
-2. Then do this
-```
-
-#### Variables
-
-- `$ARGUMENTS` - All arguments as single string
-- `$1`, `$2`, `$3` - Individual positional arguments
-
-#### Inline Bash
-
-```markdown
-Current branch: !`git branch --show-current`
-Recent commits: !`git log --oneline -5`
-```
-
----
-
-## GitHub Actions Workflows
-
-Automate code review, quality checks, and maintenance with Claude Code.
-
-**📄 Examples:**
-- [pr-claude-code-review.yml](.github/workflows/pr-claude-code-review.yml) - Auto PR review
-- [scheduled-claude-code-docs-sync.yml](.github/workflows/scheduled-claude-code-docs-sync.yml) - Monthly docs sync
-- [scheduled-claude-code-quality.yml](.github/workflows/scheduled-claude-code-quality.yml) - Weekly quality review
-- [scheduled-claude-code-dependency-audit.yml](.github/workflows/scheduled-claude-code-dependency-audit.yml) - Biweekly dependency updates
-
-### PR Code Review
-
-Automatically reviews PRs and responds to `@claude` mentions.
-
-```yaml
-name: PR - Claude Code Review
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  issue_comment:
-    types: [created]
-
-jobs:
-  review:
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@claude'))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: anthropics/claude-code-action@beta
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-opus-4-5-20251101
-          prompt: |
-            Review this PR using .claude/agents/code-reviewer.md standards.
-            Run `git diff origin/main...HEAD` to see changes.
-```
-
-### Scheduled Workflows
-
-| Workflow | Schedule | Purpose |
-|----------|----------|---------|
-| [Code Quality](.github/workflows/scheduled-claude-code-quality.yml) | Weekly (Sunday) | Reviews random directories, auto-fixes issues |
-| [Docs Sync](.github/workflows/scheduled-claude-code-docs-sync.yml) | Monthly (1st) | Ensures docs align with code changes |
-| [Dependency Audit](.github/workflows/scheduled-claude-code-dependency-audit.yml) | Biweekly (1st & 15th) | Safe dependency updates with testing |
-
-### Setup Required
-
-Add `ANTHROPIC_API_KEY` to your repository secrets:
-- Settings → Secrets and variables → Actions → New repository secret
-
-### Cost Estimate
-
-| Workflow | Frequency | Est. Cost |
-|----------|-----------|-----------|
-| PR Review | Per PR | ~$0.05 - $0.50 |
-| Docs Sync | Monthly | ~$0.50 - $2.00 |
-| Dependency Audit | Biweekly | ~$0.20 - $1.00 |
-| Code Quality | Weekly | ~$1.00 - $5.00 |
-
-**Estimated monthly total:** ~$10 - $50 (depending on PR volume)
-
----
-
-## Best Practices
-
-### 1. Start with CLAUDE.md
-
-Your `CLAUDE.md` is the foundation. Include:
-- Stack overview
-- Key commands
-- Critical rules
-- Directory structure
-
-### 2. Build Skills Incrementally
-
-Don't try to document everything at once:
-1. Start with your most common patterns
-2. Add skills as pain points emerge
-3. Keep each skill focused on one domain
-
-### 3. Use Hooks for Automation
-
-Let hooks handle repetitive tasks:
-- Auto-format on save
-- Run tests when test files change
-- Regenerate types when schemas change
-- Block edits on protected branches
-
-### 4. Create Agents for Complex Workflows
-
-Agents are great for:
-- Code review (with your team's checklist)
-- PR creation and management
-- Debugging workflows
-- Onboarding to tasks
-
-### 5. Leverage GitHub Actions
-
-Automate maintenance:
-- PR reviews on every PR
-- Weekly quality sweeps
-- Monthly docs alignment
-- Dependency updates
-
-### 6. Version Control Your Config
-
-Commit everything except:
-- `settings.local.json` (personal preferences)
-- `CLAUDE.local.md` (personal notes)
-- User-specific credentials
-
----
-
-## Examples in This Repository
-
-| File | Description |
-|------|-------------|
-| [CLAUDE.md](CLAUDE.md) | Example project memory file |
-| [.claude/settings.json](.claude/settings.json) | Full hooks configuration |
-| [.claude/settings.md](.claude/settings.md) | Human-readable hooks documentation |
-| [.mcp.json](.mcp.json) | MCP server configuration (JIRA, GitHub, Slack, etc.) |
-| **Agents** | |
-| [.claude/agents/code-reviewer.md](.claude/agents/code-reviewer.md) | Comprehensive code review agent |
-| [.claude/agents/github-workflow.md](.claude/agents/github-workflow.md) | Git workflow agent |
-| **Commands** | |
-| [.claude/commands/onboard.md](.claude/commands/onboard.md) | Deep task exploration |
-| [.claude/commands/ticket.md](.claude/commands/ticket.md) | **JIRA/Linear ticket workflow (read → implement → update)** |
-| [.claude/commands/pr-review.md](.claude/commands/pr-review.md) | PR review workflow |
-| [.claude/commands/pr-summary.md](.claude/commands/pr-summary.md) | Generate PR summary |
-| [.claude/commands/code-quality.md](.claude/commands/code-quality.md) | Quality checks |
-| [.claude/commands/docs-sync.md](.claude/commands/docs-sync.md) | Documentation sync |
-| **Hooks** | |
-| [.claude/hooks/skill-eval.sh](.claude/hooks/skill-eval.sh) | Skill evaluation wrapper |
-| [.claude/hooks/skill-eval.js](.claude/hooks/skill-eval.js) | Node.js skill matching engine |
-| [.claude/hooks/skill-rules.json](.claude/hooks/skill-rules.json) | Pattern matching rules |
-| **Skills** | |
-| [.claude/skills/testing-patterns/SKILL.md](.claude/skills/testing-patterns/SKILL.md) | TDD, factory functions, mocking |
-| [.claude/skills/systematic-debugging/SKILL.md](.claude/skills/systematic-debugging/SKILL.md) | Four-phase debugging |
-| [.claude/skills/react-ui-patterns/SKILL.md](.claude/skills/react-ui-patterns/SKILL.md) | Loading/error/empty states |
-| [.claude/skills/graphql-schema/SKILL.md](.claude/skills/graphql-schema/SKILL.md) | Queries, mutations, codegen |
-| [.claude/skills/core-components/SKILL.md](.claude/skills/core-components/SKILL.md) | Design system, tokens |
-| [.claude/skills/formik-patterns/SKILL.md](.claude/skills/formik-patterns/SKILL.md) | Form handling, validation |
-| **GitHub Workflows** | |
-| [.github/workflows/pr-claude-code-review.yml](.github/workflows/pr-claude-code-review.yml) | Auto PR review |
-| [.github/workflows/scheduled-claude-code-docs-sync.yml](.github/workflows/scheduled-claude-code-docs-sync.yml) | Monthly docs sync |
-| [.github/workflows/scheduled-claude-code-quality.yml](.github/workflows/scheduled-claude-code-quality.yml) | Weekly quality review |
-| [.github/workflows/scheduled-claude-code-dependency-audit.yml](.github/workflows/scheduled-claude-code-dependency-audit.yml) | Biweekly dependency audit |
-
----
-
-## Learn More
-
-- [Claude Code Documentation](https://docs.anthropic.com/en/docs/claude-code)
-- [Claude Code Action](https://github.com/anthropics/claude-code-action) - GitHub Action
-- [Anthropic API](https://docs.anthropic.com/en/api)
-
----
-
-## License
-
-MIT - Use this as a template for your own projects.
+> 誤解釈が出荷ミス・請求ミスに直結するため、`lib/calculations/parse-quantity.ts` 等は変更時にテスト必須です。

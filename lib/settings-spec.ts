@@ -6,6 +6,7 @@
 
 import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
 import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from '@/lib/gemini/prompts'
+import { GEMINI_MODEL_OPTIONS } from '@/lib/gemini/models'
 
 export type SettingSection = 'issuer' | 'rules' | 'field' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
 /** 'prompt' は専用エディタで描画（保存に確認フレーズ入力が必要）。 */
@@ -135,7 +136,16 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },
-  { key: 'GEMINI_MODEL', label: 'モデル', section: 'ai', secret: false, kind: 'text', placeholder: 'gemini-2.5-flash', hint: '無料枠なら gemini-2.5-flash か gemini-2.0-flash' },
+  {
+    key: 'GEMINI_MODEL',
+    label: 'AIモデル',
+    section: 'ai',
+    secret: false,
+    kind: 'select',
+    options: GEMINI_MODEL_OPTIONS,
+    selectDefault: '',
+    hint: '受注OCR・写真からの一括取込で使うモデル。「自動」は新しいモデルから順に試し、混雑時は自動で切替えます。特定モデルに固定したい時だけ選んでください。',
+  },
   {
     key: 'GEMINI_PROMPT_NORMAL',
     label: '解析プロンプト（通常モード — FAX・メール）',

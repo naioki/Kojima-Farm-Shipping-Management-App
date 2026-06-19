@@ -2,6 +2,7 @@ import 'server-only'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
+import { GEMINI_FALLBACK_ORDER, modelTryOrder } from '@/lib/gemini/models'
 
 /**
  * 写真からマスタ一括取込（OCR）の Gemini 解析。
@@ -19,16 +20,11 @@ import { getSetting } from '@/lib/settings'
  *   - API キーは Secret Manager 由来（getSetting: DB→env）。'server-only' で client から遮断。
  */
 
-/** 新→古の順。429/503/404 のときのみ次のモデルへフォールバックする。 */
-export const CANDIDATE_MODELS = [
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-flash-latest',
-] as const
+/**
+ * 候補モデル（新→古）。設定 GEMINI_MODEL が空（自動）のときの試行順。
+ * 互換のため再エクスポート（実体は lib/gemini/models.ts に集約）。
+ */
+export const CANDIDATE_MODELS = GEMINI_FALLBACK_ORDER
 
 // ============================================================
 // 抽出結果スキーマ（responseSchema と一対一）
@@ -273,16 +269,22 @@ export async function analyzeMasterImages(
       temperature: 0,
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
+      // 紙1枚に大量のマスタがあっても途中で切れないよう上限を広げる。
+      maxOutputTokens: 8192,
     },
   })
 
+  // 設定 GEMINI_MODEL を最優先、残りをフォールバック先にした試行順（空＝自動）。
+  const order = modelTryOrder(await getSetting('GEMINI_MODEL'))
+
   let lastErr: Error | null = null
-  for (const model of CANDIDATE_MODELS) {
+  for (const model of order) {
     let res: Response
     try {
-      res = await fetch(`${GEMINI_ENDPOINT}/${model}:generateContent?key=${apiKey}`, {
+      // APIキーは URL クエリではなくヘッダで送る（ログ・履歴への漏洩を避ける）。
+      res = await fetch(`${GEMINI_ENDPOINT}/${model}:generateContent`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
         body,
       })
     } catch (e) {
@@ -306,13 +308,24 @@ export async function analyzeMasterImages(
     // 成功
     try {
       const json = (await res.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+        candidates?: Array<{
+          content?: { parts?: Array<{ text?: string }> }
+          finishReason?: string
+        }>
         promptFeedback?: { blockReason?: string }
       }
       if (json.promptFeedback?.blockReason) {
         throw new Error(`Gemini にブロックされました: ${json.promptFeedback.blockReason}`)
       }
-      const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
+      const cand = json.candidates?.[0]
+      const finish = cand?.finishReason
+      if (finish === 'SAFETY' || finish === 'RECITATION' || finish === 'BLOCKLIST') {
+        throw new Error(`Gemini が応答を停止しました（${finish}）。別の写真でお試しください`)
+      }
+      if (finish === 'MAX_TOKENS') {
+        throw new Error('読み取り項目が多すぎて応答が途中で切れました。枚数を減らして再実行してください')
+      }
+      const text = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
       if (!text.trim()) throw new Error('Gemini 応答が空でした')
       const parsed = masterResultSchema.parse(JSON.parse(stripToJson(text)))
       await logUsage(true)

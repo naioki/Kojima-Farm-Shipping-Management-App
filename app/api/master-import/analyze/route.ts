@@ -7,17 +7,29 @@ import { analyzeMasterImages, type ExistingMasters } from '@/lib/gemini/master-i
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
+/** base64 1枚あたりの上限（≈4MB相当）。圧縮済み想定だが過大リクエストを弾く。 */
+const MAX_B64_PER_IMAGE = 5_600_000
+/** 全画像合計の上限（≈18MB相当）。Cloud Run のリクエスト上限(32MB)に対する安全弁。 */
+const MAX_B64_TOTAL = 24_000_000
+
 const bodySchema = z.object({
   /** data URL の接頭辞を除いた base64 と mimeType。クライアントで圧縮済み（最大1600px/JPEG）。 */
   images: z
     .array(
       z.object({
-        base64: z.string().min(1),
-        mimeType: z.string().min(1),
+        base64: z
+          .string()
+          .min(1)
+          .max(MAX_B64_PER_IMAGE, '画像1枚のサイズが大きすぎます（圧縮に失敗した可能性）'),
+        mimeType: z.string().min(1).startsWith('image/', '画像ファイルのみ対応しています'),
       }),
     )
     .min(1, '画像を1枚以上選択してください')
-    .max(6, '画像は最大6枚までです'),
+    .max(6, '画像は最大6枚までです')
+    .refine(
+      (imgs) => imgs.reduce((n, im) => n + im.base64.length, 0) <= MAX_B64_TOTAL,
+      '画像の合計サイズが大きすぎます。枚数を減らしてください',
+    ),
 })
 
 /**

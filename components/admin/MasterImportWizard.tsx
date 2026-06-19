@@ -88,6 +88,12 @@ interface CommitResult {
 let seq = 0
 const nextKey = () => `r${seq++}`
 
+/** 全角数字（２０）やカンマ・単位混入を吸収して数値化する。読めなければ NaN。 */
+function numOf(s: string): number {
+  const cleaned = s.normalize('NFKC').replace(/[,\s]/g, '').replace(/[^0-9.]/g, '')
+  return cleaned === '' ? NaN : Number(cleaned)
+}
+
 /** File を Canvas で最大1600px・JPEG0.8 に圧縮し dataUrl/base64 を得る。 */
 function compressImage(file: File): Promise<Img> {
   return new Promise((resolve, reject) => {
@@ -167,6 +173,9 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
   async function runAnalyze() {
     if (images.length === 0) return
     setPhase('analyzing')
+    // サーバ上限(120s)より少し短いクライアント側タイムアウト。ハングで画面が固まらないように。
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 115_000)
     try {
       const res = await fetch('/api/master-import/analyze', {
         method: 'POST',
@@ -174,6 +183,7 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
         body: JSON.stringify({
           images: images.map((im) => ({ base64: im.base64, mimeType: im.mimeType })),
         }),
+        signal: ctrl.signal,
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? `解析失敗 (${res.status})`)
@@ -233,8 +243,16 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
       const total = p.length + s.length + c.length
       toast.success(`${total}件の候補を読み取りました`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '解析に失敗しました')
+      const msg =
+        e instanceof DOMException && e.name === 'AbortError'
+          ? '解析がタイムアウトしました。枚数を減らすか、もう一度お試しください'
+          : e instanceof Error
+            ? e.message
+            : '解析に失敗しました'
+      toast.error(msg)
       setPhase('select')
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -248,7 +266,7 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
     }
     // 規格は selling_unit_label と base_per_selling(>0) が必須。
     const badStandards = sSel.filter(
-      (x) => !x.selling_unit_label.trim() || !(Number(x.base_per_selling) > 0) || !x.label.trim(),
+      (x) => !x.selling_unit_label.trim() || !(numOf(x.base_per_selling) > 0) || !x.label.trim(),
     )
     if (badStandards.length > 0) {
       toast.error(
@@ -273,7 +291,7 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
             product_name: x.product_name.trim(),
             label: x.label.trim(),
             selling_unit_label: x.selling_unit_label.trim(),
-            base_per_selling: Number(x.base_per_selling),
+            base_per_selling: numOf(x.base_per_selling),
           })),
           customers: cSel.map((x) => ({
             name: x.name.trim(),
@@ -398,7 +416,6 @@ function SelectScreen({
         type="file"
         accept="image/*"
         multiple
-        capture="environment"
         className="hidden"
         onChange={(e) => {
           if (e.target.files?.length) onPick(e.target.files)
@@ -450,21 +467,44 @@ function SectionHeader({
   icon: Icon,
   title,
   rows,
+  onAll,
 }: {
   icon: typeof Carrot
   title: string
   rows: { dup: Dup; checked: boolean }[]
+  onAll?: (checked: boolean) => void
 }) {
   const newCount = rows.filter((r) => r.dup === 'new').length
   const dupCount = rows.length - newCount
   const selected = rows.filter((r) => r.checked).length
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Icon className="h-4 w-4 text-earth-600" aria-hidden />
       <h2 className="font-display text-base font-bold text-ink">{title}</h2>
       <span className="text-xs text-ink-soft">
         新規 {newCount} / 重複 {dupCount}・選択 {selected}
       </span>
+      {onAll && rows.length > 0 && (
+        <span className="ml-auto flex items-center gap-1 text-xs">
+          <button
+            type="button"
+            onClick={() => onAll(true)}
+            className="rounded px-2 py-0.5 text-trust-600 hover:bg-trust-50 hover:underline"
+          >
+            すべて選択
+          </button>
+          <span className="text-line-strong" aria-hidden>
+            |
+          </span>
+          <button
+            type="button"
+            onClick={() => onAll(false)}
+            className="rounded px-2 py-0.5 text-ink-soft hover:bg-bg-soft hover:underline"
+          >
+            すべて解除
+          </button>
+        </span>
+      )}
     </div>
   )
 }
@@ -490,6 +530,7 @@ function RowShell({
         checked={checked}
         onChange={(e) => onToggle(e.target.checked)}
         onClick={(e) => e.stopPropagation()}
+        aria-label="この項目を登録対象にする"
         className="h-4 w-4 shrink-0 accent-earth-600"
       />
       <div className="min-w-0 flex-1">{summary}</div>
@@ -557,6 +598,11 @@ function ReviewScreen({
   const updS = upd(setStandards)
   const updC = upd(setCustomers)
 
+  const setAll =
+    <T extends { checked: boolean }>(setter: Dispatch<SetStateAction<T[]>>) =>
+    (checked: boolean) =>
+      setter((prev) => prev.map((r) => ({ ...r, checked })))
+
   return (
     <div className="space-y-6">
       <p className="text-xs text-ink-faint">
@@ -568,7 +614,7 @@ function ReviewScreen({
 
       {/* 品目 */}
       <section className="space-y-2">
-        <SectionHeader icon={Carrot} title="品目" rows={products} />
+        <SectionHeader icon={Carrot} title="品目" rows={products} onAll={setAll(setProducts)} />
         {products.length === 0 ? (
           <Empty />
         ) : (
@@ -626,13 +672,13 @@ function ReviewScreen({
 
       {/* 規格・荷姿 */}
       <section className="space-y-2">
-        <SectionHeader icon={Tag} title="規格・荷姿" rows={standards} />
+        <SectionHeader icon={Tag} title="規格・荷姿" rows={standards} onAll={setAll(setStandards)} />
         {standards.length === 0 ? (
           <Empty />
         ) : (
           standards.map((r) => {
             const needsFill =
-              r.checked && (!r.selling_unit_label.trim() || !(Number(r.base_per_selling) > 0))
+              r.checked && (!r.selling_unit_label.trim() || !(numOf(r.base_per_selling) > 0))
             return (
               <RowShell
                 key={r.key}
@@ -701,7 +747,7 @@ function ReviewScreen({
 
       {/* 取引先 */}
       <section className="space-y-2">
-        <SectionHeader icon={Users} title="店舗・取引先" rows={customers} />
+        <SectionHeader icon={Users} title="店舗・取引先" rows={customers} onAll={setAll(setCustomers)} />
         {customers.length === 0 ? (
           <Empty />
         ) : (
