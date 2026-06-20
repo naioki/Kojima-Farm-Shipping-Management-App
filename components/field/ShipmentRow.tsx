@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
@@ -70,6 +71,7 @@ export function ShipmentRow({
   onShipped,
   onDeleted,
 }: ShipmentRowProps) {
+  const router = useRouter()
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
   const [busy, setBusy] = useState(false)
@@ -173,6 +175,8 @@ export function ShipmentRow({
       toast.success('明細を削除しました')
       setDeleteOpen(false)
       onDeleted?.(itemId)
+      // サーバー集計（品目グループ見出し・ステータス件数・「のこり」）を最新化する
+      router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '削除に失敗しました')
     } finally {
