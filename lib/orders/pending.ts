@@ -13,6 +13,8 @@ export interface PendingOrderItem {
   quantity: number
   unit: string
   confidence: number | null
+  /** 楽観ロック用。編集（数量変更）の PATCH に必要。 */
+  version: number
 }
 
 export interface PendingOrder {
@@ -29,6 +31,15 @@ export interface PendingOrder {
   needsDeliveryDate: boolean
   /** スタッフでも承認できるか（高確信・取引先一致・納品日確定） */
   staffApprovable: boolean
+}
+
+/** 要確認の理由（やさしい日本語のバッジ／注意喚起に使う・admin/field 共通）。 */
+export function pendingReasons(o: PendingOrder): string[] {
+  const r: string[] = []
+  if (!o.customerId) r.push('取引先 みとうろく')
+  if (o.needsDeliveryDate) r.push('のうひん日 みてい')
+  if (o.minConfidence == null || o.minConfidence < 0.7) r.push('AI じしんなし')
+  return r
 }
 
 export async function getPendingOrders(): Promise<PendingOrder[]> {
@@ -49,7 +60,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   const [{ data: items }, { data: custs }] = await Promise.all([
     supabase
       .from('order_items')
-      .select('id, order_id, product_name, quantity, unit, confidence')
+      .select('id, order_id, product_name, quantity, unit, confidence, version')
       .in('order_id', orderIds),
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
@@ -67,6 +78,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       quantity: Number(it.quantity),
       unit: it.unit,
       confidence: it.confidence != null ? Number(it.confidence) : null,
+      version: Number(it.version ?? 1),
     })
     itemsByOrder.set(it.order_id, arr)
   }
