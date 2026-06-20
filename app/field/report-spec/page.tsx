@@ -39,8 +39,8 @@ export default async function ReportSpecPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-earth-100 p-2">
-          <Camera className="h-5 w-5 text-earth-700" aria-hidden />
+        <div className="rounded-lg bg-forest-100 p-2">
+          <Camera className="h-5 w-5 text-forest-700" aria-hidden />
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold text-ink">規格を ほうこく</h1>
