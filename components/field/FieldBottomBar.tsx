@@ -59,7 +59,7 @@ export function FieldBottomBar({ actions }: { actions: FieldAction[] }) {
           href="/field/shipments"
           className={cn(
             'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium',
-            onShipments ? 'text-earth-700' : 'text-ink-soft',
+            onShipments ? 'text-forest-700' : 'text-ink-soft',
           )}
           aria-current={onShipments ? 'page' : undefined}
         >
@@ -72,7 +72,7 @@ export function FieldBottomBar({ actions }: { actions: FieldAction[] }) {
           aria-expanded={open}
           className={cn(
             'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium',
-            open ? 'text-earth-700' : 'text-ink-soft',
+            open ? 'text-forest-700' : 'text-ink-soft',
           )}
         >
           <Grid3x3 className="h-6 w-6" aria-hidden />

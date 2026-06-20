@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation'
 import {
   Menu, Search, SlidersHorizontal, ChevronLeft, ChevronRight, ChevronDown,
-  Bell, Plus, Minus, X, Delete, Calendar, LayoutGrid, ClipboardList, Camera,
-  Home, History, User, FileText,
+  Bell, Plus, Delete, Calendar, LayoutGrid, ClipboardList, Camera,
+  Home, History, User, FileText, Sprout,
 } from 'lucide-react'
+import { OrderForm } from '@/components/portal/OrderForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -249,42 +250,25 @@ function Select({ value }: { value: string }) {
   )
 }
 
-/* ---------- 4. 取引先ポータル ---------- */
+/* ---------- 4. 取引先ポータル（実 OrderForm を描画して検証） ---------- */
 function PortalMock() {
   const items = [
-    { name: 'トマト 4-2', qty: 5, fixed: true },
-    { name: 'ミニトマト 2-1', qty: 3 },
-    { name: 'きゅうり 5-2', qty: 2 },
-    { name: 'なす 3-1', qty: 2 },
+    { productId: 'p1', productName: 'トマト 4-2', defaultQuantity: 5 },
+    { productId: 'p2', productName: 'ミニトマト 2-1', defaultQuantity: 3 },
+    { productId: 'p3', productName: 'きゅうり 5-2', defaultQuantity: 2 },
+    { productId: 'p4', productName: 'なす 3-1', defaultQuantity: 2 },
   ]
   return (
     <Phone>
-      <TopBar title="取引先ポータル" tone="grape" right={<Bell className="h-5 w-5" aria-hidden />} />
-      <div className="flex-1 overflow-hidden p-3">
-        <div className="text-base font-bold text-ink">A商事 様</div>
-        <p className="text-xs text-ink-soft">いつもありがとうございます！</p>
-        <div className="mb-1 mt-3 flex items-center justify-between">
-          <span className="text-sm font-semibold text-ink">いつものセット</span>
-          <span className="text-xs font-medium text-grape-600">編集</span>
-        </div>
-        <div className="space-y-2">
-          {items.map((it) => (
-            <div key={it.name} className="flex items-center justify-between rounded-lg border border-line bg-bg-card px-3 py-2">
-              <span className="text-sm text-ink">{it.name}</span>
-              <span className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line text-ink-soft"><Minus className="h-4 w-4" aria-hidden /></span>
-                <span className="num w-5 text-center text-sm font-bold text-ink">{it.qty}</span>
-                <span className="text-xs text-ink-faint">{it.fixed ? '×' : ''}</span>
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-grape-600 text-white"><Plus className="h-4 w-4" aria-hidden /></span>
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex items-center justify-between border-t border-line pt-2">
-          <span className="text-sm text-ink-soft">合計</span>
-          <span className="num text-base font-bold text-ink">12 ケース</span>
-        </div>
-        <button className="mt-3 w-full rounded-lg bg-grape-600 py-2.5 text-sm font-bold text-white">この内容で発注する</button>
+      <div className="flex items-center gap-2 bg-grape-600 px-3 py-3 text-white">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/15"><Sprout className="h-4 w-4" aria-hidden /></span>
+        <span className="flex-1 truncate font-display text-base font-bold">小島農園 発注ポータル</span>
+        <Bell className="h-5 w-5" aria-hidden />
+      </div>
+      <div className="flex-1 overflow-auto p-3">
+        <div className="mb-1 text-base font-bold text-ink">A商事 様</div>
+        <p className="mb-3 text-xs text-ink-soft">いつもありがとうございます！</p>
+        <OrderForm items={items} defaultDeliveryDate="2025-05-26" />
       </div>
       <BottomTabs active={0} items={[{ icon: Home, label: 'ホーム' }, { icon: History, label: '注文履歴' }, { icon: Bell, label: 'お知らせ' }, { icon: User, label: 'アカウント' }, { icon: FileText, label: '明細' }]} />
     </Phone>

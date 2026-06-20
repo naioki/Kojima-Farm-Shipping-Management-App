@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/Button'
+import { Minus, Plus, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 
@@ -24,6 +24,9 @@ export function OrderForm({ items, defaultDeliveryDate }: { items: DefaultSetIte
   )
   const [deliveryDate, setDeliveryDate] = useState(defaultDeliveryDate)
   const [submitting, setSubmitting] = useState(false)
+
+  const setOne = (id: string, n: number) => setQty((q) => ({ ...q, [id]: Math.max(0, n) }))
+  const total = items.reduce((acc, i) => acc + (qty[i.productId] ?? 0), 0)
 
   async function submit() {
     const payload = {
@@ -65,25 +68,58 @@ export function OrderForm({ items, defaultDeliveryDate }: { items: DefaultSetIte
         value={deliveryDate}
         onChange={(e) => setDeliveryDate(e.target.value)}
       />
-      <Card className="space-y-3">
-        {items.map((i) => (
-          <div key={i.productId} className="flex items-center justify-between gap-3">
-            <span className="text-sm text-ink">{i.productName}</span>
-            <input
-              type="number"
-              min={0}
-              inputMode="numeric"
-              aria-label={`${i.productName} の数量`}
-              className="num h-11 w-24 rounded border border-line-strong bg-bg-card px-3 text-right text-sm focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100"
-              value={qty[i.productId] ?? 0}
-              onChange={(e) => setQty((q) => ({ ...q, [i.productId]: Number(e.target.value) }))}
-            />
-          </div>
-        ))}
+      <Card className="space-y-1">
+        <p className="mb-1 text-sm font-semibold text-ink">いつものセット</p>
+        {items.map((i) => {
+          const n = qty[i.productId] ?? 0
+          return (
+            <div key={i.productId} className="flex items-center justify-between gap-3 border-b border-line/60 py-2 last:border-0">
+              <span className="min-w-0 truncate text-sm text-ink">{i.productName}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  aria-label={`${i.productName} を減らす`}
+                  onClick={() => setOne(i.productId, n - 1)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line text-ink-soft transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200 disabled:opacity-40"
+                  disabled={n <= 0}
+                >
+                  <Minus className="h-4 w-4" aria-hidden />
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  aria-label={`${i.productName} の数量`}
+                  className="num h-9 w-14 rounded-lg border border-line bg-bg-card text-center text-base font-bold text-ink focus:border-grape-500 focus:outline-none focus:ring-2 focus:ring-grape-200"
+                  value={n}
+                  onChange={(e) => setOne(i.productId, Number(e.target.value))}
+                />
+                <button
+                  type="button"
+                  aria-label={`${i.productName} を増やす`}
+                  onClick={() => setOne(i.productId, n + 1)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-grape-600 text-white transition-colors hover:bg-grape-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200"
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                </button>
+              </span>
+            </div>
+          )
+        })}
+        <div className="flex items-center justify-between pt-2">
+          <span className="text-sm text-ink-soft">合計</span>
+          <span className="num text-base font-bold text-ink">{total} 点</span>
+        </div>
       </Card>
-      <Button size="lg" className="w-full" onClick={submit} isLoading={submitting} disabled={submitting}>
-        発注する
-      </Button>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={submitting}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-grape-600 text-base font-bold text-white shadow-sm transition-colors hover:bg-grape-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200 disabled:opacity-60"
+      >
+        {submitting && <Loader2 className="h-5 w-5 animate-spin" aria-hidden />}
+        {submitting ? '送信中…' : 'この内容で発注する'}
+      </button>
     </div>
   )
 }
