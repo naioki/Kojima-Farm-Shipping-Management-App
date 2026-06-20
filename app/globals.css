@@ -66,8 +66,10 @@
   --bg-soft: #f7f4ef;
   --bg-card: #ffffff;
   --ink: #211a12;
-  --ink-soft: #6f6354;
-  --ink-faint: #a89a87;
+  /* 視認性：幅広い世代向けにサブ文字のコントラストを底上げ（WCAG AA を満たす濃さ）。
+     faint は従来 #a89a87(≈2.6:1 で AA 未達)→ 濃くして可読性を確保しつつ階層は維持。 */
+  --ink-soft: #5c5142;
+  --ink-faint: #7a6e5b;
   --line: #e9e1d4;
   --line-strong: #d6c9b4;
 
@@ -92,8 +94,8 @@
   --bg-soft: #1f1a15;
   --bg-card: #261f18;
   --ink: #f4ede2;
-  --ink-soft: #b3a692;
-  --ink-faint: #7d7060;
+  --ink-soft: #c2b6a1;
+  --ink-faint: #968873;
   --line: #3a3128;
   --line-strong: #4d4234;
   --alert-bg: #3a1512;
@@ -114,6 +116,11 @@
     background: var(--bg);
     color: var(--ink);
     font-feature-settings: "palt"; /* 日本語の詰め組み */
+  }
+  /* プレースホルダはブラウザ既定が薄すぎる（半透明灰）。トークン色＋不透明で可読性を確保。 */
+  ::placeholder {
+    color: var(--ink-faint);
+    opacity: 1;
   }
   ::selection {
     background: var(--earth-200);
