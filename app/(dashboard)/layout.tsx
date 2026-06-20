@@ -12,12 +12,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role, full_name')
+    .eq('id', user.id)
+    .maybeSingle()
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
+  const name = profile?.full_name?.trim() || user.email?.split('@')[0] || 'ユーザー'
+  const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar role={role} />
+      <Sidebar role={role} user={{ name, roleLabel }} />
       <div className="flex min-w-0 flex-1 flex-col">
         <MobileNav role={role} />
         <main className="flex-1 p-4 lg:p-8">{children}</main>

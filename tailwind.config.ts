@@ -22,6 +22,11 @@ const config: Config = {
           50: 'var(--trust-50)', 100: 'var(--trust-100)', 400: 'var(--trust-400)',
           500: 'var(--trust-500)', 600: 'var(--trust-600)', 700: 'var(--trust-700)',
         },
+        forest: {
+          50: 'var(--forest-50)', 100: 'var(--forest-100)', 200: 'var(--forest-200)',
+          400: 'var(--forest-400)', 500: 'var(--forest-500)', 600: 'var(--forest-600)',
+          700: 'var(--forest-700)', 800: 'var(--forest-800)', 900: 'var(--forest-900)',
+        },
         alert: { DEFAULT: 'var(--alert)', bg: 'var(--alert-bg)' },
         warning: { DEFAULT: 'var(--warning)', bg: 'var(--warning-bg)' },
         bg: { DEFAULT: 'var(--bg)', soft: 'var(--bg-soft)', card: 'var(--bg-card)' },

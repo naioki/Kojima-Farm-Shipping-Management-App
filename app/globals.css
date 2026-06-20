@@ -36,6 +36,17 @@
   --trust-600: #0270c4;
   --trust-700: #075a9b;
 
+  /* Forest — 深緑・サイドバー/ナビゲーション地（収穫の緑を落ち着かせた濃色） */
+  --forest-50: #eef6f1;
+  --forest-100: #d4e8db;
+  --forest-200: #a9d0b8;
+  --forest-400: #3f8f63;
+  --forest-500: #2c7a51;
+  --forest-600: #1f6442;
+  --forest-700: #184d34;
+  --forest-800: #123a28;
+  --forest-900: #0c281c;
+
   /* Functional */
   --alert: #d92d20;
   --alert-bg: #fef3f2;

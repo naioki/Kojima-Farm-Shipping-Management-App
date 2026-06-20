@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LogOut, ChevronDown } from 'lucide-react'
+import { Menu, X, LogOut, ChevronDown, Leaf } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navFor, navGroupsFor } from '@/components/layouts/nav-items'
 
@@ -62,7 +62,10 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
         >
           <Menu className="h-6 w-6" aria-hidden />
         </button>
-        <span className="font-display text-lg font-bold text-earth-700">小島農園</span>
+        <span className="inline-flex items-center gap-1.5 font-display text-lg font-bold text-forest-700">
+          <Leaf className="h-5 w-5" aria-hidden />
+          小島農園
+        </span>
         {current && <span className="truncate text-sm text-ink-soft">／ {current.label}</span>}
       </header>
 
@@ -77,15 +80,20 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
           />
           <nav
             aria-label="メニュー"
-            className="absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col bg-bg-soft p-4 shadow-xl animate-slide-in-left"
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col bg-forest-800 p-4 text-forest-100 shadow-xl animate-slide-in-left"
           >
             <div className="mb-4 flex items-center justify-between">
-              <span className="px-2 font-display text-xl font-bold text-earth-700">小島農園</span>
+              <span className="inline-flex items-center gap-2 px-1 font-display text-xl font-bold text-white">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-forest-600">
+                  <Leaf className="h-5 w-5" aria-hidden />
+                </span>
+                小島農園
+              </span>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="閉じる"
-                className="flex h-11 w-11 items-center justify-center rounded text-ink-soft hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-forest-100/80 hover:bg-forest-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
               >
                 <X className="h-6 w-6" aria-hidden />
               </button>
@@ -102,8 +110,8 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
                             href={href}
                             aria-current={active ? 'page' : undefined}
                             className={cn(
-                              'flex h-12 items-center gap-3 rounded px-3 text-base font-medium transition-colors',
-                              active ? 'bg-earth-100 text-earth-800' : 'text-ink hover:bg-bg-card',
+                              'flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium transition-colors',
+                              active ? 'bg-forest-600 text-white' : 'text-forest-100/80 hover:bg-forest-700 hover:text-white',
                             )}
                           >
                             <Icon className="h-6 w-6 shrink-0" aria-hidden />
@@ -122,7 +130,7 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
                       type="button"
                       onClick={() => setOpenGroups((p) => ({ ...p, [group.label!]: !gOpen }))}
                       aria-expanded={gOpen}
-                      className="flex w-full items-center justify-between rounded px-3 py-2 text-xs font-semibold uppercase tracking-wide text-ink-faint"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-forest-200 hover:text-white"
                     >
                       {group.label}
                       <ChevronDown className={cn('h-4 w-4 transition-transform', gOpen && 'rotate-180')} aria-hidden />
@@ -135,7 +143,7 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
             <form action="/auth/signout" method="post" className="pt-2">
               <button
                 type="submit"
-                className="flex h-14 w-full items-center gap-3 rounded px-3 text-base font-medium text-ink-soft transition-colors hover:bg-bg-card hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                className="flex h-14 w-full items-center gap-3 rounded-lg px-3 text-base font-medium text-forest-100/80 transition-colors hover:bg-forest-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
               >
                 <LogOut className="h-6 w-6 shrink-0" aria-hidden />
                 ログアウト
