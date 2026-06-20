@@ -66,6 +66,7 @@ export function SalesTrendChart({ data }: { data: TrendPoint[] }) {
                 strokeWidth={2.5}
                 dot={false}
                 activeDot={{ r: 4, fill: 'var(--harvest-600)' }}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
