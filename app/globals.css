@@ -47,6 +47,14 @@
   --forest-800: #123a28;
   --forest-900: #0c281c;
 
+  /* Grape — B2Bポータル識別色（単色のみ・グラデ禁止は厳守。藍へ差替可） */
+  --grape-50: #f4f1fd;
+  --grape-100: #e7e1fa;
+  --grape-200: #cfc2f3;
+  --grape-500: #7c5cd6;
+  --grape-600: #6a47c7;
+  --grape-700: #573aa4;
+
   /* Functional */
   --alert: #d92d20;
   --alert-bg: #fef3f2;

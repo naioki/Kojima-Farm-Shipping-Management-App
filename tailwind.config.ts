@@ -27,6 +27,10 @@ const config: Config = {
           400: 'var(--forest-400)', 500: 'var(--forest-500)', 600: 'var(--forest-600)',
           700: 'var(--forest-700)', 800: 'var(--forest-800)', 900: 'var(--forest-900)',
         },
+        grape: {
+          50: 'var(--grape-50)', 100: 'var(--grape-100)', 200: 'var(--grape-200)',
+          500: 'var(--grape-500)', 600: 'var(--grape-600)', 700: 'var(--grape-700)',
+        },
         alert: { DEFAULT: 'var(--alert)', bg: 'var(--alert-bg)' },
         warning: { DEFAULT: 'var(--warning)', bg: 'var(--warning-bg)' },
         bg: { DEFAULT: 'var(--bg)', soft: 'var(--bg-soft)', card: 'var(--bg-card)' },
