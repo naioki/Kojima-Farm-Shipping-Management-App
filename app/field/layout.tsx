@@ -1,15 +1,16 @@
 import { redirect } from 'next/navigation'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { Sidebar } from '@/components/layouts/Sidebar'
 import { MobileNav } from '@/components/layouts/MobileNav'
 import { FieldBottomBar, type FieldAction } from '@/components/field/FieldBottomBar'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 
 /**
- * 圃場（staff）画面の認証ガード＋サイドバー＋下部バー。
- * 未認証は /login へ。role は users テーブルから取得しサイドバー出し分けに使う。
+ * 圃場（staff）画面の認証ガード＋下部バー（タブレット最優先）。
+ * 未認証は /login へ。role は users テーブルから取得しナビ出し分けに使う。
  * admin/staff 共通で /field 配下にアクセスできる（admin も現場状況を見られる）。
- * 下部バーには「今日の出荷」＋解放済み機能（その他）を出す。
+ * 現場は「下部バー（今日の出荷＋その他）」を主動線にし、全画面ナビは上部ハンバーガー（MobileNav
+ * を persistent で常時表示）に集約する。大きいサイドバーはタブレット横で場所を食い下部バーと重複する
+ * ため /field では出さない（管理者のPC全機能アクセスはハンバーガーが担う）。
  */
 export default async function FieldLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthedUser()
@@ -35,13 +36,10 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar role={role} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav role={role} />
-        <main className="flex-1 p-4 pb-0 lg:p-8">{children}</main>
-        <FieldBottomBar actions={actions} />
-      </div>
+    <div className="flex min-h-screen flex-col">
+      <MobileNav role={role} persistent />
+      <main className="flex-1 p-4 pb-0 lg:p-8">{children}</main>
+      <FieldBottomBar actions={actions} />
     </div>
   )
 }

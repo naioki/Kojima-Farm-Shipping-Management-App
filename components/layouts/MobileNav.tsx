@@ -15,7 +15,7 @@ const isActiveHref = (pathname: string, href: string) =>
  * タップ対象は大きめ（h-14・text-base）にして手袋・屋外でも押しやすくする（design.md）。
  * 画面遷移・背景タップ・×・Esc で閉じる。印刷時は非表示。
  */
-export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
+export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff'; persistent?: boolean }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const nav = navFor(role)
@@ -52,8 +52,13 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
 
   return (
     <>
-      {/* 上部バー（モバイルのみ） */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg-soft/95 px-4 backdrop-blur lg:hidden print:hidden">
+      {/* 上部バー（モバイル／現場は常時） */}
+      <header
+        className={cn(
+          'sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg-soft/95 px-4 backdrop-blur print:hidden',
+          !persistent && 'lg:hidden',
+        )}
+      >
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -71,7 +76,7 @@ export function MobileNav({ role }: { role: 'admin' | 'staff' }) {
 
       {/* ドロワー */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className={cn('fixed inset-0 z-50', !persistent && 'lg:hidden')}>
           <button
             type="button"
             aria-label="メニューを閉じる"
