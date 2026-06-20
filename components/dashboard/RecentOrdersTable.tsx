@@ -50,7 +50,15 @@ export function RecentOrdersTable({
                 const row = (
                   <>
                     <td className="num whitespace-nowrap px-2 py-2.5 text-ink-soft">{o.date}</td>
-                    <td className="px-2 py-2.5 font-medium text-ink">{o.customer}</td>
+                    <td className="px-2 py-2.5 font-medium text-ink">
+                      {o.href ? (
+                        <Link href={o.href} className="hover:text-trust-600 hover:underline">
+                          {o.customer}
+                        </Link>
+                      ) : (
+                        o.customer
+                      )}
+                    </td>
                     <td className="num px-2 py-2.5 text-right text-ink-soft">{o.itemCount}件</td>
                     <td className="num px-2 py-2.5 text-right text-ink">{yen(o.amount)}</td>
                     <td className="px-2 py-2.5">
