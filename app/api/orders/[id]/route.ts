@@ -42,7 +42,15 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: '請求確定済みの明細を含むため削除できません' }, { status: 409 })
   }
 
-  // 明細 → 注文の順で削除
+  // 受信ログ(order_receipts→orders は NO ACTION)が紐づくと FK 違反で消せないため、
+  // 先にリンクだけ外す（受信ログ本体は 7年保存のため残す・tax.md）。
+  const { error: unlinkErr } = await admin
+    .from('order_receipts')
+    .update({ order_id: null })
+    .eq('order_id', params.id)
+  if (unlinkErr) return NextResponse.json({ error: unlinkErr.message }, { status: 500 })
+
+  // 明細 → 注文の順で削除（order_items→orders は CASCADE だが明示削除でガードを効かせる）
   const { error: itemsErr } = await admin.from('order_items').delete().eq('order_id', params.id)
   if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
   const { error: orderErr } = await admin.from('orders').delete().eq('id', params.id)
