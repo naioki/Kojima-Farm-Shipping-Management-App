@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
+import { downscaleImage } from '@/lib/image/downscale'
 
 const SAVE_PHRASE = '変更を理解しました'
 const MAX_FILE_MB = 10
@@ -70,7 +71,7 @@ export function ManualOcrForm({
   const isCustomPrompt = prompt.trim() !== basePrompt.trim()
   const canAnalyze = (mode === 'image' ? Boolean(imageBase64) : text.trim() !== '') && !analyzing
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     const pdf = file.type === 'application/pdf'
     if (!file.type.startsWith('image/') && !pdf) {
       toast.error('画像（JPEG/PNG等）またはPDFを選択してください')
@@ -80,19 +81,31 @@ export function ManualOcrForm({
       toast.error(`ファイルは${MAX_FILE_MB}MB以下にしてください`)
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      // data:<mime>;base64,XXXX → XXXX 部分だけ
-      const comma = dataUrl.indexOf(',')
-      setImageBase64(dataUrl.slice(comma + 1))
-      setMimeType(file.type)
-      setFileName(file.name)
-      setIsPdf(pdf)
-      // PDF は <img> で表示できないのでプレビューはファイルカードで代替
-      setImagePreview(pdf ? null : dataUrl)
+    setFileName(file.name)
+    setIsPdf(pdf)
+
+    if (pdf) {
+      // PDF は縮小できないのでそのまま base64 化（プレビューはファイルカードで代替）
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setImageBase64(dataUrl.slice(dataUrl.indexOf(',') + 1))
+        setMimeType(file.type)
+        setImagePreview(null)
+      }
+      reader.readAsDataURL(file)
+      return
     }
-    reader.readAsDataURL(file)
+
+    // 画像は送信前にブラウザで縮小＋JPEG圧縮（Cloud Run 負荷・Gemini トークン課金を削減）
+    try {
+      const img = await downscaleImage(file)
+      setImageBase64(img.base64)
+      setMimeType(img.mimeType)
+      setImagePreview(img.dataUrl)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '画像の処理に失敗しました')
+    }
   }
 
   function clearImage() {
@@ -252,7 +265,7 @@ export function ManualOcrForm({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
-              if (f) handleFile(f)
+              if (f) void handleFile(f)
             }}
           />
         </div>

@@ -24,6 +24,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { normalizeName as norm, classify, type Dup } from '@/lib/master-import/dedupe'
+import { downscaleImage } from '@/lib/image/downscale'
 
 /** 既存マスタ（重複判定の基準）。サーバ（page.tsx）から渡す。 */
 export interface ExistingForDedup {
@@ -94,36 +95,10 @@ function numOf(s: string): number {
   return cleaned === '' ? NaN : Number(cleaned)
 }
 
-/** File を Canvas で最大1600px・JPEG0.8 に圧縮し dataUrl/base64 を得る。 */
-function compressImage(file: File): Promise<Img> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'))
-    reader.onload = () => {
-      const img = new Image()
-      img.onerror = () => reject(new Error('画像を開けませんでした'))
-      img.onload = () => {
-        const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height))
-        const w = Math.round(img.width * scale)
-        const h = Math.round(img.height * scale)
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return reject(new Error('Canvas を初期化できませんでした'))
-        ctx.drawImage(img, 0, 0, w, h)
-        const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY)
-        resolve({
-          dataUrl,
-          base64: dataUrl.slice(dataUrl.indexOf(',') + 1),
-          mimeType: 'image/jpeg',
-          name: file.name,
-        })
-      }
-      img.src = reader.result as string
-    }
-    reader.readAsDataURL(file)
-  })
+/** File を共有ユーティリティで最大MAX_DIMpx・JPEG圧縮し、Img 形（name付き）にする。 */
+async function compressImage(file: File): Promise<Img> {
+  const img = await downscaleImage(file, { maxDim: MAX_DIM, quality: JPEG_QUALITY })
+  return { dataUrl: img.dataUrl, base64: img.base64, mimeType: img.mimeType, name: file.name }
 }
 
 export function MasterImportWizard({ existing }: { existing: ExistingForDedup }) {
