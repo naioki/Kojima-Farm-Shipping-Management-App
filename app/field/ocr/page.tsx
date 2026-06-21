@@ -43,7 +43,7 @@ export default async function FieldOcrPage() {
           <ScanLine className="h-5 w-5 text-earth-700" aria-hidden />
         </div>
         <div>
-          <h1 className="font-display text-2xl font-bold text-ink">OCR よみとり</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">注文を 読む</h1>
           <p className="text-sm text-ink-soft">
             FAX・しゃしん・PDF・メールを AI が よみとります。
           </p>

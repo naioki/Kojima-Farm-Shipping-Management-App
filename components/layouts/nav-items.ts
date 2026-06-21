@@ -40,7 +40,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/approvals', label: '注文の承認', icon: CheckCircle2 },
       { href: '/admin/inbox', label: '承認待ち（受信）', icon: Inbox },
-      { href: '/admin/ocr', label: '手動OCR', icon: ScanLine },
+      { href: '/admin/ocr', label: '注文を読む', icon: ScanLine },
     ],
   },
   {
@@ -61,7 +61,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
   {
     label: 'マスタ',
     items: [
-      { href: '/admin/master-import', label: '写真で一括登録', icon: Images },
+      { href: '/admin/master-import', label: '写真でマスタ登録', icon: Images },
       { href: '/admin/customers', label: '取引先', icon: Users },
       { href: '/admin/products', label: '商品', icon: Carrot },
       { href: '/admin/pricing-master', label: '価格・荷姿', icon: Tag },

@@ -26,7 +26,7 @@ export default async function FieldLayout({ children }: { children: React.ReactN
     { key: 'matrix', label: '計画ひょう', href: '/field/matrix', icon: 'matrix' },
   ]
   if (canStaffUse('ocr', role, features)) {
-    actions.push({ key: 'ocr', label: 'OCR よみとり', href: '/field/ocr', icon: 'ocr' })
+    actions.push({ key: 'ocr', label: '注文を 読む', href: '/field/ocr', icon: 'ocr' })
   }
   if (canStaffUse('reportSpec', role, features)) {
     actions.push({ key: 'report', label: '規格を ほうこく', href: '/field/report-spec', icon: 'report' })
