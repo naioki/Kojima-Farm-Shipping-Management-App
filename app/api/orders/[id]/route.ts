@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
@@ -13,6 +14,11 @@ export const runtime = 'nodejs'
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  // 入口の堅牢化：UUID 以外は 400 で弾く（不正な値で DB エラーにしない）
+  if (!z.string().uuid().safeParse(params.id).success) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 })
+  }
 
   const supabase = createClient()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
