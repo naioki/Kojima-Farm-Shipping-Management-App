@@ -8,13 +8,8 @@ import { buildCustomerHintText, type ParseHint } from '@/lib/ingestion/learning'
 import { decideReceiptApproval } from '@/lib/ingestion/auto-approve'
 import { getSetting } from '@/lib/settings'
 import { notify } from '@/lib/notify'
+import { parseQuantity } from '@/lib/calculations/parse-quantity'
 
-/**
- * pending_ai の order_receipt 1件を処理するパイプライン（G1 / design.md §2）。
- * 前処理 → Gemini解析 → 名寄せ → 自動承認判定 → DB保存
- *
- * 戻り値: 処理ステータス（呼び出し元のログ用）
- */
 export type ProcessReceiptStatus =
   | 'approved'
   | 'pending_review'
@@ -32,7 +27,6 @@ export interface ProcessReceiptResult {
 export async function processReceipt(receiptId: string): Promise<ProcessReceiptResult> {
   const admin = createAdminClient()
 
-  // レシートのメタデータを取得
   const { data: receipt } = await admin
     .from('order_receipts')
     .select('id, channel, r2_key, raw_payload, sender_date_key, customer_id, is_revision, status')
@@ -43,7 +37,6 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
     return { receiptId, status: 'skipped_no_content', orderCount: 0 }
   }
 
-  // 画像（R2）またはテキスト（raw_payload）を取得
   let imageBuffer: Buffer | null = null
   let textContent: string | null = null
 
@@ -62,7 +55,7 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
     return await failReceipt(receiptId, 'コンテンツが空（画像なし・テキストなし）')
   }
 
-  // FAX番号から取引先を特定（channel_identifiers.fax）
+  // FAX番号から取引先を特定
   let customerId = receipt.customer_id as string | null
   if (!customerId && receipt.sender_date_key && receipt.channel === 'fax') {
     const faxNum = receipt.sender_date_key.split('_')[0] ?? ''
@@ -104,14 +97,13 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
       base64 = preprocessed.base64
       mimeType = preprocessed.mimeType
     } catch {
-      // 前処理失敗は生バイトで続行（Gemini が直接解釈）
       base64 = imageBuffer.toString('base64')
       mimeType = 'image/jpeg'
     }
   }
 
   // Gemini 解析（1回目）
-  let result = await tryAnalyze({ base64, mimeType, text: textContent }, receipt.channel, hintText, receiptId)
+  let result = await tryAnalyze({ base64, mimeType, text: textContent }, receipt.channel, hintText)
   if (!result) {
     return await failReceipt(receiptId, 'Gemini 解析失敗')
   }
@@ -120,14 +112,17 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   if (!result.is_order && imageBuffer) {
     try {
       const rotated = await preprocessFaxImageRotated180(imageBuffer)
-      const retried = await tryAnalyze({ base64: rotated.base64, mimeType: rotated.mimeType, text: null }, receipt.channel, hintText, receiptId)
+      const retried = await tryAnalyze(
+        { base64: rotated.base64, mimeType: rotated.mimeType, text: null },
+        receipt.channel,
+        hintText,
+      )
       if (retried?.is_order) result = retried
     } catch {
       // リトライ失敗は無視（1回目の結果を使う）
     }
   }
 
-  // 受注書でない場合
   if (!result.is_order || result.orders.length === 0) {
     await admin
       .from('order_receipts')
@@ -147,7 +142,6 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
     aliases: (p.aliases as string[] | null) ?? [],
   }))
 
-  // 自動承認設定
   const [autoApproveEnabled, thresholdRaw] = await Promise.all([
     getSetting('AUTO_APPROVE_ENABLED'),
     getSetting('AUTO_APPROVE_THRESHOLD'),
@@ -156,7 +150,6 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   const threshold = parseThreshold(thresholdRaw)
   const enabled = isAutoApproveOn(autoApproveEnabled)
 
-  // 注文ごとに処理
   let anyPendingReview = false
   let savedCount = 0
 
@@ -176,13 +169,11 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
 
   const finalStatus = anyPendingReview ? 'pending_review' : 'approved'
 
-  // receipt ステータス更新
   await admin
     .from('order_receipts')
     .update({ status: finalStatus, customer_id: customerId ?? undefined })
     .eq('id', receiptId)
 
-  // pending_review の場合は通知
   if (finalStatus === 'pending_review') {
     await notify({
       event: 'pending_review',
@@ -196,12 +187,10 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   return { receiptId, status: finalStatus, orderCount: savedCount }
 }
 
-/** Gemini 解析を try-catch でラップ。失敗は null を返す（retry/fail は呼び出し元が判断）。 */
 async function tryAnalyze(
   input: { base64: string | null; mimeType: string; text: string | null },
   channel: string,
   hintText: string,
-  receiptId: string,
 ) {
   try {
     return await analyzeOrders(
@@ -218,23 +207,31 @@ async function tryAnalyze(
   }
 }
 
-/** receipt を ai_failed に更新して ProcessReceiptResult を返す。 */
+/** receipt を ai_failed に更新。retry_count をインクリメントし next_retry_at を設定（G10）。 */
 async function failReceipt(receiptId: string, error: string): Promise<ProcessReceiptResult> {
   const admin = createAdminClient()
+
+  // 現在の retry_count を読んでバックオフを計算（5分→30分→3時間）
+  const { data: current } = await admin
+    .from('order_receipts')
+    .select('retry_count')
+    .eq('id', receiptId)
+    .maybeSingle()
+
+  const retryCount = (current?.retry_count as number | null) ?? 0
+  const backoffMinutes = retryCount === 0 ? 5 : retryCount === 1 ? 30 : 180
+  const nextRetryAt = new Date(Date.now() + backoffMinutes * 60 * 1000).toISOString()
+
   await admin
     .from('order_receipts')
     .update({
       status: 'ai_failed',
       error_message: error,
+      retry_count: retryCount + 1,
+      next_retry_at: retryCount < 3 ? nextRetryAt : null, // 3回失敗で打ち止め
     })
     .eq('id', receiptId)
-  // retry_count の increment はシンプルに RPC なしで実装
-  // retry_count を安全にインクリメント（RPC が未定義でも無視）
-  try {
-    await admin.rpc('increment_receipt_retry', { receipt_id: receiptId })
-  } catch {
-    // RPC 未定義の場合はスキップ（retry_count は目安値）
-  }
+
   return { receiptId, status: 'ai_failed', orderCount: 0, error }
 }
 
@@ -248,10 +245,6 @@ interface SaveOrderArgs {
   isRevision: boolean
 }
 
-/**
- * 1注文を解析→名寄せ→自動承認判定→DB保存。
- * 自動承認できれば orders INSERT(approved)、できなければ pending_review のまま。
- */
 async function saveOrder({
   order,
   receiptId,
@@ -263,6 +256,9 @@ async function saveOrder({
 }: SaveOrderArgs): Promise<{ saved: boolean; needsReview: boolean }> {
   const admin = createAdminClient()
 
+  // G8: 再送（revision）は二重計上リスクがあるため必ず人間確認
+  if (isRevision) return { saved: false, needsReview: true }
+
   // 名寄せ
   const resolvedItems = order.items.map((item) => {
     const match = matchProductName(item.raw_name, candidates)
@@ -272,13 +268,28 @@ async function saveOrder({
       product_name: match.productId
         ? (candidates.find((c) => c.id === match.productId)?.name ?? item.product_name)
         : item.product_name,
-      quantity_raw: item.quantity,
+      quantity_raw: item.quantity, // 生OCRテキスト（migration 0012 で追加した列）
       unit: item.unit,
       confidence: item.confidence,
       name_match_score: match.score,
       is_flagged: match.needsConfirmation || item.confidence < 0.7,
     }
   })
+
+  // G7: マッチした商品の packs_per_case をバッチ取得
+  const matchedProductIds = resolvedItems.filter((it) => it.product_id).map((it) => it.product_id!)
+  const { data: rules } =
+    customerId && matchedProductIds.length > 0
+      ? await admin
+          .from('customer_product_rules')
+          .select('product_id, packs_per_case')
+          .eq('customer_id', customerId)
+          .in('product_id', matchedProductIds)
+      : { data: [] }
+
+  const packsPerCaseMap = new Map<string, number | null>(
+    (rules ?? []).map((r) => [r.product_id as string, r.packs_per_case as number | null]),
+  )
 
   const customerMatched = Boolean(customerId)
   const deliveryDateKnown = Boolean(order.delivery_date)
@@ -295,13 +306,54 @@ async function saveOrder({
   })
 
   if (decision.action === 'manual_review') {
-    // pending_review: orders には保存せず、receipt を pending_review のまま人間に委ねる
     return { saved: false, needsReview: true }
   }
 
-  // 自動承認: orders INSERT
   if (!customerId || !order.delivery_date) return { saved: false, needsReview: true }
 
+  // G7: parseQuantity で総数を確定。解釈不能は pending_review へ
+  const itemsToInsert: Array<{
+    order_id: string
+    product_id: string
+    product_name: string
+    quantity: number
+    quantity_raw: string | null
+    unit: string
+    unit_price: number
+    tax_rate: number
+    confidence: number
+    is_flagged: boolean
+  }> = []
+
+  for (const it of resolvedItems) {
+    if (!it.product_id) continue
+
+    const qtyResult = parseQuantity(it.quantity_raw ?? '', {
+      packsPerCase: packsPerCaseMap.get(it.product_id) ?? null,
+    })
+
+    if (qtyResult.type === 'error') {
+      // c記法だが P/C 未設定、または解釈不能 → 人間確認
+      return { saved: false, needsReview: true }
+    }
+
+    const quantity = qtyResult.type === 'delete' ? 0 : qtyResult.total.toNumber()
+
+    itemsToInsert.push({
+      order_id: '', // INSERT後に埋める
+      product_id: it.product_id,
+      product_name: it.product_name ?? '',
+      quantity,
+      quantity_raw: it.quantity_raw ?? null,
+      unit: it.unit ?? '個',
+      unit_price: 0,
+      tax_rate: 8,
+      confidence: it.confidence,
+      is_flagged: it.is_flagged || (qtyResult.type === 'ok' && qtyResult.needsConfirmation),
+    })
+  }
+
+  // G6: orders INSERT（receipt_id / is_revision は orders テーブルに存在しない）
   const { data: newOrder, error: orderErr } = await admin
     .from('orders')
     .insert({
@@ -309,35 +361,19 @@ async function saveOrder({
       delivery_date: order.delivery_date,
       status: 'approved',
       source: 'fax',
-      receipt_id: receiptId,
-      is_revision: isRevision,
     })
     .select('id')
     .maybeSingle()
 
   if (orderErr || !newOrder) return { saved: false, needsReview: true }
 
-  // order_items INSERT
-  const itemsToInsert = resolvedItems
-    .filter((it) => it.product_id)
-    .map((it) => ({
-      order_id: newOrder.id,
-      product_id: it.product_id!,
-      product_name: it.product_name ?? '',
-      quantity: 0, // スマートパースは UI 側または後続処理で解決。ここは raw で積む。
-      quantity_raw: it.quantity_raw,
-      unit: it.unit ?? '個',
-      unit_price: 0,
-      tax_rate: 8,
-      confidence: it.confidence,
-      is_flagged: it.is_flagged,
-    }))
-
   if (itemsToInsert.length > 0) {
-    await admin.from('order_items').insert(itemsToInsert)
+    await admin.from('order_items').insert(
+      itemsToInsert.map((it) => ({ ...it, order_id: newOrder.id })),
+    )
   }
 
-  // receipt に order_id を紐付け
+  // receipt に order_id を紐付け（G6: receipt_id/is_revision の代替連携）
   await admin.from('order_receipts').update({ order_id: newOrder.id }).eq('id', receiptId)
 
   return { saved: true, needsReview: false }

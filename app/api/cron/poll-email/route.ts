@@ -93,7 +93,28 @@ export async function GET(req: Request) {
   const analyzeResults: Array<{ receiptId: string; status: string }> = []
 
   if (allowed) {
-    const ids = pendingReceiptIds.filter(Boolean).slice(0, 3) as string[]
+    const newIds = pendingReceiptIds.filter(Boolean) as string[]
+
+    // G10: next_retry_at が到来した ai_failed を追加で拾う
+    const { data: retryRows } = await supabase
+      .from('order_receipts')
+      .select('id')
+      .eq('status', 'ai_failed')
+      .eq('channel', 'email')
+      .lte('next_retry_at', new Date().toISOString())
+      .lt('retry_count', 3)
+      .limit(3)
+
+    const retryIds = (retryRows ?? []).map((r) => r.id as string)
+    if (retryIds.length > 0) {
+      await supabase
+        .from('order_receipts')
+        .update({ status: 'pending_ai' })
+        .in('id', retryIds)
+    }
+
+    const ids = [...newIds, ...retryIds].slice(0, 3)
+
     for (const rid of ids) {
       const res = await processReceipt(rid).catch(() => ({
         receiptId: rid,
