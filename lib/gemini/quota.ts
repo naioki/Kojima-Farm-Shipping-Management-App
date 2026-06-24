@@ -53,3 +53,38 @@ export function canRunGemini(priority: GeminiPriority, remaining: number): boole
   const status = getQuotaStatus(remaining)
   return priority === 'P2' ? status.allowP2 : status.allowP3
 }
+
+/**
+ * DBから当日使用数を取得し、指定優先度で解析可能か返す。
+ * 通知が必要な状態（残50/0到達）は呼び出し元が送ること。
+ * Cloud Run（server-only コンテキスト）でのみ使う。
+ */
+export async function canRunGeminiNow(priority: GeminiPriority): Promise<{
+  allowed: boolean
+  status: QuotaStatus
+}> {
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  const { notify } = await import('@/lib/notify')
+
+  const today = new Date().toISOString().slice(0, 10)
+  const admin = createAdminClient()
+  const { count } = await admin
+    .from('gemini_usage_log')
+    .select('id', { count: 'exact', head: true })
+    .gte('called_at', `${today}T00:00:00Z`)
+    .lt('called_at', `${today}T23:59:59Z`)
+
+  const remaining = remainingFromUsage(count ?? 0)
+  const status = getQuotaStatus(remaining)
+
+  if (status.shouldNotify) {
+    await notify({
+      event: 'quota_low',
+      level: 'alert',
+      title: `Gemini 無料枠 残${remaining}`,
+      body: `本日の使用量: ${(count ?? 0)}/${GEMINI_DAILY_FREE_LIMIT}。自動解析を停止します。`,
+    }).catch(() => {})
+  }
+
+  return { allowed: canRunGemini(priority, remaining), status }
+}

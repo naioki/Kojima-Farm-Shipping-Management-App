@@ -38,6 +38,18 @@ export async function putReceiptOriginal(
   return key
 }
 
+/** R2 から原本バイト列を取得する。処理パイプライン（解析・再処理）で使う。 */
+export async function getReceiptOriginal(key: string): Promise<Buffer> {
+  const [client, Bucket] = await Promise.all([r2(), bucket()])
+  const res = await client.send(new GetObjectCommand({ Bucket, Key: key }))
+  if (!res.Body) throw new Error(`R2 オブジェクトが空です: ${key}`)
+  const chunks: Uint8Array[] = []
+  for await (const chunk of res.Body as AsyncIterable<Uint8Array>) {
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
+}
+
 /** 検証画面で原本を表示するための一時署名URL（既定15分）。 */
 export async function getReceiptSignedUrl(key: string, expiresSec = 900): Promise<string> {
   const [client, Bucket] = await Promise.all([r2(), bucket()])

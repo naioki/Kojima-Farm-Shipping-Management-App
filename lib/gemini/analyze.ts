@@ -156,11 +156,14 @@ ${hintText && hintText.trim() !== '' ? hintText + '\n' : ''}${diffExtra}
 export async function analyzeOrders(
   input: { imageBase64?: string; mimeType?: string; text?: string },
   channel: string,
+  /** 取引先ごとの表記学習ヒント（lib/ingestion/learning.buildCustomerHintText の出力）。 */
+  hintText?: string,
 ): Promise<OrdersResult> {
   const model = (await client()).getGenerativeModel({ model: await getModel() })
   const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
     { text: DEFAULT_GEMINI_PROMPT_ORDERS },
   ]
+  if (hintText && hintText.trim() !== '') parts.push({ text: hintText })
   if (input.imageBase64) {
     parts.push({ inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' } })
   }

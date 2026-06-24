@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyCronRequest, looksLikeOrder } from '@/lib/config/ingestion'
 import { getSetting } from '@/lib/settings'
 import { buildSenderDateKey } from '@/lib/receipts/dedupe'
+import { canRunGeminiNow } from '@/lib/gemini/quota'
+import { processReceipt } from '@/lib/ingestion/process-receipt'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,6 +35,7 @@ export async function GET(req: Request) {
   const imap = new ImapFlow({ host, port: 993, secure: true, auth: { user, pass }, logger: false })
   await imap.connect()
   let processed = 0
+  const pendingReceiptIds: (string | null)[] = []
 
   try {
     const lock = await imap.getMailboxLock('INBOX')
@@ -56,14 +59,18 @@ export async function GET(req: Request) {
         const isOrder = await looksLikeOrder(`${parsedMail.subject ?? ''}\n${text}`)
         const senderDateKey = buildSenderDateKey('email', from, parsedMail.date ?? new Date())
 
-        await supabase.from('order_receipts').insert({
-          channel: 'email',
-          message_id: messageId,
-          sender_date_key: senderDateKey,
-          received_at: (parsedMail.date ?? new Date()).toISOString(),
-          raw_payload: { subject: parsedMail.subject, from, text },
-          status: isOrder ? 'pending_ai' : 'unmatched',
-        })
+        const { data: newReceipt } = await supabase
+          .from('order_receipts')
+          .insert({
+            channel: 'email',
+            message_id: messageId,
+            sender_date_key: senderDateKey,
+            received_at: (parsedMail.date ?? new Date()).toISOString(),
+            raw_payload: { subject: parsedMail.subject, from, text },
+            status: isOrder ? 'pending_ai' : 'unmatched',
+          })
+          .select('id')
+          .maybeSingle()
 
         // 処理済みラベル付与（ダブルチェック）
         try {
@@ -72,7 +79,7 @@ export async function GET(req: Request) {
           // ラベル付与失敗は致命的ではない（Message-ID 判定が主）
         }
         processed++
-        // TODO(Phase B): 添付画像/PDF は R2 保存＋画像解析、本文は Gemini テキスト解析（quota ゲート）
+        pendingReceiptIds.push(newReceipt?.id ?? null)
       }
     } finally {
       lock.release()
@@ -81,5 +88,21 @@ export async function GET(req: Request) {
     await imap.logout()
   }
 
-  return NextResponse.json({ processed })
+  // pending_ai のテキストメールを quota ゲート経由で解析（最大3件）
+  const { allowed } = await canRunGeminiNow('P2')
+  const analyzeResults: Array<{ receiptId: string; status: string }> = []
+
+  if (allowed) {
+    const ids = pendingReceiptIds.filter(Boolean).slice(0, 3) as string[]
+    for (const rid of ids) {
+      const res = await processReceipt(rid).catch(() => ({
+        receiptId: rid,
+        status: 'ai_failed',
+        orderCount: 0,
+      }))
+      analyzeResults.push({ receiptId: rid, status: res.status })
+    }
+  }
+
+  return NextResponse.json({ processed, analyzed: analyzeResults.length, analyzeResults })
 }

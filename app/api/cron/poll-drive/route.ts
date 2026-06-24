@@ -6,6 +6,11 @@ import { putReceiptOriginal } from '@/lib/r2'
 import { parseFaxFilename, verifyCronRequest, getDriveFolderId } from '@/lib/config/ingestion'
 import { getSetting } from '@/lib/settings'
 import { buildSenderDateKey, decideReceiptDisposition } from '@/lib/receipts/dedupe'
+import { canRunGeminiNow } from '@/lib/gemini/quota'
+import { processReceipt } from '@/lib/ingestion/process-receipt'
+
+/** 1回の poll-drive で解析まで行う最大ファイル数。タイムアウト対策。 */
+const MAX_PROCESS_PER_POLL = 3
 
 // Cloud Run 上で重い処理も可（stack.md）。Node ランタイムを明示。
 export const runtime = 'nodejs'
@@ -42,7 +47,7 @@ export async function GET(req: Request) {
     orderBy: 'createdTime',
   })
 
-  const results: Array<{ file: string; disposition: string }> = []
+  const results: Array<{ file: string; disposition: string; receiptId: string | null }> = []
 
   for (const f of list.data.files ?? []) {
     if (!f.id || !f.name) continue
@@ -85,21 +90,50 @@ export async function GET(req: Request) {
     const status =
       disposition === 'duplicate' ? 'duplicate' : parsed ? 'pending_ai' : 'unmatched'
 
-    await supabase.from('order_receipts').insert({
-      channel: 'fax',
-      received_at: f.createdTime ?? new Date().toISOString(),
-      exact_hash: exactHash,
-      sender_date_key: senderDateKey,
-      r2_key: r2Key,
-      is_revision: disposition === 'revision',
-      status,
-    })
+    const { data: newReceipt } = await supabase
+      .from('order_receipts')
+      .insert({
+        channel: 'fax',
+        received_at: f.createdTime ?? new Date().toISOString(),
+        exact_hash: exactHash,
+        sender_date_key: senderDateKey,
+        r2_key: r2Key,
+        is_revision: disposition === 'revision',
+        status,
+      })
+      .select('id')
+      .maybeSingle()
 
-    results.push({ file: f.name, disposition })
-    // TODO(Phase B): pending_ai のものを quota ゲート(canRunGemini)を見て解析キューへ。
+    results.push({ file: f.name, disposition, receiptId: status === 'pending_ai' ? (newReceipt?.id ?? null) : null })
   }
 
-  return NextResponse.json({ processed: results.length, results })
+  // pending_ai のレシートを quota ゲート経由で解析（最大 MAX_PROCESS_PER_POLL 件）
+  const { allowed } = await canRunGeminiNow('P2')
+  const analyzeResults: Array<{ receiptId: string; status: string; error?: string }> = []
+
+  if (allowed) {
+    const pendingIds = results
+      .filter((r) => r.receiptId)
+      .map((r) => r.receiptId!)
+      .slice(0, MAX_PROCESS_PER_POLL)
+
+    for (const rid of pendingIds) {
+      const res = await processReceipt(rid).catch((e: unknown) => ({
+        receiptId: rid,
+        status: 'ai_failed' as const,
+        orderCount: 0,
+        error: String(e),
+      }))
+      analyzeResults.push({ receiptId: rid, status: res.status, error: res.error })
+    }
+  }
+
+  return NextResponse.json({
+    processed: results.length,
+    results,
+    analyzed: analyzeResults.length,
+    analyzeResults,
+  })
 }
 
 /**
