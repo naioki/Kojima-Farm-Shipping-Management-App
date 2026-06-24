@@ -10,6 +10,7 @@
 /** 新→古の順。先頭から順に試し、429/503/404 のときのみ次へフォールバックする。
  *  ※ gemini-2.0-flash / 2.0-flash-lite は 2026-06-01 でシャットダウン済みのため除外。 */
 export const GEMINI_FALLBACK_ORDER = [
+  'gemini-3.1-flash-lite',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-flash-latest',
@@ -18,6 +19,7 @@ export const GEMINI_FALLBACK_ORDER = [
 /** 設定画面のプルダウン選択肢。value='' は「自動」。 */
 export const GEMINI_MODEL_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: '自動（推奨・混雑時は自動で切替）' },
+  { value: 'gemini-3.1-flash-lite', label: 'gemini-3.1-flash-lite（最新・最安）' },
   { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash（標準）' },
   { value: 'gemini-2.5-flash-lite', label: 'gemini-2.5-flash-lite（軽量・速い）' },
   { value: 'gemini-flash-latest', label: 'gemini-flash-latest（最新エイリアス）' },
