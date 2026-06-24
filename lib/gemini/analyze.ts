@@ -1,21 +1,46 @@
 import 'server-only'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI, type GenerateContentResult, type Part } from '@google/generative-ai'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF, DEFAULT_GEMINI_PROMPT_ORDERS } from './prompts'
+import { modelTryOrder } from './models'
+
+/** APIキーは設定（DB→env）。設定画面 or Secret Manager で投入する。 */
+async function client(): Promise<GoogleGenerativeAI> {
+  const key = await getSetting('GEMINI_API_KEY')
+  if (!key) throw new Error('GEMINI_API_KEY が未設定です（設定画面 または Secret Manager で投入）')
+  return new GoogleGenerativeAI(key)
+}
 
 /**
- * Gemini 解析（features.md §4）。通常モード（画像/テキスト → items[]）と
- * 差分モード（前回確定 items を注入 → added/modified/removed）を提供する。
- * 全項目に self-confidence(0..1) を採点させ、呼び出しごとに gemini_usage_log を記録する。
- *
- * モデル: gemini-2.0-flash（無料枠 ~1500req/日）。APIキーは Secret Manager 由来の環境変数。
+ * 503/429/404 のときだけ次のモデルへフォールバックしながら generateContent を試みる。
+ * 設定 GEMINI_MODEL が空（自動）なら GEMINI_FALLBACK_ORDER 順に試す。
  */
+async function generateWithFallback(parts: Part[]): Promise<GenerateContentResult> {
+  const preferred = await getSetting('GEMINI_MODEL')
+  const order = modelTryOrder(preferred)
+  const api = await client()
 
-/** モデル名は設定（DB→env）→ 既定 gemini-2.5-flash（無料枠）。 */
-async function getModel(): Promise<string> {
-  return (await getSetting('GEMINI_MODEL')) || 'gemini-2.5-flash'
+  let lastError: unknown
+  for (const modelName of order) {
+    try {
+      const model = api.getGenerativeModel({ model: modelName })
+      return await model.generateContent(parts)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const isTransient =
+        msg.includes('503') ||
+        msg.includes('429') ||
+        msg.includes('404') ||
+        msg.toLowerCase().includes('unavailable') ||
+        msg.toLowerCase().includes('not found') ||
+        msg.toLowerCase().includes('high demand')
+      if (!isTransient) throw e
+      lastError = e
+    }
+  }
+  throw lastError
 }
 
 export const parsedItemSchema = z.object({
@@ -49,13 +74,6 @@ export const diffResultSchema = z.object({
 })
 export type DiffResult = z.infer<typeof diffResultSchema>
 
-/** APIキーは設定（DB→env）。設定画面 or Secret Manager で投入する。 */
-async function client(): Promise<GoogleGenerativeAI> {
-  const key = await getSetting('GEMINI_API_KEY')
-  if (!key) throw new Error('GEMINI_API_KEY が未設定です（設定画面 または Secret Manager で投入）')
-  return new GoogleGenerativeAI(key)
-}
-
 /** 通常モードの基本指示。設定 GEMINI_PROMPT_NORMAL があればそちらを優先する。 */
 async function getBaseInstruction(): Promise<string> {
   return (await getSetting('GEMINI_PROMPT_NORMAL')) || DEFAULT_GEMINI_PROMPT_NORMAL
@@ -88,22 +106,17 @@ export async function analyzeNormal(
   /** この解析だけに使う一回限りのプロンプト上書き（手動OCR画面用）。設定は変更しない。 */
   promptOverride?: string,
 ): Promise<ParsedItem[]> {
-  const model = (await client()).getGenerativeModel({ model: await getModel() })
   const baseInstruction =
     promptOverride && promptOverride.trim() !== '' ? promptOverride : await getBaseInstruction()
-  const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-    { text: baseInstruction },
-  ]
+  const parts: Part[] = [{ text: baseInstruction }]
   if (hintText && hintText.trim() !== '') parts.push({ text: hintText })
   if (input.imageBase64) {
-    parts.push({
-      inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' },
-    })
+    parts.push({ inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' } })
   }
   if (input.text) parts.push({ text: `注文テキスト:\n${input.text}` })
 
   try {
-    const res = await model.generateContent(parts)
+    const res = await generateWithFallback(parts)
     const json = extractJson(res.response.text())
     const parsed = normalResultSchema.parse(json)
     await logUsage('normal', channel, true, res.response.usageMetadata?.totalTokenCount)
@@ -121,23 +134,18 @@ export async function analyzeDiff(
   channel: string,
   hintText?: string,
 ): Promise<DiffResult> {
-  const model = (await client()).getGenerativeModel({ model: await getModel() })
   const diffExtra = await getDiffInstruction()
   const instruction = `${await getBaseInstruction()}
 ${hintText && hintText.trim() !== '' ? hintText + '\n' : ''}${diffExtra}
 前回確定明細: ${JSON.stringify(previousItems)}`
-  const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-    { text: instruction },
-  ]
+  const parts: Part[] = [{ text: instruction }]
   if (input.imageBase64) {
-    parts.push({
-      inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' },
-    })
+    parts.push({ inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' } })
   }
   if (input.text) parts.push({ text: `注文テキスト:\n${input.text}` })
 
   try {
-    const res = await model.generateContent(parts)
+    const res = await generateWithFallback(parts)
     const json = extractJson(res.response.text())
     const parsed = diffResultSchema.parse(json)
     await logUsage('diff', channel, true, res.response.usageMetadata?.totalTokenCount)
@@ -159,10 +167,7 @@ export async function analyzeOrders(
   /** 取引先ごとの表記学習ヒント（lib/ingestion/learning.buildCustomerHintText の出力）。 */
   hintText?: string,
 ): Promise<OrdersResult> {
-  const model = (await client()).getGenerativeModel({ model: await getModel() })
-  const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-    { text: DEFAULT_GEMINI_PROMPT_ORDERS },
-  ]
+  const parts: Part[] = [{ text: DEFAULT_GEMINI_PROMPT_ORDERS }]
   if (hintText && hintText.trim() !== '') parts.push({ text: hintText })
   if (input.imageBase64) {
     parts.push({ inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' } })
@@ -170,7 +175,7 @@ export async function analyzeOrders(
   if (input.text) parts.push({ text: `注文テキスト:\n${input.text}` })
 
   try {
-    const res = await model.generateContent(parts)
+    const res = await generateWithFallback(parts)
     const json = extractJson(res.response.text())
     const parsed = ordersResultSchema.parse(json)
     await logUsage('orders', channel, true, res.response.usageMetadata?.totalTokenCount)
