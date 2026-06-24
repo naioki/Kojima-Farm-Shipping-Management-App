@@ -57,7 +57,12 @@ export async function POST(req: Request) {
     const result = await analyzeOrders({ imageBase64, mimeType, text }, 'manual')
     return NextResponse.json(result)
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'AI解析に失敗しました'
-    return NextResponse.json({ error: message }, { status: 502 })
+    const raw = e instanceof Error ? e.message : String(e)
+    // Gemini 過負荷（503）は一時的。ユーザーに再試行を促す。
+    const isOverload = raw.includes('503') || raw.toLowerCase().includes('high demand') || raw.toLowerCase().includes('unavailable')
+    const message = isOverload
+      ? 'AIが混雑しています。しばらく待ってから再試行してください。'
+      : 'AI解析に失敗しました'
+    return NextResponse.json({ error: message }, { status: isOverload ? 503 : 502 })
   }
 }
