@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
-import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from './prompts'
+import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF, DEFAULT_GEMINI_PROMPT_ORDERS } from './prompts'
 
 /**
  * Gemini 解析（features.md §4）。通常モード（画像/テキスト → items[]）と
@@ -28,6 +28,19 @@ export const parsedItemSchema = z.object({
 export type ParsedItem = z.infer<typeof parsedItemSchema>
 
 const normalResultSchema = z.object({ items: z.array(parsedItemSchema) })
+
+export const parsedOrderSchema = z.object({
+  customer_name: z.string().nullable(),
+  delivery_date: z.string().nullable(),
+  items: z.array(parsedItemSchema),
+})
+export type ParsedOrder = z.infer<typeof parsedOrderSchema>
+
+export const ordersResultSchema = z.object({
+  is_order: z.boolean(),
+  orders: z.array(parsedOrderSchema),
+})
+export type OrdersResult = z.infer<typeof ordersResultSchema>
 
 export const diffResultSchema = z.object({
   added: z.array(parsedItemSchema),
@@ -131,6 +144,36 @@ ${hintText && hintText.trim() !== '' ? hintText + '\n' : ''}${diffExtra}
     return parsed
   } catch (e) {
     await logUsage('diff', channel, false)
+    throw e
+  }
+}
+
+/**
+ * 手動OCR専用：FAX 1枚から orders[] 形式で複数注文を抽出。
+ * is_order=false の場合は受注書ではない（仕向け別出荷数量表等）。
+ * プロンプトは設定DB非対応（DEFAULT_GEMINI_PROMPT_ORDERS 固定）。
+ */
+export async function analyzeOrders(
+  input: { imageBase64?: string; mimeType?: string; text?: string },
+  channel: string,
+): Promise<OrdersResult> {
+  const model = (await client()).getGenerativeModel({ model: await getModel() })
+  const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
+    { text: DEFAULT_GEMINI_PROMPT_ORDERS },
+  ]
+  if (input.imageBase64) {
+    parts.push({ inlineData: { data: input.imageBase64, mimeType: input.mimeType || 'image/png' } })
+  }
+  if (input.text) parts.push({ text: `注文テキスト:\n${input.text}` })
+
+  try {
+    const res = await model.generateContent(parts)
+    const json = extractJson(res.response.text())
+    const parsed = ordersResultSchema.parse(json)
+    await logUsage('orders', channel, true, res.response.usageMetadata?.totalTokenCount)
+    return parsed
+  } catch (e) {
+    await logUsage('orders', channel, false)
     throw e
   }
 }

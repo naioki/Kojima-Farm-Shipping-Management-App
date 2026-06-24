@@ -2,12 +2,13 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Image as ImageIcon, FileText, Upload, Sparkles, X, ChevronDown, ChevronUp, AlertTriangle, Save, FileType } from 'lucide-react'
+import { Image as ImageIcon, FileText, Upload, Sparkles, X, ChevronDown, ChevronUp, AlertTriangle, Save, FileType, Ban } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { downscaleImage } from '@/lib/image/downscale'
+import { OcrSaveSection } from '@/components/admin/OcrSaveSection'
 
 const SAVE_PHRASE = '変更を理解しました'
 const MAX_FILE_MB = 10
@@ -20,6 +21,17 @@ interface ParsedItem {
   confidence: number
 }
 
+interface ParsedOrder {
+  customer_name: string | null
+  delivery_date: string | null
+  items: ParsedItem[]
+}
+
+interface OcrResult {
+  is_order: boolean
+  orders: ParsedOrder[]
+}
+
 interface ManualOcrFormProps {
   /** 現在保存されている解析プロンプト（設定 GEMINI_PROMPT_NORMAL）。空ならデフォルト。 */
   currentPrompt: string
@@ -29,6 +41,10 @@ interface ManualOcrFormProps {
   allowPromptEdit?: boolean
   /** 既定プロンプトとして恒久保存できるか（管理者のみ true）。 */
   allowPromptSave?: boolean
+  /** 取引先一覧（保存フォームの選択肢）。渡さない場合は保存セクション非表示。 */
+  customers?: { id: string; name: string }[]
+  /** 商品一覧（保存フォームの選択肢）。渡さない場合は保存セクション非表示。 */
+  products?: { id: string; name: string }[]
 }
 
 type Mode = 'image' | 'text'
@@ -44,6 +60,8 @@ export function ManualOcrForm({
   defaultPrompt,
   allowPromptEdit = true,
   allowPromptSave = true,
+  customers = [],
+  products = [],
 }: ManualOcrFormProps) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('image')
@@ -59,7 +77,7 @@ export function ManualOcrForm({
   const [promptOpen, setPromptOpen] = useState(false)
 
   const [analyzing, setAnalyzing] = useState(false)
-  const [items, setItems] = useState<ParsedItem[] | null>(null)
+  const [result, setResult] = useState<OcrResult | null>(null)
 
   const [confirmCustomOpen, setConfirmCustomOpen] = useState(false)
   const [saveModalOpen, setSaveModalOpen] = useState(false)
@@ -118,7 +136,7 @@ export function ManualOcrForm({
 
   async function runAnalyze() {
     setAnalyzing(true)
-    setItems(null)
+    setResult(null)
     try {
       const res = await fetch('/api/ocr/analyze', {
         method: 'POST',
@@ -127,13 +145,17 @@ export function ManualOcrForm({
           imageBase64: mode === 'image' ? imageBase64 : undefined,
           mimeType: mode === 'image' ? mimeType : undefined,
           text: mode === 'text' ? text : undefined,
-          promptOverride: isCustomPrompt ? prompt : undefined,
         }),
       })
-      const json = (await res.json()) as { items?: ParsedItem[]; error?: string }
-      if (!res.ok) throw new Error(json.error ?? `解析失敗 (${res.status})`)
-      setItems(json.items ?? [])
-      toast.success(`${json.items?.length ?? 0}件の明細を読み取りました`)
+      const json = (await res.json()) as OcrResult & { error?: string }
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `解析失敗 (${res.status})`)
+      setResult(json)
+      if (!json.is_order) {
+        toast('受注書ではないと判定されました', { icon: '⚠️' })
+      } else {
+        const total = json.orders.reduce((s, o) => s + o.items.length, 0)
+        toast.success(`${json.orders.length}件の注文・${total}明細を読み取りました`)
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '解析に失敗しました')
     } finally {
@@ -341,50 +363,70 @@ export function ManualOcrForm({
       </div>
 
       {/* 結果 */}
-      {items && (
-        <div className="space-y-2">
-          <h2 className="font-display text-base font-bold text-ink">読み取り結果（{items.length}件）</h2>
-          {items.length === 0 ? (
+      {result && (
+        <div className="space-y-4">
+          {!result.is_order ? (
+            <div className="flex items-center gap-3 rounded-lg border border-line bg-bg-soft px-4 py-4 text-sm text-ink-soft">
+              <Ban className="h-5 w-5 shrink-0 text-ink-faint" aria-hidden />
+              <span>受注書ではないと判定されました（仕向け別出荷数量表・集計表など）。別のファイルを試してください。</span>
+            </div>
+          ) : result.orders.length === 0 ? (
             <p className="rounded-lg border border-line bg-bg-soft px-4 py-6 text-center text-sm text-ink-soft">
-              明細を検出できませんでした。画像の向き・解像度を確認するか、プロンプトを調整してください。
+              注文明細を検出できませんでした。画像の向き・解像度を確認してください。
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-line">
-              <table className="w-full text-sm">
-                <thead className="bg-bg-soft text-xs text-ink-soft">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">読取り原文</th>
-                    <th className="px-3 py-2 text-left font-medium">商品名</th>
-                    <th className="px-3 py-2 text-right font-medium">数量</th>
-                    <th className="px-3 py-2 text-left font-medium">単位</th>
-                    <th className="px-3 py-2 text-right font-medium">確信度</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {items.map((it, i) => {
-                    const low = it.confidence < 0.7
-                    return (
-                      <tr key={i} className={cn(low && 'bg-alert-bg/40')}>
-                        <td className="px-3 py-2 text-ink-soft">{it.raw_name}</td>
-                        <td className="px-3 py-2 font-medium text-ink">{it.product_name ?? '—'}</td>
-                        <td className="num px-3 py-2 text-right font-bold tabular-nums text-ink">{it.quantity}</td>
-                        <td className="px-3 py-2 text-ink-soft">{it.unit ?? '—'}</td>
-                        <td className="px-3 py-2 text-right">
-                          <span className={cn('num inline-flex items-center gap-1 tabular-nums', low ? 'text-alert' : 'text-harvest-600')}>
-                            {low && <AlertTriangle className="h-3 w-3" aria-hidden />}
-                            {Math.round(it.confidence * 100)}%
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-4">
+              <h2 className="font-display text-base font-bold text-ink">
+                読み取り結果（{result.orders.length}件の注文）
+              </h2>
+              {result.orders.map((order, i) => (
+                <div key={i} className="space-y-2">
+                  {/* 明細プレビュー */}
+                  <div className="overflow-x-auto rounded-lg border border-line">
+                    <table className="w-full text-sm">
+                      <thead className="bg-bg-soft text-xs text-ink-soft">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">読取り原文</th>
+                          <th className="px-3 py-2 text-left font-medium">商品名</th>
+                          <th className="px-3 py-2 text-right font-medium">数量</th>
+                          <th className="px-3 py-2 text-left font-medium">単位</th>
+                          <th className="px-3 py-2 text-right font-medium">確信度</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-line">
+                        {order.items.map((it, j) => {
+                          const low = it.confidence < 0.7
+                          return (
+                            <tr key={j} className={cn(low && 'bg-alert-bg/40')}>
+                              <td className="px-3 py-2 text-ink-soft">{it.raw_name}</td>
+                              <td className="px-3 py-2 font-medium text-ink">{it.product_name ?? '—'}</td>
+                              <td className="num px-3 py-2 text-right font-bold tabular-nums text-ink">{it.quantity}</td>
+                              <td className="px-3 py-2 text-ink-soft">{it.unit ?? '—'}</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className={cn('num inline-flex items-center gap-1 tabular-nums', low ? 'text-alert' : 'text-harvest-600')}>
+                                  {low && <AlertTriangle className="h-3 w-3" aria-hidden />}
+                                  {Math.round(it.confidence * 100)}%
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* 保存フォーム（customers が渡されているときのみ表示） */}
+                  {customers.length > 0 && (
+                    <OcrSaveSection
+                      order={order}
+                      index={i}
+                      customers={customers}
+                      products={products}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           )}
-          <p className="text-xs text-ink-faint">
-            ※ これはプレビューです（DBには保存されません）。<span className="text-alert">赤＝確信度70%未満</span>は要確認です。
-          </p>
         </div>
       )}
 

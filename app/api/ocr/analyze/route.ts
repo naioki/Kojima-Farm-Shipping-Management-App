@@ -2,7 +2,7 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { analyzeNormal } from '@/lib/gemini/analyze'
+import { analyzeOrders } from '@/lib/gemini/analyze'
 import { getStaffFeatures } from '@/lib/field/features'
 
 export const runtime = 'nodejs'
@@ -16,8 +16,6 @@ const bodySchema = z
     mimeType: z.string().optional(),
     /** メール本文などのテキスト。 */
     text: z.string().min(1).optional(),
-    /** この解析だけに使う一回限りのプロンプト。設定は変更されない。 */
-    promptOverride: z.string().optional(),
   })
   .refine((d) => Boolean(d.imageBase64 || d.text), {
     message: '画像またはテキストのいずれかが必要です',
@@ -53,18 +51,11 @@ export async function POST(req: Request) {
     )
   }
 
-  const { imageBase64, mimeType, text, promptOverride } = parsed.data
-  // プロンプト上書きは管理者のみ（スタッフは既定プロンプト固定）。
-  const effectiveOverride = role === 'admin' ? promptOverride : undefined
+  const { imageBase64, mimeType, text } = parsed.data
 
   try {
-    const items = await analyzeNormal(
-      { imageBase64, mimeType, text },
-      'manual',
-      undefined,
-      effectiveOverride,
-    )
-    return NextResponse.json({ items })
+    const result = await analyzeOrders({ imageBase64, mimeType, text }, 'manual')
+    return NextResponse.json(result)
   } catch (e) {
     const message = e instanceof Error ? e.message : 'AI解析に失敗しました'
     return NextResponse.json({ error: message }, { status: 502 })
