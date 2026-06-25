@@ -107,6 +107,7 @@ export interface AppSetting {
 export interface Order {
   id: UUID
   customer_id: UUID
+  destination_id: UUID | null
   source: Channel
   status: OrderStatus
   order_date: ISODate
@@ -116,6 +117,19 @@ export interface Order {
   shipping_time: ShippingTime | null
   note: string | null
   created_by: UUID | null
+  created_at: ISODateTime
+  updated_at: ISODateTime
+}
+
+/** 納入先（取引先の配下の届け先）。migrations/0013。 */
+export interface DeliveryDestination {
+  id: UUID
+  customer_id: UUID
+  code: string | null
+  full_name: string
+  aliases: string[]
+  sort_order: number
+  is_active: boolean
   created_at: ISODateTime
   updated_at: ISODateTime
 }

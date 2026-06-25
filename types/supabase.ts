@@ -16,6 +16,7 @@ import type {
   CustomerParseHint,
   DeliveryNote,
   DeliveryNoteItem,
+  DeliveryDestination,
 } from './database'
 
 /**
@@ -57,6 +58,18 @@ export interface Database {
         },
         Partial<Customer>
       >
+      delivery_destinations: Table<
+        DeliveryDestination,
+        {
+          customer_id: string
+          code?: string | null
+          full_name: string
+          aliases?: string[]
+          sort_order?: number
+          is_active?: boolean
+        },
+        Partial<DeliveryDestination>
+      >
       products: Table<
         Product,
         {
@@ -76,6 +89,7 @@ export interface Database {
         Order,
         {
           customer_id: string
+          destination_id?: string | null
           source: Order['source']
           status?: Order['status']
           order_date?: string

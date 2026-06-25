@@ -7,6 +7,7 @@ import { CustomerRulesEditor, type RuleRow } from '@/components/admin/CustomerRu
 import { CustomerManage } from '@/components/admin/CustomerManage'
 import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHistory'
 import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
+import { DestinationManager, type Destination } from '@/components/admin/DestinationManager'
 import { getSetting } from '@/lib/settings'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
@@ -28,6 +29,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     { data: products, error: prodErr },
     { data: rules },
     { data: auditRows },
+    { data: destinations },
     lockRaw,
     masterRaw,
   ] = await Promise.all([
@@ -47,6 +49,12 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       .eq('entity_type', 'customer_product_rules')
       .order('created_at', { ascending: false })
       .limit(200),
+    supabase
+      .from('delivery_destinations')
+      .select('id, code, full_name, aliases, is_active')
+      .eq('customer_id', params.id)
+      .order('sort_order')
+      .order('full_name'),
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
   ])
@@ -137,6 +145,21 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
           customerId={customer.id}
           customerName={customer.name}
           initialColor={customer.display_color}
+        />
+      </Card>
+
+      <Card className="space-y-3">
+        <div>
+          <h2 className="font-display text-base font-bold text-ink">納入先（届け先）</h2>
+          <p className="text-sm text-ink-soft">
+            この取引先に複数の届け先がある場合に登録します（例: 仲卸の各店舗）。表示は常に
+            「<strong className="text-ink">{customer.name} ＞ 納入先</strong>」。略称は普段の表示、正式名は伝票、表記ゆれはOCRの名寄せに使います。
+          </p>
+        </div>
+        <DestinationManager
+          customerId={customer.id}
+          customerName={customer.name}
+          initial={(destinations ?? []) as Destination[]}
         />
       </Card>
 
