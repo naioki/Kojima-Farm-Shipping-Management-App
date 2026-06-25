@@ -22,6 +22,8 @@ const orderSchema = z.object({
   shipping_time: z.enum(['am', 'pm']).optional(),
   note: z.string().optional(),
   items: z.array(itemSchema).min(1),
+  /** 同一取引先×納品日の既存注文があっても登録を強行する（重複警告を承認した）。 */
+  confirm_duplicate: z.boolean().optional(),
 })
 
 /**
@@ -52,8 +54,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '入力値が不正です', details: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { customer_id, delivery_date, shipping_time, note, items } = parsed.data
+  const { customer_id, delivery_date, shipping_time, note, items, confirm_duplicate } = parsed.data
   const admin = createAdminClient()
+
+  // 重複警告（dedupe.ts の sender_date_key と同思想：取引先×納品日）。
+  // ブロックせず 409 で既存を知らせ、ユーザーが confirm_duplicate=true で再送信したら通す。
+  if (!confirm_duplicate) {
+    const { data: dupes } = await admin
+      .from('orders')
+      .select('id, created_at, order_items(count)')
+      .eq('customer_id', customer_id)
+      .eq('delivery_date', delivery_date)
+      .neq('status', 'cancelled')
+    if (dupes && dupes.length > 0) {
+      return NextResponse.json(
+        {
+          duplicate: true,
+          error: '同じ取引先・納品日の注文が既に存在します',
+          existing: dupes.map((o) => ({
+            id: o.id as string,
+            created_at: o.created_at as string,
+            item_count: (o.order_items as unknown as { count: number }[])?.[0]?.count ?? 0,
+          })),
+        },
+        { status: 409 },
+      )
+    }
+  }
 
   // 過去90日の同取引先×商品の最大数量を取得（異常値検知）
   const productIds = [...new Set(items.map((i) => i.product_id))]

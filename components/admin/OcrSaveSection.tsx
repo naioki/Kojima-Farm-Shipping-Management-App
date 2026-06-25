@@ -6,6 +6,7 @@ import { AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { ConfirmModal } from '@/components/ui/Modal'
 
 interface ParsedOrder {
   customer_name: string | null
@@ -76,12 +77,15 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
     })),
   )
   const [saving, setSaving] = useState(false)
+  const [dupConfirmOpen, setDupConfirmOpen] = useState(false)
+  const [dupCount, setDupCount] = useState(0)
 
   function updateRow(i: number, field: string, value: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)))
   }
 
-  async function handleSave() {
+  /** confirmDuplicate=true なら重複警告を無視して登録を強行する。 */
+  async function handleSave(confirmDuplicate = false) {
     if (!customerId) { toast.error('取引先を選択してください'); return }
     if (!deliveryDate) { toast.error('納品日を入力してください'); return }
     const invalid = rows.filter((r) => !r.product_id || isNaN(Number(r.quantity)) || Number(r.quantity) <= 0)
@@ -95,6 +99,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
         body: JSON.stringify({
           customer_id: customerId,
           delivery_date: deliveryDate,
+          confirm_duplicate: confirmDuplicate,
           items: rows.map((r) => ({
             product_id: r.product_id,
             product_name: r.product_name,
@@ -105,7 +110,17 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
           })),
         }),
       })
-      const json = (await res.json().catch(() => ({}))) as { error?: string }
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string
+        duplicate?: boolean
+        existing?: { id: string; item_count: number; created_at: string }[]
+      }
+      // 409 = 同一取引先×納品日の既存注文あり。警告ダイアログを出して判断を仰ぐ。
+      if (res.status === 409 && json.duplicate) {
+        setDupCount(json.existing?.length ?? 1)
+        setDupConfirmOpen(true)
+        return
+      }
       if (!res.ok) throw new Error(json.error ?? `保存失敗 (${res.status})`)
       toast.success('注文を登録しました')
       router.push('/admin/orders')
@@ -212,10 +227,25 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
       </div>
 
       <div className="flex justify-end">
-        <Button variant="primary" onClick={handleSave} isLoading={saving} disabled={saving}>
+        <Button variant="primary" onClick={() => handleSave(false)} isLoading={saving} disabled={saving}>
           注文として保存
         </Button>
       </div>
+
+      {/* 重複警告（同一取引先×納品日の既存注文あり）。承認すれば登録を強行する。 */}
+      <ConfirmModal
+        open={dupConfirmOpen}
+        onClose={() => setDupConfirmOpen(false)}
+        onConfirm={() => {
+          setDupConfirmOpen(false)
+          void handleSave(true)
+        }}
+        title="重複の可能性"
+        message={`この取引先・納品日（${deliveryDate}）の注文が既に ${dupCount} 件あります。FAXの再送・二重読み取りの可能性があります。それでも新しい注文として登録しますか？`}
+        confirmLabel="重複を承知で登録"
+        danger
+        isLoading={saving}
+      />
     </div>
   )
 }
