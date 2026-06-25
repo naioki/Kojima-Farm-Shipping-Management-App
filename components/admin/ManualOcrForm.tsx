@@ -78,6 +78,8 @@ export function ManualOcrForm({
 
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<OcrResult | null>(null)
+  // 取引先リストは全注文で共有する（ある注文で新規登録したら次の注文でも選べるように）
+  const [customerList, setCustomerList] = useState(customers)
 
   const [confirmCustomOpen, setConfirmCustomOpen] = useState(false)
   const [saveModalOpen, setSaveModalOpen] = useState(false)
@@ -415,12 +417,19 @@ export function ManualOcrForm({
                     </table>
                   </div>
                   {/* 保存フォーム（customers が渡されているときのみ表示） */}
-                  {customers.length > 0 && (
+                  {customerList.length > 0 && (
                     <OcrSaveSection
                       order={order}
                       index={i}
-                      customers={customers}
+                      customers={customerList}
                       products={products}
+                      onCustomerAdded={(c) =>
+                        setCustomerList((prev) =>
+                          prev.some((x) => x.id === c.id)
+                            ? prev
+                            : [...prev, c].sort((a, b) => a.name.localeCompare(b.name, 'ja')),
+                        )
+                      }
                     />
                   )}
                 </div>

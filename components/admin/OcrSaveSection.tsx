@@ -25,6 +25,8 @@ interface Props {
   index: number
   customers: { id: string; name: string }[]
   products: { id: string; name: string }[]
+  /** 新規取引先を登録したとき親へ通知（同じ画面の他の注文でも選べるようにする）。 */
+  onCustomerAdded?: (customer: { id: string; name: string }) => void
 }
 
 /** 全角→半角・記号正規化（parse-quantity.ts と同方針）。"１５ｃ２"→"15c2" */
@@ -89,7 +91,7 @@ function bestMatchCustomerId(name: string | null, customers: { id: string; name:
  * OCR読み取り結果（1注文分）を受注として保存するフォーム。
  * 取引先・納品日・商品を確認してから POST /api/orders に送信する。
  */
-export function OcrSaveSection({ order, index, customers, products }: Props) {
+export function OcrSaveSection({ order, index, customers, products, onCustomerAdded }: Props) {
   const router = useRouter()
 
   const [customerId, setCustomerId] = useState(() => bestMatchCustomerId(order.customer_name, customers))
@@ -116,7 +118,8 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
   const [dupCount, setDupCount] = useState(0)
 
   // 取引先のインライン追加（未登録でも画面を離れずに登録できる＝二度手間防止）
-  const [localCustomers, setLocalCustomers] = useState(customers)
+  // リストは親(ManualOcrForm)が持つ customers を共有し、追加は onCustomerAdded で親へ通知する
+  // （同じ画面の次の注文でも選べるようにするため）。
   const [addingCustomer, setAddingCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState(order.customer_name ?? '')
   const [creatingCustomer, setCreatingCustomer] = useState(false)
@@ -136,7 +139,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
         error?: string
       }
       if (!res.ok || !json.customer) throw new Error(json.error ?? `登録失敗 (${res.status})`)
-      setLocalCustomers((prev) => [...prev, json.customer!].sort((a, b) => a.name.localeCompare(b.name, 'ja')))
+      onCustomerAdded?.(json.customer) // 親の共有リストに追加（次の注文でも選べる）
       setCustomerId(json.customer.id)
       setAddingCustomer(false)
       toast.success(`取引先「${json.customer.name}」を登録しました（締め・規格は後で設定可）`)
@@ -250,7 +253,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
             <>
               <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={selectCls}>
                 <option value="">選択してください</option>
-                {localCustomers.map((c) => (
+                {customers.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
