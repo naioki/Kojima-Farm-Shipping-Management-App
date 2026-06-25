@@ -27,11 +27,32 @@ interface Props {
   products: { id: string; name: string }[]
 }
 
-/** "100+0" → 100, "x58" → 58, "23.0 cs" → 23, "10" → 10。解釈不能は NaN。 */
+/** 全角→半角・記号正規化（parse-quantity.ts と同方針）。"１５ｃ２"→"15c2" */
+function normalizeQty(raw: string): string {
+  return raw
+    .replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
+    .replace(/[ｃＣ]/g, 'c')
+    .replace(/[ｘＸ]/g, 'x')
+    .replace(/\s+/g, '')
+}
+
+/**
+ * c記法（ケース＋端数, 例 "15c2" / "15c"）か判定する。
+ * c記法は入り数(P/C)が無いと総数を確定できない。ここで自動展開すると
+ * 誤った入り数を前提にした値が出てしまい、後の人がそれを信じる危険があるため、
+ * 検知したら数量は空にして人手の総数入力を促す（マスタには一切触れない）。
+ */
+function isCaseNotation(raw: string): boolean {
+  return /^(\d+)c(\d*)$/i.test(normalizeQty(raw))
+}
+
+/** "100+0" → 100, "x58" → 58, "23.0 cs" → 23, "10" → 10。解釈不能・c記法は NaN。 */
 function parseOcrQty(raw: string): number {
-  const x = raw.match(/x(\d+)/i)
+  const s = normalizeQty(raw)
+  if (isCaseNotation(s)) return NaN // c記法は総数を確定できない（人手入力へ）
+  const x = s.match(/x(\d+)/i)
   if (x) return Number(x[1])
-  const n = raw.match(/^(\d+(?:\.\d+)?)/)
+  const n = s.match(/^(\d+(?:\.\d+)?)/)
   return n ? Number(n[1]) : NaN
 }
 
@@ -67,14 +88,20 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
   const [customerId, setCustomerId] = useState(() => bestMatchCustomerId(order.customer_name, customers))
   const [deliveryDate, setDeliveryDate] = useState(order.delivery_date ?? '')
   const [rows, setRows] = useState(() =>
-    order.items.map((it) => ({
-      raw_name: it.raw_name,
-      product_id: bestMatchId(it.product_name, products),
-      product_name: it.product_name ?? it.raw_name,
-      quantity: String(parseOcrQty(it.quantity) || ''),
-      unit: it.unit || '個',
-      confidence: it.confidence,
-    })),
+    order.items.map((it) => {
+      const caseNotation = isCaseNotation(it.quantity)
+      return {
+        raw_name: it.raw_name,
+        product_id: bestMatchId(it.product_name, products),
+        product_name: it.product_name ?? it.raw_name,
+        // c記法は総数を確定できないので空にして人手入力を促す（誤った自動値を出さない）
+        quantity: caseNotation ? '' : String(parseOcrQty(it.quantity) || ''),
+        qtyRaw: it.quantity, // 数量の読取り原文（"15c2" 等）。警告表示に使う
+        unit: it.unit || '個',
+        confidence: it.confidence,
+        needsTotal: caseNotation,
+      }
+    }),
   )
   const [saving, setSaving] = useState(false)
   const [dupConfirmOpen, setDupConfirmOpen] = useState(false)
@@ -172,6 +199,16 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
   return (
     <div className="space-y-3 rounded-lg border border-earth-200 bg-earth-50 p-4">
       <p className="text-xs font-semibold text-earth-700">注文 {index + 1} を保存</p>
+
+      {rows.some((r) => r.needsTotal) && (
+        <div className="flex items-start gap-2 rounded border border-alert/40 bg-alert-bg/40 px-3 py-2 text-xs text-alert">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            ケース表記（例「15c2」）の項目があります。入り数(P/C)が確定できないため<strong>推測値は入れていません</strong>。
+            FAXを見て<strong>総数</strong>を手入力してください（入り数はマスタに保存されません）。
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -272,9 +309,20 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
                     type="number"
                     value={r.quantity}
                     onChange={(e) => updateRow(i, 'quantity', e.target.value)}
-                    className={cn(inputCls, 'text-right')}
+                    className={cn(
+                      inputCls,
+                      'text-right',
+                      r.needsTotal && !r.quantity && 'border-alert bg-alert-bg/40',
+                    )}
                     min={1}
+                    placeholder={r.needsTotal ? '総数' : undefined}
                   />
+                  {r.needsTotal && (
+                    <span className="mt-0.5 flex items-center gap-0.5 text-[10px] leading-tight text-alert">
+                      <AlertTriangle className="h-2.5 w-2.5 shrink-0" aria-hidden />
+                      入り数が必要な表記「{r.qtyRaw.trim()}」。総数を確認して入力
+                    </span>
+                  )}
                 </td>
                 <td className="px-2 py-1.5">
                   <input
