@@ -14,6 +14,7 @@ import {
   Tag,
   Coins,
   Images,
+  AlertTriangle,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -65,6 +66,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
       { href: '/admin/customers', label: '取引先', icon: Users },
       { href: '/admin/products', label: '商品', icon: Carrot },
       { href: '/admin/pricing-master', label: '価格・荷姿', icon: Tag },
+      { href: '/admin/rules-missing', label: '規格の未登録', icon: AlertTriangle },
     ],
   },
   { label: null, items: [{ href: '/admin/settings', label: '設定', icon: Settings }] },
