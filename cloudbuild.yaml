@@ -8,7 +8,7 @@
 
 substitutions:
   _REGION: asia-northeast1
-  _SERVICE: kojima-noen
+  _SERVICE: kojima-farm-order-app
   _NEXT_PUBLIC_SUPABASE_URL: ''
   _NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
 
