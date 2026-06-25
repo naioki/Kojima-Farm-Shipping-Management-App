@@ -14,6 +14,8 @@ const itemSchema = z.object({
   tax_rate: z.union([z.literal(8), z.literal(10)]).default(8),
   /** 荷姿（pack_config）。出荷表示・後の価格解決に使う。 */
   pack_config_id: z.string().uuid().nullish(),
+  /** 入り数(P/C)。任意。未設定の規格マスタにのみ保存する（既存値は上書きしない）。 */
+  packs_per_case: z.number().positive().nullish(),
 })
 
 const orderSchema = z.object({
@@ -164,6 +166,41 @@ export async function POST(req: NextRequest) {
     // ロールバック（order だけ残さない）
     await admin.from('orders').delete().eq('id', order.id)
     return NextResponse.json({ error: '明細の登録に失敗しました' }, { status: 500 })
+  }
+
+  // 入り数(P/C)を規格マスタに保存（未設定のときのみ。既存値は誤上書きしない）。
+  // 注文本体は登録済みなので、ここでの失敗は注文を巻き戻さない（best-effort）。
+  const withPacks = items.filter((it) => typeof it.packs_per_case === 'number' && it.packs_per_case > 0)
+  if (withPacks.length > 0) {
+    const pids = [...new Set(withPacks.map((it) => it.product_id))]
+    const { data: existing } = await admin
+      .from('customer_product_rules')
+      .select('product_id, packs_per_case')
+      .eq('customer_id', customer_id)
+      .in('product_id', pids)
+    const ruleByProduct = new Map((existing ?? []).map((r) => [r.product_id as string, r]))
+
+    for (const it of withPacks) {
+      const rule = ruleByProduct.get(it.product_id)
+      try {
+        if (!rule) {
+          await admin.from('customer_product_rules').insert({
+            customer_id,
+            product_id: it.product_id,
+            packs_per_case: it.packs_per_case,
+          })
+        } else if (rule.packs_per_case == null) {
+          await admin
+            .from('customer_product_rules')
+            .update({ packs_per_case: it.packs_per_case })
+            .eq('customer_id', customer_id)
+            .eq('product_id', it.product_id)
+        }
+        // 既に入り数が入っている場合は上書きしない
+      } catch (e) {
+        console.error('[POST /api/orders] packs_per_case upsert skipped', e)
+      }
+    }
   }
 
   return NextResponse.json({ orderId: order.id, warnings })

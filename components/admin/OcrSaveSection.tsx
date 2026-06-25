@@ -46,6 +46,13 @@ function isCaseNotation(raw: string): boolean {
   return /^(\d+)c(\d*)$/i.test(normalizeQty(raw))
 }
 
+/** c記法 "15c2" → {cases:15, loose:2}、"15c" → {cases:15, loose:0}。c記法でなければ null。 */
+function caseParts(raw: string): { cases: number; loose: number } | null {
+  const m = normalizeQty(raw).match(/^(\d+)c(\d*)$/i)
+  if (!m) return null
+  return { cases: Number(m[1]), loose: m[2] === '' ? 0 : Number(m[2]) }
+}
+
 /** "100+0" → 100, "x58" → 58, "23.0 cs" → 23, "10" → 10。解釈不能・c記法は NaN。 */
 function parseOcrQty(raw: string): number {
   const s = normalizeQty(raw)
@@ -100,6 +107,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
         unit: it.unit || '個',
         confidence: it.confidence,
         needsTotal: caseNotation,
+        packsPerCase: '', // 入り数(P/C)。任意。入れればc記法を総数展開＋マスタ保存
       }
     }),
   )
@@ -143,6 +151,22 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)))
   }
 
+  /** 入り数(P/C)変更。c記法の行なら総数を自動再計算する（15c2 + P/C → 総数）。 */
+  function updatePack(i: number, value: string) {
+    setRows((prev) =>
+      prev.map((r, idx) => {
+        if (idx !== i) return r
+        const next = { ...r, packsPerCase: value }
+        const parts = caseParts(r.qtyRaw)
+        const pc = Number(value)
+        if (parts && value.trim() !== '' && pc > 0) {
+          next.quantity = String(parts.cases * pc + parts.loose)
+        }
+        return next
+      }),
+    )
+  }
+
   /** confirmDuplicate=true なら重複警告を無視して登録を強行する。 */
   async function handleSave(confirmDuplicate = false) {
     if (!customerId) { toast.error('取引先を選択してください'); return }
@@ -166,6 +190,10 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
             unit: r.unit,
             unit_price: 0,
             tax_rate: 8,
+            // 入り数が入っていれば規格マスタ保存用に送る（任意）
+            packs_per_case: r.packsPerCase.trim() !== '' && Number(r.packsPerCase) > 0
+              ? Number(r.packsPerCase)
+              : undefined,
           })),
         }),
       })
@@ -205,7 +233,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>
             ケース表記（例「15c2」）の項目があります。入り数(P/C)が確定できないため<strong>推測値は入れていません</strong>。
-            FAXを見て<strong>総数</strong>を手入力してください（入り数はマスタに保存されません）。
+            <strong>総数</strong>を直接入力するか、分かれば<strong>入り数</strong>を入れてください（入り数→総数を自動計算し、規格マスタにも保存します）。
           </span>
         </div>
       )}
@@ -278,6 +306,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
               <th className="px-2 py-2 text-left font-medium">商品</th>
               <th className="w-20 px-2 py-2 text-right font-medium">数量</th>
               <th className="w-16 px-2 py-2 text-left font-medium">単位</th>
+              <th className="w-20 px-2 py-2 text-right font-medium">入り数<span className="font-normal text-ink-faint">(任意)</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -320,7 +349,7 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
                   {r.needsTotal && (
                     <span className="mt-0.5 flex items-center gap-0.5 text-[10px] leading-tight text-alert">
                       <AlertTriangle className="h-2.5 w-2.5 shrink-0" aria-hidden />
-                      入り数が必要な表記「{r.qtyRaw.trim()}」。総数を確認して入力
+                      「{r.qtyRaw.trim()}」は総数を入力（または右の入り数を入力）
                     </span>
                   )}
                 </td>
@@ -330,6 +359,17 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
                     value={r.unit}
                     onChange={(e) => updateRow(i, 'unit', e.target.value)}
                     className={inputCls}
+                  />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input
+                    type="number"
+                    value={r.packsPerCase}
+                    onChange={(e) => updatePack(i, e.target.value)}
+                    className={cn(inputCls, 'text-right')}
+                    min={1}
+                    placeholder="—"
+                    title="1ケースあたりの入り数（P/C）。入れるとケース表記を総数に展開し、規格マスタにも保存します"
                   />
                 </td>
               </tr>
