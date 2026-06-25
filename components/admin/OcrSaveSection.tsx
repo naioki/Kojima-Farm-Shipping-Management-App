@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
@@ -80,6 +80,38 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
   const [dupConfirmOpen, setDupConfirmOpen] = useState(false)
   const [dupCount, setDupCount] = useState(0)
 
+  // 取引先のインライン追加（未登録でも画面を離れずに登録できる＝二度手間防止）
+  const [localCustomers, setLocalCustomers] = useState(customers)
+  const [addingCustomer, setAddingCustomer] = useState(false)
+  const [newCustomerName, setNewCustomerName] = useState(order.customer_name ?? '')
+  const [creatingCustomer, setCreatingCustomer] = useState(false)
+
+  async function createCustomer() {
+    const name = newCustomerName.trim()
+    if (!name) { toast.error('取引先名を入力してください'); return }
+    setCreatingCustomer(true)
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        customer?: { id: string; name: string }
+        error?: string
+      }
+      if (!res.ok || !json.customer) throw new Error(json.error ?? `登録失敗 (${res.status})`)
+      setLocalCustomers((prev) => [...prev, json.customer!].sort((a, b) => a.name.localeCompare(b.name, 'ja')))
+      setCustomerId(json.customer.id)
+      setAddingCustomer(false)
+      toast.success(`取引先「${json.customer.name}」を登録しました（締め・規格は後で設定可）`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '取引先の登録に失敗しました')
+    } finally {
+      setCreatingCustomer(false)
+    }
+  }
+
   function updateRow(i: number, field: string, value: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)))
   }
@@ -149,12 +181,44 @@ export function OcrSaveSection({ order, index, customers, products }: Props) {
               <span className="ml-1 text-ink-faint">（AI読取: {order.customer_name}）</span>
             )}
           </label>
-          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={selectCls}>
-            <option value="">選択してください</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          {!addingCustomer ? (
+            <>
+              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={selectCls}>
+                <option value="">選択してください</option>
+                {localCustomers.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              {!customerId && (
+                <button
+                  type="button"
+                  onClick={() => { setNewCustomerName(order.customer_name ?? ''); setAddingCustomer(true) }}
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+                >
+                  <Plus className="h-3 w-3" aria-hidden />
+                  この取引先を新規登録
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="flex gap-1">
+              <input
+                type="text"
+                value={newCustomerName}
+                onChange={(e) => setNewCustomerName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void createCustomer() } }}
+                placeholder="取引先名（店名）"
+                autoFocus
+                className={inputCls}
+              />
+              <Button variant="primary" size="sm" onClick={createCustomer} isLoading={creatingCustomer} disabled={creatingCustomer}>
+                登録
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setAddingCustomer(false)} disabled={creatingCustomer}>
+                取消
+              </Button>
+            </div>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-soft">
