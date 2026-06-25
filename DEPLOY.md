@@ -85,7 +85,7 @@ _NEXT_PUBLIC_SUPABASE_ANON_KEY=ここに anon キー
 ## ロールバック
 
 ```bash
-gcloud run revisions list --service=kojima-noen --region=asia-northeast1
-gcloud run services update-traffic kojima-noen --region=asia-northeast1 \
+gcloud run revisions list --service=kojima-farm-order-app --region=asia-northeast1
+gcloud run services update-traffic kojima-farm-order-app --region=asia-northeast1 \
   --to-revisions=<安定リビジョン>=100
 ```
