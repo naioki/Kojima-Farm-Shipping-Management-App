@@ -10,6 +10,7 @@ import { ConfirmModal } from '@/components/ui/Modal'
 
 interface ParsedOrder {
   customer_name: string | null
+  destination_name?: string | null
   delivery_date: string | null
   items: {
     raw_name: string
@@ -17,6 +18,7 @@ interface ParsedOrder {
     quantity: string
     unit: string | null
     confidence: number
+    is_new?: boolean
   }[]
 }
 
@@ -37,6 +39,8 @@ interface Props {
   destinations?: Destination[]
   /** 新規取引先を登録したとき親へ通知（同じ画面の他の注文でも選べるようにする）。 */
   onCustomerAdded?: (customer: { id: string; name: string }) => void
+  /** 新規納入先を登録したとき親へ通知（同じ画面の他の注文でも選べるようにする）。 */
+  onDestinationAdded?: (destination: Destination) => void
 }
 
 /** OCRが読んだ文字列を納入先（code/full_name/aliases）に名寄せ。見つからなければ ''。 */
@@ -112,7 +116,7 @@ function bestMatchCustomerId(name: string | null, customers: { id: string; name:
  * OCR読み取り結果（1注文分）を受注として保存するフォーム。
  * 取引先・納品日・商品を確認してから POST /api/orders に送信する。
  */
-export function OcrSaveSection({ order, index, customers, products, destinations = [], onCustomerAdded }: Props) {
+export function OcrSaveSection({ order, index, customers, products, destinations = [], onCustomerAdded, onDestinationAdded }: Props) {
   const router = useRouter()
 
   const [customerId, setCustomerId] = useState(() => bestMatchCustomerId(order.customer_name, customers))
@@ -122,10 +126,11 @@ export function OcrSaveSection({ order, index, customers, products, destinations
   // 選択中の取引先に紐づく納入先だけを候補にする
   const customerDestinations = destinations.filter((d) => d.customer_id === customerId)
 
-  // 取引先が変わったら納入先を自動マッチ（OCRの取引先名で寄せる）／無ければクリア
+  // 取引先が変わったら納入先を自動マッチ（OCRの納入先名→無ければ取引先名で寄せる）／無ければクリア
   useEffect(() => {
     const ds = destinations.filter((d) => d.customer_id === customerId)
-    setDestinationId(ds.length > 0 ? bestMatchDestinationId(order.customer_name, ds) : '')
+    const hint = order.destination_name || order.customer_name
+    setDestinationId(ds.length > 0 ? bestMatchDestinationId(hint, ds) : '')
     // 取引先変更時のみ再選択する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
@@ -143,6 +148,7 @@ export function OcrSaveSection({ order, index, customers, products, destinations
         confidence: it.confidence,
         needsTotal: caseNotation,
         packsPerCase: '', // 入り数(P/C)。任意。入れればc記法を総数展開＋マスタ保存
+        isNew: Boolean(it.is_new), // ★等で「新規/変更」とマークされた明細
       }
     }),
   )
@@ -180,6 +186,41 @@ export function OcrSaveSection({ order, index, customers, products, destinations
       toast.error(e instanceof Error ? e.message : '取引先の登録に失敗しました')
     } finally {
       setCreatingCustomer(false)
+    }
+  }
+
+  // 納入先のインライン追加（取引先と同様、画面を離れず登録＝二度手間防止）
+  const [addingDest, setAddingDest] = useState(false)
+  const [newDestCode, setNewDestCode] = useState('')
+  const [newDestFullName, setNewDestFullName] = useState(order.destination_name ?? '')
+  const [creatingDest, setCreatingDest] = useState(false)
+
+  async function createDestination() {
+    if (!customerId) { toast.error('先に取引先を選んでください'); return }
+    const full = newDestFullName.trim()
+    if (!full) { toast.error('正式名を入力してください'); return }
+    setCreatingDest(true)
+    try {
+      const res = await fetch('/api/destinations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ customer_id: customerId, code: newDestCode.trim() || null, full_name: full, aliases: [] }),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        destination?: { id: string; code: string | null; full_name: string; aliases: string[] }
+        error?: string
+      }
+      if (!res.ok || !json.destination) throw new Error(json.error ?? `登録失敗 (${res.status})`)
+      const dest: Destination = { ...json.destination, customer_id: customerId }
+      onDestinationAdded?.(dest) // 親の共有リストに追加（次の注文でも選べる）
+      setDestinationId(dest.id)
+      setAddingDest(false)
+      setNewDestCode(''); setNewDestFullName('')
+      toast.success(`納入先「${dest.code?.trim() || dest.full_name}」を登録しました`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '納入先の登録に失敗しました')
+    } finally {
+      setCreatingDest(false)
     }
   }
 
@@ -265,6 +306,16 @@ export function OcrSaveSection({ order, index, customers, products, destinations
     <div className="space-y-3 rounded-lg border border-earth-200 bg-earth-50 p-4">
       <p className="text-xs font-semibold text-earth-700">注文 {index + 1} を保存</p>
 
+      {rows.some((r) => r.isNew) && (
+        <div className="flex items-start gap-2 rounded border border-trust-300 bg-trust-50 px-3 py-2 text-xs text-trust-700">
+          <span className="font-bold">★</span>
+          <span>
+            FAXで<strong>新規・変更マーク（★）</strong>が付いた明細があります（下で青く強調）。
+            数量の変更を見落とさないよう、必ず確認してください。
+          </span>
+        </div>
+      )}
+
       {rows.some((r) => r.needsTotal) && (
         <div className="flex items-start gap-2 rounded border border-alert/40 bg-alert-bg/40 px-3 py-2 text-xs text-alert">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -335,24 +386,60 @@ export function OcrSaveSection({ order, index, customers, products, destinations
         </div>
       </div>
 
-      {/* 納入先（届け先）。選択中の取引先に納入先がある場合だけ表示。「取引先 ＞ 納入先」 */}
-      {customerDestinations.length > 0 && (
+      {/* 納入先（届け先）。取引先選択中に表示。「取引先 ＞ 納入先」。未登録ならその場で追加できる。 */}
+      {customerId && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-soft">
             納入先（届け先）
             <span className="ml-1 text-ink-faint">
               {customers.find((c) => c.id === customerId)?.name} ＞ …
+              {order.destination_name && <span className="ml-1">（AI読取: {order.destination_name}）</span>}
             </span>
           </label>
-          <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)} className={selectCls}>
-            <option value="">（指定なし）</option>
-            {customerDestinations.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.code?.trim() || d.full_name}
-                {d.code?.trim() && d.full_name ? `（${d.full_name}）` : ''}
-              </option>
-            ))}
-          </select>
+          {!addingDest ? (
+            <div className="flex items-center gap-2">
+              {customerDestinations.length > 0 && (
+                <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)} className={selectCls}>
+                  <option value="">（指定なし）</option>
+                  {customerDestinations.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.code?.trim() || d.full_name}
+                      {d.code?.trim() && d.full_name ? `（${d.full_name}）` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                onClick={() => { setNewDestCode(''); setNewDestFullName(order.destination_name ?? ''); setAddingDest(true) }}
+                className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+              >
+                <Plus className="h-3 w-3" aria-hidden />
+                納入先を登録
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              <input
+                type="text"
+                value={newDestCode}
+                onChange={(e) => setNewDestCode(e.target.value)}
+                placeholder="略称（例: マルタ）"
+                className={cn(inputCls, 'w-32')}
+              />
+              <input
+                type="text"
+                value={newDestFullName}
+                onChange={(e) => setNewDestFullName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void createDestination() } }}
+                placeholder="正式名（必須）"
+                autoFocus
+                className={cn(inputCls, 'min-w-[10rem] flex-1')}
+              />
+              <Button variant="primary" size="sm" onClick={createDestination} isLoading={creatingDest} disabled={creatingDest}>登録</Button>
+              <Button variant="secondary" size="sm" onClick={() => setAddingDest(false)} disabled={creatingDest}>取消</Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -369,8 +456,13 @@ export function OcrSaveSection({ order, index, customers, products, destinations
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r, i) => (
-              <tr key={i} className={cn(r.confidence < 0.7 && 'bg-alert-bg/30')}>
+              <tr key={i} className={cn(r.confidence < 0.7 && 'bg-alert-bg/30', r.isNew && 'bg-trust-50')}>
                 <td className="px-2 py-1.5 text-xs text-ink-faint">
+                  {r.isNew && (
+                    <span className="mr-1 inline-flex items-center rounded-full bg-trust-600 px-1.5 py-0.5 text-[10px] font-bold text-white align-middle">
+                      ★新規・変更
+                    </span>
+                  )}
                   {r.confidence < 0.7 && <AlertTriangle className="mr-1 inline h-3 w-3 text-alert" />}
                   {r.raw_name}
                 </td>

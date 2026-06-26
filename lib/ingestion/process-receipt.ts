@@ -24,6 +24,22 @@ export interface ProcessReceiptResult {
   error?: string
 }
 
+/** OCRが読んだ届け先テキストを納入先（code/full_name/aliases）に名寄せ。無ければ null。 */
+function matchDestinationId(
+  text: string | null | undefined,
+  dests: { id: string; code: string | null; full_name: string; aliases: string[] | null }[],
+): string | null {
+  if (!text) return null
+  const lower = text.toLowerCase()
+  const hit = dests.find((d) => {
+    const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
+      .filter((s): s is string => Boolean(s))
+      .map((s) => s.toLowerCase())
+    return cands.some((c) => c === lower || c.includes(lower) || lower.includes(c))
+  })
+  return hit?.id ?? null
+}
+
 export async function processReceipt(receiptId: string): Promise<ProcessReceiptResult> {
   const admin = createAdminClient()
 
@@ -311,6 +327,17 @@ async function saveOrder({
 
   if (!customerId || !order.delivery_date) return { saved: false, needsReview: true }
 
+  // 納入先の名寄せ（取引先配下の delivery_destinations を code/full_name/aliases で照合）
+  let destinationId: string | null = null
+  if (order.destination_name) {
+    const { data: dests } = await admin
+      .from('delivery_destinations')
+      .select('id, code, full_name, aliases')
+      .eq('customer_id', customerId)
+      .eq('is_active', true)
+    destinationId = matchDestinationId(order.destination_name, dests ?? [])
+  }
+
   // G7: parseQuantity で総数を確定。解釈不能は pending_review へ
   const itemsToInsert: Array<{
     order_id: string
@@ -358,6 +385,7 @@ async function saveOrder({
     .from('orders')
     .insert({
       customer_id: customerId,
+      destination_id: destinationId,
       delivery_date: order.delivery_date,
       status: 'approved',
       source: 'fax',

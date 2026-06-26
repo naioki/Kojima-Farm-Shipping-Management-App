@@ -61,9 +61,10 @@ JSON のみ。コードフェンス・説明文は付けない。
   "orders": [
     {
       "customer_name": string|null,
+      "destination_name": string|null,
       "delivery_date": string|null,
       "items": [
-        { "raw_name": string, "product_name": string|null, "quantity": string, "unit": string|null, "confidence": number }
+        { "raw_name": string, "product_name": string|null, "quantity": string, "unit": string|null, "confidence": number, "is_new": boolean }
       ]
     }
   ]
@@ -71,23 +72,26 @@ JSON のみ。コードフェンス・説明文は付けない。
 
 # orders の作り方
 ## 単純型（1枚＝1注文）
-orders は要素1つ。customer_name は発注元・得意先名。delivery_date は納品日を "YYYY-MM-DD" で。
+orders は要素1つ。customer_name は発注元・得意先名。destination_name は null。delivery_date は納品日を "YYYY-MM-DD" で。
 
 ## 複数日付型（日付ごとに明細行）
 納品日ごとに order を分割する。同じ customer_name・異なる delivery_date として複数の order を作る。
 
-## マトリックス型（日付×商品×取引先の表）
-日付×取引先の組み合わせごとに order を分割する。セルが空（数量なし）の組み合わせは作らない。
-取引先は商品行の「得意先」「納入先」「行先」列から読み取る。
+## マトリックス型（日付×商品×納入先の表）
+納入先×日付の組み合わせごとに order を分割する。セルが空（数量なし・★のみ）の組み合わせは order を作らない。
+- customer_name: ヘッダーの発注元組織・請求先（例「和郷園」）。請求のまとめ単位。
+- destination_name: 商品行の「得意先」「納入先」「行先」列の届け先名（例「マルタ」「東海コープ」）。請求先とは別。
 
 # 各フィールドの規則
-- customer_name: 発注元または得意先名。マトリックス表では商品ごとの得意先名を使う。読めなければ null
+- customer_name: 発注元・請求先の組織名。マトリックス表ではヘッダーの組織名。読めなければ null
+- destination_name: 届け先（得意先/納入先）。単純型や届け先列が無いFAXでは null
 - delivery_date: "YYYY-MM-DD" 形式。年が書かれていない場合は文書のヘッダー日付から推定。不明なら null
 - raw_name: 商品表記をサイズ・規格・括弧書きも含めてそのまま写す
 - product_name: 標準的な商品名（サイズ・規格除く）。判断できなければ null
-- quantity: 数量表記をそのまま写す。計算・換算しない。"15c2"→"15c2"、"x58"→"x58"、"23.0 cs"→"23.0 cs"
+- quantity: 数量表記をそのまま写す。計算・換算しない。"15c2"→"15c2"、"x58"→"x58"、"23.0 cs"→"23.0 cs"。「100+0」のように上段＝本数+端数があれば上段を写す
 - unit: 単位が明記されていれば写す（cs/ケース/kg/本/個など）。なければ null
 - confidence: 0.0〜1.0。手書きのかすれ・ノイズ・訂正跡・数字の誤読余地があるときは必ず下げる
+- is_new: そのセル/明細に ★ や「新」「追加」等の変更マークが付いていれば true。無ければ false。顧客が「今回変えた/追加した」と示す印なので必ず拾う
 
 # 除外する情報
 宛名・住所・電話・FAX番号・挨拶文・合計・備考欄・担当者名は items に含めない。

@@ -19,10 +19,12 @@ interface ParsedItem {
   quantity: string
   unit: string | null
   confidence: number
+  is_new?: boolean
 }
 
 interface ParsedOrder {
   customer_name: string | null
+  destination_name?: string | null
   delivery_date: string | null
   items: ParsedItem[]
 }
@@ -81,8 +83,9 @@ export function ManualOcrForm({
 
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<OcrResult | null>(null)
-  // 取引先リストは全注文で共有する（ある注文で新規登録したら次の注文でも選べるように）
+  // 取引先・納入先リストは全注文で共有する（ある注文で新規登録したら次の注文でも選べるように）
   const [customerList, setCustomerList] = useState(customers)
+  const [destinationList, setDestinationList] = useState(destinations)
 
   const [confirmCustomOpen, setConfirmCustomOpen] = useState(false)
   const [saveModalOpen, setSaveModalOpen] = useState(false)
@@ -426,13 +429,16 @@ export function ManualOcrForm({
                       index={i}
                       customers={customerList}
                       products={products}
-                      destinations={destinations}
+                      destinations={destinationList}
                       onCustomerAdded={(c) =>
                         setCustomerList((prev) =>
                           prev.some((x) => x.id === c.id)
                             ? prev
                             : [...prev, c].sort((a, b) => a.name.localeCompare(b.name, 'ja')),
                         )
+                      }
+                      onDestinationAdded={(d) =>
+                        setDestinationList((prev) => (prev.some((x) => x.id === d.id) ? prev : [...prev, d]))
                       }
                     />
                   )}

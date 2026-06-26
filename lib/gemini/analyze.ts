@@ -49,6 +49,8 @@ export const parsedItemSchema = z.object({
   quantity: z.string(), // 生表記（"15c2" 等）。換算は lib/calculations/parse-quantity に委譲
   unit: z.string().nullable(),
   confidence: z.number().min(0).max(1),
+  /** ★等で「新規追加/変更」と明示された明細（顧客が変更箇所をマークしている）。 */
+  is_new: z.boolean().optional(),
 })
 export type ParsedItem = z.infer<typeof parsedItemSchema>
 
@@ -56,6 +58,8 @@ const normalResultSchema = z.object({ items: z.array(parsedItemSchema) })
 
 export const parsedOrderSchema = z.object({
   customer_name: z.string().nullable(),
+  /** 納入先（届け先）。マトリクスFAXの得意先/納入先列。請求先(customer_name)とは別。無ければ null。 */
+  destination_name: z.string().nullable().optional(),
   delivery_date: z.string().nullable(),
   items: z.array(parsedItemSchema),
 })
