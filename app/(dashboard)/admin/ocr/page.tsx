@@ -25,14 +25,26 @@ export default async function ManualOcrPage() {
     return <ErrorState title="権限がありません" message="手動OCRは管理者のみ利用できます。" />
   }
 
-  const [currentPrompt, customersResult, productsResult] = await Promise.all([
+  const [currentPrompt, customersResult, productsResult, destinationsResult] = await Promise.all([
     getSetting('GEMINI_PROMPT_NORMAL').then((v) => v ?? ''),
     createAdminClient().from('customers').select('id, name').eq('is_active', true).order('name'),
     createAdminClient().from('products').select('id, name').eq('is_active', true).order('name'),
+    createAdminClient()
+      .from('delivery_destinations')
+      .select('id, customer_id, code, full_name, aliases')
+      .eq('is_active', true)
+      .order('sort_order'),
   ])
 
   const customers = (customersResult.data ?? []) as { id: string; name: string }[]
   const products = (productsResult.data ?? []) as { id: string; name: string }[]
+  const destinations = (destinationsResult.data ?? []) as {
+    id: string
+    customer_id: string
+    code: string | null
+    full_name: string
+    aliases: string[]
+  }[]
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -54,6 +66,7 @@ export default async function ManualOcrPage() {
           defaultPrompt={DEFAULT_GEMINI_PROMPT_NORMAL}
           customers={customers}
           products={products}
+          destinations={destinations}
         />
       </Card>
     </div>

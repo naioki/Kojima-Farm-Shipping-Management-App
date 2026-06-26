@@ -45,6 +45,8 @@ interface ManualOcrFormProps {
   customers?: { id: string; name: string }[]
   /** 商品一覧（保存フォームの選択肢）。渡さない場合は保存セクション非表示。 */
   products?: { id: string; name: string }[]
+  /** 納入先一覧（取引先配下の届け先）。保存フォームで「取引先 ＞ 納入先」を選ぶのに使う。 */
+  destinations?: { id: string; customer_id: string; code: string | null; full_name: string; aliases: string[] }[]
 }
 
 type Mode = 'image' | 'text'
@@ -62,6 +64,7 @@ export function ManualOcrForm({
   allowPromptSave = true,
   customers = [],
   products = [],
+  destinations = [],
 }: ManualOcrFormProps) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('image')
@@ -423,6 +426,7 @@ export function ManualOcrForm({
                       index={i}
                       customers={customerList}
                       products={products}
+                      destinations={destinations}
                       onCustomerAdded={(c) =>
                         setCustomerList((prev) =>
                           prev.some((x) => x.id === c.id)

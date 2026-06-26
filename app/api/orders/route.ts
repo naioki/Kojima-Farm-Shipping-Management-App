@@ -20,6 +20,8 @@ const itemSchema = z.object({
 
 const orderSchema = z.object({
   customer_id: z.string().uuid(),
+  /** 納入先（取引先配下の届け先）。任意。 */
+  destination_id: z.string().uuid().nullish(),
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   shipping_time: z.enum(['am', 'pm']).optional(),
   note: z.string().optional(),
@@ -56,18 +58,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '入力値が不正です', details: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { customer_id, delivery_date, shipping_time, note, items, confirm_duplicate } = parsed.data
+  const { customer_id, destination_id, delivery_date, shipping_time, note, items, confirm_duplicate } = parsed.data
   const admin = createAdminClient()
 
-  // 重複警告（dedupe.ts の sender_date_key と同思想：取引先×納品日）。
+  // 重複警告（dedupe.ts の sender_date_key と同思想：取引先×納入先×納品日）。
   // ブロックせず 409 で既存を知らせ、ユーザーが confirm_duplicate=true で再送信したら通す。
   if (!confirm_duplicate) {
-    const { data: dupes } = await admin
+    let dupeQuery = admin
       .from('orders')
       .select('id, created_at, order_items(count)')
       .eq('customer_id', customer_id)
       .eq('delivery_date', delivery_date)
       .neq('status', 'cancelled')
+    // 納入先が指定されていれば同じ納入先のみ、無ければ納入先なしの注文のみを重複対象にする
+    dupeQuery = destination_id ? dupeQuery.eq('destination_id', destination_id) : dupeQuery.is('destination_id', null)
+    const { data: dupes } = await dupeQuery
     if (dupes && dupes.length > 0) {
       return NextResponse.json(
         {
@@ -131,6 +136,7 @@ export async function POST(req: NextRequest) {
     .from('orders')
     .insert({
       customer_id,
+      destination_id: destination_id ?? null,
       source: 'manual',
       status: 'approved',
       order_date: new Date().toISOString().slice(0, 10),

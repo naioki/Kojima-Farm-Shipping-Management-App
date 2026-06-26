@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -20,13 +20,34 @@ interface ParsedOrder {
   }[]
 }
 
+interface Destination {
+  id: string
+  customer_id: string
+  code: string | null
+  full_name: string
+  aliases: string[]
+}
+
 interface Props {
   order: ParsedOrder
   index: number
   customers: { id: string; name: string }[]
   products: { id: string; name: string }[]
+  /** 取引先配下の納入先（届け先）。選択中の取引先のものだけ絞って表示する。 */
+  destinations?: Destination[]
   /** 新規取引先を登録したとき親へ通知（同じ画面の他の注文でも選べるようにする）。 */
   onCustomerAdded?: (customer: { id: string; name: string }) => void
+}
+
+/** OCRが読んだ文字列を納入先（code/full_name/aliases）に名寄せ。見つからなければ ''。 */
+function bestMatchDestinationId(text: string | null, dests: Destination[]): string {
+  if (!text) return ''
+  const lower = text.toLowerCase()
+  const hit = dests.find((d) => {
+    const cands = [d.code, d.full_name, ...d.aliases].filter(Boolean).map((s) => s!.toLowerCase())
+    return cands.some((c) => c === lower || c.includes(lower) || lower.includes(c))
+  })
+  return hit?.id ?? ''
 }
 
 /** 全角→半角・記号正規化（parse-quantity.ts と同方針）。"１５ｃ２"→"15c2" */
@@ -91,11 +112,23 @@ function bestMatchCustomerId(name: string | null, customers: { id: string; name:
  * OCR読み取り結果（1注文分）を受注として保存するフォーム。
  * 取引先・納品日・商品を確認してから POST /api/orders に送信する。
  */
-export function OcrSaveSection({ order, index, customers, products, onCustomerAdded }: Props) {
+export function OcrSaveSection({ order, index, customers, products, destinations = [], onCustomerAdded }: Props) {
   const router = useRouter()
 
   const [customerId, setCustomerId] = useState(() => bestMatchCustomerId(order.customer_name, customers))
   const [deliveryDate, setDeliveryDate] = useState(order.delivery_date ?? '')
+  const [destinationId, setDestinationId] = useState('')
+
+  // 選択中の取引先に紐づく納入先だけを候補にする
+  const customerDestinations = destinations.filter((d) => d.customer_id === customerId)
+
+  // 取引先が変わったら納入先を自動マッチ（OCRの取引先名で寄せる）／無ければクリア
+  useEffect(() => {
+    const ds = destinations.filter((d) => d.customer_id === customerId)
+    setDestinationId(ds.length > 0 ? bestMatchDestinationId(order.customer_name, ds) : '')
+    // 取引先変更時のみ再選択する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId])
   const [rows, setRows] = useState(() =>
     order.items.map((it) => {
       const caseNotation = isCaseNotation(it.quantity)
@@ -184,6 +217,7 @@ export function OcrSaveSection({ order, index, customers, products, onCustomerAd
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           customer_id: customerId,
+          destination_id: destinationId || undefined,
           delivery_date: deliveryDate,
           confirm_duplicate: confirmDuplicate,
           items: rows.map((r) => ({
@@ -300,6 +334,27 @@ export function OcrSaveSection({ order, index, customers, products, onCustomerAd
           />
         </div>
       </div>
+
+      {/* 納入先（届け先）。選択中の取引先に納入先がある場合だけ表示。「取引先 ＞ 納入先」 */}
+      {customerDestinations.length > 0 && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-soft">
+            納入先（届け先）
+            <span className="ml-1 text-ink-faint">
+              {customers.find((c) => c.id === customerId)?.name} ＞ …
+            </span>
+          </label>
+          <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)} className={selectCls}>
+            <option value="">（指定なし）</option>
+            {customerDestinations.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.code?.trim() || d.full_name}
+                {d.code?.trim() && d.full_name ? `（${d.full_name}）` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded border border-line">
         <table className="w-full text-sm">
