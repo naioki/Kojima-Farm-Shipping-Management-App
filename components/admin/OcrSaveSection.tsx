@@ -134,6 +134,25 @@ export function OcrSaveSection({ order, index, customers, products, destinations
     // 取引先変更時のみ再選択する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
+
+  // 同一キー（取引先×納入先×納品日）の既存注文の商品別数量。「前回X→今回Y」差分表示用。
+  const [prevQty, setPrevQty] = useState<Record<string, number>>({})
+  useEffect(() => {
+    if (!customerId || !deliveryDate) { setPrevQty({}); return }
+    const params = new URLSearchParams({ customer_id: customerId, delivery_date: deliveryDate })
+    if (destinationId) params.set('destination_id', destinationId)
+    let cancelled = false
+    fetch(`/api/orders/existing?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((j: { items?: { product_id: string; quantity: number }[] }) => {
+        if (cancelled) return
+        const m: Record<string, number> = {}
+        for (const it of j.items ?? []) m[it.product_id] = it.quantity
+        setPrevQty(m)
+      })
+      .catch(() => { if (!cancelled) setPrevQty({}) })
+    return () => { cancelled = true }
+  }, [customerId, destinationId, deliveryDate])
   const [rows, setRows] = useState(() =>
     order.items.map((it) => {
       const caseNotation = isCaseNotation(it.quantity)
@@ -312,6 +331,16 @@ export function OcrSaveSection({ order, index, customers, products, destinations
           <span>
             FAXで<strong>新規・変更マーク（★）</strong>が付いた明細があります（下で青く強調）。
             数量の変更を見落とさないよう、必ず確認してください。
+          </span>
+        </div>
+      )}
+
+      {rows.some((r) => r.product_id && prevQty[r.product_id] != null && Number(r.quantity) !== prevQty[r.product_id]) && (
+        <div className="flex items-start gap-2 rounded border border-alert/40 bg-alert-bg/40 px-3 py-2 text-xs text-alert">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            この取引先・納入先・納品日には<strong>既存の注文があり、数量が変わっています</strong>（下に「前回→今回」を赤表示）。
+            最新で上書きされます。変更内容を必ず確認してください。
           </span>
         </div>
       )}
@@ -501,6 +530,15 @@ export function OcrSaveSection({ order, index, customers, products, destinations
                       <AlertTriangle className="h-2.5 w-2.5 shrink-0" aria-hidden />
                       「{r.qtyRaw.trim()}」は総数を入力（または右の入り数を入力）
                     </span>
+                  )}
+                  {r.product_id && prevQty[r.product_id] != null && (
+                    Number(r.quantity) !== prevQty[r.product_id] ? (
+                      <span className="mt-0.5 block rounded bg-alert/10 px-1 text-[10px] font-bold leading-tight text-alert">
+                        前回 {prevQty[r.product_id]} → 今回 {r.quantity || '?'}（変更）
+                      </span>
+                    ) : (
+                      <span className="mt-0.5 block text-[10px] leading-tight text-ink-faint">前回と同じ {prevQty[r.product_id]}</span>
+                    )
                   )}
                 </td>
                 <td className="px-2 py-1.5">
