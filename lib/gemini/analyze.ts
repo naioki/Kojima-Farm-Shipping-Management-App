@@ -49,8 +49,6 @@ export const parsedItemSchema = z.object({
   quantity: z.string(), // 生表記（"15c2" 等）。換算は lib/calculations/parse-quantity に委譲
   unit: z.string().nullable(),
   confidence: z.number().min(0).max(1),
-  /** ★等で「新規追加/変更」と明示された明細（顧客が変更箇所をマークしている）。 */
-  is_new: z.boolean().optional(),
 })
 export type ParsedItem = z.infer<typeof parsedItemSchema>
 

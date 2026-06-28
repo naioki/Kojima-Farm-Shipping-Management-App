@@ -64,7 +64,7 @@ JSON のみ。コードフェンス・説明文は付けない。
       "destination_name": string|null,
       "delivery_date": string|null,
       "items": [
-        { "raw_name": string, "product_name": string|null, "quantity": string, "unit": string|null, "confidence": number, "is_new": boolean }
+        { "raw_name": string, "product_name": string|null, "quantity": string, "unit": string|null, "confidence": number }
       ]
     }
   ]
@@ -78,7 +78,7 @@ orders は要素1つ。customer_name は発注元・得意先名。destination_n
 納品日ごとに order を分割する。同じ customer_name・異なる delivery_date として複数の order を作る。
 
 ## マトリックス型（日付×商品×納入先の表）
-納入先×日付の組み合わせごとに order を分割する。セルが空（数量なし・★のみ）の組み合わせは order を作らない。
+納入先×日付の組み合わせごとに order を分割する。数量が無いセルの組み合わせは order を作らない。
 - customer_name: ヘッダーの発注元組織・請求先（例「和郷園」）。請求のまとめ単位。
 - destination_name: 商品行の「得意先」「納入先」「行先」列の届け先名（例「マルタ」「東海コープ」）。請求先とは別。
 
@@ -91,7 +91,6 @@ orders は要素1つ。customer_name は発注元・得意先名。destination_n
 - quantity: 数量表記をそのまま写す。計算・換算しない。"15c2"→"15c2"、"x58"→"x58"、"23.0 cs"→"23.0 cs"。「100+0」のように上段＝本数+端数があれば上段を写す
 - unit: 単位が明記されていれば写す（cs/ケース/kg/本/個など）。なければ null
 - confidence: 0.0〜1.0。手書きのかすれ・ノイズ・訂正跡・数字の誤読余地があるときは必ず下げる
-- is_new: そのセル/明細に ★ や「新」「追加」等の変更マークが付いていれば true。無ければ false。顧客が「今回変えた/追加した」と示す印なので必ず拾う
 
 # 除外する情報
 宛名・住所・電話・FAX番号・挨拶文・合計・備考欄・担当者名は items に含めない。

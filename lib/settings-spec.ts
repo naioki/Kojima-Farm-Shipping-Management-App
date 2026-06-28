@@ -35,10 +35,24 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
   field: '現場（スタッフ）機能の解放 — 段階的にON',
   ai: 'AI解析（Gemini）',
   automation: '自動承認（識字率が高い受信の自動入力）',
-  ingest: '取り込み（Drive / メール）',
+  ingest: '注文の取り込み（FAX画像 / メール）',
   storage: '保管（Cloudflare R2）',
   notify: '通知（Discord / LINE WORKS）',
   ops: '運用',
+}
+
+/** 各セクションの先頭に出す1行説明（任意）。何のための設定かを平易に伝える。 */
+export const SECTION_DESCRIPTIONS: Partial<Record<SettingSection, string>> = {
+  issuer: '請求書・納品書の上部に印字される自社情報です。',
+  rules: '取引先ごとの規格（P/C・荷姿など）を誰が変更できるか、変更時に通知するかを決めます。',
+  field: '現場スタッフに開放する機能を1つずつONにできます。既定はすべてOFF（管理者のみ）。',
+  ai: 'FAX・写真・メールから注文を読み取るAIの設定です。ふだんは「自動」のままでOK。',
+  automation: '読み取り精度が高い受信を、人の確認なしで自動入力する設定です。安全のため既定はOFF。',
+  ingest:
+    'FAX画像やメールを自動で取り込むための接続先です。FAXソフトから転送された注文メールは、ここで指定したメールボックスを監視して取り込みます（FAXソフト側「送信に使うメール」と同じ箱を指定）。',
+  storage: '受信したFAX/PDFの原本を保管するクラウドストレージ（Cloudflare R2）の接続情報です。',
+  notify: '注文の受信などを Discord / LINE WORKS に知らせる設定です。',
+  ops: '運用まわりの細かい設定です。ふだんは変更不要。',
 }
 
 export const SECTION_ORDER: SettingSection[] = ['issuer', 'rules', 'field', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
@@ -185,10 +199,10 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   { key: 'DRIVE_FOLDER_ID', label: 'Drive フォルダID', section: 'ingest', secret: false, kind: 'text', hint: 'FAX画像が入る Google Drive フォルダのID' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_JSON', label: 'Drive サービスアカウント鍵(JSON)', section: 'ingest', secret: true, kind: 'textarea', hint: 'Drive API 用サービスアカウントの鍵JSON全文' },
   { key: 'FAX_FILENAME_PATTERN', label: 'FAXファイル名規則', section: 'ingest', secret: false, kind: 'text', placeholder: '(?<fax>\\d{6,11})[_-](?<date>\\d{8})' },
-  { key: 'IMAP_HOST', label: 'IMAP ホスト', section: 'ingest', secret: false, kind: 'text', placeholder: 'imap.example.com' },
-  { key: 'IMAP_USER', label: 'IMAP ユーザー', section: 'ingest', secret: false, kind: 'text', placeholder: 'order@kojima-farm.jp' },
-  { key: 'IMAP_PASSWORD', label: 'IMAP パスワード', section: 'ingest', secret: true, kind: 'text' },
-  { key: 'ORDER_KEYWORDS', label: '注文キーワード', section: 'ingest', secret: false, kind: 'text', placeholder: '注文,発注,ご注文,オーダー' },
+  { key: 'IMAP_HOST', label: 'メールサーバー名（受信／IMAP）', section: 'ingest', secret: false, kind: 'text', placeholder: 'imap.example.com', hint: 'FAXソフトが注文を送る先のメールボックスの「受信サーバー名」。メール会社からもらった値を入れます。' },
+  { key: 'IMAP_USER', label: 'メールのユーザー名（ログインID）', section: 'ingest', secret: false, kind: 'text', placeholder: 'order@kojima-farm.jp', hint: 'そのメールボックスにログインするID。FAXソフト側の転送先アドレスと同じ箱を指します。' },
+  { key: 'IMAP_PASSWORD', label: 'メールのパスワード', section: 'ingest', secret: true, kind: 'text', hint: 'そのメールボックスのパスワード。' },
+  { key: 'ORDER_KEYWORDS', label: '注文とみなすキーワード', section: 'ingest', secret: false, kind: 'text', placeholder: '注文,発注,ご注文,オーダー', hint: '件名・本文にこれらの語が含まれるメールを注文として取り込みます。カンマ区切り。FAXソフトからの転送メールは添付PDFがあるため、この語が無くても取り込まれます。' },
   // 保管
   { key: 'R2_ENDPOINT', label: 'R2 エンドポイント', section: 'storage', secret: false, kind: 'text', placeholder: 'https://xxxx.r2.cloudflarestorage.com' },
   { key: 'R2_BUCKET', label: 'R2 バケット', section: 'storage', secret: false, kind: 'text', placeholder: 'kojima-noen' },

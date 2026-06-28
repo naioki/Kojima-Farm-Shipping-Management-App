@@ -18,7 +18,6 @@ interface ParsedOrder {
     quantity: string
     unit: string | null
     confidence: number
-    is_new?: boolean
   }[]
 }
 
@@ -167,7 +166,6 @@ export function OcrSaveSection({ order, index, customers, products, destinations
         confidence: it.confidence,
         needsTotal: caseNotation,
         packsPerCase: '', // 入り数(P/C)。任意。入れればc記法を総数展開＋マスタ保存
-        isNew: Boolean(it.is_new), // ★等で「新規/変更」とマークされた明細
       }
     }),
   )
@@ -316,6 +314,9 @@ export function OcrSaveSection({ order, index, customers, products, destinations
     }
   }
 
+  // 前回注文が存在するか（差分表示の判定に使う）。空＝この取引先/納入先/納品日は初回。
+  const hasPrev = Object.keys(prevQty).length > 0
+
   const inputCls =
     'h-9 w-full rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
   const selectCls =
@@ -324,16 +325,6 @@ export function OcrSaveSection({ order, index, customers, products, destinations
   return (
     <div className="space-y-3 rounded-lg border border-earth-200 bg-earth-50 p-4">
       <p className="text-xs font-semibold text-earth-700">注文 {index + 1} を保存</p>
-
-      {rows.some((r) => r.isNew) && (
-        <div className="flex items-start gap-2 rounded border border-trust-300 bg-trust-50 px-3 py-2 text-xs text-trust-700">
-          <span className="font-bold">★</span>
-          <span>
-            FAXで<strong>新規・変更マーク（★）</strong>が付いた明細があります（下で青く強調）。
-            数量の変更を見落とさないよう、必ず確認してください。
-          </span>
-        </div>
-      )}
 
       {rows.some((r) => r.product_id && prevQty[r.product_id] != null && Number(r.quantity) !== prevQty[r.product_id]) && (
         <div className="flex items-start gap-2 rounded border border-alert/40 bg-alert-bg/40 px-3 py-2 text-xs text-alert">
@@ -485,13 +476,8 @@ export function OcrSaveSection({ order, index, customers, products, destinations
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r, i) => (
-              <tr key={i} className={cn(r.confidence < 0.7 && 'bg-alert-bg/30', r.isNew && 'bg-trust-50')}>
+              <tr key={i} className={cn(r.confidence < 0.7 && 'bg-alert-bg/30')}>
                 <td className="px-2 py-1.5 text-xs text-ink-faint">
-                  {r.isNew && (
-                    <span className="mr-1 inline-flex items-center rounded-full bg-trust-600 px-1.5 py-0.5 text-[10px] font-bold text-white align-middle">
-                      ★新規・変更
-                    </span>
-                  )}
                   {r.confidence < 0.7 && <AlertTriangle className="mr-1 inline h-3 w-3 text-alert" />}
                   {r.raw_name}
                 </td>
@@ -539,6 +525,12 @@ export function OcrSaveSection({ order, index, customers, products, destinations
                     ) : (
                       <span className="mt-0.5 block text-[10px] leading-tight text-ink-faint">前回と同じ {prevQty[r.product_id]}</span>
                     )
+                  )}
+                  {/* 前回注文はあるが、この商品は前回に無い＝今回の再送で増えた明細（差分で「新規」を検出） */}
+                  {hasPrev && r.product_id && prevQty[r.product_id] == null && (
+                    <span className="mt-0.5 block rounded bg-harvest-50 px-1 text-[10px] font-bold leading-tight text-harvest-700">
+                      前回なし → 今回 {r.quantity || '?'}（新規追加）
+                    </span>
                   )}
                 </td>
                 <td className="px-2 py-1.5">

@@ -19,7 +19,6 @@ interface ParsedItem {
   quantity: string
   unit: string | null
   confidence: number
-  is_new?: boolean
 }
 
 interface ParsedOrder {

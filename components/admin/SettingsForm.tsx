@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { PromptEditor } from '@/components/admin/PromptEditor'
-import { SECTION_LABELS, SECTION_ORDER, type SettingSection, type SettingKind } from '@/lib/settings-spec'
+import { SECTION_LABELS, SECTION_DESCRIPTIONS, SECTION_ORDER, type SettingSection, type SettingKind } from '@/lib/settings-spec'
 
 export interface SettingItem {
   key: string
@@ -86,7 +86,12 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
         if (!sectionItems.length) return null
         return (
           <div key={section} className="space-y-3">
-            <h2 className="font-display text-base font-bold text-ink">{SECTION_LABELS[section]}</h2>
+            <div className="space-y-1">
+              <h2 className="font-display text-base font-bold text-ink">{SECTION_LABELS[section]}</h2>
+              {SECTION_DESCRIPTIONS[section] && (
+                <p className="text-xs leading-relaxed text-ink-soft">{SECTION_DESCRIPTIONS[section]}</p>
+              )}
+            </div>
             <div className="space-y-6">
               {sectionItems.map((it) => {
                 // プロンプト設定は独自エディタで描画（グローバル保存から除外）

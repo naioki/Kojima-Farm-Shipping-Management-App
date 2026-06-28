@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { ConfidenceBar } from '@/components/admin/ConfidenceBar'
+import { IngestButton } from '@/components/admin/IngestButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,15 +41,18 @@ export default async function InboxPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">承認待ち（受信）</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          取り込んだ受信の確認。承認は受注一覧・
-          <Link href="/admin/approvals" className="text-trust-600 hover:underline">
-            注文の承認
-          </Link>
-          で行います。
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">承認待ち（受信）</h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            取り込んだ受信の確認。承認は受注一覧・
+            <Link href="/admin/approvals" className="text-trust-600 hover:underline">
+              注文の承認
+            </Link>
+            で行います。
+          </p>
+        </div>
+        <IngestButton />
       </div>
 
       {!receipts?.length ? (
