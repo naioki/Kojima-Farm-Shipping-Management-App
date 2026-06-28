@@ -46,7 +46,16 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
   }
 
   const supabase = createAdminClient()
-  const imap = new ImapFlow({ host, port: 993, secure: true, auth: { user, pass }, logger: false })
+  const imap = new ImapFlow({
+    host,
+    port: 993,
+    secure: true,
+    auth: { user, pass },
+    logger: false,
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 30000,
+  })
   await imap.connect()
 
   let processed = 0
