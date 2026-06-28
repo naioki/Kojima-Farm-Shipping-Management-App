@@ -1,6 +1,7 @@
 import 'server-only'
 import crypto from 'node:crypto'
-import { ImapFlow } from 'imapflow'
+import tls from 'node:tls'
+import readline from 'node:readline'
 import { simpleParser, type ParsedMail, type Attachment } from 'mailparser'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { looksLikeOrder, parseFaxFilename } from '@/lib/config/ingestion'
@@ -10,10 +11,7 @@ import { canRunGeminiNow } from '@/lib/gemini/quota'
 import { putReceiptOriginal } from '@/lib/r2'
 import { processReceipt } from '@/lib/ingestion/process-receipt'
 
-/** 1回の取込で解析まで行う最大件数。タイムアウト対策。 */
 const MAX_PROCESS_PER_POLL = 3
-
-/** FAX原本として扱う添付の MIME。これ以外（テキスト等）の添付は無視する。 */
 const FAX_MIME = /^(application\/pdf|image\/(jpeg|jpg|png|tiff))$/i
 
 export interface PollEmailResult {
@@ -23,105 +21,134 @@ export interface PollEmailResult {
   error?: string
 }
 
-/**
- * 専用メールボックスを1回スキャンして取り込む（features.md §2-2 / FAX→メール独立運用）。
- * Cloud Scheduler(cron) と 管理画面の手動ボタン の両方から呼ばれる共通処理。
- *
- * 自作FAXソフトは「受信したPDFをこのメールボックスへ送る」だけ（出荷アプリを一切知らない＝疎結合）。
- * メールボックス自体が緩衝材になるので、アプリが落ちていてもメールは溜まって待つ。
- *
- *  - 添付（PDF/画像）あり → FAXチャネルとして処理（exact_hash重複・R2保存・再送判定 → OCR）
- *  - 添付なし（本文のみ）  → 従来のメール注文として処理（テキスト解析）
- *  - 重複判定: Message-ID（取り込み済み判定）＋ exact_hash（同一ファイル）＋ sender_date_key（同日再送）
- *  - 処理済みは \Flagged を付け、次回は未フラグのみ取得＝再ダウンロードしない
- */
+// ---------------------------------------------------------------------------
+// 最小 POP3 クライアント（Node.js 組み込み tls + readline のみ使用）
+// ---------------------------------------------------------------------------
+
+interface Pop3Conn {
+  readLine: () => Promise<string>
+  write: (cmd: string) => void
+  destroy: () => void
+}
+
+function pop3Connect(host: string, port: number, timeoutMs: number): Promise<Pop3Conn> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { sock.destroy(); reject(new Error('POP3 接続タイムアウト')) }, timeoutMs)
+    const sock = tls.connect({ host, port, rejectUnauthorized: true })
+    sock.on('error', (e) => { clearTimeout(timer); reject(e) })
+    sock.on('secureConnect', () => {
+      const lines: string[] = []
+      const waiters: Array<(s: string) => void> = []
+      const rl = readline.createInterface({ input: sock, crlfDelay: Infinity })
+      rl.on('line', (line) => {
+        if (waiters.length > 0) waiters.shift()!(line)
+        else lines.push(line)
+      })
+      const readLine = (): Promise<string> =>
+        lines.length > 0 ? Promise.resolve(lines.shift()!) : new Promise((r) => waiters.push(r))
+      clearTimeout(timer)
+      resolve({ readLine, write: (cmd) => sock.write(cmd + '\r\n'), destroy: () => sock.destroy() })
+    })
+  })
+}
+
+async function pop3Cmd(conn: Pop3Conn, cmd: string): Promise<string> {
+  conn.write(cmd)
+  const line = await conn.readLine()
+  if (!line.startsWith('+OK')) throw new Error(`POP3 エラー: ${line}`)
+  return line
+}
+
+async function pop3MultiLine(conn: Pop3Conn): Promise<string[]> {
+  const lines: string[] = []
+  while (true) {
+    const line = await conn.readLine()
+    if (line === '.') break
+    lines.push(line.startsWith('..') ? line.slice(1) : line)
+  }
+  return lines
+}
+
+async function pop3Retrieve(conn: Pop3Conn, num: number): Promise<Buffer> {
+  await pop3Cmd(conn, `RETR ${num}`)
+  const lines = await pop3MultiLine(conn)
+  return Buffer.from(lines.join('\r\n'))
+}
+
+// ---------------------------------------------------------------------------
+// メイン取込ロジック
+// ---------------------------------------------------------------------------
+
 export async function pollEmailOnce(): Promise<PollEmailResult> {
-  const [host, user, pass] = await Promise.all([
+  // IMAP_HOST → POP3ホストを自動導出（imap.xxx → pop.xxx）
+  const [imapHost, user, pass] = await Promise.all([
     getSetting('IMAP_HOST'),
     getSetting('IMAP_USER'),
     getSetting('IMAP_PASSWORD'),
   ])
-  if (!host || !user || !pass) {
-    return { processed: 0, analyzed: 0, analyzeResults: [], error: 'IMAP 認証情報未設定' }
+  if (!imapHost || !user || !pass) {
+    return { processed: 0, analyzed: 0, analyzeResults: [], error: 'メール認証情報未設定（IMAP_HOST/USER/PASSWORD）' }
   }
+  const popHost = imapHost.replace(/^imap\./, 'pop.')
 
   const supabase = createAdminClient()
-  const imap = new ImapFlow({
-    host,
-    port: 993,
-    secure: true,
-    auth: { user, pass },
-    logger: false,
-    connectionTimeout: 15000,
-    greetingTimeout: 10000,
-    socketTimeout: 30000,
-  })
-  await imap.connect()
 
+  let conn: Pop3Conn | null = null
   let processed = 0
   const pendingReceiptIds: string[] = []
+  const toDelete: number[] = []
 
   try {
-    const lock = await imap.getMailboxLock('INBOX')
-    try {
-      // 未フラグ（未処理）のみ取得。処理済みは \Flagged 済みなので再ダウンロードしない＝軽い。
-      for await (const msg of imap.fetch({ flagged: false }, { source: true, envelope: true })) {
-        const messageId = msg.envelope?.messageId
-        if (!messageId) continue
+    conn = await pop3Connect(popHost, 995, 20000)
+    await pop3Cmd(conn, `USER ${user}`)
+    await pop3Cmd(conn, `PASS ${pass}`)
 
-        const parsed = await simpleParser(msg.source as Buffer)
-        const date = parsed.date ?? new Date()
-        const faxAttachments = (parsed.attachments ?? []).filter((a) => FAX_MIME.test(a.contentType))
+    const stat = await pop3Cmd(conn, 'STAT')
+    const total = parseInt(stat.split(' ')[1] ?? '0', 10)
 
-        // このメールの全パートが正常に処理できたか。1つでも一時障害なら旗を付けず次回リトライ。
-        let allOk = true
+    for (let num = 1; num <= total; num++) {
+      const raw = await pop3Retrieve(conn, num)
+      const parsed = await simpleParser(raw)
+      const messageId = (parsed.messageId ?? `pop3-${num}-${Date.now()}`)
+      const date = parsed.date ?? new Date()
+      const faxAttachments = (parsed.attachments ?? []).filter((a) => FAX_MIME.test(a.contentType))
 
-        if (faxAttachments.length > 0) {
-          // FAX 経路：添付の各PDF/画像を独立した receipt として取り込む
-          for (let i = 0; i < faxAttachments.length; i++) {
-            const r = await ingestFaxAttachment(
-              supabase,
-              faxAttachments[i]!,
-              parsed,
-              messageId,
-              i,
-              date,
-            )
-            if (r.ok) processed++
-            else allOk = false
-            if (r.receiptId) pendingReceiptIds.push(r.receiptId)
-          }
-        } else {
-          // テキスト経路：本文のみのメール注文（従来挙動）
-          const r = await ingestTextEmail(supabase, parsed, messageId, date)
+      let allOk = true
+
+      if (faxAttachments.length > 0) {
+        for (let i = 0; i < faxAttachments.length; i++) {
+          const r = await ingestFaxAttachment(supabase, faxAttachments[i]!, parsed, messageId, i, date)
           if (r.ok) processed++
           else allOk = false
           if (r.receiptId) pendingReceiptIds.push(r.receiptId)
         }
-
-        // 全パート正常時のみ処理済みフラグ。insert が一時障害で失敗したメールは
-        // 旗を付けずに残し、次回の取込で再取得＝注文の取りこぼしを防ぐ。
-        if (allOk) {
-          try {
-            await imap.messageFlagsAdd(msg.seq, ['\\Flagged'])
-          } catch {
-            // フラグ失敗は致命的ではない（重複判定が主防御）
-          }
-        }
+      } else {
+        const r = await ingestTextEmail(supabase, parsed, messageId, date)
+        if (r.ok) processed++
+        else allOk = false
+        if (r.receiptId) pendingReceiptIds.push(r.receiptId)
       }
-    } finally {
-      lock.release()
+
+      // 全パート正常時のみ削除マーク（POP3ではDELEがIMAPの\Flaggedに相当）
+      if (allOk) toDelete.push(num)
     }
-  } finally {
-    await imap.logout()
+
+    // DELE は QUIT 前にまとめて送る
+    for (const num of toDelete) {
+      try { await pop3Cmd(conn, `DELE ${num}`) } catch { /* 失敗しても続行 */ }
+    }
+    await pop3Cmd(conn, 'QUIT')
+  } catch (e) {
+    conn?.destroy()
+    const msg = e instanceof Error ? e.message : String(e)
+    return { processed, analyzed: 0, analyzeResults: [], error: msg }
   }
 
-  // pending_ai を quota ゲート経由で解析（最大 MAX_PROCESS_PER_POLL 件）
+  // Gemini 解析
   const { allowed } = await canRunGeminiNow('P2')
   const analyzeResults: Array<{ receiptId: string; status: string }> = []
 
   if (allowed) {
-    // G10: next_retry_at が到来した ai_failed を追加で拾う
     const { data: retryRows } = await supabase
       .from('order_receipts')
       .select('id')
@@ -151,19 +178,12 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
-/**
- * メールに含まれる FAX 番号を取り出す。
- * 優先順: X-Fax-Number ヘッダ → 件名中の数字列 → 添付ファイル名（番号_YYYYMMDD）。
- * 自作FAXソフトが番号をどこに入れても拾えるよう多段で探す。無ければ null。
- */
 async function extractFaxNumber(parsed: ParsedMail, att: Attachment): Promise<string | null> {
   const header = parsed.headers.get('x-fax-number')
   if (typeof header === 'string' && header.trim()) return header.trim()
-
   const subj = parsed.subject ?? ''
   const subjMatch = subj.match(/(\d{6,11})/)
   if (subjMatch) return subjMatch[1]!
-
   if (att.filename) {
     const fromName = await parseFaxFilename(att.filename)
     if (fromName) return fromName.faxNumber
@@ -171,15 +191,8 @@ async function extractFaxNumber(parsed: ParsedMail, att: Attachment): Promise<st
   return null
 }
 
-/**
- * 取り込み結果。
- * - ok=true  : 正常に処理できた（新規・重複・注文以外いずれも）。\Flagged を付けてよい。
- * - ok=false : 一時障害（DB insert 失敗など）。旗を付けず次回の取込でリトライさせる。
- * - receiptId: 解析対象（pending_ai）の receipt id。なければ null。
- */
 type IngestOutcome = { ok: boolean; receiptId: string | null }
 
-/** 添付（PDF/画像）を FAX チャネルの receipt として取り込む。 */
 async function ingestFaxAttachment(
   supabase: AdminClient,
   att: Attachment,
@@ -191,7 +204,6 @@ async function ingestFaxAttachment(
   const bytes = att.content as Buffer
   const exactHash = crypto.createHash('md5').update(bytes).digest('hex')
 
-  // 同一ファイルの取り込み済み判定（DB一意制約 uq_receipt_exact がバックストップ）
   const { data: existingExact } = await supabase
     .from('order_receipts')
     .select('id')
@@ -215,13 +227,11 @@ async function ingestFaxAttachment(
     senderDateKeyMatch: Boolean(existingRevision),
   })
 
-  // R2 へ原本保存（重複でも証跡として残す・7年保存 tax.md）
-  const r2Key = `receipts/fax/${exactHash}-${att.filename ?? 'fax'}`
-  await putReceiptOriginal(r2Key, bytes, att.contentType || 'application/octet-stream')
+  const storageKey = `receipts/fax/${exactHash}-${att.filename ?? 'fax'}`
+  await putReceiptOriginal(storageKey, bytes, att.contentType || 'application/octet-stream')
 
   const status = disposition === 'duplicate' ? 'duplicate' : 'pending_ai'
 
-  // 1メールに複数添付があっても Message-ID 一意制約に当たらないよう連番を付ける
   const { data: newReceipt, error } = await supabase
     .from('order_receipts')
     .insert({
@@ -230,7 +240,7 @@ async function ingestFaxAttachment(
       received_at: date.toISOString(),
       exact_hash: exactHash,
       sender_date_key: senderDateKey,
-      r2_key: r2Key,
+      r2_key: storageKey,
       is_revision: disposition === 'revision',
       status,
     })
@@ -238,23 +248,19 @@ async function ingestFaxAttachment(
     .maybeSingle()
 
   if (error) {
-    // 一意制約違反（23505）＝すでに同じ受信が登録済み＝重複。処理済み扱いでよい（旗OK）。
     if (error.code === '23505') return { ok: true, receiptId: null }
-    // それ以外は一時障害の可能性 → 旗を付けず次回リトライ（注文の取りこぼし防止）。
     return { ok: false, receiptId: null }
   }
 
   return { ok: true, receiptId: status === 'pending_ai' ? (newReceipt?.id ?? null) : null }
 }
 
-/** 本文のみのメール（添付なし）を従来どおりメール注文として取り込む。 */
 async function ingestTextEmail(
   supabase: AdminClient,
   parsed: ParsedMail,
   messageId: string,
   date: Date,
 ): Promise<IngestOutcome> {
-  // 既に取り込み済みなら何もしない（再フェッチ時の二重登録防止）。処理済み扱い（旗OK）。
   const { data: seen } = await supabase
     .from('order_receipts')
     .select('id')
@@ -281,9 +287,7 @@ async function ingestTextEmail(
     .maybeSingle()
 
   if (error) {
-    // 一意制約違反（23505）＝同じメールが既に登録済み（並行取込のレース）。処理済み扱い（旗OK）。
     if (error.code === '23505') return { ok: true, receiptId: null }
-    // それ以外は一時障害 → 旗を付けず次回リトライ。
     return { ok: false, receiptId: null }
   }
 
