@@ -85,6 +85,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
 
   return orders.map((o) => {
     const orderItems = itemsByOrder.get(o.id) ?? []
+    if (orderItems.length === 0) return null // 明細ゼロの空注文は承認画面に出さない
     const confidences = orderItems.map((i) => i.confidence)
     const minConfidence = confidences.length
       ? confidences.reduce<number | null>((min, c) => {
@@ -109,5 +110,5 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       needsDeliveryDate,
       staffApprovable,
     }
-  })
+  }).filter((o): o is PendingOrder => o !== null)
 }

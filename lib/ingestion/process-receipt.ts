@@ -119,16 +119,21 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   }
 
   // Gemini 解析（1回目）
-  let result = await tryAnalyze({ base64, mimeType, text: textContent }, receipt.channel, hintText)
-  if (!result) {
-    return await failReceipt(receiptId, 'Gemini 解析失敗')
+  const { result: rawResult, error: analyzeError } = await tryAnalyze(
+    { base64, mimeType, text: textContent },
+    receipt.channel,
+    hintText,
+  )
+  if (!rawResult) {
+    return await failReceipt(receiptId, analyzeError ?? 'Gemini 解析失敗')
   }
+  let result = rawResult
 
   // 上下逆さまリトライ（is_order:false かつ画像あり）
   if (!result.is_order && imageBuffer) {
     try {
       const rotated = await preprocessFaxImageRotated180(imageBuffer)
-      const retried = await tryAnalyze(
+      const { result: retried } = await tryAnalyze(
         { base64: rotated.base64, mimeType: rotated.mimeType, text: null },
         receipt.channel,
         hintText,
@@ -207,9 +212,9 @@ async function tryAnalyze(
   input: { base64: string | null; mimeType: string; text: string | null },
   channel: string,
   hintText: string,
-) {
+): Promise<{ result: Awaited<ReturnType<typeof analyzeOrders>> | null; error: string | null }> {
   try {
-    return await analyzeOrders(
+    const result = await analyzeOrders(
       {
         imageBase64: input.base64 ?? undefined,
         mimeType: input.mimeType,
@@ -218,8 +223,11 @@ async function tryAnalyze(
       channel,
       hintText,
     )
-  } catch {
-    return null
+    return { result, error: null }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[processReceipt] Gemini error:', msg)
+    return { result: null, error: msg }
   }
 }
 
@@ -322,40 +330,7 @@ async function saveOrder({
   })
 
   if (decision.action === 'manual_review' || !customerId || !order.delivery_date) {
-    // 自動承認条件を満たさないが、人間が確認できるようにオーダーを pending_review で作る
-    const { data: draftOrder, error: draftErr } = await admin
-      .from('orders')
-      .insert({
-        customer_id: customerId ?? null,
-        delivery_date: order.delivery_date ?? null,
-        status: 'pending_review',
-        source: 'fax',
-      })
-      .select('id')
-      .maybeSingle()
-
-    if (!draftErr && draftOrder) {
-      // マッチした商品だけ挿入（product_id NOT NULL 制約のため未マッチはスキップ）
-      const matched = resolvedItems.filter((it) => it.product_id)
-      if (matched.length > 0) {
-        await admin.from('order_items').insert(
-          matched.map((it) => ({
-            order_id: draftOrder.id,
-            product_id: it.product_id,
-            product_name: it.product_name ?? '',
-            quantity: 0,
-            quantity_raw: it.quantity_raw ?? null,
-            unit: it.unit ?? '個',
-            unit_price: 0,
-            tax_rate: 8,
-            confidence: it.confidence,
-            is_flagged: true,
-          })),
-        )
-      }
-      await admin.from('order_receipts').update({ order_id: draftOrder.id }).eq('id', receiptId)
-    }
-
+    // 自動承認条件を満たさない → 受信トレイに留めて人間が手動OCRで注文化する
     return { saved: false, needsReview: true }
   }
 

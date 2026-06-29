@@ -48,6 +48,8 @@ interface ManualOcrFormProps {
   products?: { id: string; name: string }[]
   /** 納入先一覧（取引先配下の届け先）。保存フォームで「取引先 ＞ 納入先」を選ぶのに使う。 */
   destinations?: { id: string; customer_id: string; code: string | null; full_name: string; aliases: string[] }[]
+  /** 受信トレイからの遷移時にサーバーが取得した原本画像。設定済みなら自動プリロード。 */
+  preloadedImage?: { base64: string; mimeType: string; fileName: string } | null
 }
 
 type Mode = 'image' | 'text'
@@ -66,15 +68,20 @@ export function ManualOcrForm({
   customers = [],
   products = [],
   destinations = [],
+  preloadedImage = null,
 }: ManualOcrFormProps) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('image')
   const [text, setText] = useState('')
-  const [imageBase64, setImageBase64] = useState<string | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [isPdf, setIsPdf] = useState(false)
-  const [mimeType, setMimeType] = useState<string>('image/png')
-  const [fileName, setFileName] = useState<string>('')
+  const [imageBase64, setImageBase64] = useState<string | null>(preloadedImage?.base64 ?? null)
+  const [imagePreview, setImagePreview] = useState<string | null>(
+    preloadedImage && !preloadedImage.mimeType.includes('pdf')
+      ? `data:${preloadedImage.mimeType};base64,${preloadedImage.base64}`
+      : null,
+  )
+  const [isPdf, setIsPdf] = useState(preloadedImage?.mimeType === 'application/pdf')
+  const [mimeType, setMimeType] = useState<string>(preloadedImage?.mimeType ?? 'image/png')
+  const [fileName, setFileName] = useState<string>(preloadedImage?.fileName ?? '')
 
   const basePrompt = currentPrompt || defaultPrompt
   const [prompt, setPrompt] = useState(basePrompt)
@@ -209,6 +216,13 @@ export function ManualOcrForm({
 
   return (
     <div className="space-y-5">
+      {preloadedImage && (
+        <div className="flex items-center gap-2 rounded-lg border border-harvest-300 bg-harvest-50 px-3 py-2 text-sm text-harvest-800">
+          <span className="shrink-0">📠</span>
+          <span>受信トレイの原本を読み込みました。「読み取る」を押してください。</span>
+        </div>
+      )}
+
       {/* 入力モード切替 */}
       <div className="inline-flex rounded-lg border border-line bg-bg-soft p-1">
         <button

@@ -1,11 +1,12 @@
 import Link from 'next/link'
-import { Image as ImageIcon, FileText, CheckCircle2 } from 'lucide-react'
+import { Image as ImageIcon, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { ConfidenceBar } from '@/components/admin/ConfidenceBar'
 import { IngestButton } from '@/components/admin/IngestButton'
+import { InboxReceiptActions } from '@/components/admin/InboxReceiptActions'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,9 +18,9 @@ const CHANNEL_LABEL: Record<string, string> = {
 }
 
 /**
- * 承認待ち一覧（features.md Phase C）。受信ログのうち要対応ステータスを表示する。
- * 確信度バー・原本プレビュー（R2署名URL）・生成された注文への導線を提供する。
- * ※ 実際の承認は注文側（/admin/approvals・受注詳細）で行う（受信→注文化は取り込みが担当）。
+ * 承認待ち受信トレイ。
+ * 各受信カードに「読み取る」（手動OCR）・「再解析」（ai_failed のみ）・「却下」を提供。
+ * 実際の承認は /admin/approvals（明細のある pending_review 注文のみ表示）。
  */
 export default async function InboxPage() {
   const supabase = createClient()
@@ -31,7 +32,6 @@ export default async function InboxPage() {
 
   if (error) return <ErrorState message={error.message} />
 
-  // 取引先名（紐付け済みのものだけ）
   const customerIds = [...new Set((receipts ?? []).map((r) => r.customer_id).filter(Boolean))] as string[]
   const { data: custs } = customerIds.length
     ? await supabase.from('customers').select('id, name, display_color').in('id', customerIds)
@@ -45,11 +45,12 @@ export default async function InboxPage() {
         <div>
           <h1 className="font-display text-2xl font-bold text-ink">承認待ち（受信）</h1>
           <p className="mt-1 text-sm text-ink-soft">
-            取り込んだ受信の確認。承認は受注一覧・
+            「読み取る」で手動OCR→注文化、または「却下」でリストから削除。
+            注文の承認は
             <Link href="/admin/approvals" className="text-trust-600 hover:underline">
               注文の承認
             </Link>
-            で行います。
+            で。
           </p>
         </div>
         <IngestButton />
@@ -99,7 +100,7 @@ export default async function InboxPage() {
                       </div>
                       <ConfidenceBar value={r.ocr_confidence != null ? Number(r.ocr_confidence) : null} />
                       {r.status === 'ai_failed' && r.error_message && (
-                        <p className="text-xs text-alert">{r.error_message}</p>
+                        <p className="rounded bg-alert-bg/60 px-2 py-1 text-xs text-alert">{r.error_message}</p>
                       )}
                     </div>
                     <time className="num shrink-0 text-xs text-ink-faint">
@@ -119,7 +120,7 @@ export default async function InboxPage() {
                         原本を見る
                       </a>
                     )}
-                    {r.order_id ? (
+                    {r.order_id && (
                       <Link
                         href={`/admin/orders/${r.order_id}`}
                         className="inline-flex items-center gap-1.5 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50"
@@ -127,15 +128,12 @@ export default async function InboxPage() {
                         <FileText className="h-3.5 w-3.5" aria-hidden />
                         受注を見る
                       </Link>
-                    ) : (
-                      <Link
-                        href="/admin/approvals"
-                        className="inline-flex items-center gap-1.5 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-harvest-700 hover:bg-harvest-50"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                        承認へ
-                      </Link>
                     )}
+                    <InboxReceiptActions
+                      receiptId={r.id}
+                      status={r.status}
+                      hasR2Key={Boolean(r.r2_key)}
+                    />
                   </div>
                 </Card>
               </li>

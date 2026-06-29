@@ -7,15 +7,19 @@ import { ErrorState } from '@/components/ui/States'
 import { ManualOcrForm } from '@/components/admin/ManualOcrForm'
 import { getSetting } from '@/lib/settings'
 import { DEFAULT_GEMINI_PROMPT_NORMAL } from '@/lib/gemini/prompts'
+import { getReceiptOriginal } from '@/lib/r2'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * 手動OCR（管理者専用）。
- * FAX画像・スキャン・メール本文をその場でAIに読ませ、注文として保存まで行う。
- * 取引先・商品一覧を渡してOcrSaveSectionで確認→登録できるようにする。
+ * ?receipt=<id> で受信トレイから遷移した場合、原本画像を自動プリロードする。
  */
-export default async function ManualOcrPage() {
+export default async function ManualOcrPage({
+  searchParams,
+}: {
+  searchParams: { receipt?: string }
+}) {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
@@ -46,6 +50,33 @@ export default async function ManualOcrPage() {
     aliases: string[]
   }[]
 
+  // 受信トレイからの遷移：原本を取得してプリロード
+  let preloadedImage: { base64: string; mimeType: string; fileName: string } | null = null
+  if (searchParams.receipt) {
+    const admin = createAdminClient()
+    const { data: receipt } = await admin
+      .from('order_receipts')
+      .select('r2_key, channel, received_at')
+      .eq('id', searchParams.receipt)
+      .maybeSingle()
+
+    if (receipt?.r2_key) {
+      try {
+        const buf = await getReceiptOriginal(receipt.r2_key)
+        const ext = receipt.r2_key.split('.').pop()?.toLowerCase() ?? 'jpg'
+        const mimeType =
+          ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : 'image/jpeg'
+        preloadedImage = {
+          base64: buf.toString('base64'),
+          mimeType,
+          fileName: receipt.r2_key.split('/').pop() ?? 'receipt',
+        }
+      } catch {
+        // 取得失敗は無視（通常フローにフォールバック）
+      }
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-start gap-3">
@@ -67,6 +98,7 @@ export default async function ManualOcrPage() {
           customers={customers}
           products={products}
           destinations={destinations}
+          preloadedImage={preloadedImage}
         />
       </Card>
     </div>
