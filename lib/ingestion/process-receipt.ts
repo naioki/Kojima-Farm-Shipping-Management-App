@@ -321,11 +321,43 @@ async function saveOrder({
     })),
   })
 
-  if (decision.action === 'manual_review') {
+  if (decision.action === 'manual_review' || !customerId || !order.delivery_date) {
+    // 自動承認条件を満たさないが、人間が確認できるようにオーダーを pending_review で作る
+    const { data: draftOrder, error: draftErr } = await admin
+      .from('orders')
+      .insert({
+        customer_id: customerId ?? null,
+        delivery_date: order.delivery_date ?? null,
+        status: 'pending_review',
+        source: 'fax',
+      })
+      .select('id')
+      .maybeSingle()
+
+    if (!draftErr && draftOrder) {
+      // マッチした商品だけ挿入（product_id NOT NULL 制約のため未マッチはスキップ）
+      const matched = resolvedItems.filter((it) => it.product_id)
+      if (matched.length > 0) {
+        await admin.from('order_items').insert(
+          matched.map((it) => ({
+            order_id: draftOrder.id,
+            product_id: it.product_id,
+            product_name: it.product_name ?? '',
+            quantity: 0,
+            quantity_raw: it.quantity_raw ?? null,
+            unit: it.unit ?? '個',
+            unit_price: 0,
+            tax_rate: 8,
+            confidence: it.confidence,
+            is_flagged: true,
+          })),
+        )
+      }
+      await admin.from('order_receipts').update({ order_id: draftOrder.id }).eq('id', receiptId)
+    }
+
     return { saved: false, needsReview: true }
   }
-
-  if (!customerId || !order.delivery_date) return { saved: false, needsReview: true }
 
   // 納入先の名寄せ（取引先配下の delivery_destinations を code/full_name/aliases で照合）
   let destinationId: string | null = null

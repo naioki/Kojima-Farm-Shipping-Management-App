@@ -58,9 +58,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     .select('id, product_id, quantity, confidence')
     .eq('order_id', order.id)
   if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
-  if (!items || items.length === 0) {
-    return NextResponse.json({ error: '明細がありません' }, { status: 400 })
-  }
 
   // 納品日（body で確定可。harvest_tasks.task_date に必須）
   const deliveryDate = parsed.data.delivery_date ?? order.delivery_date
@@ -99,13 +96,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const { error: updErr } = await admin.from('orders').update(updates).eq('id', order.id)
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-  // 各明細 → 収穫タスク生成（必要数＝注文数、task_date＝納品日）
-  const tasks = items.map((it) => ({
-    product_id: it.product_id,
-    order_item_id: it.id,
-    required_qty: it.quantity,
-    task_date: deliveryDate,
-  }))
+  // 各明細 → 収穫タスク生成（product_id 未照合はスキップ）
+  const tasks = items
+    .filter((it) => it.product_id)
+    .map((it) => ({
+      product_id: it.product_id!,
+      order_item_id: it.id,
+      required_qty: it.quantity,
+      task_date: deliveryDate,
+    }))
   const { error: taskErr } = await admin.from('harvest_tasks').insert(tasks)
   if (taskErr) {
     // タスク生成に失敗したら承認を巻き戻す（中途半端な状態を残さない）
