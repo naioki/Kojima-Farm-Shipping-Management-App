@@ -46,8 +46,10 @@ function pop3Connect(host: string, port: number, timeoutMs: number): Promise<Pop
       })
       const readLine = (): Promise<string> =>
         lines.length > 0 ? Promise.resolve(lines.shift()!) : new Promise((r) => waiters.push(r))
-      clearTimeout(timer)
-      resolve({ readLine, write: (cmd) => sock.write(cmd + '\r\n'), destroy: () => sock.destroy() })
+      // グリーティング（+OK POP3 ready ...）を消費してから resolve
+      readLine()
+        .then(() => { clearTimeout(timer); resolve({ readLine, write: (cmd) => sock.write(cmd + '\r\n'), destroy: () => sock.destroy() }) })
+        .catch(reject)
     })
   })
 }
