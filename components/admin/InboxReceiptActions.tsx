@@ -38,14 +38,19 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
     setRetrying(true)
     try {
       const res = await fetch(`/api/receipts/${receiptId}/retry`, { method: 'POST' })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(j.error ?? `失敗 (${res.status})`)
+      const json = (await res.json().catch(() => ({}))) as { status?: string; error?: string }
+      if (!res.ok) throw new Error(json.error ?? `失敗 (${res.status})`)
+
+      if (json.status === 'ai_failed') {
+        toast.error(`再解析に失敗しました${json.error ? `：${json.error}` : ''}`)
+      } else if (json.status === 'not_order') {
+        toast('受注書ではないと判定されました', { icon: '⚠️' })
+      } else {
+        toast.success('再解析が完了しました')
       }
-      toast.success('再解析を開始しました。少し待ってからページを更新してください。')
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '再解析の開始に失敗しました')
+      toast.error(e instanceof Error ? e.message : '再解析に失敗しました')
     } finally {
       setRetrying(false)
     }
@@ -70,7 +75,7 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
           className="inline-flex items-center gap-1.5 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-ink hover:bg-bg-soft disabled:opacity-50"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${retrying ? 'animate-spin' : ''}`} aria-hidden />
-          {retrying ? '開始中…' : '再解析'}
+          {retrying ? '再解析中…' : '再解析'}
         </button>
       )}
       <button
