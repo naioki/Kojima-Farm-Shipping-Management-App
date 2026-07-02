@@ -1,12 +1,16 @@
 import Link from 'next/link'
-import { Image as ImageIcon, FileText } from 'lucide-react'
+import { Image as ImageIcon, FileText, ScanLine } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { ConfidenceBar } from '@/components/admin/ConfidenceBar'
 import { IngestButton } from '@/components/admin/IngestButton'
 import { InboxReceiptActions } from '@/components/admin/InboxReceiptActions'
+import { ManualOcrForm } from '@/components/admin/ManualOcrForm'
+import { getSetting } from '@/lib/settings'
+import { DEFAULT_GEMINI_PROMPT_NORMAL } from '@/lib/gemini/prompts'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,8 +22,9 @@ const CHANNEL_LABEL: Record<string, string> = {
 }
 
 /**
- * 承認待ち受信トレイ。
- * 各受信カードに「読み取る」（手動OCR）・「再解析」（ai_failed のみ）・「却下」を提供。
+ * 受信トレイ（受注の取り込み拠点）。
+ *  - 上部: 手動でファイル（FAX画像・PDF・メール本文）を読み取って注文化（旧「注文を読む」を統合）。
+ *  - 下部: 自動で届いた受信の一覧。各カードに「読み取る」「再解析」「却下」。
  * 実際の承認は /admin/approvals（明細のある pending_review 注文のみ表示）。
  */
 export default async function InboxPage() {
@@ -33,20 +38,41 @@ export default async function InboxPage() {
   if (error) return <ErrorState message={error.message} />
 
   const customerIds = [...new Set((receipts ?? []).map((r) => r.customer_id).filter(Boolean))] as string[]
-  const { data: custs } = customerIds.length
-    ? await supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-    : { data: [] as { id: string; name: string; display_color: string | null }[] }
+  const admin = createAdminClient()
+  const [{ data: custs }, currentPrompt, ocrCustomersRes, productsRes, destinationsRes] = await Promise.all([
+    customerIds.length
+      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
+    getSetting('GEMINI_PROMPT_NORMAL').then((v) => v ?? ''),
+    admin.from('customers').select('id, name').eq('is_active', true).order('name'),
+    admin.from('products').select('id, name').eq('is_active', true).order('name'),
+    admin
+      .from('delivery_destinations')
+      .select('id, customer_id, code, full_name, aliases')
+      .eq('is_active', true)
+      .order('sort_order'),
+  ])
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
+
+  const ocrCustomers = (ocrCustomersRes.data ?? []) as { id: string; name: string }[]
+  const products = (productsRes.data ?? []) as { id: string; name: string }[]
+  const destinations = (destinationsRes.data ?? []) as {
+    id: string
+    customer_id: string
+    code: string | null
+    full_name: string
+    aliases: string[]
+  }[]
 
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold text-ink">承認待ち（受信）</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">受信トレイ</h1>
           <p className="mt-1 text-sm text-ink-soft">
-            「読み取る」で手動OCR→注文化、または「却下」でリストから削除。
-            注文の承認は
+            届いたFAX・メールの取り込み拠点。「読み取る」で注文化、「却下」でリストから削除。
+            承認は
             <Link href="/admin/approvals" className="text-trust-600 hover:underline">
               注文の承認
             </Link>
@@ -55,6 +81,25 @@ export default async function InboxPage() {
         </div>
         <IngestButton />
       </div>
+
+      {/* 手動でファイルを読み取る（旧「注文を読む」を統合。折りたたみ・既定は閉じる） */}
+      <details className="group rounded-lg border border-line bg-bg-card">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-ink hover:bg-bg-soft">
+          <ScanLine className="h-4 w-4 text-earth-700" aria-hidden />
+          手動でファイルを読み取る（FAX画像・PDF・メール本文）
+          <span className="ml-auto text-xs text-ink-faint group-open:hidden">開く ＋</span>
+          <span className="ml-auto hidden text-xs text-ink-faint group-open:inline">閉じる −</span>
+        </summary>
+        <div className="border-t border-line p-4">
+          <ManualOcrForm
+            currentPrompt={currentPrompt}
+            defaultPrompt={DEFAULT_GEMINI_PROMPT_NORMAL}
+            customers={ocrCustomers}
+            products={products}
+            destinations={destinations}
+          />
+        </div>
+      </details>
 
       {!receipts?.length ? (
         <EmptyState title="承認待ちはありません" description="新しい受信があるとここに表示されます。" />

@@ -8,13 +8,11 @@ import {
   Carrot,
   Settings,
   ClipboardList,
-  ScanLine,
   Camera,
   CheckCircle2,
   Tag,
   Coins,
   Images,
-  AlertTriangle,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -31,32 +29,39 @@ export interface NavGroup {
 }
 
 /**
- * 管理（経営）サーフェスのナビ。13項目をフラットに並べず、業務フェーズで
- * グルーピングして俯瞰しやすくする（Cの方針：高密度だが整理された経営画面）。
+ * 管理（経営）サーフェスのナビ。業務フェーズでグルーピングして俯瞰しやすくする。
+ *
+ * 整理方針（2026-07）:
+ *  - 受注: 「受信トレイ（取り込み＋手動読み取り）→ 承認 → 一覧」の一直線。
+ *    旧「注文を読む」は受信トレイ内の手動アップロードに統合しメニューから除外。
+ *  - 受注一覧をメニューに追加（従来はダッシュボード経由でしか行けなかった不整合を解消）。
+ *  - 「規格の未登録」はToDo性が強いためメニューから外し、ダッシュボードのアラートで通知。
+ *  - 価格系は役割が一目で分かる名称へ（月次の価格確定／単価・荷姿マスタ）。
+ *  - 納品書は出荷実務に近いため「出荷・現場」へ移動。
  */
 export const ADMIN_GROUPS: NavGroup[] = [
   { label: null, items: [{ href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard }] },
   {
     label: '受注',
     items: [
+      { href: '/admin/inbox', label: '受信トレイ', icon: Inbox },
       { href: '/admin/approvals', label: '注文の承認', icon: CheckCircle2 },
-      { href: '/admin/inbox', label: '承認待ち（受信）', icon: Inbox },
-      { href: '/admin/ocr', label: '注文を読む', icon: ScanLine },
+      { href: '/admin/orders', label: '受注一覧', icon: ClipboardList },
     ],
   },
   {
     label: '出荷・現場',
     items: [
       { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
+      { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },
       { href: '/admin/spec-reports', label: '規格報告', icon: Camera },
     ],
   },
   {
     label: '請求',
     items: [
-      { href: '/admin/pricing', label: '請求準備（価格確定）', icon: Coins },
+      { href: '/admin/pricing', label: '価格の確定（月次）', icon: Coins },
       { href: '/admin/invoices', label: '請求', icon: FileText },
-      { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },
     ],
   },
   {
@@ -65,8 +70,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
       { href: '/admin/master-import', label: '写真でマスタ登録', icon: Images },
       { href: '/admin/customers', label: '取引先', icon: Users },
       { href: '/admin/products', label: '商品', icon: Carrot },
-      { href: '/admin/pricing-master', label: '価格・荷姿', icon: Tag },
-      { href: '/admin/rules-missing', label: '規格の未登録', icon: AlertTriangle },
+      { href: '/admin/pricing-master', label: '単価・荷姿マスタ', icon: Tag },
     ],
   },
   { label: null, items: [{ href: '/admin/settings', label: '設定', icon: Settings }] },

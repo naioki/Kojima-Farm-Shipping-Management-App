@@ -1,5 +1,7 @@
 import 'server-only'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { yen } from '@/lib/format'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
@@ -145,6 +147,9 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const pendingOrders = pendingOrdersRes.count ?? 0
   const pendingReceipts = pendingReceiptsRes.count ?? 0
   const failedReceipts = failedReceiptsRes.count ?? 0
+  // 規格未登録はナビから外しここで通知（ToDo性が強いため）。集計失敗は0扱いで全体を止めない。
+  const missingSpecs = await getMissingSpecs(createAdminClient()).catch(() => [])
+  const missingSpecsCount = missingSpecs.length
   const alerts: AlertItem[] = []
   if (pendingOrders > 0)
     alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/approvals' })
@@ -152,6 +157,8 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     alerts.push({ id: 'pr', tone: 'warning', label: `未処理の受信データが ${pendingReceipts}件 あります`, count: pendingReceipts, href: '/admin/inbox' })
   if (failedReceipts > 0)
     alerts.push({ id: 'fr', tone: 'alert', label: `解析失敗・未紐付けが ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox?status=ai_failed' })
+  if (missingSpecsCount > 0)
+    alerts.push({ id: 'ms', tone: 'warning', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
   const notificationCount = pendingOrders + pendingReceipts + failedReceipts
 
   // --- 今月の出荷推移（日次） ---
