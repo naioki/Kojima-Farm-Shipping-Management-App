@@ -104,17 +104,34 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
     }
   }
 
-  // 画像前処理
+  // PDFか判定（マジックバイト %PDF）。FAXソフトはPDFで送ってくることが多い。
+  // Gemini は application/pdf を直接受け取れるので、PDFは画像前処理（sharp）を通さず
+  // そのまま渡す。sharp はPDFを扱えず、従来はここで例外→image/jpegラベルのまま渡していたため
+  // Geminiが「不正な画像」として拒否し「解析失敗」になっていた（根本原因）。
+  const isPdf =
+    imageBuffer != null &&
+    imageBuffer.length >= 4 &&
+    imageBuffer[0] === 0x25 && // %
+    imageBuffer[1] === 0x50 && // P
+    imageBuffer[2] === 0x44 && // D
+    imageBuffer[3] === 0x46 //  F
+
+  // 画像前処理（画像のみ。PDFはそのまま）
   let base64: string | null = null
   let mimeType = 'image/jpeg'
   if (imageBuffer) {
-    try {
-      const preprocessed = await preprocessFaxImage(imageBuffer)
-      base64 = preprocessed.base64
-      mimeType = preprocessed.mimeType
-    } catch {
+    if (isPdf) {
       base64 = imageBuffer.toString('base64')
-      mimeType = 'image/jpeg'
+      mimeType = 'application/pdf'
+    } else {
+      try {
+        const preprocessed = await preprocessFaxImage(imageBuffer)
+        base64 = preprocessed.base64
+        mimeType = preprocessed.mimeType
+      } catch {
+        base64 = imageBuffer.toString('base64')
+        mimeType = 'image/jpeg'
+      }
     }
   }
 
@@ -129,8 +146,8 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   }
   let result = rawResult
 
-  // 上下逆さまリトライ（is_order:false かつ画像あり）
-  if (!result.is_order && imageBuffer) {
+  // 上下逆さまリトライ（is_order:false かつ画像あり。PDFは回転前処理できないので対象外）
+  if (!result.is_order && imageBuffer && !isPdf) {
     try {
       const rotated = await preprocessFaxImageRotated180(imageBuffer)
       const { result: retried } = await tryAnalyze(

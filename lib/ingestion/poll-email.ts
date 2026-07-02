@@ -11,7 +11,7 @@ import { canRunGeminiNow } from '@/lib/gemini/quota'
 import { putReceiptOriginal } from '@/lib/r2'
 import { processReceipt } from '@/lib/ingestion/process-receipt'
 
-const MAX_PROCESS_PER_POLL = 3
+const MAX_PROCESS_PER_POLL = 10
 const FAX_MIME = /^(application\/pdf|image\/(jpeg|jpg|png|tiff))$/i
 
 export interface PollEmailResult {
@@ -151,6 +151,7 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
   const analyzeResults: Array<{ receiptId: string; status: string }> = []
 
   if (allowed) {
+    // ai_failed でリトライ期限が来たものを pending_ai に戻す（自動リトライ）
     const { data: retryRows } = await supabase
       .from('order_receipts')
       .select('id')
@@ -164,7 +165,18 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
       await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
     }
 
-    const ids = [...pendingReceiptIds, ...retryIds].slice(0, MAX_PROCESS_PER_POLL)
+    // pending_ai を DB から直接拾う。今回取り込んだ分だけでなく、過去に取り込まれたが
+    // 未処理のまま残った「孤児」レコード（quota切れ・上限超過・途中中断で滞留したもの）も
+    // 確実に処理する。古い順（received_at 昇順）に最大 MAX_PROCESS_PER_POLL 件。
+    void pendingReceiptIds // 個別追跡は不要（DBの pending_ai を正とする）
+    const { data: pendingRows } = await supabase
+      .from('order_receipts')
+      .select('id')
+      .eq('status', 'pending_ai')
+      .order('received_at', { ascending: true })
+      .limit(MAX_PROCESS_PER_POLL)
+
+    const ids = (pendingRows ?? []).map((r) => r.id as string)
     for (const rid of ids) {
       const res = await processReceipt(rid).catch(() => ({
         receiptId: rid,
