@@ -1,5 +1,20 @@
 # デプロイ手順（Cloud Run）
 
+## 推奨: スクリプトを使う
+
+```powershell
+# デプロイ（事前チェック→ビルド→トラフィック確認→スモークテスト→git tag まで自動）
+powershell -File scripts\deploy.ps1
+
+# ロールバック（過去リビジョンへ数秒で切替。一覧から選択可能）
+powershell -File scripts\rollback.ps1
+# 復旧後は必ず平常運用へ:
+powershell -File scripts\rollback.ps1 -ToLatest
+```
+
+デプロイの成否は `/api/health`（DB到達性込みのヘルスチェック）で自動確認される。
+以下は手動で行う場合の手順。
+
 このアプリは **Next.js standalone を 1 コンテナ**で動かす（`.claude/rules/stack.md` 準拠）。
 ポイントは「**実行時に渡すシークレットは 1 つだけ**」にしてあること。残りはデプロイ後に
 `/admin/settings` から入力できる（`lib/settings.ts` が DB(`app_settings`)→env の順に解決する）。
