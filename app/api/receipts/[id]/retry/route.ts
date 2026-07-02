@@ -18,22 +18,19 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
+  // read-then-update は二重クリックで競合する（両リクエストが status='ai_failed' を読んでしまう）。
+  // 条件付き1回のUPDATEにし、実際に更新できた行数で「自分が処理する権利を得たか」を判定する。
   const admin = createAdminClient()
-  const { data: receipt, error: fetchErr } = await admin
-    .from('order_receipts')
-    .select('id, status')
-    .eq('id', params.id)
-    .maybeSingle()
-  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
-  if (!receipt || receipt.status !== 'ai_failed') {
-    return NextResponse.json({ error: '再解析できる状態ではありません' }, { status: 409 })
-  }
-
-  const { error: updErr } = await admin
+  const { data: updated, error: updErr } = await admin
     .from('order_receipts')
     .update({ status: 'pending_ai', error_message: null, retry_count: 0, next_retry_at: null })
     .eq('id', params.id)
+    .eq('status', 'ai_failed')
+    .select('id')
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+  if (!updated || updated.length === 0) {
+    return NextResponse.json({ error: '再解析できる状態ではありません（既に処理中か完了しています）' }, { status: 409 })
+  }
 
   const result = await processReceipt(params.id)
   return NextResponse.json({ ok: true, status: result.status, error: result.error })

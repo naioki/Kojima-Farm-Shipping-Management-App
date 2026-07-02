@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ScanLine, RefreshCw, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ConfirmModal } from '@/components/ui/Modal'
 
 interface Props {
   receiptId: string
@@ -15,9 +16,9 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
   const router = useRouter()
   const [dismissing, setDismissing] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   async function handleDismiss() {
-    if (!confirm('この受信を却下してリストから消しますか？（元の画像は保持されます）')) return
     setDismissing(true)
     try {
       const res = await fetch(`/api/receipts/${receiptId}/dismiss`, { method: 'POST' })
@@ -26,6 +27,7 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
         throw new Error(j.error ?? `却下失敗 (${res.status})`)
       }
       toast.success('受信を却下しました')
+      setConfirmOpen(false)
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '却下に失敗しました')
@@ -80,13 +82,22 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
       )}
       <button
         type="button"
-        onClick={handleDismiss}
+        onClick={() => setConfirmOpen(true)}
         disabled={dismissing}
         className="inline-flex items-center gap-1.5 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-ink-faint hover:bg-bg-soft disabled:opacity-50"
       >
         <X className="h-3.5 w-3.5" aria-hidden />
         {dismissing ? '処理中…' : '却下'}
       </button>
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleDismiss}
+        title="この受信を却下しますか？"
+        message="リストから消えます（原本の画像・PDFは保持されます。取り消せません）。"
+        confirmLabel="却下する"
+        isLoading={dismissing}
+      />
     </>
   )
 }

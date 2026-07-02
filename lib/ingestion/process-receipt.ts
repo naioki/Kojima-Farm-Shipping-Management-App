@@ -164,10 +164,18 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   if (!result.is_order || result.orders.length === 0) {
     await admin
       .from('order_receipts')
-      .update({ status: 'unmatched', customer_id: customerId ?? undefined })
+      .update({
+        status: 'unmatched',
+        customer_id: customerId ?? undefined,
+        error_message: '受注書として読み取れませんでした（受注書ではない可能性、または画像が不鮮明）',
+      })
       .eq('id', receiptId)
     return { receiptId, status: 'not_order', orderCount: 0 }
   }
+
+  // 受信レベルの確信度（表示用）。全明細の最小値＝最も自信のない項目を代表値にする。
+  const allConfidences = result.orders.flatMap((o) => o.items.map((it) => it.confidence))
+  const ocrConfidence = allConfidences.length > 0 ? Math.min(...allConfidences) : null
 
   // 商品マスタ取得（名寄せ用）
   const { data: products } = await admin
@@ -209,7 +217,7 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
 
   await admin
     .from('order_receipts')
-    .update({ status: finalStatus, customer_id: customerId ?? undefined })
+    .update({ status: finalStatus, customer_id: customerId ?? undefined, ocr_confidence: ocrConfidence })
     .eq('id', receiptId)
 
   if (finalStatus === 'pending_review') {

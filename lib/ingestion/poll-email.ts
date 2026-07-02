@@ -165,10 +165,9 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
       await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
     }
 
-    // pending_ai を DB から直接拾う。今回取り込んだ分だけでなく、過去に取り込まれたが
-    // 未処理のまま残った「孤児」レコード（quota切れ・上限超過・途中中断で滞留したもの）も
-    // 確実に処理する。古い順（received_at 昇順）に最大 MAX_PROCESS_PER_POLL 件。
-    void pendingReceiptIds // 個別追跡は不要（DBの pending_ai を正とする）
+    // pending_ai を DB から直接拾う。今回取り込んだ分（pendingReceiptIds）だけでなく、
+    // 過去に取り込まれたが未処理のまま残った「孤児」レコード（quota切れ・上限超過・
+    // 途中中断で滞留したもの）も確実に処理する。古い順（received_at 昇順）に最大 MAX_PROCESS_PER_POLL 件。
     const { data: pendingRows } = await supabase
       .from('order_receipts')
       .select('id')

@@ -32,7 +32,7 @@ export default async function InboxPage() {
   const { data: receipts, error } = await supabase
     .from('order_receipts')
     .select('id, channel, status, received_at, sender_date_key, is_revision, ocr_confidence, r2_key, order_id, customer_id, error_message')
-    .in('status', ['pending_review', 'ai_failed', 'unmatched'])
+    .in('status', ['pending_ai', 'pending_review', 'ai_failed', 'unmatched'])
     .order('received_at', { ascending: false })
 
   if (error) return <ErrorState message={error.message} />
@@ -129,6 +129,12 @@ export default async function InboxPage() {
                         {r.status === 'ai_failed' && (
                           <span className="rounded bg-alert-bg px-2 py-0.5 text-xs font-medium text-alert">
                             解析失敗
+                          </span>
+                        )}
+                        {r.status === 'pending_ai' && (
+                          <span className="inline-flex items-center gap-1 rounded bg-trust-100 px-2 py-0.5 text-xs font-medium text-trust-700">
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-trust-500" aria-hidden />
+                            解析待ち
                           </span>
                         )}
                       </div>
