@@ -1,18 +1,16 @@
-import { redirect } from 'next/navigation'
 import { ScanLine } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
-import { ErrorState } from '@/components/ui/States'
 import { ManualOcrForm } from '@/components/admin/ManualOcrForm'
-import { getSetting } from '@/lib/settings'
 import { DEFAULT_GEMINI_PROMPT_NORMAL } from '@/lib/gemini/prompts'
 import { getReceiptOriginal } from '@/lib/r2'
+import { requireAdmin } from '@/lib/auth/require-admin'
+import { getManualOcrMasterData } from '@/lib/ocr/manual-ocr-data'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * 手動OCR（管理者専用）。
+ * 手動OCR（管理者専用）。/field/ocr と同じフォーム・同じマスタ取得を共有する（lib/ocr/manual-ocr-data）。
  * ?receipt=<id> で受信トレイから遷移した場合、原本画像を自動プリロードする。
  */
 export default async function ManualOcrPage({
@@ -20,35 +18,10 @@ export default async function ManualOcrPage({
 }: {
   searchParams: { receipt?: string }
 }) {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('手動OCRは管理者のみ利用できます。')
+  if (guard) return guard
 
-  const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="手動OCRは管理者のみ利用できます。" />
-  }
-
-  const [currentPrompt, customersResult, productsResult, destinationsResult] = await Promise.all([
-    getSetting('GEMINI_PROMPT_NORMAL').then((v) => v ?? ''),
-    createAdminClient().from('customers').select('id, name').eq('is_active', true).order('name'),
-    createAdminClient().from('products').select('id, name').eq('is_active', true).order('name'),
-    createAdminClient()
-      .from('delivery_destinations')
-      .select('id, customer_id, code, full_name, aliases')
-      .eq('is_active', true)
-      .order('sort_order'),
-  ])
-
-  const customers = (customersResult.data ?? []) as { id: string; name: string }[]
-  const products = (productsResult.data ?? []) as { id: string; name: string }[]
-  const destinations = (destinationsResult.data ?? []) as {
-    id: string
-    customer_id: string
-    code: string | null
-    full_name: string
-    aliases: string[]
-  }[]
+  const { currentPrompt, customers, products, destinations } = await getManualOcrMasterData()
 
   // 受信トレイからの遷移：原本を取得してプリロード
   let preloadedImage: { base64: string; mimeType: string; fileName: string } | null = null

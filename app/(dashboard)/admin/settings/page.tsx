@@ -1,9 +1,9 @@
-import { redirect } from 'next/navigation'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { SettingsForm, type SettingItem } from '@/components/admin/SettingsForm'
 import { SETTINGS_SPEC } from '@/lib/settings-spec'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,14 +13,10 @@ export const dynamic = 'force-dynamic'
  * 解決順は DB（app_settings）→ 環境変数。実際の取り込み稼働には外部の認証情報が必要。
  */
 export default async function SettingsPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('設定は管理者のみアクセスできます。')
+  if (guard) return guard
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="設定は管理者のみアクセスできます。" />
-  }
 
   // app_settings を取得（admin_all RLS で admin のみ可）
   const { data: rows, error } = await supabase.from('app_settings').select('key, value')

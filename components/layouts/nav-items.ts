@@ -82,7 +82,7 @@ export const STAFF_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
-      { href: '/field/matrix', label: '圃場マトリックス', icon: Sprout },
+      { href: '/field/matrix', label: '週間マトリックス', icon: Sprout },
     ],
   },
 ]

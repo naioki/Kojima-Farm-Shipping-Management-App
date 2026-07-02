@@ -25,6 +25,8 @@ export interface ShipmentRowProps {
   customerName: string
   /** 取引先の識別色（hex or null → 名前から自動生成） */
   customerColor?: string | null
+  /** 納入先名（取引先の配下の届け先。無ければ非表示。表示は常に「取引先＞納入先」） */
+  destinationName?: string | null
   /** 総数表示（"120" や "6c0" など、呼び出し側で整形） */
   quantityText: string
   /** 受注総数（中断時の「できた数」との比較・部分完了判定に使う） */
@@ -57,6 +59,7 @@ export function ShipmentRow({
   itemId,
   customerName,
   customerColor,
+  destinationName,
   quantityText,
   orderedQty,
   initialStatus,
@@ -250,37 +253,46 @@ export function ShipmentRow({
 
   return (
     <div className={cn('rounded border', conflict ? 'animate-pulse-alert border-alert' : 'border-line')}>
-      <div className="flex items-center justify-between gap-3 px-3 py-2">
+      <div className="px-3 py-2">
+        {/* 1行目: 取引先＞納入先（折り返し可・省略しない）＋数量。狭い画面でも読める幅を優先する。 */}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
+          className="flex w-full items-start gap-2 text-left focus-visible:outline-none"
         >
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-ink-faint transition-transform', open && 'rotate-180')} aria-hidden />
-          <span className="min-w-0">
-            <span className="flex items-center gap-1.5">
+          <ChevronDown className={cn('mt-1 h-4 w-4 shrink-0 text-ink-faint transition-transform', open && 'rotate-180')} aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <ColorDot color={customerColor} name={customerName} />
-              <span className="truncate text-sm font-medium text-ink">{customerName}</span>
+              <span className="text-sm font-medium text-ink">{customerName}</span>
+              {destinationName && (
+                <span className="inline-flex items-center rounded bg-trust-50 px-1.5 py-0.5 text-xs font-medium text-trust-700">
+                  ＞{destinationName}
+                </span>
+              )}
             </span>
-            <span className="num block text-base font-bold tabular-nums text-ink">{quantityText}</span>
+            <span className="flex flex-wrap items-center gap-1.5 mt-0.5">
+              <span className="num text-base font-bold tabular-nums text-ink">{quantityText}</span>
+              {hasDetails && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-soft">
+                  {hasCard && <IdCard className="h-3 w-3" aria-hidden />}
+                  {[container, spec].filter(Boolean).join(' / ') || '荷姿あり'}
+                </span>
+              )}
+              {Boolean(fieldNote) && (
+                // 現場メモがある行はメモアイコンで明示（中断は下のステータス欄で色分け表示）
+                <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+                  <StickyNote className="h-3 w-3" aria-hidden />
+                  メモ
+                </span>
+              )}
+            </span>
           </span>
-          {hasDetails && (
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-soft">
-              {hasCard && <IdCard className="h-3 w-3" aria-hidden />}
-              {[container, spec].filter(Boolean).join(' / ') || '荷姿あり'}
-            </span>
-          )}
-          {Boolean(fieldNote) && (
-            // 現場メモがある行はメモアイコンで明示（中断は右のステータス欄で色分け表示）
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
-              <StickyNote className="h-3 w-3" aria-hidden />
-              メモ
-            </span>
-          )}
         </button>
 
-        <div className="flex items-center gap-1.5">
+        {/* 2行目: 操作ボタン。1行目と幅を奪い合わないよう分離し、タップ領域も広くとる。 */}
+        <div className="mt-2 flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
@@ -290,7 +302,7 @@ export function ShipmentRow({
           >
             <ChevronLeft className="h-5 w-5" aria-hidden />
           </button>
-          <span className="flex w-20 flex-col items-center gap-0.5">
+          <span className="flex flex-1 flex-col items-center gap-0.5">
             {interrupted ? (
               <>
                 <PauseCircle className="h-5 w-5 text-warning" aria-hidden />
@@ -320,7 +332,7 @@ export function ShipmentRow({
             aria-label="中断・できた数を記録"
             title="中断・できた数を記録"
             className={cn(
-              'flex h-12 w-10 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
+              'flex h-12 w-12 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
               isPartial
                 ? 'border-harvest-200 bg-harvest-50 text-earth-700'
                 : 'border-line text-ink-soft hover:bg-bg-soft',

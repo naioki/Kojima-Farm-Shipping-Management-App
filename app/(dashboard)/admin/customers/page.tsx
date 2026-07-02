@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { AddCustomerForm } from '@/components/admin/AddCustomerForm'
 import { ColorDot } from '@/components/ui/ColorDot'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,9 @@ export const dynamic = 'force-dynamic'
  * 取引先を一覧し、各取引先のP/C・荷姿・「いつものセット」編集（詳細画面）へ導線。
  */
 export default async function CustomersPage() {
+  const guard = await requireAdmin('取引先設定は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
   const { data: customers, error } = await supabase
     .from('customers')

@@ -58,12 +58,13 @@ export default async function ShipmentsPage({
   // ① その日の出荷日を持つ注文（型安全のため埋め込みを使わず段階取得）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('id, customer_id')
+    .select('id, customer_id, destination_id')
     .eq('delivery_date', date)
   if (ordersErr) return <ErrorState message={ordersErr.message} />
 
   const orderIds = (orders ?? []).map((o) => o.id)
   const orderToCustomer = new Map((orders ?? []).map((o) => [o.id, o.customer_id]))
+  const orderToDestination = new Map((orders ?? []).map((o) => [o.id, o.destination_id]))
 
   // ② 明細（出荷対象）— spec_warnings も取得して常時表示
   const items = orderIds.length
@@ -76,20 +77,25 @@ export default async function ShipmentsPage({
       ).data ?? []
     : []
 
-  // ③ 取引先名・識別色・商品の荷姿容量（表示用）
+  // ③ 取引先名・識別色・商品の荷姿容量・納入先名（表示用。表示は常に「取引先＞納入先」）
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const productIds = [...new Set(items.map((i) => i.product_id))]
-  const [{ data: custRows }, { data: prodRows }] = await Promise.all([
+  const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
+  const [{ data: custRows }, { data: prodRows }, { data: destRows }] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[] }),
+    destinationIds.length
+      ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
+      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[] }),
   ])
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const customerColor = new Map((custRows ?? []).map((c) => [c.id, c.display_color]))
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
+  const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
 
   // 荷姿（明細に紐づく pack_config）を取得して表示に使う
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
@@ -188,10 +194,12 @@ export default async function ShipmentsPage({
               <ShipmentGroupRows
                 rows={rows.map((it) => {
                   const custId = orderToCustomer.get(it.order_id) ?? ''
+                  const destId = orderToDestination.get(it.order_id)
                   return {
                     itemId: it.id,
                     customerName: customerName.get(custId) ?? '—',
                     customerColor: customerColor.get(custId) ?? null,
+                    destinationName: destId ? destinationName.get(destId) ?? null : null,
                     quantityText: formatQty(
                       it.quantity,
                       capacityById.get(it.product_id) ?? null,

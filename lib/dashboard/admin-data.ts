@@ -13,7 +13,7 @@ const QUICK_ACTIONS: AdminDashboardData['actions'] = [
   { href: '/admin/orders', label: '受注一覧', icon: ClipboardList, tone: 'trust' },
   { href: '/admin/approvals', label: '受注承認', icon: CheckCircle2, tone: 'harvest' },
   { href: '/admin/master-import', label: 'マスタ取込 (OCR)', icon: Camera, tone: 'earth' },
-  { href: '/field/matrix', label: '出荷マトリックス', icon: LayoutGrid, tone: 'forest' },
+  { href: '/field/matrix', label: '週間マトリックス', icon: LayoutGrid, tone: 'forest' },
   { href: '/admin/invoices', label: '請求書作成', icon: FileText, tone: 'earth' },
   { href: '/admin/settings', label: '設定', icon: Settings, tone: 'trust' },
 ]
@@ -156,7 +156,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   if (pendingReceipts > 0)
     alerts.push({ id: 'pr', tone: 'warning', label: `未処理の受信データが ${pendingReceipts}件 あります`, count: pendingReceipts, href: '/admin/inbox' })
   if (failedReceipts > 0)
-    alerts.push({ id: 'fr', tone: 'alert', label: `解析失敗・未紐付けが ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox?status=ai_failed' })
+    alerts.push({ id: 'fr', tone: 'alert', label: `解析失敗・未紐付けが ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox?status=ai_failed,unmatched' })
   if (missingSpecsCount > 0)
     alerts.push({ id: 'ms', tone: 'warning', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
   const notificationCount = pendingOrders + pendingReceipts + failedReceipts

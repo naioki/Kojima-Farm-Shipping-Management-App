@@ -12,6 +12,7 @@ import { getSetting } from '@/lib/settings'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
 import type { FractionPolicy } from '@/types/database'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,9 @@ export const dynamic = 'force-dynamic'
  * 規格はロック中ならマスターのみ変更可。変更は履歴（audit_log）に残り参照できる。
  */
 export default async function CustomerDetailPage({ params }: { params: { id: string } }) {
+  const guard = await requireAdmin('取引先設定は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
   const user = await getAuthedUser()
 

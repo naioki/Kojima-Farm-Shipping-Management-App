@@ -1,16 +1,13 @@
 import Link from 'next/link'
-import { Image as ImageIcon, FileText, ScanLine } from 'lucide-react'
+import { Image as ImageIcon, FileText, ScanLine, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { ConfidenceBar } from '@/components/admin/ConfidenceBar'
 import { IngestButton } from '@/components/admin/IngestButton'
 import { InboxReceiptActions } from '@/components/admin/InboxReceiptActions'
-import { ManualOcrForm } from '@/components/admin/ManualOcrForm'
-import { getSetting } from '@/lib/settings'
-import { DEFAULT_GEMINI_PROMPT_NORMAL } from '@/lib/gemini/prompts'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,49 +18,47 @@ const CHANNEL_LABEL: Record<string, string> = {
   manual: '手動',
 }
 
+const ALL_STATUSES = ['pending_ai', 'pending_review', 'ai_failed', 'unmatched']
+const STATUS_FILTER_LABEL: Record<string, string> = {
+  pending_ai: '解析待ち',
+  pending_review: '要確認',
+  ai_failed: '解析失敗',
+  unmatched: '未紐付け',
+}
+
 /**
  * 受信トレイ（受注の取り込み拠点）。
  *  - 上部: 手動でファイル（FAX画像・PDF・メール本文）を読み取って注文化（旧「注文を読む」を統合）。
  *  - 下部: 自動で届いた受信の一覧。各カードに「読み取る」「再解析」「却下」。
+ * ?status=ai_failed,unmatched でダッシュボードの「解析失敗・未紐付け」アラートから絞り込んで開ける。
  * 実際の承認は /admin/approvals（明細のある pending_review 注文のみ表示）。
  */
-export default async function InboxPage() {
+export default async function InboxPage({
+  searchParams,
+}: {
+  searchParams: { status?: string }
+}) {
+  const guard = await requireAdmin('受信トレイは管理者のみです。')
+  if (guard) return guard
+
+  const requested = searchParams.status?.split(',').filter((s) => ALL_STATUSES.includes(s)) ?? []
+  const statusFilter = requested.length ? requested : ALL_STATUSES
+
   const supabase = createClient()
   const { data: receipts, error } = await supabase
     .from('order_receipts')
     .select('id, channel, status, received_at, sender_date_key, is_revision, ocr_confidence, r2_key, order_id, customer_id, error_message')
-    .in('status', ['pending_ai', 'pending_review', 'ai_failed', 'unmatched'])
+    .in('status', statusFilter)
     .order('received_at', { ascending: false })
 
   if (error) return <ErrorState message={error.message} />
 
   const customerIds = [...new Set((receipts ?? []).map((r) => r.customer_id).filter(Boolean))] as string[]
-  const admin = createAdminClient()
-  const [{ data: custs }, currentPrompt, ocrCustomersRes, productsRes, destinationsRes] = await Promise.all([
-    customerIds.length
-      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
-    getSetting('GEMINI_PROMPT_NORMAL').then((v) => v ?? ''),
-    admin.from('customers').select('id, name').eq('is_active', true).order('name'),
-    admin.from('products').select('id, name').eq('is_active', true).order('name'),
-    admin
-      .from('delivery_destinations')
-      .select('id, customer_id, code, full_name, aliases')
-      .eq('is_active', true)
-      .order('sort_order'),
-  ])
+  const { data: custs } = customerIds.length
+    ? await supabase.from('customers').select('id, name, display_color').in('id', customerIds)
+    : { data: [] as { id: string; name: string; display_color: string | null }[] }
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
-
-  const ocrCustomers = (ocrCustomersRes.data ?? []) as { id: string; name: string }[]
-  const products = (productsRes.data ?? []) as { id: string; name: string }[]
-  const destinations = (destinationsRes.data ?? []) as {
-    id: string
-    customer_id: string
-    code: string | null
-    full_name: string
-    aliases: string[]
-  }[]
 
   return (
     <div className="space-y-4">
@@ -78,28 +73,27 @@ export default async function InboxPage() {
             </Link>
             で。
           </p>
+          {requested.length > 0 && (
+            <p className="mt-1.5 text-xs text-ink-faint">
+              絞り込み中（{requested.map((s) => STATUS_FILTER_LABEL[s] ?? s).join('・')}）
+              <Link href="/admin/inbox" className="ml-1.5 text-trust-600 hover:underline">
+                すべて表示
+              </Link>
+            </p>
+          )}
         </div>
         <IngestButton />
       </div>
 
-      {/* 手動でファイルを読み取る（旧「注文を読む」を統合。折りたたみ・既定は閉じる） */}
-      <details className="group rounded-lg border border-line bg-bg-card">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-ink hover:bg-bg-soft">
-          <ScanLine className="h-4 w-4 text-earth-700" aria-hidden />
-          手動でファイルを読み取る（FAX画像・PDF・メール本文）
-          <span className="ml-auto text-xs text-ink-faint group-open:hidden">開く ＋</span>
-          <span className="ml-auto hidden text-xs text-ink-faint group-open:inline">閉じる −</span>
-        </summary>
-        <div className="border-t border-line p-4">
-          <ManualOcrForm
-            currentPrompt={currentPrompt}
-            defaultPrompt={DEFAULT_GEMINI_PROMPT_NORMAL}
-            customers={ocrCustomers}
-            products={products}
-            destinations={destinations}
-          />
-        </div>
-      </details>
+      {/* 手動でファイルを読み取る（読み取りフォーム本体は /admin/ocr に一本化。ここは導線のみ） */}
+      <Link
+        href="/admin/ocr"
+        className="flex items-center gap-2 rounded-lg border border-line bg-bg-card px-4 py-3 text-sm font-medium text-ink hover:bg-bg-soft"
+      >
+        <ScanLine className="h-4 w-4 text-earth-700" aria-hidden />
+        手動でファイルを読み取る（FAX画像・PDF・メール本文）
+        <ChevronRight className="ml-auto h-4 w-4 text-ink-faint" aria-hidden />
+      </Link>
 
       {!receipts?.length ? (
         <EmptyState title="承認待ちはありません" description="新しい受信があるとここに表示されます。" />

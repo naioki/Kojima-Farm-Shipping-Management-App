@@ -84,8 +84,30 @@ _NEXT_PUBLIC_SUPABASE_ANON_KEY=ここに anon キー
 
 ## ロールバック
 
+Cloud Run のリビジョンで戻すのが基本（各リビジョンはデプロイ時のイメージを保持しているため、
+Artifact Registry の `:latest` タグが上書きされていても影響しない）:
+
 ```bash
 gcloud run revisions list --service=kojima-farm-order-app --region=asia-northeast1
 gcloud run services update-traffic kojima-farm-order-app --region=asia-northeast1 \
   --to-revisions=<安定リビジョン>=100
+```
+
+**トラフィック固定の罠**: 上記でロールバックした後、`--to-revisions` で特定リビジョンに
+100%固定されたままだと、次回の通常デプロイが `serving 0 percent of traffic` のまま反映されない。
+ロールバック後に平常運用へ戻すときは必ず `--to-latest` に戻すこと:
+
+```bash
+gcloud run services update-traffic kojima-farm-order-app --region=asia-northeast1 --to-latest
+```
+
+イメージそのものから再デプロイしたい場合（Cloud Run のリビジョンが消えている等）は、
+`cloudbuild.yaml` が `:latest` に加えて `:$BUILD_ID`（ビルドごとに一意）でも push しているので、
+Artifact Registry で過去の `:$BUILD_ID` を確認し、そのイメージを直接指定して deploy できる:
+
+```bash
+gcloud artifacts docker images list asia-northeast1-docker.pkg.dev/$PROJECT/kojima-noen/app
+gcloud run deploy kojima-farm-order-app \
+  --image=asia-northeast1-docker.pkg.dev/$PROJECT/kojima-noen/app:<過去のBUILD_ID> \
+  --region=asia-northeast1
 ```

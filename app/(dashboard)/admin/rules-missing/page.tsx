@@ -1,11 +1,9 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, Settings } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
-import { ErrorState } from '@/components/ui/States'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,13 +14,8 @@ export const dynamic = 'force-dynamic'
  * 設計判断: 空でも常に警告は出さない。注文実績がある＝実際に使う組み合わせだけを対象にする。
  */
 export default async function RulesMissingPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
-  const sb = createClient()
-  const { data: profile } = await sb.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="このページは管理者のみ利用できます。" />
-  }
+  const guard = await requireAdmin('このページは管理者のみ利用できます。')
+  if (guard) return guard
 
   const missing = await getMissingSpecs(createAdminClient())
 

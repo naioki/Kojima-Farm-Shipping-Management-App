@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
 import { DeliveryNoteDocument } from '@/components/admin/DeliveryNoteDocument'
 import { parseAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,9 @@ export const dynamic = 'force-dynamic'
  * 元注文を編集しても、ここは当時の内容のまま。再印刷・PDF・確認に使う。
  */
 export default async function SavedDeliveryNotePage({ params }: { params: { id: string } }) {
+  const guard = await requireAdmin('納品書は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
 
   const { data: note, error } = await supabase

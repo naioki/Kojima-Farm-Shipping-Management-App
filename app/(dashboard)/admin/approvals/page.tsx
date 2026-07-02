@@ -1,9 +1,8 @@
-import { redirect } from 'next/navigation'
 import { CheckCircle2 } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { EmptyState, ErrorState } from '@/components/ui/States'
+import { EmptyState } from '@/components/ui/States'
 import { EditableOrderCard } from '@/components/admin/EditableOrderCard'
 import { getPendingOrders, pendingReasons } from '@/lib/orders/pending'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,14 +14,8 @@ const SOURCE_LABEL: Record<string, string> = { fax: 'FAX', email: 'メール', p
  * 納品日が無い注文は承認時に日付入力を促す。
  */
 export default async function AdminApprovalsPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
-
-  const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="承認は管理者のみです。" />
-  }
+  const guard = await requireAdmin('承認は管理者のみです。')
+  if (guard) return guard
 
   const orders = await getPendingOrders()
 
@@ -47,6 +40,8 @@ export default async function AdminApprovalsPage() {
                 customerColor={o.customerColor}
                 deliveryDate={o.deliveryDate}
                 needsDeliveryDate={o.needsDeliveryDate}
+                needsDestination={o.needsDestination}
+                destinationOptions={o.destinationOptions}
                 reasons={pendingReasons(o)}
                 items={o.items}
                 approveLabel="承認する"

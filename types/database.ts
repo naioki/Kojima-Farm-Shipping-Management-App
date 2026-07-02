@@ -396,6 +396,8 @@ export const orderItemPatchSchema = z.object({
   /** 現場の記録（中断時の部分完了数・現場メモ・migrations/0006） */
   shipped_qty: z.number().nonnegative().nullish(),
   field_note: z.string().nullish(),
+  /** 荷姿マスタの確定（承認時ゲート・migrations/0010） */
+  pack_config_id: z.string().uuid().nullish(),
   /** 期待 version。不一致は 409（競合） */
   version: z.number().int().positive(),
 })
@@ -433,6 +435,8 @@ export const deliveryNoteCreateSchema = z.object({
   customer_id: z.string().uuid(),
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amount_mode: z.enum(['full', 'blank', 'none']).default('full'),
+  /** 納入先で絞り込んで発行する場合のみ指定（未指定はその日の全納入先をまとめて発行・従来動作）。 */
+  destination_id: z.string().uuid().nullish(),
 })
 export type DeliveryNoteCreateInput = z.infer<typeof deliveryNoteCreateSchema>
 

@@ -1,11 +1,11 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { OrderNewForm } from '@/components/admin/OrderNewForm'
 import { getSetting } from '@/lib/settings'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,14 +15,10 @@ export const dynamic = 'force-dynamic'
  * 手動入力は OCR を通さず直接 status='approved' で登録する。
  */
 export default async function OrderNewPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('注文入力は管理者のみアクセスできます。')
+  if (guard) return guard
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="注文入力は管理者のみアクセスできます。" />
-  }
 
   // QTY_INPUT_MODE 設定
   const qtyModeSetting = await getSetting('QTY_INPUT_MODE')

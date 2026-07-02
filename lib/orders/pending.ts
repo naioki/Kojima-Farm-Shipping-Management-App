@@ -7,14 +7,29 @@ import { parseThreshold } from '@/lib/ingestion/auto-approve'
  * 承認待ち（pending_review）注文の取得（管理者/スタッフ承認画面で共有）。
  * 各注文に「スタッフが承認できるか（高確信・取引先一致・納品日確定）」を付与する。
  */
+export interface PackConfigOption {
+  id: string
+  label: string
+}
+
 export interface PendingOrderItem {
   id: string
+  productId: string | null
   productName: string
   quantity: number
   unit: string
   confidence: number | null
   /** 楽観ロック用。編集（数量変更）の PATCH に必要。 */
   version: number
+  /** 荷姿マスタ確定済みID（未確定は null） */
+  packConfigId: string | null
+  /** この商品×取引先で選べる荷姿（0件＝マスタ未登録なのでゲート対象外） */
+  packConfigOptions: PackConfigOption[]
+}
+
+export interface DestinationOption {
+  id: string
+  label: string
 }
 
 export interface PendingOrder {
@@ -29,6 +44,10 @@ export interface PendingOrder {
   minConfidence: number | null
   /** 納品日が未確定（承認時に入力が必要） */
   needsDeliveryDate: boolean
+  /** 納入先未確定（取引先に納入先が登録されているのに未選択。承認時に選択が必要） */
+  needsDestination: boolean
+  /** 選べる納入先（取引先に登録がなければ0件） */
+  destinationOptions: DestinationOption[]
   /** スタッフでも承認できるか（高確信・取引先一致・納品日確定） */
   staffApprovable: boolean
 }
@@ -38,6 +57,8 @@ export function pendingReasons(o: PendingOrder): string[] {
   const r: string[] = []
   if (!o.customerId) r.push('取引先 みとうろく')
   if (o.needsDeliveryDate) r.push('のうひん日 みてい')
+  if (o.needsDestination) r.push('のうにゅうさき みてい')
+  if (o.items.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)) r.push('荷姿 みてい')
   if (o.minConfidence == null || o.minConfidence < 0.7) r.push('AI じしんなし')
   return r
 }
@@ -48,7 +69,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
 
   const { data: orders } = await supabase
     .from('orders')
-    .select('id, source, delivery_date, customer_id')
+    .select('id, source, delivery_date, customer_id, destination_id')
     .eq('status', 'pending_review')
     .order('created_at', { ascending: true })
 
@@ -57,35 +78,61 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   const orderIds = orders.map((o) => o.id)
   const customerIds = [...new Set(orders.map((o) => o.customer_id).filter(Boolean))] as string[]
 
-  const [{ data: items }, { data: custs }] = await Promise.all([
+  const [{ data: items }, { data: custs }, { data: destRows }] = await Promise.all([
     supabase
       .from('order_items')
-      .select('id, order_id, product_name, quantity, unit, confidence, version')
+      .select('id, order_id, product_id, product_name, quantity, unit, confidence, version, pack_config_id')
       .in('order_id', orderIds),
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
+    customerIds.length
+      ? supabase.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).in('customer_id', customerIds)
+      : Promise.resolve({ data: [] as { id: string; customer_id: string; code: string | null; full_name: string }[] }),
   ])
+
+  const productIds = [...new Set((items ?? []).map((it) => it.product_id).filter(Boolean))] as string[]
+  const { data: packConfigs } = productIds.length
+    ? await supabase
+        .from('pack_configs')
+        .select('id, product_id, customer_id, label')
+        .eq('is_active', true)
+        .in('product_id', productIds)
+    : { data: [] as { id: string; product_id: string; customer_id: string | null; label: string }[] }
 
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
-  const itemsByOrder = new Map<string, PendingOrderItem[]>()
+  const destByCustomer = new Map<string, DestinationOption[]>()
+  for (const d of destRows ?? []) {
+    const arr = destByCustomer.get(d.customer_id) ?? []
+    arr.push({ id: d.id, label: d.code || d.full_name })
+    destByCustomer.set(d.customer_id, arr)
+  }
+
+  type ItemRow = NonNullable<typeof items>[number]
+  const itemsByOrder = new Map<string, ItemRow[]>()
   for (const it of items ?? []) {
     const arr = itemsByOrder.get(it.order_id) ?? []
-    arr.push({
+    arr.push(it)
+    itemsByOrder.set(it.order_id, arr)
+  }
+
+  return orders.map((o) => {
+    const rawItems = itemsByOrder.get(o.id) ?? []
+    if (rawItems.length === 0) return null // 明細ゼロの空注文は承認画面に出さない
+    const orderItems: PendingOrderItem[] = rawItems.map((it) => ({
       id: it.id,
+      productId: it.product_id,
       productName: it.product_name,
       quantity: Number(it.quantity),
       unit: it.unit,
       confidence: it.confidence != null ? Number(it.confidence) : null,
       version: Number(it.version ?? 1),
-    })
-    itemsByOrder.set(it.order_id, arr)
-  }
-
-  return orders.map((o) => {
-    const orderItems = itemsByOrder.get(o.id) ?? []
-    if (orderItems.length === 0) return null // 明細ゼロの空注文は承認画面に出さない
+      packConfigId: it.pack_config_id,
+      packConfigOptions: (packConfigs ?? [])
+        .filter((pc) => pc.product_id === it.product_id && (pc.customer_id === o.customer_id || pc.customer_id === null))
+        .map((pc) => ({ id: pc.id, label: pc.label })),
+    }))
     const confidences = orderItems.map((i) => i.confidence)
     const minConfidence = confidences.length
       ? confidences.reduce<number | null>((min, c) => {
@@ -95,8 +142,12 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
         }, 1)
       : null
     const needsDeliveryDate = !o.delivery_date
+    const destinationOptions = o.customer_id ? destByCustomer.get(o.customer_id) ?? [] : []
+    const needsDestination = !o.destination_id && destinationOptions.length > 0
+    const needsPackConfig = orderItems.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)
     const allConfident = orderItems.length > 0 && minConfidence != null && minConfidence >= threshold
-    const staffApprovable = Boolean(o.customer_id) && !needsDeliveryDate && allConfident
+    const staffApprovable =
+      Boolean(o.customer_id) && !needsDeliveryDate && !needsDestination && !needsPackConfig && allConfident
 
     return {
       id: o.id,
@@ -108,6 +159,8 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       items: orderItems,
       minConfidence,
       needsDeliveryDate,
+      needsDestination,
+      destinationOptions,
       staffApprovable,
     }
   }).filter((o): o is PendingOrder => o !== null)

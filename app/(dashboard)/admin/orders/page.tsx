@@ -1,13 +1,13 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import { ClipboardList, ChevronRight, Table, Filter } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { ClipboardList, ChevronRight, Table, Filter, Plus } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { OrderStatusBadge, sourceLabel, ORDER_STATUS_OPTIONS } from '@/components/admin/OrderStatusBadge'
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,14 +31,10 @@ export default async function AdminOrdersPage({
 }: {
   searchParams: { status?: string; customerId?: string; start?: string; end?: string }
 }) {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('受注一覧は管理者のみです。')
+  if (guard) return guard
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="受注一覧は管理者のみです。" />
-  }
 
   const filter: OrderFilter = {
     status: first(searchParams.status),
@@ -76,13 +72,22 @@ export default async function AdminOrdersPage({
           <ClipboardList className="h-5 w-5 text-earth-700" aria-hidden />
           <h1 className="font-display text-2xl font-bold text-ink">受注一覧</h1>
         </div>
-        <a
-          href={csvHref}
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-line-strong bg-bg-card px-3 text-sm font-medium text-ink transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
-        >
-          <Table className="h-4 w-4" aria-hidden />
-          CSV出力
-        </a>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/orders/new"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-earth-600 px-3 text-sm font-medium text-white transition-colors hover:bg-earth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-earth-400"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            新規受注
+          </Link>
+          <a
+            href={csvHref}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-line-strong bg-bg-card px-3 text-sm font-medium text-ink transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+          >
+            <Table className="h-4 w-4" aria-hidden />
+            CSV出力
+          </a>
+        </div>
       </div>
 
       {/* 絞り込みバー（GET フォーム：JS不要・URLに条件が残る） */}
@@ -166,7 +171,12 @@ export default async function AdminOrdersPage({
                     <td className="px-4 py-3">
                       <span className="flex min-w-0 items-center gap-2 font-medium text-ink">
                         <ColorDot color={o.customerColor} name={o.customerName} />
-                        <span className="truncate">{o.customerName}</span>
+                        <span className="min-w-0 truncate">
+                          {o.customerName}
+                          {o.destinationName && (
+                            <span className="ml-1 font-normal text-ink-soft">＞{o.destinationName}</span>
+                          )}
+                        </span>
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-faint">{sourceLabel(o.source)}</td>

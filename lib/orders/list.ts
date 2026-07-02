@@ -14,6 +14,8 @@ export interface OrderListRow {
   source: string
   customerName: string
   customerColor: string | null
+  /** 納入先（取引先の配下の届け先）。無ければ null（表示は常に「取引先＞納入先」）。 */
+  destinationName: string | null
   itemCount: number
   amount: number
 }
@@ -38,6 +40,8 @@ export interface OrderDetail {
   note: string | null
   customerName: string
   customerColor: string | null
+  /** 納入先（取引先の配下の届け先）。無ければ null。 */
+  destinationName: string | null
   items: OrderDetailItem[]
   total: number
 }
@@ -58,7 +62,9 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
   const supabase = createClient()
   let query = supabase
     .from('orders')
-    .select('id, order_date, delivery_date, status, source, customers(name, display_color), order_items(line_total)')
+    .select(
+      'id, order_date, delivery_date, status, source, customers(name, display_color), delivery_destinations(code, full_name), order_items(line_total)',
+    )
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -77,6 +83,7 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
     status: string
     source: string
     customers: { name: string; display_color: string | null } | null
+    delivery_destinations: { code: string | null; full_name: string } | null
     order_items: { line_total: number | null }[] | null
   }
   return ((data ?? []) as unknown as Row[]).map((o) => ({
@@ -87,6 +94,7 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
     source: o.source,
     customerName: o.customers?.name ?? '取引先 未紐付け',
     customerColor: o.customers?.display_color ?? null,
+    destinationName: o.delivery_destinations ? o.delivery_destinations.code || o.delivery_destinations.full_name : null,
     itemCount: o.order_items?.length ?? 0,
     amount: sumLine(o.order_items),
   }))
@@ -98,7 +106,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, order_date, delivery_date, status, source, note, customers(name, display_color), order_items(id, product_name, quantity, unit, unit_price, line_total, field_status, confidence)',
+      'id, order_date, delivery_date, status, source, note, customers(name, display_color), delivery_destinations(code, full_name), order_items(id, product_name, quantity, unit, unit_price, line_total, field_status, confidence)',
     )
     .eq('id', id)
     .maybeSingle()
@@ -113,6 +121,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     source: string
     note: string | null
     customers: { name: string; display_color: string | null } | null
+    delivery_destinations: { code: string | null; full_name: string } | null
     order_items: {
       id: string
       product_name: string
@@ -144,6 +153,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     note: o.note,
     customerName: o.customers?.name ?? '取引先 未紐付け',
     customerColor: o.customers?.display_color ?? null,
+    destinationName: o.delivery_destinations ? o.delivery_destinations.code || o.delivery_destinations.full_name : null,
     items,
     total: items.reduce((a, it) => a + it.lineTotal, 0),
   }

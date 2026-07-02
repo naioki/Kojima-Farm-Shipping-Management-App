@@ -1,14 +1,14 @@
 import Link from 'next/link'
-import { redirect, notFound } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
+import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { OrderStatusBadge, sourceLabel } from '@/components/admin/OrderStatusBadge'
 import { DeleteOrderButton } from '@/components/admin/DeleteOrderButton'
 import { getOrderDetail } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,14 +26,8 @@ const FIELD_STATUS: Record<string, { label: string; cls: string }> = {
 
 /** 受注詳細（管理者・読み取り）。明細・荷姿状態・確信度を1画面で確認する。 */
 export default async function AdminOrderDetailPage({ params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
-
-  const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="受注詳細は管理者のみです。" />
-  }
+  const guard = await requireAdmin('受注詳細は管理者のみです。')
+  if (guard) return guard
 
   let order
   try {
@@ -63,7 +57,12 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
           <div className="flex items-center gap-2.5">
             <ColorDot color={order.customerColor} name={order.customerName} size="md" />
             <div>
-              <h1 className="font-display text-xl font-bold text-ink">{order.customerName}</h1>
+              <h1 className="font-display text-xl font-bold text-ink">
+                {order.customerName}
+                {order.destinationName && (
+                  <span className="ml-1.5 text-base font-normal text-ink-soft">＞{order.destinationName}</span>
+                )}
+              </h1>
               <p className="text-xs text-ink-faint">受注元: {sourceLabel(order.source)}</p>
             </div>
           </div>

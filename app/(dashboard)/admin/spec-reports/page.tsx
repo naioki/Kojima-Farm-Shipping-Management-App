@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import { Camera, ChevronRight } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { SpecReportActions } from '@/components/admin/SpecReportActions'
 import { getReceiptSignedUrl } from '@/lib/r2'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,14 +14,10 @@ export const dynamic = 'force-dynamic'
  * 対応済み/却下にする。実際のマスタ反映は取引先ページの規格編集で行う（直接編集はガバナンス下）。
  */
 export default async function SpecReportsPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('規格報告の確認は管理者のみです。')
+  if (guard) return guard
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="規格報告の確認は管理者のみです。" />
-  }
 
   const { data: reports, error } = await supabase
     .from('spec_reports')

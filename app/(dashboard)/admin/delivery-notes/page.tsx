@@ -7,6 +7,7 @@ import { DeliveryNoteForm } from '@/components/admin/DeliveryNoteForm'
 import { getSetting } from '@/lib/settings'
 import { formatYen } from '@/lib/calculations/tax'
 import { parseAmountMode, amountModeLabel } from '@/lib/delivery-notes/amount-mode'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,9 @@ export const dynamic = 'force-dynamic'
  * 「発行して保存」した納品書は履歴として残り、後から再印刷・確認できる（発行時スナップショット）。
  */
 export default async function DeliveryNotesPage() {
+  const guard = await requireAdmin('納品書は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
   const [{ data: customers, error }, { data: notes }, amountModeSetting] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),

@@ -5,6 +5,11 @@
 #   - NEXT_PUBLIC_SUPABASE_URL / ANON は --build-arg でビルド時に焼き込む（RLS前提の非秘匿値）。
 #   - SUPABASE_SERVICE_ROLE_KEY だけ Secret Manager（--set-secrets）で実行時に渡す。
 #   - GEMINI_API_KEY・R2・通知 等の残りは /admin/settings から入力（lib/settings.ts が DB→env 解決）。
+#   - イメージは :latest に加えて :$BUILD_ID でも push する（$BUILD_ID はトリガー無しの手動
+#     `gcloud builds submit` でも必ず払い出される）。:latest だけだと過去ビルドが上書きされ、
+#     ロールバック先が無くなる事故があったため、ビルドごとに残る個別タグを必ず持たせる。
+#     ロールバックする場合は Artifact Registry で過去の :$BUILD_ID イメージを確認し、
+#     `gcloud run deploy ${_SERVICE} --image=<過去のBUILD_IDタグ>` で戻す。
 
 substitutions:
   _REGION: asia-northeast1
@@ -20,11 +25,12 @@ steps:
       - --build-arg=NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}
       - --build-arg=NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - -t=${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest
+      - -t=${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:$BUILD_ID
       - .
 
   - id: push
     name: gcr.io/cloud-builders/docker
-    args: [push, '${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest']
+    args: [push, '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app']
 
   - id: deploy
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -33,7 +39,7 @@ steps:
       - run
       - deploy
       - ${_SERVICE}
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:$BUILD_ID
       - --region=${_REGION}
       - --memory=1Gi
       - --cpu=1
@@ -45,6 +51,7 @@ steps:
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/kojima-noen/app:$BUILD_ID
 
 options:
   logging: CLOUD_LOGGING_ONLY

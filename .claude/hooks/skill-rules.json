@@ -16,12 +16,9 @@
     "contextPattern": 2
   },
   "directoryMappings": {
-    "src/components/core": "core-components",
-    "src/components": "core-components",
+    "src/hooks": "react-ui-patterns",
     "src/screens": "navigation-architecture",
     "src/navigation": "navigation-architecture",
-    "src/hooks": "react-ui-patterns",
-    "src/graphql": "graphql-schema",
     "src/localization": "i18n-translations",
     "src/state": "state-management",
     "src/contexts": "state-management",
@@ -31,69 +28,6 @@
     "src/datadog": "analytics-tracking"
   },
   "skills": {
-    "storybook": {
-      "description": "Storybook story creation patterns",
-      "priority": 8,
-      "triggers": {
-        "keywords": ["storybook", "stories", "story"],
-        "keywordPatterns": ["\\bstory\\b", "\\.stories\\b"],
-        "pathPatterns": ["**/*.stories.tsx", "**/stories/**"],
-        "intentPatterns": [
-          "(?:create|add|write|build|make).*(?:stor(?:y|ies))",
-          "(?:stor(?:y|ies)).*(?:for|of)"
-        ],
-        "contentPatterns": ["ComponentMeta", "StoryObj", "@storybook"]
-      },
-      "relatedSkills": ["core-components"]
-    },
-    "testing-patterns": {
-      "description": "Jest testing patterns and TDD workflow",
-      "priority": 9,
-      "triggers": {
-        "keywords": ["test", "jest", "spec", "tdd", "mock", "factory"],
-        "keywordPatterns": ["\\btest(?:s|ing)?\\b", "\\bspec\\b", "unit test"],
-        "pathPatterns": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/test-utils/**", "**/__mocks__/**"],
-        "intentPatterns": [
-          "(?:write|add|create|fix).*(?:test|spec)",
-          "(?:test|spec).*(?:for|of|the)",
-          "(?:red.green.refactor|tdd)"
-        ],
-        "contentPatterns": ["describe\\(", "it\\(", "expect\\(", "jest\\.mock", "getMock"]
-      },
-      "excludePatterns": ["e2e", "maestro", "end-to-end"]
-    },
-    "formik-patterns": {
-      "description": "Formik form handling with validation",
-      "priority": 7,
-      "triggers": {
-        "keywords": ["form", "formik", "validation", "yup", "input field"],
-        "keywordPatterns": ["\\bform(?:s)?\\b", "Form\\b", "\\bvalidat(?:e|ion)\\b"],
-        "pathPatterns": ["**/*Form.tsx", "**/*Form/**", "**/forms/**"],
-        "intentPatterns": [
-          "(?:create|build|add).*(?:form)",
-          "(?:form).*(?:validation|submit|field)",
-          "(?:validat(?:e|ion)).*(?:schema|rule)"
-        ],
-        "contentPatterns": ["useFormik", "Formik", "FormikProvider", "yup\\."]
-      },
-      "excludePatterns": ["format", "transform", "platform"]
-    },
-    "graphql-schema": {
-      "description": "GraphQL queries, mutations, and code generation",
-      "priority": 8,
-      "triggers": {
-        "keywords": ["graphql", "query", "mutation", "gql", "apollo", "fragment"],
-        "keywordPatterns": ["\\bgql\\b", "\\bquery\\b", "\\bmutation\\b", "graphql"],
-        "pathPatterns": ["**/*.gql", "**/graphql/**", "**/*.generated.ts"],
-        "intentPatterns": [
-          "(?:create|add|write).*(?:query|mutation|fragment)",
-          "(?:fetch|get|load).*(?:data|from api)",
-          "(?:graphql).*(?:hook|type)"
-        ],
-        "contentPatterns": ["gql`", "useQuery", "useMutation", "useLazyQuery"]
-      },
-      "relatedSkills": ["react-ui-patterns"]
-    },
     "navigation-architecture": {
       "description": "React Navigation patterns and deep linking",
       "priority": 7,
@@ -122,21 +56,6 @@
         ],
         "contentPatterns": ["useTranslation", "t\\(", "i18next"]
       }
-    },
-    "core-components": {
-      "description": "Core component library and design system",
-      "priority": 7,
-      "triggers": {
-        "keywords": ["component", "ui", "button", "text", "box", "hstack", "vstack", "token"],
-        "keywordPatterns": ["\\bcomponent\\b", "\\$[a-z]+\\d*"],
-        "pathPatterns": ["**/components/core/**", "**/components/**/*.tsx"],
-        "intentPatterns": [
-          "(?:create|build|add).*(?:component)",
-          "(?:style|design).*(?:component|ui)"
-        ],
-        "contentPatterns": ["from 'components/core", "Box", "HStack", "VStack", "Text"]
-      },
-      "excludePatterns": ["storybook", "test"]
     },
     "systematic-debugging": {
       "description": "Four-phase debugging with root cause analysis",

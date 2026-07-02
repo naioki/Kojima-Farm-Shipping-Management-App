@@ -15,10 +15,13 @@ export function DeliveryNoteIssueButton({
   customerId,
   date,
   mode,
+  destinationId,
 }: {
   customerId: string
   date: string
   mode: DeliveryAmountMode
+  /** 納入先で絞り込み中なら、その納入先の明細だけを発行する。 */
+  destinationId?: string
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -29,7 +32,12 @@ export function DeliveryNoteIssueButton({
       const res = await fetch('/api/delivery-notes', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ customer_id: customerId, delivery_date: date, amount_mode: mode }),
+        body: JSON.stringify({
+          customer_id: customerId,
+          delivery_date: date,
+          amount_mode: mode,
+          destination_id: destinationId || undefined,
+        }),
       })
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string }

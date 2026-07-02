@@ -4,14 +4,16 @@ import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { ManualOcrForm } from '@/components/admin/ManualOcrForm'
-import { getSetting } from '@/lib/settings'
 import { DEFAULT_GEMINI_PROMPT_NORMAL } from '@/lib/gemini/prompts'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
+import { getManualOcrMasterData } from '@/lib/ocr/manual-ocr-data'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * 現場OCR（スタッフ向け）。
+ * 現場OCR（スタッフ向け）。/admin/ocr と同じフォーム・同じマスタ取得を共有する（lib/ocr/manual-ocr-data）。
+ * 以前は customers/products/destinations を渡していなかったため保存セクションが出ず、
+ * スタッフは読み取るだけで保存できなかった（修正済み）。
  * 設定「現場機能の解放 → スタッフもOCR」がONのときだけスタッフが使える（admin は常時可）。
  * スタッフはプロンプト編集・保存は不可（既定プロンプトで読むだけ）。社内利用のみ。
  */
@@ -34,7 +36,7 @@ export default async function FieldOcrPage() {
   }
 
   const isAdmin = role === 'admin'
-  const currentPrompt = isAdmin ? ((await getSetting('GEMINI_PROMPT_NORMAL')) ?? '') : ''
+  const { currentPrompt, customers, products, destinations } = await getManualOcrMasterData()
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -53,10 +55,13 @@ export default async function FieldOcrPage() {
       <Card>
         {/* スタッフはプロンプトを編集・保存できない（読むだけ）。管理者は両方可。 */}
         <ManualOcrForm
-          currentPrompt={currentPrompt}
+          currentPrompt={isAdmin ? currentPrompt : ''}
           defaultPrompt={DEFAULT_GEMINI_PROMPT_NORMAL}
           allowPromptEdit={isAdmin}
           allowPromptSave={isAdmin}
+          customers={customers}
+          products={products}
+          destinations={destinations}
         />
       </Card>
     </div>

@@ -1,10 +1,9 @@
-import { redirect } from 'next/navigation'
 import { Tag, Package } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
-import { ErrorState } from '@/components/ui/States'
 import { PackConfigManager, type PackConfigRow } from '@/components/admin/PackConfigManager'
 import { PriceRuleManager, type PriceRuleListRow } from '@/components/admin/PriceRuleManager'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,14 +13,10 @@ export const dynamic = 'force-dynamic'
  * 過去の請求は order_items に凍結済みなので、ここの変更は遡及しない。
  */
 export default async function PricingMasterPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('価格・荷姿マスタは管理者のみです。')
+  if (guard) return guard
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="価格・荷姿マスタは管理者のみです。" />
-  }
 
   const [{ data: products }, { data: customers }, { data: packs }, { data: prices }] = await Promise.all([
     supabase.from('products').select('id, name, base_unit').eq('is_active', true).order('name'),
@@ -43,7 +38,7 @@ export default async function PricingMasterPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">価格・荷姿マスタ</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">単価・荷姿マスタ</h1>
         <p className="text-sm text-ink-soft">
           荷姿（多形態）と価格（期間×取引先）を管理します。過去の請求には遡及しません。
         </p>

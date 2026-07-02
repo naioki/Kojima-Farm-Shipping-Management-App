@@ -87,6 +87,8 @@ export default async function FieldApprovalsPage() {
                 customerColor={o.customerColor}
                 deliveryDate={o.deliveryDate}
                 needsDeliveryDate={o.needsDeliveryDate}
+                needsDestination={o.needsDestination}
+                destinationOptions={o.destinationOptions}
                 reasons={pendingReasons(o)}
                 items={o.items}
                 approveLabel="なおして しょうにん"

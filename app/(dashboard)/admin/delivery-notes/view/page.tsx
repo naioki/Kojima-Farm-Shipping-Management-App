@@ -9,6 +9,7 @@ import { getSetting } from '@/lib/settings'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 import { DELIVERY_AMOUNT_MODES, parseAmountMode } from '@/lib/delivery-notes/amount-mode'
 import { DELIVERY_DOC_TYPES, parseDocType, docTypeMeta } from '@/lib/delivery-notes/doc-type'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,8 +21,11 @@ export const dynamic = 'force-dynamic'
 export default async function DeliveryNoteView({
   searchParams,
 }: {
-  searchParams: { customer?: string; date?: string; amount?: string; type?: string }
+  searchParams: { customer?: string; date?: string; amount?: string; type?: string; destination?: string }
 }) {
+  const guard = await requireAdmin('納品書は管理者のみです。')
+  if (guard) return guard
+
   const customerId = searchParams.customer ?? ''
   const date = searchParams.date ?? ''
   if (!/^[0-9a-f-]{36}$/i.test(customerId) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -37,12 +41,25 @@ export default async function DeliveryNoteView({
     .maybeSingle()
   if (custErr) return <ErrorState message={custErr.message} />
 
-  const { data: orders } = await supabase
+  // その日・その取引先の全注文（納入先ごとに混在していないか確認するため destination_id も取得）
+  const { data: allOrders } = await supabase
     .from('orders')
-    .select('id')
+    .select('id, destination_id')
     .eq('customer_id', customerId)
     .eq('delivery_date', date)
+  const distinctDestIds = [...new Set((allOrders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
+  const { data: destRows } = distinctDestIds.length
+    ? await supabase.from('delivery_destinations').select('id, code, full_name').in('id', distinctDestIds)
+    : { data: [] as { id: string; code: string | null; full_name: string }[] }
+  const destLabel = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
+
+  // 納入先を1つに絞り込み中なら、その納入先の注文だけを対象にする（表示は常に「取引先＞納入先」）。
+  const destinationId = searchParams.destination ?? ''
+  const orders = destinationId ? (allOrders ?? []).filter((o) => o.destination_id === destinationId) : allOrders
   const orderIds = (orders ?? []).map((o) => o.id)
+  const documentCustomerName = destinationId && destLabel.has(destinationId)
+    ? `${customer?.name ?? '—'}＞${destLabel.get(destinationId)}`
+    : customer?.name ?? '—'
 
   const items = orderIds.length
     ? (
@@ -75,7 +92,7 @@ export default async function DeliveryNoteView({
     total: t.total.toNumber(),
   }
 
-  const baseQs = `customer=${customerId}&date=${date}`
+  const baseQs = `customer=${customerId}&date=${date}${destinationId ? `&destination=${destinationId}` : ''}`
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -132,10 +149,30 @@ export default async function DeliveryNoteView({
           <PrintButton />
           {/* 履歴保存（発行）は納品書のみ。ご注文確認書はオンデマンド印刷／PDF。 */}
           {items.length > 0 && docType === 'delivery' && (
-            <DeliveryNoteIssueButton customerId={customerId} date={date} mode={mode} />
+            <DeliveryNoteIssueButton customerId={customerId} date={date} mode={mode} destinationId={destinationId || undefined} />
           )}
         </div>
       </div>
+
+      {/* 複数の納入先が同日混在。絞り込まずに発行すると納入先が区別できない伝票になるため、選ばせる。 */}
+      {!destinationId && distinctDestIds.length > 1 && (
+        <div className="rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-ink-soft print:hidden">
+          <p className="font-medium text-warning">
+            この日は納入先が複数あります。絞り込まずに発行すると納入先が区別できない伝票になります。
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {distinctDestIds.map((id) => (
+              <Link
+                key={id}
+                href={`/admin/delivery-notes/view?customer=${customerId}&date=${date}&amount=${mode}&type=${docType}&destination=${id}`}
+                className="rounded-full border border-line-strong bg-bg-card px-3 py-1 text-xs font-medium text-ink hover:bg-bg-soft"
+              >
+                ＞{destLabel.get(id)} のみ表示
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {items.length === 0 ? (
         <EmptyState
@@ -150,7 +187,7 @@ export default async function DeliveryNoteView({
               : `${docTypeMeta(docType).title}のプレビューです。印刷／PDFで相手方にお渡しできます（履歴保存はありません）。`}
           </p>
           <DeliveryNoteDocument
-            customerName={customer?.name ?? '—'}
+            customerName={documentCustomerName}
             date={date}
             issuer={{ name: farmName, address: farmAddr, tel: farmTel }}
             items={items}

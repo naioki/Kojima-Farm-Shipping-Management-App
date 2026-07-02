@@ -1,9 +1,8 @@
-import { redirect } from 'next/navigation'
 import { Images } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
-import { ErrorState } from '@/components/ui/States'
 import { MasterImportWizard, type ExistingForDedup } from '@/components/admin/MasterImportWizard'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,18 +12,10 @@ export const dynamic = 'force-dynamic'
  * 既存マスタ名は重複判定（名寄せ）のためクライアントへ渡す。
  */
 export default async function MasterImportPage() {
-  const user = await getAuthedUser()
-  if (!user) redirect('/login')
+  const guard = await requireAdmin('マスタ一括取込は管理者のみ利用できます。')
+  if (guard) return guard
 
   const supabase = createClient()
-  const { data: profile } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profile?.role !== 'admin') {
-    return <ErrorState title="権限がありません" message="マスタ一括取込は管理者のみ利用できます。" />
-  }
 
   const [{ data: customers }, { data: products }, { data: packs }] = await Promise.all([
     supabase.from('customers').select('name').eq('is_active', true),
@@ -48,7 +39,7 @@ export default async function MasterImportPage() {
           <Images className="h-5 w-5 text-earth-700" aria-hidden />
         </div>
         <div>
-          <h1 className="font-display text-2xl font-bold text-ink">写真からマスタ一括取込</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">写真でマスタ登録</h1>
           <p className="text-sm text-ink-soft">
             紙の取引先一覧・品目台帳・規格表を撮影すると、AIが店舗・品目・規格をまとめて読み取ります。
             確認・編集してから一括登録します（管理者専用）。

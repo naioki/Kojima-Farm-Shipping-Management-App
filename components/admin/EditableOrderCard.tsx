@@ -8,6 +8,11 @@ import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { ApproveOrderButton } from '@/components/admin/ApproveOrderButton'
 
+export interface PackConfigOption {
+  id: string
+  label: string
+}
+
 export interface EditableOrderItem {
   id: string
   productName: string
@@ -15,6 +20,15 @@ export interface EditableOrderItem {
   quantity: number
   confidence: number | null
   version: number
+  /** 荷姿マスタ確定済みID（未確定は null） */
+  packConfigId?: string | null
+  /** 選べる荷姿（0件＝マスタ未登録なので選択UIを出さない） */
+  packConfigOptions?: PackConfigOption[]
+}
+
+export interface DestinationOption {
+  id: string
+  label: string
 }
 
 export interface EditableOrderCardProps {
@@ -23,6 +37,9 @@ export interface EditableOrderCardProps {
   customerColor?: string | null
   deliveryDate: string | null
   needsDeliveryDate: boolean
+  /** 納入先が未確定（取引先に納入先があるのに未選択）。承認時に選択させる。 */
+  needsDestination?: boolean
+  destinationOptions?: DestinationOption[]
   /** 要確認の理由（あれば注意喚起バナーを出す） */
   reasons?: string[]
   items: EditableOrderItem[]
@@ -40,7 +57,8 @@ interface Row extends EditableOrderItem {
 /**
  * 承認前に内容を直せる注文カード（admin・現場 共通）。
  * 数量はその場で編集（楽観ロック version）。誤った明細は削除。要確認は注意喚起バナー＋赤表示。
- * 確定（承認）は ApproveOrderButton（納品日未確定ならその場で入力）。
+ * 荷姿(pack_config)が選べる商品は、未確定ならその場で選ばせる（出荷一覧で箱数を計算するため必須）。
+ * 確定（承認）は ApproveOrderButton（納品日・納入先が未確定ならその場で入力）。
  */
 export function EditableOrderCard({
   orderId,
@@ -48,6 +66,8 @@ export function EditableOrderCard({
   customerColor,
   deliveryDate,
   needsDeliveryDate,
+  needsDestination = false,
+  destinationOptions = [],
   reasons = [],
   items,
   approveLabel = '承認する',
@@ -60,6 +80,29 @@ export function EditableOrderCard({
   const caution = reasons.length > 0
 
   const patch = (id: string, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...p } : r)))
+
+  async function savePackConfig(row: Row, packConfigId: string) {
+    patch(row.id, { saving: true })
+    try {
+      const res = await fetch(`/api/order-items/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pack_config_id: packConfigId || null, version: row.version }),
+      })
+      const json = (await res.json().catch(() => ({}))) as { item?: { version: number }; error?: string }
+      if (res.status === 409) {
+        toast.error('他の人が編集しました。画面を更新します')
+        router.refresh()
+        return
+      }
+      if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
+      patch(row.id, { packConfigId: packConfigId || null, version: json.item?.version ?? row.version + 1, saving: false })
+      toast.success('荷姿を確定しました')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+      patch(row.id, { saving: false })
+    }
+  }
 
   async function saveQty(row: Row) {
     const n = Number(row.draft)
@@ -111,16 +154,16 @@ export function EditableOrderCard({
 
   return (
     <Card className={caution ? 'space-y-3 border-warning/50' : 'space-y-3'}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <ColorDot color={customerColor} name={customerName} size="md" />
-          <div>
+      <div className="space-y-2">
+        <div className="flex items-start gap-2">
+          <ColorDot color={customerColor} name={customerName} size="md" className="mt-1" />
+          <div className="min-w-0 flex-1">
             <p className="font-medium text-ink">{customerName}</p>
             <p className="text-xs text-ink-soft">のうひん {deliveryDate ?? 'みてい'}</p>
           </div>
         </div>
         {caution && (
-          <div className="flex flex-wrap justify-end gap-1">
+          <div className="flex flex-wrap gap-1">
             {reasons.map((r) => (
               <span key={r} className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
                 {r}
@@ -140,14 +183,18 @@ export function EditableOrderCard({
       <ul className="divide-y divide-line rounded border border-line">
         {rows.map((row) => {
           const low = row.confidence == null || row.confidence < 0.7
+          const needsPack = (row.packConfigOptions?.length ?? 0) > 0 && !row.packConfigId
           return (
-            <li key={row.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
-              <span className="min-w-0 flex-1 truncate text-base text-ink">{row.productName}</span>
+            <li key={row.id} className="space-y-1.5 px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 text-base text-ink">{row.productName}</span>
               {low && (
                 <span className="num shrink-0 text-xs font-medium text-alert">
                   {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '?'}
                 </span>
               )}
+            </div>
+            <div className="flex items-center justify-end gap-2">
               <input
                 type="number"
                 inputMode="numeric"
@@ -191,6 +238,30 @@ export function EditableOrderCard({
                   <Trash2 className="h-4 w-4" aria-hidden />
                 </button>
               )}
+            </div>
+              {(row.packConfigOptions?.length ?? 0) > 0 && (
+                <label className="flex items-center gap-2">
+                  <span className={`shrink-0 text-xs font-medium ${needsPack ? 'text-alert' : 'text-ink-soft'}`}>
+                    荷姿{needsPack ? '（みてい）' : ''}
+                  </span>
+                  <select
+                    value={row.packConfigId ?? ''}
+                    disabled={row.saving}
+                    onChange={(e) => savePackConfig(row, e.target.value)}
+                    aria-label={`${row.productName} の荷姿`}
+                    className={`h-9 flex-1 rounded border bg-bg-card px-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
+                      needsPack ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
+                    }`}
+                  >
+                    <option value="">選択してください</option>
+                    {row.packConfigOptions!.map((pc) => (
+                      <option key={pc.id} value={pc.id}>
+                        {pc.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </li>
           )
         })}
@@ -200,7 +271,14 @@ export function EditableOrderCard({
         <p className="text-sm text-ink-soft">明細がありません。受注一覧から この注文を削除できます。</p>
       ) : (
         <div className="flex items-center justify-end gap-2">
-          <ApproveOrderButton orderId={orderId} needsDeliveryDate={needsDeliveryDate} label={approveLabel} size={size} />
+          <ApproveOrderButton
+            orderId={orderId}
+            needsDeliveryDate={needsDeliveryDate}
+            needsDestination={needsDestination}
+            destinationOptions={destinationOptions}
+            label={approveLabel}
+            size={size}
+          />
         </div>
       )}
     </Card>

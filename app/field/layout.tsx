@@ -23,7 +23,7 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   // 解放済み機能を「その他」ドロワーに並べる（admin は常に全許可）。
   const features = await getStaffFeatures()
   const actions: FieldAction[] = [
-    { key: 'matrix', label: '計画ひょう', href: '/field/matrix', icon: 'matrix' },
+    { key: 'matrix', label: '週間マトリックス', href: '/field/matrix', icon: 'matrix' },
   ]
   if (canStaffUse('ocr', role, features)) {
     actions.push({ key: 'ocr', label: '注文を 読む', href: '/field/ocr', icon: 'ocr' })

@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { customer_id, delivery_date, amount_mode } = parsed.data
+  const { customer_id, delivery_date, amount_mode, destination_id } = parsed.data
   const supabase = createClient()
 
   // 取引先（名前スナップショット用）
@@ -34,12 +34,23 @@ export async function POST(req: Request) {
   if (custErr) return NextResponse.json({ error: custErr.message }, { status: 500 })
   if (!customer) return NextResponse.json({ error: 'unknown_customer' }, { status: 400 })
 
-  // その日の明細（orders→order_items）
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('id')
-    .eq('customer_id', customer_id)
-    .eq('delivery_date', delivery_date)
+  // 納入先で絞り込み中は「取引先＞納入先」をスナップショット名にする（表示は常にこのルール）。
+  // delivery_notes に専用列を追加せず、既存の customer_name スナップショットに含める。
+  let customerNameSnapshot = customer.name
+  if (destination_id) {
+    const { data: dest } = await supabase
+      .from('delivery_destinations')
+      .select('code, full_name')
+      .eq('id', destination_id)
+      .maybeSingle()
+    if (dest) customerNameSnapshot = `${customer.name}＞${dest.code || dest.full_name}`
+  }
+
+  // その日の明細（orders→order_items）。納入先で絞り込み中はその納入先の注文だけを対象にする
+  // （表示のプレビューと発行内容がズレないように・複数納入先混在時の事故防止）。
+  let ordersQuery = supabase.from('orders').select('id').eq('customer_id', customer_id).eq('delivery_date', delivery_date)
+  if (destination_id) ordersQuery = ordersQuery.eq('destination_id', destination_id)
+  const { data: orders } = await ordersQuery
   const orderIds = (orders ?? []).map((o) => o.id)
   const items = orderIds.length
     ? (
@@ -77,7 +88,7 @@ export async function POST(req: Request) {
     .insert({
       note_number,
       customer_id,
-      customer_name: customer.name,
+      customer_name: customerNameSnapshot,
       delivery_date,
       amount_mode,
       issuer_name: issuerName ?? null,

@@ -7,37 +7,18 @@ This directory contains project-specific skills that provide Claude with domain 
 ### Code Quality & Patterns
 | Skill | Description |
 |-------|-------------|
-| [testing-patterns](./testing-patterns/SKILL.md) | Jest testing, factory functions, mocking strategies, TDD workflow |
 | [systematic-debugging](./systematic-debugging/SKILL.md) | Four-phase debugging methodology, root cause analysis |
 
 ### React & UI
 | Skill | Description |
 |-------|-------------|
-| [react-ui-patterns](./react-ui-patterns/SKILL.md) | React patterns, loading states, error handling, GraphQL hooks |
-| [core-components](./core-components/SKILL.md) | Design system components, tokens, component library |
-| [formik-patterns](./formik-patterns/SKILL.md) | Form handling, validation, submission patterns |
+| [react-ui-patterns](./react-ui-patterns/SKILL.md) | React patterns, loading states, error handling |
 
-### Data & API
-| Skill | Description |
-|-------|-------------|
-| [graphql-schema](./graphql-schema/SKILL.md) | GraphQL queries, mutations, code generation |
-
-## Skill Combinations for Common Tasks
-
-### Building a New Feature
-1. **react-ui-patterns** - Loading/error/empty states
-2. **graphql-schema** - Create queries/mutations
-3. **core-components** - UI implementation
-4. **testing-patterns** - Write tests (TDD)
-
-### Building a Form
-1. **formik-patterns** - Form structure and validation
-2. **graphql-schema** - Mutation for submission
-3. **react-ui-patterns** - Loading/error handling
-
-### Debugging an Issue
-1. **systematic-debugging** - Root cause analysis
-2. **testing-patterns** - Write failing test first
+> 以前ここにあった `formik-patterns` / `graphql-schema` / `core-components` / `testing-patterns` は
+> 他プロジェクトのテンプレートの取り違えで、このアプリのスタック（Next.js App Router / Supabase /
+> Tailwind / vitest）と無関係だったため削除した（2026-07）。実際の規約は `.claude/rules/*.md`
+> （design.md / features.md / security.md / stack.md / structure.md / tax.md）と `CLAUDE.md` を参照。
+> テストは Jest ではなく **vitest**（`vitest.config.ts`）。既存の `**/*.test.ts` を手本にする。
 
 ## How Skills Work
 

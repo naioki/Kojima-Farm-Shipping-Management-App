@@ -6,6 +6,7 @@ import { InvoiceActions } from '@/components/admin/InvoiceActions'
 import { getSetting } from '@/lib/settings'
 import { formatYen } from '@/lib/calculations/tax'
 import type { InvoiceStatus } from '@/types/database'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,9 @@ const STATUS_JP: Record<InvoiceStatus, string> = {
  * ブラウザ印刷で PDF 保存できる（サイドバー等は print:hidden）。
  */
 export default async function InvoiceDetailPage({ params }: { params: { id: string } }) {
+  const guard = await requireAdmin('請求は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
 
   const { data: invoice, error } = await supabase

@@ -65,6 +65,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.container_type !== undefined) updates.container_type = input.container_type
     if (input.has_card !== undefined) updates.has_card = input.has_card
     if (input.line_note !== undefined) updates.line_note = input.line_note
+    if (input.pack_config_id !== undefined) updates.pack_config_id = input.pack_config_id
     // 現場の記録（中断時の部分完了数・現場メモ）
     if (input.shipped_qty !== undefined) updates.shipped_qty = input.shipped_qty
     if (input.field_note !== undefined) updates.field_note = input.field_note

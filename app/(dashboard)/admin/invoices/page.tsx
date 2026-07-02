@@ -8,6 +8,7 @@ import { BulkInvoiceForm } from '@/components/admin/BulkInvoiceForm'
 import { InvoiceCsvExport } from '@/components/admin/InvoiceCsvExport'
 import { formatYen } from '@/lib/calculations/tax'
 import type { InvoiceStatus } from '@/types/database'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,9 @@ const STATUS_LABEL: Record<InvoiceStatus, { label: string; cls: string }> = {
  * 納品書（出荷ごとの伝票）とは用途が異なるため別メニュー（/admin/delivery-notes）。
  */
 export default async function InvoicesPage() {
+  const guard = await requireAdmin('請求は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
   const { data: invoices, error } = await supabase
     .from('invoices')

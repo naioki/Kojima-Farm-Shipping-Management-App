@@ -1,9 +1,12 @@
+import Link from 'next/link'
+import { AlertTriangle, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { AddProductForm } from '@/components/admin/AddProductForm'
 import { ProductsTable, type ProductRow } from '@/components/admin/ProductsTable'
 import type { TaxRate } from '@/types/database'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +15,9 @@ export const dynamic = 'force-dynamic'
  * 在庫数（stock_qty）もここで調整できる（Laravel版 画面4の在庫管理に対応）。バーコードは対象外。
  */
 export default async function ProductsPage() {
+  const guard = await requireAdmin('商品設定は管理者のみです。')
+  if (guard) return guard
+
   const supabase = createClient()
   const { data: products, error } = await supabase
     .from('products')
@@ -31,11 +37,21 @@ export default async function ProductsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">商品（品目）設定</h1>
-        <p className="text-sm text-ink-soft">
-          品目は「何を作るか」と基準単位のみ。荷姿（ケース・箱等）と価格は「価格・荷姿」で管理します。
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">商品（品目）設定</h1>
+          <p className="text-sm text-ink-soft">
+            品目は「何を作るか」と基準単位のみ。荷姿（ケース・箱等）と価格は「価格・荷姿」で管理します。
+          </p>
+        </div>
+        <Link
+          href="/admin/rules-missing"
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+        >
+          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+          規格の未登録一覧
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+        </Link>
       </div>
 
       <Card className="space-y-3">

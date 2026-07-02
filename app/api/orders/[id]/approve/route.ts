@@ -13,6 +13,8 @@ export const runtime = 'nodejs'
 const bodySchema = z.object({
   /** 納品日が未確定なら承認時にここで確定（harvest_tasks.task_date に必須）。 */
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** 納入先が未確定（取引先に納入先があるのに未選択）なら承認時にここで確定。 */
+  destination_id: z.string().uuid().optional(),
 })
 
 /**
@@ -44,7 +46,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // 対象注文＋明細を取得
   const { data: order, error: orderErr } = await admin
     .from('orders')
-    .select('id, customer_id, status, delivery_date')
+    .select('id, customer_id, status, delivery_date, destination_id')
     .eq('id', params.id)
     .maybeSingle()
   if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
@@ -55,7 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const { data: items, error: itemsErr } = await admin
     .from('order_items')
-    .select('id, product_id, quantity, confidence')
+    .select('id, product_id, product_name, quantity, confidence, pack_config_id')
     .eq('order_id', order.id)
   if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
 
@@ -63,6 +65,40 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const deliveryDate = parsed.data.delivery_date ?? order.delivery_date
   if (!deliveryDate) {
     return NextResponse.json({ error: '納品日を確定してください' }, { status: 400 })
+  }
+
+  // 納入先ゲート: 取引先に納入先が登録されているのに未確定なら承認させない
+  // （「取引先＞納入先」表示ルール・出荷現場が仕分けできなくなる事故を防ぐ）。
+  const destinationId = order.destination_id ?? parsed.data.destination_id ?? null
+  if (!destinationId && order.customer_id) {
+    const { count: destCount } = await admin
+      .from('delivery_destinations')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', order.customer_id)
+      .eq('is_active', true)
+    if ((destCount ?? 0) > 0) {
+      return NextResponse.json({ error: '納入先を選択してください' }, { status: 400 })
+    }
+  }
+
+  // 荷姿ゲート: その商品×取引先に選べる荷姿マスタがあるのに未確定なら承認させない
+  // （出荷一覧で「何箱作るか」が計算できないまま現場に渡ってしまう事故を防ぐ）。
+  const productIds = [...new Set(items.map((it) => it.product_id).filter(Boolean))] as string[]
+  if (productIds.length > 0) {
+    const { data: packConfigs } = await admin
+      .from('pack_configs')
+      .select('id, product_id, customer_id')
+      .in('product_id', productIds)
+      .eq('is_active', true)
+    for (const it of items) {
+      if (it.pack_config_id || !it.product_id) continue
+      const hasOption = (packConfigs ?? []).some(
+        (pc) => pc.product_id === it.product_id && (pc.customer_id === order.customer_id || pc.customer_id === null),
+      )
+      if (hasOption) {
+        return NextResponse.json({ error: `荷姿を選択してください（${it.product_name}）` }, { status: 400 })
+      }
+    }
   }
 
   // スタッフは高確信・取引先一致・納品日確定のときだけ承認可
@@ -87,11 +123,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
   }
 
-  // 承認：status 更新（＋必要なら delivery_date 確定）
+  // 承認：status 更新（＋必要なら delivery_date・destination_id を確定）
   const updates: Record<string, unknown> = { status: 'approved' }
   if (!order.delivery_date && parsed.data.delivery_date) {
     updates.delivery_date = parsed.data.delivery_date
     updates.delivery_date_source = 'manual'
+  }
+  if (!order.destination_id && parsed.data.destination_id) {
+    updates.destination_id = parsed.data.destination_id
   }
   const { error: updErr } = await admin.from('orders').update(updates).eq('id', order.id)
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
