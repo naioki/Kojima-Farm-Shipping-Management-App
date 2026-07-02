@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 /** YYYY-MM-DD を n 日ずらす（UTC基準で計算し、ローカルタイムゾーン変換によるズレを避ける） */
 function shiftDate(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number)
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number]
   const dt = new Date(Date.UTC(y, m - 1, d))
   dt.setUTCDate(dt.getUTCDate() + days)
   return dt.toISOString().slice(0, 10)
