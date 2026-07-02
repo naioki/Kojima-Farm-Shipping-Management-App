@@ -13,6 +13,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "kojima-fax-3100",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "-p", "3100"],
+      "port": 3100,
+      "cwd": "C:\\Users\\kagay\\Kojima-Farm-Shipping-Management-App-local"
     }
   ]
 }
