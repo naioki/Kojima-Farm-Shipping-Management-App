@@ -68,3 +68,10 @@ kojima-noen/
 - [ ] Phase E: B2Bポータル（Magic Link・いつものセット・RLS）
 - [ ] Phase F: オフライン同期（PWA/IndexedDB outbox）＋Realtime
 - [ ] Phase G: 出荷指示書生成 → 請求書(invoices)フロー接続＋通知
+
+# 配送管理フェーズ（個人Wiki「配送管理アプリ設計提案」2026-07-03 準拠）
+
+- [x] 配送 Phase 0: deliveries/lots/delivery_events スキーマ（migrations/0015）＋
+      /admin/deliveries 配送リスト（取引先＞納入先グルーピング・印刷帳票）。並行運用期は紙が正
+- [ ] 配送 Phase 1: 出発前ダブルチェック画面＋配送完了記録（deliveries行生成・状態遷移・staff UPDATEポリシー）
+- [ ] 配送 Phase 2: 分析（データ6ヶ月蓄積後。納入先別リードタイム・クレーム傾向）

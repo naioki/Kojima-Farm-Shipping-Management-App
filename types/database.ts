@@ -134,6 +134,52 @@ export interface DeliveryDestination {
   updated_at: ISODateTime
 }
 
+export type DeliveryStatus = 'planned' | 'loaded' | 'delivered'
+
+/**
+ * 配送（取引先×納入先×配送日を1配送とする単位・migrations/0015）。
+ * 明細テーブルは持たない：同じ (delivery_date, customer_id, destination_id) の
+ * orders 配下の order_items がそのまま対象（並列スキーマ禁止・features.md §1）。
+ */
+export interface Delivery {
+  id: UUID
+  delivery_date: ISODate
+  customer_id: UUID
+  destination_id: UUID | null
+  status: DeliveryStatus
+  checked_by: UUID | null
+  checked_at: ISODateTime | null
+  delivered_by: UUID | null
+  delivered_at: ISODateTime | null
+  photo_url: string | null
+  note: string | null
+  created_at: ISODateTime
+  updated_at: ISODateTime
+}
+
+/** 配送イベント（append-only・クレーム原因分析用・migrations/0015） */
+export interface DeliveryEvent {
+  id: UUID
+  delivery_id: UUID
+  actor: UUID | null
+  action: string
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  created_at: ISODateTime
+}
+
+/** ロット（圃場×収穫日・J-GAPトレーサビリティ専用。請求とは別粒度・migrations/0015） */
+export interface Lot {
+  id: UUID
+  lot_no: string
+  product_id: UUID
+  field_name: string | null
+  harvest_date: ISODate | null
+  gap_record_ref: string | null
+  note: string | null
+  created_at: ISODateTime
+}
+
 export interface OrderItem {
   id: UUID
   order_id: UUID
@@ -173,6 +219,8 @@ export interface OrderItem {
   priced_at: ISODateTime | null
   priced_by: UUID | null
   pack_config_id: UUID | null
+  /** ロット紐付け（トレーサビリティ・migrations/0015。当面は任意入力） */
+  lot_id: UUID | null
   created_at: ISODateTime
   updated_at: ISODateTime
 }
