@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { jstTodayStr } from '@/lib/dates'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
       destination_id: destination_id ?? null,
       source: 'manual',
       status: 'approved',
-      order_date: new Date().toISOString().slice(0, 10),
+      order_date: jstTodayStr(),
       delivery_date,
       delivery_date_source: 'manual',
       shipping_time: shipping_time ?? null,

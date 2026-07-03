@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Table } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
+import { jstDateStr } from '@/lib/dates'
 
 /** 月初・月末の既定値（今日が属する月）。 */
 function thisMonthRange(): { start: string; end: string } {
@@ -12,8 +13,7 @@ function thisMonthRange(): { start: string; end: string } {
   const m = now.getMonth()
   const start = new Date(y, m, 1)
   const end = new Date(y, m + 1, 0)
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
-  return { start: fmt(start), end: fmt(end) }
+  return { start: jstDateStr(start), end: jstDateStr(end) }
 }
 
 /**

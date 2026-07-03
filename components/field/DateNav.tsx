@@ -3,18 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-
-/** YYYY-MM-DD を n 日ずらす（UTC基準で計算し、ローカルタイムゾーン変換によるズレを避ける） */
-function shiftDate(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number]
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  dt.setUTCDate(dt.getUTCDate() + days)
-  return dt.toISOString().slice(0, 10)
-}
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 /**
  * 出荷一覧・マトリックスの日付コントロール（features.md §8）。
@@ -30,7 +19,7 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
 
   return (
     <div className="flex items-center gap-2">
-      <Link href={hrefFor(shiftDate(date, -1))} aria-label="前の日" className={btn}>
+      <Link href={hrefFor(shiftDateStr(date, -1))} aria-label="前の日" className={btn}>
         <ChevronLeft className="h-5 w-5" aria-hidden />
       </Link>
 
@@ -46,12 +35,12 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
         className="num h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100"
       />
 
-      <Link href={hrefFor(shiftDate(date, 1))} aria-label="次の日" className={btn}>
+      <Link href={hrefFor(shiftDateStr(date, 1))} aria-label="次の日" className={btn}>
         <ChevronRight className="h-5 w-5" aria-hidden />
       </Link>
 
       <Link
-        href={hrefFor(todayStr())}
+        href={hrefFor(jstTodayStr())}
         className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
       >
         今日

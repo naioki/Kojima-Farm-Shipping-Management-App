@@ -8,8 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { DELIVERY_AMOUNT_MODES, parseAmountMode, type DeliveryAmountMode } from '@/lib/delivery-notes/amount-mode'
-
-const today = () => new Date().toISOString().slice(0, 10)
+import { jstTodayStr as today } from '@/lib/dates'
 
 /** 納品書を表示（取引先×納品日）。その日のその取引先向け明細から伝票を生成する。 */
 export function DeliveryNoteForm({

@@ -5,18 +5,13 @@ import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid } from '@/components/field/MatrixGrid'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
 const PATH = '/field/matrix'
-const todayStr = () => new Date().toISOString().slice(0, 10)
-function shift(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00`)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
 function weekDates(start: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => shift(start, i))
+  return Array.from({ length: 7 }, (_, i) => shiftDateStr(start, i))
 }
 
 /**
@@ -29,7 +24,7 @@ export default async function MatrixPage({
 }: {
   searchParams: { week?: string; product?: string }
 }) {
-  const week = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.week ?? '') ? searchParams.week! : todayStr()
+  const week = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.week ?? '') ? searchParams.week! : jstTodayStr()
   const dates = weekDates(week)
   const supabase = createClient()
 
@@ -93,19 +88,19 @@ export default async function MatrixPage({
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`${PATH}?week=${shift(week, -7)}&product=${selected.id}`}
+            href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             ← 前週
           </Link>
           <Link
-            href={`${PATH}?week=${todayStr()}&product=${selected.id}`}
+            href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             今週
           </Link>
           <Link
-            href={`${PATH}?week=${shift(week, 7)}&product=${selected.id}`}
+            href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             翌週 →

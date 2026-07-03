@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { OrderForm, type DefaultSetItem } from '@/components/portal/OrderForm'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +33,7 @@ export default async function PortalOrderPage() {
     defaultQuantity: Number(r.default_quantity ?? 0),
   }))
 
-  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+  const tomorrow = shiftDateStr(jstTodayStr(), 1)
 
   return (
     <div className="space-y-4">

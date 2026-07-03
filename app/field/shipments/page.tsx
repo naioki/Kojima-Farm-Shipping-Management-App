@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { formatQty } from '@/lib/calculations/format-qty'
+import { jstTodayStr } from '@/lib/dates'
 import { ShipmentStatusSummary } from '@/components/field/ShipmentStatusSummary'
 import { ShipmentGroupRows } from '@/components/field/ShipmentGroupRows'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
@@ -14,7 +15,6 @@ import type { SpecWarning } from '@/types/database'
 export const dynamic = 'force-dynamic'
 
 const PATH = '/field/shipments'
-const todayStr = () => new Date().toISOString().slice(0, 10)
 
 /**
  * 出荷一覧（Laravel版 画面2）。現場が毎日使うメイン画面。
@@ -28,7 +28,7 @@ export default async function ShipmentsPage({
 }: {
   searchParams: { date?: string }
 }) {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : todayStr()
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const supabase = createClient()
 
   // ① その日の出荷日を持つ注文（型安全のため埋め込みを使わず段階取得）

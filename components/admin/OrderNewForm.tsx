@@ -6,6 +6,7 @@ import { Plus, Trash2, AlertTriangle, ShoppingCart, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
 import { cn } from '@/lib/cn'
+import { jstTodayStr } from '@/lib/dates'
 import { Button } from '@/components/ui/Button'
 import { ColorDot } from '@/components/ui/ColorDot'
 
@@ -73,7 +74,7 @@ interface ProductStats {
 }
 
 const ANOMALY_THRESHOLD = 2.5
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = jstTodayStr
 
 function AnomalyBadge({ qty, stats }: { qty: number; stats: ProductStats }) {
   if (stats.count === 0 || qty <= 0) return null

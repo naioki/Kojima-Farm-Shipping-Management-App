@@ -478,6 +478,28 @@ export const fieldStatusResetSchema = z.object({
 })
 export type FieldStatusReset = z.infer<typeof fieldStatusResetSchema>
 
+/**
+ * 配送チェックの記録（配送 Phase 1）。配送単位（取引先×納入先×配送日）で
+ * loaded（出発前チェックOK）／delivered（配送完了）／revert（1段階もどす）を記録する。
+ * items はチェック時点の明細スナップショット（delivery_events に保存・クレーム原因分析用）。
+ */
+export const deliveryConfirmSchema = z.object({
+  delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  customer_id: z.string().uuid(),
+  destination_id: z.string().uuid().nullable(),
+  action: z.enum(['loaded', 'delivered', 'revert']),
+  items: z
+    .array(
+      z.object({
+        product_name: z.string(),
+        quantity: z.number(),
+        unit: z.string(),
+      }),
+    )
+    .optional(),
+})
+export type DeliveryConfirmInput = z.infer<typeof deliveryConfirmSchema>
+
 /** 納品書の発行（スナップショット保存）。取引先×納品日のその日の明細を凍結する。 */
 export const deliveryNoteCreateSchema = z.object({
   customer_id: z.string().uuid(),

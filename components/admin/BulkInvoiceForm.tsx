@@ -6,8 +6,8 @@ import { Layers } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { jstDateStr as iso } from '@/lib/dates'
 
-const iso = (d: Date) => d.toISOString().slice(0, 10)
 const firstOfMonth = () => {
   const d = new Date()
   return iso(new Date(d.getFullYear(), d.getMonth(), 1))

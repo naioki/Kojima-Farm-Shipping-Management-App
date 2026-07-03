@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { statusLabel, sourceLabel } from '@/components/admin/OrderStatusBadge'
+import { jstTodayStr } from '@/lib/dates'
 
 export const runtime = 'nodejs'
 
@@ -76,7 +77,7 @@ export async function GET(req: Request) {
   }
   const csv = CSV_BOM + lines.join('\r\n')
 
-  const stamp = new Date().toISOString().slice(0, 10)
+  const stamp = jstTodayStr()
   return new Response(csv, {
     headers: {
       'content-type': 'text/csv;charset=utf-8',

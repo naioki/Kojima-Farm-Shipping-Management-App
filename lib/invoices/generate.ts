@@ -2,6 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sumInvoiceTotals, formatInvoiceNumber, type TaxRate } from '@/lib/calculations/tax'
 import { writeAudit } from '@/lib/audit/log'
+import { jstTodayStr } from '@/lib/dates'
 
 /**
  * 1取引先・指定期間の請求書を生成する共通ロジック（tax.md 厳守）。
@@ -76,7 +77,7 @@ export async function generateInvoiceForCustomer(
       billing_month: billingMonth,
       period_start: periodStart,
       period_end: periodEnd,
-      issue_date: new Date().toISOString().slice(0, 10),
+      issue_date: jstTodayStr(),
       invoice_reg_num: customer?.invoice_reg_num ?? null,
       subtotal_8: totals.reduced.subtotal.toNumber(),
       tax_8: totals.reduced.tax.toNumber(),

@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { PackageCheck, Grid3x3, X, ScanLine, ShoppingCart, Camera, CheckCircle2, Sprout } from 'lucide-react'
+import { PackageCheck, Grid3x3, X, ScanLine, ShoppingCart, Camera, CheckCircle2, Sprout, Truck } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 /** ドロワー項目のアイコンキー → lucide コンポーネント（server からは文字列で渡す）。 */
 const ICONS = {
   matrix: Sprout,
+  delivery: Truck,
   ocr: ScanLine,
   order: ShoppingCart,
   report: Camera,

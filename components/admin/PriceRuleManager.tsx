@@ -6,6 +6,7 @@ import { Plus, Trash2, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { jstTodayStr } from '@/lib/dates'
 
 interface Option { id: string; name: string }
 export interface PriceRuleListRow {
@@ -20,7 +21,7 @@ export interface PriceRuleListRow {
   effective_to: string | null
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
+const todayStr = jstTodayStr
 
 /**
  * 価格表管理（管理者）。期間×取引先×チャネルの単価。最新の effective_from が優先される。

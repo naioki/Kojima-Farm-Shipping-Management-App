@@ -7,8 +7,8 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
+import { jstDateStr as iso } from '@/lib/dates'
 
-const iso = (d: Date) => d.toISOString().slice(0, 10)
 const firstOfMonth = () => {
   const d = new Date()
   return iso(new Date(d.getFullYear(), d.getMonth(), 1))
