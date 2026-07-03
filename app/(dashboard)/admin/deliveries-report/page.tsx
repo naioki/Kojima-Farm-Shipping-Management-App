@@ -20,6 +20,8 @@ interface DestStat {
   avgLeadMin: number | null
   /** もどす回数（誤タップ・やり直しのヒヤリハット指標） */
   reverts: number
+  /** 問題記録の件数（クレーム・数量違い等） */
+  issues: number
 }
 
 /**
@@ -55,7 +57,7 @@ export default async function DeliveriesReportPage({
   // 表示名（取引先＞納入先）と revert イベント数
   const customerIds = [...new Set(deliveries.map((d) => d.customer_id))]
   const destinationIds = [...new Set(deliveries.map((d) => d.destination_id).filter(Boolean))] as string[]
-  const [{ data: custRows }, { data: destRows }, { data: revertRows }] = await Promise.all([
+  const [{ data: custRows }, { data: destRows }, { data: eventRows }] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -63,14 +65,29 @@ export default async function DeliveriesReportPage({
       ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
       : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[] }),
     deliveryIds.length
-      ? supabase.from('delivery_events').select('delivery_id').eq('action', 'revert').in('delivery_id', deliveryIds)
-      : Promise.resolve({ data: [] as { delivery_id: string }[] }),
+      ? supabase
+          .from('delivery_events')
+          .select('delivery_id, action, after, created_at')
+          .in('action', ['revert', 'issue'])
+          .in('delivery_id', deliveryIds)
+          .order('created_at', { ascending: false })
+      : Promise.resolve({
+          data: [] as { delivery_id: string; action: string; after: unknown; created_at: string }[],
+        }),
   ])
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
   const revertsByDelivery = new Map<string, number>()
-  for (const r of revertRows ?? []) {
-    revertsByDelivery.set(r.delivery_id, (revertsByDelivery.get(r.delivery_id) ?? 0) + 1)
+  const issuesByDelivery = new Map<string, number>()
+  const issueList: { deliveryId: string; note: string; at: string }[] = []
+  for (const r of eventRows ?? []) {
+    if (r.action === 'revert') {
+      revertsByDelivery.set(r.delivery_id, (revertsByDelivery.get(r.delivery_id) ?? 0) + 1)
+    } else {
+      issuesByDelivery.set(r.delivery_id, (issuesByDelivery.get(r.delivery_id) ?? 0) + 1)
+      const note = (r.after as { note?: string } | null)?.note ?? ''
+      issueList.push({ deliveryId: r.delivery_id, note, at: r.created_at.slice(0, 10) })
+    }
   }
 
   // 配送先（取引先＞納入先）単位に集計
@@ -87,6 +104,7 @@ export default async function DeliveriesReportPage({
         checked: 0,
         avgLeadMin: null,
         reverts: 0,
+        issues: 0,
         leadSumMin: 0,
         leadCount: 0,
       }
@@ -101,7 +119,15 @@ export default async function DeliveriesReportPage({
       s.leadCount++
     }
     s.reverts += revertsByDelivery.get(d.id) ?? 0
+    s.issues += issuesByDelivery.get(d.id) ?? 0
   }
+  // 問題リストに配送先ラベルを付与（直近10件）
+  const labelByDelivery = new Map<string, string>()
+  for (const d of deliveries) {
+    const dest = d.destination_id ? destinationName.get(d.destination_id) : null
+    labelByDelivery.set(d.id, `${customerName.get(d.customer_id) ?? '—'}${dest ? `＞${dest}` : ''}`)
+  }
+  const recentIssues = issueList.slice(0, 10)
   const list = [...stats.values()]
     .map((s) => ({ ...s, avgLeadMin: s.leadCount > 0 ? Math.round(s.leadSumMin / s.leadCount) : null }))
     .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'ja'))
@@ -109,6 +135,7 @@ export default async function DeliveriesReportPage({
     total: deliveries.length,
     delivered: deliveries.filter((d) => d.status === 'delivered').length,
     reverts: [...revertsByDelivery.values()].reduce((a, b) => a + b, 0),
+    issues: issueList.length,
   }
 
   return (
@@ -152,7 +179,7 @@ export default async function DeliveriesReportPage({
       ) : (
         <>
           {/* 期間サマリー */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Card className="space-y-1 text-center">
               <p className="text-xs text-ink-soft">配送件数</p>
               <p className="num text-2xl font-bold tabular-nums text-ink">{totals.total}</p>
@@ -167,6 +194,12 @@ export default async function DeliveriesReportPage({
               <p className="text-xs text-ink-soft">もどす回数</p>
               <p className="num text-2xl font-bold tabular-nums text-ink">{totals.reverts}</p>
             </Card>
+            <Card className="space-y-1 text-center">
+              <p className="text-xs text-ink-soft">問題記録</p>
+              <p className={`num text-2xl font-bold tabular-nums ${totals.issues > 0 ? 'text-alert' : 'text-ink'}`}>
+                {totals.issues}
+              </p>
+            </Card>
           </div>
 
           <Card>
@@ -177,7 +210,8 @@ export default async function DeliveriesReportPage({
                   <th className="py-1.5 pr-2 text-right font-medium">件数</th>
                   <th className="py-1.5 pr-2 text-right font-medium">完了</th>
                   <th className="py-1.5 pr-2 text-right font-medium">チェック→納品</th>
-                  <th className="py-1.5 text-right font-medium">もどす</th>
+                  <th className="py-1.5 pr-2 text-right font-medium">もどす</th>
+                  <th className="py-1.5 text-right font-medium">問題</th>
                 </tr>
               </thead>
               <tbody>
@@ -194,16 +228,34 @@ export default async function DeliveriesReportPage({
                     <td className="num py-2 pr-2 text-right tabular-nums text-ink">
                       {s.avgLeadMin != null ? `${s.avgLeadMin}分` : '—'}
                     </td>
-                    <td className="num py-2 text-right tabular-nums text-ink">{s.reverts}</td>
+                    <td className="num py-2 pr-2 text-right tabular-nums text-ink">{s.reverts}</td>
+                    <td className={`num py-2 text-right tabular-nums ${s.issues > 0 ? 'font-bold text-alert' : 'text-ink'}`}>
+                      {s.issues}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </Card>
 
+          {recentIssues.length > 0 && (
+            <Card className="space-y-2">
+              <h2 className="font-display text-base font-bold text-ink">直近の問題記録</h2>
+              <ul className="space-y-1.5 text-sm">
+                {recentIssues.map((i, idx) => (
+                  <li key={idx} className="flex items-baseline gap-2">
+                    <span className="num shrink-0 text-xs tabular-nums text-ink-soft">{i.at}</span>
+                    <span className="shrink-0 font-medium text-ink">{labelByDelivery.get(i.deliveryId) ?? '—'}</span>
+                    <span className="text-ink-soft">{i.note}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
           <p className="text-xs text-ink-soft">
-            「もどす」はチェックのやり直し回数（ヒヤリハット指標）。多い配送先は荷姿・表示の見直し候補。
-            クレーム傾向・曜日パターン等の本格分析はデータ蓄積後に追加する。
+            「もどす」はチェックのやり直し回数（ヒヤリハット指標）。「問題」は配送後に記録されたクレーム・数量違い等。
+            多い配送先は荷姿・表示の見直し候補。曜日パターン等の本格分析はデータ蓄積後に追加する。
           </p>
         </>
       )}

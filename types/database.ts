@@ -487,7 +487,9 @@ export const deliveryConfirmSchema = z.object({
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   customer_id: z.string().uuid(),
   destination_id: z.string().uuid().nullable(),
-  action: z.enum(['loaded', 'delivered', 'revert']),
+  /** issue = 配送後の問題記録（状態は変えずイベントのみ追記。クレーム原因分析用） */
+  action: z.enum(['loaded', 'delivered', 'revert', 'issue']),
+  note: z.string().max(500).optional(),
   items: z
     .array(
       z.object({
@@ -499,6 +501,24 @@ export const deliveryConfirmSchema = z.object({
     .optional(),
 })
 export type DeliveryConfirmInput = z.infer<typeof deliveryConfirmSchema>
+
+/**
+ * ロット作成（J-GAPトレサ・配送 Phase 2）。粒度は「圃場×収穫日×品目」。
+ * assign_delivery_date を指定すると、その出荷日の同品目の未紐付け明細に一括で紐付ける
+ * （1品目=1日1ロットが実態のため、明細ごとの手作業をなくす）。
+ */
+export const lotCreateSchema = z.object({
+  product_id: z.string().uuid(),
+  harvest_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  field_name: z.string().max(100).optional(),
+  gap_record_ref: z.string().max(200).optional(),
+  note: z.string().max(500).optional(),
+  assign_delivery_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+})
+export type LotCreateInput = z.infer<typeof lotCreateSchema>
 
 /** 納品書の発行（スナップショット保存）。取引先×納品日のその日の明細を凍結する。 */
 export const deliveryNoteCreateSchema = z.object({

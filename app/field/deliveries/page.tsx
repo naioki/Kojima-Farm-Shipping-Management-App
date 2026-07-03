@@ -73,7 +73,7 @@ export default async function DeliveriesPage({
       packIds.length
         ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
         : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[] }),
-      supabase.from('deliveries').select('customer_id, destination_id, status').eq('delivery_date', date),
+      supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url').eq('delivery_date', date),
     ])
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
@@ -81,8 +81,11 @@ export default async function DeliveriesPage({
   const packById = new Map(
     (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
   )
-  const statusByKey = new Map(
-    (deliveryRows ?? []).map((d) => [`${d.customer_id}:${d.destination_id ?? ''}`, d.status as DeliveryStatus]),
+  const deliveryByKey = new Map(
+    (deliveryRows ?? []).map((d) => [
+      `${d.customer_id}:${d.destination_id ?? ''}`,
+      { id: d.id, status: d.status as DeliveryStatus, photoUrl: d.photo_url },
+    ]),
   )
 
   // 配送単位（取引先×納入先）にグルーピング。deliveries テーブルと同じキー設計（migrations/0015）。
@@ -122,7 +125,7 @@ export default async function DeliveriesPage({
     `${a.customerName}${a.destinationName ?? ''}`.localeCompare(`${b.customerName}${b.destinationName ?? ''}`, 'ja'),
   )
   const totalItems = items.length
-  const doneCount = sorted.filter((g) => statusByKey.get(g.key) === 'delivered').length
+  const doneCount = sorted.filter((g) => deliveryByKey.get(g.key)?.status === 'delivered').length
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -166,13 +169,15 @@ export default async function DeliveriesPage({
             {sorted.map((g) => (
               <DeliveryCheckCard
                 key={g.key}
-                status={statusByKey.get(g.key) ?? 'planned'}
+                status={deliveryByKey.get(g.key)?.status ?? 'planned'}
                 customerName={g.customerName}
                 destinationName={g.destinationName}
                 items={g.items}
                 deliveryDate={date}
                 customerId={g.customerId}
                 destinationId={g.destinationId}
+                deliveryId={deliveryByKey.get(g.key)?.id ?? null}
+                hasPhoto={Boolean(deliveryByKey.get(g.key)?.photoUrl)}
               />
             ))}
           </div>

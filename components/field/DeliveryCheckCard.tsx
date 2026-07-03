@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCircle2, Truck, Undo2 } from 'lucide-react'
+import { AlertTriangle, Camera, Check, CheckCircle2, Truck, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Card } from '@/components/ui/Card'
@@ -33,6 +33,8 @@ export function DeliveryCheckCard({
   deliveryDate,
   customerId,
   destinationId,
+  deliveryId,
+  hasPhoto,
 }: {
   status: DeliveryStatus
   customerName: string
@@ -41,8 +43,12 @@ export function DeliveryCheckCard({
   deliveryDate: string
   customerId: string
   destinationId: string | null
+  /** deliveries 行が既にあるときの id（写真閲覧リンク用） */
+  deliveryId: string | null
+  hasPhoto: boolean
 }) {
   const router = useRouter()
+  const fileRef = useRef<HTMLInputElement>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const allChecked = items.length > 0 && items.every((it) => checked.has(it.id))
@@ -92,6 +98,51 @@ export function DeliveryCheckCard({
   function revert() {
     // 完了の取り消しは意図的なワンクッション（誤タップで記録が消えない）
     if (window.confirm('1つ前の状態にもどしますか？')) void send('revert')
+  }
+
+  function reportIssue() {
+    // 配送後の問題（数量違い・傷み・遅delay等）をその場で記録 → 配送実績に集計
+    const note = window.prompt('どんな問題がありましたか？（例：キュウリ1ケース不足の連絡あり）')
+    if (note?.trim()) {
+      void (async () => {
+        setBusy(true)
+        try {
+          const res = await fetch('/api/deliveries/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              delivery_date: deliveryDate,
+              customer_id: customerId,
+              destination_id: destinationId,
+              action: 'issue',
+              note: note.trim(),
+            }),
+          })
+          if (res.ok) toast.success('問題を記録しました')
+          else toast.error('記録できませんでした')
+          router.refresh()
+        } finally {
+          setBusy(false)
+        }
+      })()
+    }
+  }
+
+  async function uploadPhoto(file: File) {
+    setBusy(true)
+    try {
+      const form = new FormData()
+      form.set('delivery_date', deliveryDate)
+      form.set('customer_id', customerId)
+      if (destinationId) form.set('destination_id', destinationId)
+      form.set('file', file)
+      const res = await fetch('/api/deliveries/photo', { method: 'POST', body: form })
+      if (res.ok) toast.success('写真を保存しました')
+      else toast.error('写真を保存できませんでした')
+      router.refresh()
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -168,6 +219,41 @@ export function DeliveryCheckCard({
         </tbody>
       </table>
 
+      {/* 積込写真（任意・配送単位に1枚。誤配送クレーム時の物証） */}
+      <div className="flex items-center gap-3 print:hidden">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void uploadPhoto(f)
+            e.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-1.5 rounded border border-line px-3 py-2 text-xs font-medium text-ink-soft hover:bg-bg-soft disabled:opacity-50"
+        >
+          <Camera className="h-4 w-4" aria-hidden />
+          {hasPhoto ? '写真を撮りなおす' : '積込写真（任意）'}
+        </button>
+        {hasPhoto && deliveryId && (
+          <a
+            href={`/api/deliveries/photo?id=${deliveryId}`}
+            target="_blank"
+            rel="noopener"
+            className="text-xs text-trust-600 hover:underline"
+          >
+            写真を見る
+          </a>
+        )}
+      </div>
+
       {/* アクション（画面のみ） */}
       <div className="flex items-center justify-between gap-2 print:hidden">
         {status === 'planned' && (
@@ -195,10 +281,20 @@ export function DeliveryCheckCard({
         )}
         {status === 'delivered' && (
           <>
-            <button type="button" onClick={revert} className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink">
-              <Undo2 className="h-3.5 w-3.5" aria-hidden />
-              もどす
-            </button>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={revert} className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink">
+                <Undo2 className="h-3.5 w-3.5" aria-hidden />
+                もどす
+              </button>
+              <button
+                type="button"
+                onClick={reportIssue}
+                className="inline-flex items-center gap-1 text-xs text-warning hover:underline"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                問題を記録
+              </button>
+            </div>
             <p className="flex items-center gap-1.5 text-sm font-bold text-harvest-700">
               <CheckCircle2 className="h-5 w-5" aria-hidden />
               この配送は おわりました

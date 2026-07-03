@@ -76,5 +76,7 @@ kojima-noen/
 - [x] 配送 Phase 1: 出発前ダブルチェック（/field/deliveries・1行タップ確認→積込OK→納品完了、
       /api/deliveries/confirm で状態遷移＋delivery_eventsに明細スナップショット記録、migrations/0016）。
       あわせて業務日付のUTCバグを lib/dates.ts（JST統一）で全面修正
-- [x] 配送 Phase 2（最小版）: /admin/deliveries-report 配送実績（配送先別の件数・完了率・
-      チェック→納品リードタイム・もどす回数）。本格分析（クレーム傾向・曜日パターン）はデータ6ヶ月蓄積後に拡張
+- [x] 配送 Phase 2: /admin/deliveries-report 配送実績（配送先別の件数・完了率・リードタイム・
+      もどす・問題記録＋直近の問題リスト）／/admin/lots ロット管理（圃場×収穫日×品目・出荷日一括紐付け）／
+      積込写真（Storage bucket 'deliveries'・署名URL閲覧）／問題記録（delivery_events action='issue'）。
+      曜日パターン等の統計拡張のみデータ蓄積後

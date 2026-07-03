@@ -31,7 +31,10 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { delivery_date, customer_id, destination_id, action, items } = parsed.data
+  const { delivery_date, customer_id, destination_id, action, note, items } = parsed.data
+  if (action === 'issue' && !note?.trim()) {
+    return NextResponse.json({ error: 'note_required' }, { status: 400 })
+  }
   const supabase = createClient()
 
   // 配送単位の行を取得（無ければ planned で作成）。UNIQUE(uq_delivery_unit) が二重作成を防ぐ。
@@ -55,6 +58,19 @@ export async function POST(req: Request) {
     if (createErr) return NextResponse.json({ error: createErr.message }, { status: 500 })
     deliveryId = created.id
     currentStatus = created.status as DeliveryStatus
+  }
+
+  // 問題記録は状態を変えず、イベントだけ追記して終わる（クレーム原因分析の一次証跡）
+  if (action === 'issue') {
+    const { error: evErr } = await supabase.from('delivery_events').insert({
+      delivery_id: deliveryId,
+      actor: user.id,
+      action: 'issue',
+      before: { status: currentStatus },
+      after: { status: currentStatus, note: note!.trim() },
+    })
+    if (evErr) return NextResponse.json({ error: evErr.message }, { status: 500 })
+    return NextResponse.json({ id: deliveryId, status: currentStatus })
   }
 
   // 遷移の決定と検証（画面が古い場合は 409 で再読込を促す。楽観ロックと同方針）

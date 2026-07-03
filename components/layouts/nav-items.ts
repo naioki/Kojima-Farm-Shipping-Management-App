@@ -15,6 +15,7 @@ import {
   Images,
   Truck,
   BarChart3,
+  Tags,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -57,6 +58,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
       { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
       { href: '/field/deliveries', label: '配送リスト', icon: Truck },
       { href: '/admin/deliveries-report', label: '配送実績', icon: BarChart3 },
+      { href: '/admin/lots', label: 'ロット（トレサ）', icon: Tags },
       { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },
       { href: '/admin/spec-reports', label: '規格報告', icon: Camera },
     ],
