@@ -1,4 +1,4 @@
-# ロールバックスクリプト（Cloud Run）
+﻿# ロールバックスクリプト（Cloud Run）
 # 使い方:
 #   powershell -File scripts\rollback.ps1            → リビジョン一覧を表示して番号で選択
 #   powershell -File scripts\rollback.ps1 -Revision <name>  → 指定リビジョンへ即切替

@@ -73,5 +73,7 @@ kojima-noen/
 
 - [x] 配送 Phase 0: deliveries/lots/delivery_events スキーマ（migrations/0015）＋
       /admin/deliveries 配送リスト（取引先＞納入先グルーピング・印刷帳票）。並行運用期は紙が正
-- [ ] 配送 Phase 1: 出発前ダブルチェック画面＋配送完了記録（deliveries行生成・状態遷移・staff UPDATEポリシー）
+- [x] 配送 Phase 1: 出発前ダブルチェック（/field/deliveries・1行タップ確認→積込OK→納品完了、
+      /api/deliveries/confirm で状態遷移＋delivery_eventsに明細スナップショット記録、migrations/0016）。
+      あわせて業務日付のUTCバグを lib/dates.ts（JST統一）で全面修正
 - [ ] 配送 Phase 2: 分析（データ6ヶ月蓄積後。納入先別リードタイム・クレーム傾向）

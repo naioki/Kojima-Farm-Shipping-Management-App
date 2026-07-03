@@ -1,4 +1,4 @@
-# デプロイスクリプト（Cloud Run）
+﻿# デプロイスクリプト（Cloud Run）
 # 使い方: powershell -File scripts\deploy.ps1 [-AnonKey <anon key>] [-SkipChecks]
 #   1. typecheck / lint / test をローカルで実行（落ちたらデプロイ中止）
 #   2. gcloud builds submit（cloudbuild.yaml: build → push → deploy）
