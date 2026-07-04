@@ -1,5 +1,6 @@
 import {
   Inbox,
+  Printer,
   LayoutDashboard,
   Sprout,
   FileText,
@@ -57,6 +58,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
       { href: '/field/deliveries', label: '配送リスト', icon: Truck },
+      { href: '/field/print', label: '帳票印刷', icon: Printer },
       { href: '/admin/deliveries-report', label: '配送実績', icon: BarChart3 },
       { href: '/admin/lots', label: 'ロット（トレサ）', icon: Tags },
       { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },

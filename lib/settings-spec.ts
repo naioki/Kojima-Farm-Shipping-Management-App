@@ -63,6 +63,7 @@ export const STAFF_FEATURE_KEYS = {
   createOrder: 'STAFF_CAN_CREATE_ORDER',
   reportSpec: 'STAFF_CAN_REPORT_SPEC',
   approve: 'STAFF_CAN_APPROVE',
+  printDocs: 'STAFF_CAN_PRINT_DOCS',
 } as const
 export type StaffFeatureKey = (typeof STAFF_FEATURE_KEYS)[keyof typeof STAFF_FEATURE_KEYS]
 
@@ -147,6 +148,15 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     kind: 'toggle',
     toggleDefault: 'off',
     hint: '取引先が自動一致・全明細が高確信・納品日確定の受信だけスタッフが承認できます。低確信・未紐付け・差分は管理者専用のまま。家族など信頼できる人が居る時だけONを推奨。',
+  },
+  {
+    key: 'STAFF_CAN_PRINT_DOCS',
+    label: 'スタッフが出荷帳票を印刷できる',
+    section: 'field',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'off',
+    hint: 'ONにすると現場の「その他」から出荷表カード・出荷ラベルのPDF印刷が使えます。供給先は「取引先＞納入先」表記（例: ヨーク 東道野辺）。',
   },
   // AI解析
   { key: 'GEMINI_API_KEY', label: 'Gemini APIキー', section: 'ai', secret: true, kind: 'text', hint: 'Google AI Studio で取得' },

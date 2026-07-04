@@ -80,3 +80,15 @@ kojima-noen/
       もどす・問題記録＋直近の問題リスト）／/admin/lots ロット管理（圃場×収穫日×品目・出荷日一括紐付け）／
       積込写真（Storage bucket 'deliveries'・署名URL閲覧）／問題記録（delivery_events action='issue'）。
       曜日パターン等の統計拡張のみデータ蓄積後
+
+# 統合フェーズ（docs/phase2-app-integration-design.md 準拠・v4アプリの吸収）
+
+- [x] 統合 2A: 出荷帳票の移植 — 出荷表カード(/api/shipping-docs/sheet)・出荷ラベル＋出荷一覧表
+      (/api/shipping-docs/labels、Cut and Stack・端数強調)・/field/print(現場印刷、
+      STAFF_CAN_PRINT_DOCSで解放)。供給先は lib/format/destination.ts の
+      formatSupplyDestination(取引先＞納入先の紙面表記「ヨーク 東道野辺」/「寺崎」)に統一。
+      計算コアは lib/calculations/shipping-docs.ts(v4確定仕様の移植＋単体テスト)
+- [ ] 統合 2B: マスタ移行スクリプト＋寺崎の手動受注運用開始
+- [ ] 統合 2C: ヨークメール取り込み移植＋影実行(差分ゼロ3営業日で切替判定)
+- [ ] 統合 2D: 現場切替・print_jobs移設・v4読み取り専用化
+- [ ] 統合 2E: Discord自動化移植・v4退役
