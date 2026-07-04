@@ -139,7 +139,10 @@ v4 `destination.py` と同一の意味論（系列＋店舗／系列のみ／互
 | product_standards（規格・unit_size・unit_type） | pack_configs（荷姿=入数換算） | P/C=unit_size |
 | units.json（品目×規格×店舗の入数） | customer_product_rules.packs_per_case | 店舗依存入数は納入先ヒントとして保持 |
 
-移行スクリプトは `scripts/migrate-v4-masters.ts`（dry-run既定・差分表示→`--apply`で書込み）。
+移行は `migrations/0018_seed_v4_product_masters.sql`（冪等SQL）で実施 **[2B実施済み]**。
+当初案のTSスクリプト（dry-run付き）は、v4マスタが小規模・静的で両DBの鍵管理が増えるだけと
+判断して採用せず、リポジトリ規約どおり migrations に一本化した。並行運用中にv4側のマスタが
+変わった場合は同SQLに行を追記して再適用する（冪等なので安全）。
 
 ### 6-2. 履歴データ
 **移行しない（凍結参照）**。v4のDB（Supabase hynedtz…）は読み取り専用で当面残し、

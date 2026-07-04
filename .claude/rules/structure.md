@@ -88,7 +88,9 @@ kojima-noen/
       STAFF_CAN_PRINT_DOCSで解放)。供給先は lib/format/destination.ts の
       formatSupplyDestination(取引先＞納入先の紙面表記「ヨーク 東道野辺」/「寺崎」)に統一。
       計算コアは lib/calculations/shipping-docs.ts(v4確定仕様の移植＋単体テスト)
-- [ ] 統合 2B: マスタ移行スクリプト＋寺崎の手動受注運用開始
+- [x] 統合 2B: v4品目・規格マスタ移行（migrations/0018、冪等・本番適用済み。胡瓜→キュウリ等は
+      別名で吸収、バラ・平箱系はv4運用実績どおり独立品目、荷姿は customer_id NULL の汎用登録）。
+      寺崎の手動受注は 出荷一覧のスマート追加 or /admin/orders/new で開始可能（運用定着の確認は現場側）
 - [ ] 統合 2C: ヨークメール取り込み移植＋影実行(差分ゼロ3営業日で切替判定)
 - [ ] 統合 2D: 現場切替・print_jobs移設・v4読み取り専用化
 - [ ] 統合 2E: Discord自動化移植・v4退役
