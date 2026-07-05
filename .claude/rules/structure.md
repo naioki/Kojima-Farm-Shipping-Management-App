@@ -91,6 +91,11 @@ kojima-noen/
 - [x] 統合 2B: v4品目・規格マスタ移行（migrations/0018、冪等・本番適用済み。胡瓜→キュウリ等は
       別名で吸収、バラ・平箱系はv4運用実績どおり独立品目、荷姿は customer_id NULL の汎用登録）。
       寺崎の手動受注は 出荷一覧のスマート追加 or /admin/orders/new で開始可能（運用定着の確認は現場側）
-- [ ] 統合 2C: ヨークメール取り込み移植＋影実行(差分ゼロ3営業日で切替判定)
+- [x] 統合 2C: メール取り込みの汎用化＋影実行 — 取引先マッチングをマスタ駆動に
+      (lib/ingestion/match-customer.ts、channel_identifiers.email/subject_keywords。ヨークは
+      件名キーワードで特定=migrations/0019)。件名を解析対象に含め(納品日が件名にある転送運用)、
+      要確認止まりの解析結果も raw_payload.parsed_orders に保存。影実行は /api/cron/shadow-diff
+      (lib/shadow/、v4接続は設定 V4_SUPABASE_URL/KEY で。差分ゼロ3営業日で切替判定)。
+      残: IMAP/Gemini/V4接続の設定投入と数日の並行運用（運用側）
 - [ ] 統合 2D: 現場切替・print_jobs移設・v4読み取り専用化
 - [ ] 統合 2E: Discord自動化移植・v4退役

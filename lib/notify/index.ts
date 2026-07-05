@@ -14,6 +14,7 @@ export type NotifyEvent =
   | 'edit_conflict' // 楽観ロック競合
   | 'shortage_forecast' // 翌日以降の不足予測
   | 'rule_changed' // 取引先の規格（取引ルール）の追加・変更
+  | 'shadow_diff' // 影実行（v4×新アプリの突合レポート・統合2C）
 
 export interface NotifyMessage {
   event: NotifyEvent

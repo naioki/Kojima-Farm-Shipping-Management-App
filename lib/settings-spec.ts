@@ -225,6 +225,10 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   { key: 'NOTIFY_LINE_WORKS', label: 'LINE WORKS通知', section: 'notify', secret: false, kind: 'toggle', hint: 'on / off' },
   // 運用
   { key: 'CRON_SECRET', label: 'cron 共有シークレット', section: 'ops', secret: true, kind: 'text', hint: 'Cloud Scheduler からの取り込み呼び出しを検証' },
+  // 影実行（統合2C）: v4本番との日次突合。URL/キーが空なら影実行は動かない（設定でON/OFF）
+  { key: 'V4_SUPABASE_URL', label: '影実行: v4 Supabase URL', section: 'ops', secret: false, kind: 'text', placeholder: 'https://xxxx.supabase.co', hint: '統合2Cの並行運用期間のみ使用。空欄で影実行OFF' },
+  { key: 'V4_SUPABASE_SERVICE_KEY', label: '影実行: v4 service_roleキー', section: 'ops', secret: true, kind: 'text', hint: 'v4本番の確定注文を読み取り比較する（読み取りのみに使用）' },
+  { key: 'SHADOW_DIFF_CUSTOMER', label: '影実行: 対象取引先名', section: 'ops', secret: false, kind: 'text', placeholder: 'ヨーク', hint: '空欄なら「ヨーク」。v4がカバーする取引先だけを比較する' },
   { key: 'PDF_FONT_URL', label: 'PDF 日本語フォントURL', section: 'ops', secret: false, kind: 'text', hint: '空なら Noto Sans JP を既定使用。社内フォント等に差し替え可（otf/ttf）' },
   {
     key: 'ORDER_ANOMALY_THRESHOLD',
