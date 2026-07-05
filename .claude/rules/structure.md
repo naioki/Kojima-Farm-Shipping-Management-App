@@ -97,5 +97,9 @@ kojima-noen/
       要確認止まりの解析結果も raw_payload.parsed_orders に保存。影実行は /api/cron/shadow-diff
       (lib/shadow/、v4接続は設定 V4_SUPABASE_URL/KEY で。差分ゼロ3営業日で切替判定)。
       残: IMAP/Gemini/V4接続の設定投入と数日の並行運用（運用側）
-- [ ] 統合 2D: 現場切替・print_jobs移設・v4読み取り専用化
+- [x] 統合 2D(コード側): print_jobs移設（migrations/0020・v4エージェント互換スキーマ+RLS・
+      storage bucket 'print-jobs'・本番適用済み）／POST /api/print-jobs（共通レンダラー
+      lib/shipping-docs/render.ts でPDF生成→Storage→キュー投入）／/field/print に
+      「事務所で自動印刷」ボタンとキュー状況表示。切替手順は docs/cutover-2d.md
+      （エージェント.env切替・v4 cron停止・ロールバック含む）。現場切替の実施は運用側
 - [ ] 統合 2E: Discord自動化移植・v4退役

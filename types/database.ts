@@ -746,6 +746,21 @@ export const packConfigUpsertSchema = z.object({
 })
 export type PackConfigUpsertInput = z.infer<typeof packConfigUpsertSchema>
 
+/** 印刷キュー（統合2D・migrations/0020）。常駐エージェント(print_agent.py)がv4互換のREST操作で消化する。 */
+export type PrintJobStatus = 'pending' | 'processing' | 'printed' | 'failed'
+export interface PrintJob {
+  id: UUID
+  doc_type: 'sheet' | 'labels'
+  target_date: ISODate
+  product_id: UUID | null
+  pdf_url: string
+  status: PrintJobStatus
+  error_message: string | null
+  requested_by: UUID | null
+  created_at: ISODateTime
+  updated_at: ISODateTime
+}
+
 /** 価格ルールの作成。期間は effective_from（開始日）＋最新優先。 */
 export const priceRuleCreateSchema = z.object({
   product_id: z.string().uuid(),

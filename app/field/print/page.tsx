@@ -1,4 +1,5 @@
 import { FileText, Tags } from 'lucide-react'
+import { QueuePrintButton } from '@/components/field/QueuePrintButton'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
@@ -53,6 +54,14 @@ export default async function FieldPrintPage({
     : []
   const products = [...new Map(items.map((i) => [i.product_id, i.product_name])).entries()]
 
+  // この日の印刷キュー状況（エージェントが拾ったかどうかを現場でも確認できるように）
+  const { data: jobs } = await supabase
+    .from('print_jobs')
+    .select('id, doc_type, status, created_at')
+    .eq('target_date', date)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
   const sheetHref = (product?: string) =>
     `/api/shipping-docs/sheet?date=${date}${product ? `&product=${product}` : ''}`
   const labelsHref = (product?: string) =>
@@ -88,6 +97,40 @@ export default async function FieldPrintPage({
               <span className="text-xs text-ink-soft">8分割ラベル ＋ 出荷一覧表</span>
             </a>
           </div>
+
+          {/* 事務所の常駐プリンタへ自動印刷（print_jobs キュー・統合2D） */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-ink-soft">その場で開かずに印刷:</span>
+            <QueuePrintButton date={date} docType="sheet" label="出荷表を事務所で自動印刷" />
+            <QueuePrintButton date={date} docType="labels" label="ラベルを事務所で自動印刷" />
+          </div>
+
+          {(jobs ?? []).length > 0 && (
+            <Card className="space-y-1">
+              <h2 className="font-display text-sm font-bold text-ink">きょうの 印刷キュー</h2>
+              <ul className="divide-y divide-line text-sm">
+                {(jobs ?? []).map((j) => (
+                  <li key={j.id} className="flex items-center justify-between py-1.5">
+                    <span className="text-ink">{j.doc_type === 'sheet' ? '出荷表' : 'ラベル'}</span>
+                    <span
+                      className={
+                        j.status === 'printed'
+                          ? 'text-harvest-500 font-medium'
+                          : j.status === 'failed'
+                            ? 'text-alert font-medium'
+                            : 'text-ink-soft'
+                      }
+                    >
+                      {j.status === 'pending' && 'じゅんばん待ち'}
+                      {j.status === 'processing' && '印刷中…'}
+                      {j.status === 'printed' && '印刷ずみ'}
+                      {j.status === 'failed' && 'しっぱい（管理者に連絡）'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           {/* 品目をしぼって印刷（パック作業は品目単位で進むため） */}
           <Card className="space-y-2">

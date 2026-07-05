@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server'
-import { renderToBuffer } from '@react-pdf/renderer'
 import { getAuthedUser } from '@/lib/supabase/server'
-import { registerPdfFonts } from '@/lib/pdf/fonts'
-import { ShippingSheetPdf } from '@/lib/pdf/ShippingSheetPdf'
-import { loadShippingDocEntries } from '@/lib/shipping-docs/load'
-import { getSetting } from '@/lib/settings'
+import { renderShippingDocPdf } from '@/lib/shipping-docs/render'
 
 export const runtime = 'nodejs'
 
@@ -28,19 +24,13 @@ export async function GET(req: Request) {
   if (customerId && !UUID_RE.test(customerId)) return NextResponse.json({ error: 'invalid_customer' }, { status: 400 })
   if (productId && !UUID_RE.test(productId)) return NextResponse.json({ error: 'invalid_product' }, { status: 400 })
 
-  const { entries, dateDisplayWide, error } = await loadShippingDocEntries({ date, customerId, productId })
-  if (error) return NextResponse.json({ error }, { status: 500 })
-  if (!entries.length) {
-    return NextResponse.json({ error: 'この日の出荷対象はありません' }, { status: 404 })
-  }
+  const result = await renderShippingDocPdf({ docType: 'sheet', date, customerId, productId })
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
 
-  registerPdfFonts(await getSetting('PDF_FONT_URL'))
-  const buffer = await renderToBuffer(<ShippingSheetPdf entries={entries} dateDisplay={dateDisplayWide} />)
-
-  return new Response(new Uint8Array(buffer), {
+  return new Response(new Uint8Array(result.buffer), {
     headers: {
       'content-type': 'application/pdf',
-      'content-disposition': `inline; filename="shipping_sheet_${date}.pdf"`,
+      'content-disposition': `inline; filename="${result.filename}"`,
     },
   })
 }
