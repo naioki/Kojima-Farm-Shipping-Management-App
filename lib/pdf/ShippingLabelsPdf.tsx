@@ -1,7 +1,9 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 import {
+  aggregateForDeliveryNote,
   fitFontSize,
   rearrangeCutAndStack,
+  resolveSingleCustomerName,
   type ShippingDocEntry,
   type ShippingLabel,
 } from '@/lib/calculations/shipping-docs'
@@ -35,6 +37,7 @@ const GRAY = '#9ca3af'
 
 const s = StyleSheet.create({
   summaryPage: { fontFamily: 'JP', color: INK, fontSize: 12, paddingTop: 40, paddingHorizontal: 30 },
+  customerHeading: { fontSize: 14, color: '#555', marginBottom: 4 },
   summaryTitle: { fontSize: 24, marginBottom: 16 },
   th: { flexDirection: 'row', backgroundColor: '#c0c0c0', borderWidth: 1, borderColor: '#666' },
   tr: { flexDirection: 'row', borderBottomWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#666' },
@@ -45,6 +48,16 @@ const s = StyleSheet.create({
   cTotal: { width: 76, padding: 6, textAlign: 'center' },
   cCont: { width: 64, padding: 6, textAlign: 'center', fontWeight: 'bold' },
   totalRow: { flexDirection: 'row', backgroundColor: '#dcdcdc', borderWidth: 1, borderColor: '#666' },
+
+  noteTitle: { fontSize: 14, marginTop: 26, marginBottom: 8 },
+  noteTh: { flexDirection: 'row', backgroundColor: '#d0d0d0', borderWidth: 0.8, borderColor: '#888' },
+  noteTr: { flexDirection: 'row', borderBottomWidth: 0.8, borderLeftWidth: 0.8, borderRightWidth: 0.8, borderColor: '#888' },
+  noteTrAlt: { backgroundColor: '#f5f5f5' },
+  nItem: { flex: 1.6, padding: 5, fontSize: 10 },
+  nSpec: { flex: 1.2, padding: 5, fontSize: 10 },
+  nQty: { width: 56, padding: 5, fontSize: 10, textAlign: 'right' },
+  nUnit: { width: 46, padding: 5, fontSize: 10 },
+  nBlank: { flex: 1, padding: 5, fontSize: 10 },
 
   labelPage: { fontFamily: 'JP', color: INK },
   label: { position: 'absolute', width: LABEL_W, height: LABEL_H },
@@ -86,9 +99,12 @@ function containerCounts(entries: ShippingDocEntry[]): Map<string, number> {
 function SummaryPage({ entries, dateDisplay }: { entries: ShippingDocEntry[]; dateDisplay: string }) {
   const containers = containerCounts(entries)
   const totalContainers = [...containers.values()].reduce((a, b) => a + b, 0)
+  const singleCustomer = resolveSingleCustomerName(entries)
+  const noteLines = aggregateForDeliveryNote(entries)
   let prevDest: string | null = null
   return (
     <Page size="A4" style={s.summaryPage}>
+      {singleCustomer && <Text style={s.customerHeading}>出荷先名前：{singleCustomer}</Text>}
       <Text style={s.summaryTitle}>【出荷一覧表】 {dateDisplay}</Text>
       <View style={s.th}>
         <Text style={s.cDest}>供給先</Text>
@@ -121,6 +137,29 @@ function SummaryPage({ entries, dateDisplay }: { entries: ShippingDocEntry[]; da
         <Text style={s.cTotal} />
         <Text style={s.cCont}>{totalContainers}</Text>
       </View>
+
+      {/* 納品書（品目×規格の合算・単価/金額/備考は手書き記入欄） */}
+      <Text style={s.noteTitle}>【納品書】</Text>
+      <View style={s.noteTh}>
+        <Text style={s.nItem}>品目</Text>
+        <Text style={s.nSpec}>規格</Text>
+        <Text style={s.nQty}>数量</Text>
+        <Text style={s.nUnit}>単位</Text>
+        <Text style={s.nBlank}>単価</Text>
+        <Text style={s.nBlank}>金額</Text>
+        <Text style={s.nBlank}>備考</Text>
+      </View>
+      {noteLines.map((n, i) => (
+        <View key={i} style={[s.noteTr, ...(i % 2 === 1 ? [s.noteTrAlt] : [])]}>
+          <Text style={s.nItem}>{n.item}</Text>
+          <Text style={s.nSpec}>{n.spec || '—'}</Text>
+          <Text style={s.nQty}>{n.totalQty}</Text>
+          <Text style={s.nUnit}>{n.unitLabel}</Text>
+          <Text style={s.nBlank} />
+          <Text style={s.nBlank} />
+          <Text style={s.nBlank} />
+        </View>
+      ))}
     </Page>
   )
 }

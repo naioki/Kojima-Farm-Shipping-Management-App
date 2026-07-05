@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
   aggregateEntries,
+  aggregateForDeliveryNote,
   buildLabels,
   decomposeQty,
   fitFontSize,
   rearrangeCutAndStack,
+  resolveSingleCustomerName,
   type ShippingDocEntry,
 } from './shipping-docs'
 
 const entry = (over: Partial<ShippingDocEntry>): ShippingDocEntry => ({
   destination: 'ヨーク 東道野辺',
+  customerName: 'ヨーク',
+  storeName: '東道野辺',
   item: 'トマト',
   spec: 'スタンドパック',
   unitsPerBox: 15,
@@ -78,6 +82,74 @@ describe('buildLabels（v4 ocr_parser.py の移植）', () => {
 
   it('入数未登録（0）はラベルを作らない', () => {
     expect(buildLabels([entry({ unitsPerBox: 0, remainder: 8, totalQty: 8 })])).toHaveLength(0)
+  })
+
+  it('単一取引先の印刷では系列名を省き納入先（店舗）名だけにする', () => {
+    const labels = buildLabels([
+      entry({ boxes: 1, totalQty: 15 }),
+      entry({ item: 'トウモロコシ', customerName: 'ヨーク', storeName: '青葉台', destination: 'ヨーク 青葉台', boxes: 1, totalQty: 40 }),
+    ])
+    expect(labels.every((l) => l.destination !== 'ヨーク 東道野辺' && l.destination !== 'ヨーク 青葉台')).toBe(true)
+    expect(labels[0]?.destination).toBe('東道野辺')
+    expect(labels[1]?.destination).toBe('青葉台')
+  })
+
+  it('取引先が混在する印刷は誤配送防止のため系列名＋店舗名のまま表示する', () => {
+    const labels = buildLabels([
+      entry({ boxes: 1, totalQty: 15 }),
+      entry({
+        item: '胡瓜',
+        customerName: '寺崎',
+        storeName: null,
+        destination: '寺崎',
+        boxes: 1,
+        totalQty: 50,
+      }),
+    ])
+    expect(labels[0]?.destination).toBe('ヨーク 東道野辺')
+    expect(labels[1]?.destination).toBe('寺崎')
+  })
+
+  it('納入先を持たない取引先（寺崎）は単一取引先でも表記そのまま', () => {
+    const labels = buildLabels([
+      entry({ customerName: '寺崎', storeName: null, destination: '寺崎', boxes: 1, totalQty: 50 }),
+    ])
+    expect(labels[0]?.destination).toBe('寺崎')
+  })
+})
+
+describe('resolveSingleCustomerName', () => {
+  it('全明細が同一取引先なら取引先名を返す', () => {
+    expect(
+      resolveSingleCustomerName([entry({}), entry({ item: 'トウモロコシ', storeName: '青葉台' })]),
+    ).toBe('ヨーク')
+  })
+  it('取引先が混在すれば null', () => {
+    expect(
+      resolveSingleCustomerName([entry({}), entry({ customerName: '寺崎', storeName: null })]),
+    ).toBeNull()
+  })
+  it('空配列は null', () => {
+    expect(resolveSingleCustomerName([])).toBeNull()
+  })
+})
+
+describe('aggregateForDeliveryNote（v4 納品書テーブルの移植）', () => {
+  it('(品目,規格) 単位で供給先をまたいで合算する', () => {
+    const lines = aggregateForDeliveryNote([
+      entry({ totalQty: 140 }),
+      entry({ storeName: '青葉台', destination: 'ヨーク 青葉台', totalQty: 60 }),
+    ])
+    expect(lines).toEqual([{ item: 'トマト', spec: 'スタンドパック', totalQty: 200, unitLabel: '袋' }])
+  })
+
+  it('品目名→規格の順でソートし、同じ品目を隣接させる', () => {
+    const lines = aggregateForDeliveryNote([
+      entry({ item: '胡瓜', spec: 'バラ', totalQty: 50 }),
+      entry({ item: '胡瓜', spec: '3本P', totalQty: 30 }),
+      entry({ item: 'トマト', spec: '', totalQty: 10 }),
+    ])
+    expect(lines.map((l) => `${l.item}/${l.spec}`)).toEqual(['トマト/', '胡瓜/3本P', '胡瓜/バラ'])
   })
 })
 

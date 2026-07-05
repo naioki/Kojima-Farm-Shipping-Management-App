@@ -90,7 +90,8 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
     if (!order) continue
     const cust = customerName.get(order.customer_id) ?? ''
     const dest = order.destination_id ? destById.get(order.destination_id) : null
-    const destination = formatSupplyDestination(cust, dest ? dest.code || dest.full_name : null)
+    const storeName = dest ? dest.code || dest.full_name : null
+    const destination = formatSupplyDestination(cust, storeName)
     if (!sortKey.has(destination)) {
       const destSort = String(dest?.sort_order ?? 999).padStart(4, '0')
       sortKey.set(destination, `${cust}:${destSort}`)
@@ -101,6 +102,8 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
     const { boxes, remainder } = decomposeQty(it.quantity, unitsPerBox)
     raw.push({
       destination,
+      customerName: cust,
+      storeName,
       item: it.product_name,
       spec: it.spec ?? '',
       unitsPerBox,
