@@ -6,6 +6,7 @@ import { getReceiptOriginal } from '@/lib/r2'
 import { matchProductName, type ProductCandidate } from '@/lib/matching/name-match'
 import { buildCustomerHintText, type ParseHint } from '@/lib/ingestion/learning'
 import { decideReceiptApproval } from '@/lib/ingestion/auto-approve'
+import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
 import { notify } from '@/lib/notify'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
@@ -55,6 +56,8 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
 
   let imageBuffer: Buffer | null = null
   let textContent: string | null = null
+  let emailSubject: string | null = null
+  let emailFrom: string | null = null
 
   if (receipt.r2_key) {
     try {
@@ -64,7 +67,12 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
     }
   } else if (receipt.raw_payload) {
     const p = receipt.raw_payload as Record<string, unknown>
-    textContent = typeof p['text'] === 'string' ? p['text'] : null
+    const body = typeof p['text'] === 'string' ? p['text'] : null
+    emailSubject = typeof p['subject'] === 'string' ? p['subject'] : null
+    emailFrom = typeof p['from'] === 'string' ? p['from'] : null
+    // 件名も解析対象に含める（例: 件名「7/3ヨーク」に納品日と取引先が入っている転送メール運用。
+    // 件名を落とすと納品日が推定できず常に人間確認になる）
+    textContent = body != null ? (emailSubject ? `件名: ${emailSubject}\n\n${body}` : body) : null
   }
 
   if (!imageBuffer && !textContent) {
@@ -83,6 +91,22 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
         .maybeSingle()
       customerId = matched?.id ?? null
     }
+  }
+
+  // メールは送信元アドレス→件名キーワードの順で取引先を特定（マスタ駆動・lib/ingestion/match-customer.ts）
+  if (!customerId && receipt.channel === 'email') {
+    const { data: allCustomers } = await admin
+      .from('customers')
+      .select('id, channel_identifiers')
+      .eq('is_active', true)
+    customerId = matchEmailCustomer(
+      emailFrom,
+      emailSubject,
+      (allCustomers ?? []).map((c) => ({
+        id: c.id as string,
+        channelIdentifiers: c.channel_identifiers as { email?: string[]; subject_keywords?: string[] } | null,
+      })),
+    )
   }
 
   // 取引先別の学習ヒントを取得
@@ -215,9 +239,27 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
 
   const finalStatus = anyPendingReview ? 'pending_review' : 'approved'
 
+  // 解析結果を raw_payload に保存する（既存の text/subject/from は保持してマージ）。
+  // 要確認で注文化されなかった場合でも「何と読んだか」が残り、
+  // 影実行（/api/cron/shadow-diff）のv4突合と受信トレイ表示に使える。
+  const { data: currentReceipt } = await admin
+    .from('order_receipts')
+    .select('raw_payload')
+    .eq('id', receiptId)
+    .maybeSingle()
+  const mergedPayload = {
+    ...((currentReceipt?.raw_payload as Record<string, unknown> | null) ?? {}),
+    parsed_orders: result.orders,
+  }
+
   await admin
     .from('order_receipts')
-    .update({ status: finalStatus, customer_id: customerId ?? undefined, ocr_confidence: ocrConfidence })
+    .update({
+      status: finalStatus,
+      customer_id: customerId ?? undefined,
+      ocr_confidence: ocrConfidence,
+      raw_payload: mergedPayload,
+    })
     .eq('id', receiptId)
 
   if (finalStatus === 'pending_review') {

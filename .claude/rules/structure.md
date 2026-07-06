@@ -80,3 +80,26 @@ kojima-noen/
       もどす・問題記録＋直近の問題リスト）／/admin/lots ロット管理（圃場×収穫日×品目・出荷日一括紐付け）／
       積込写真（Storage bucket 'deliveries'・署名URL閲覧）／問題記録（delivery_events action='issue'）。
       曜日パターン等の統計拡張のみデータ蓄積後
+
+# 統合フェーズ（docs/phase2-app-integration-design.md 準拠・v4アプリの吸収）
+
+- [x] 統合 2A: 出荷帳票の移植 — 出荷表カード(/api/shipping-docs/sheet)・出荷ラベル＋出荷一覧表
+      (/api/shipping-docs/labels、Cut and Stack・端数強調)・/field/print(現場印刷、
+      STAFF_CAN_PRINT_DOCSで解放)。供給先は lib/format/destination.ts の
+      formatSupplyDestination(取引先＞納入先の紙面表記「ヨーク 東道野辺」/「寺崎」)に統一。
+      計算コアは lib/calculations/shipping-docs.ts(v4確定仕様の移植＋単体テスト)
+- [x] 統合 2B: v4品目・規格マスタ移行（migrations/0018、冪等・本番適用済み。胡瓜→キュウリ等は
+      別名で吸収、バラ・平箱系はv4運用実績どおり独立品目、荷姿は customer_id NULL の汎用登録）。
+      寺崎の手動受注は 出荷一覧のスマート追加 or /admin/orders/new で開始可能（運用定着の確認は現場側）
+- [x] 統合 2C: メール取り込みの汎用化＋影実行 — 取引先マッチングをマスタ駆動に
+      (lib/ingestion/match-customer.ts、channel_identifiers.email/subject_keywords。ヨークは
+      件名キーワードで特定=migrations/0019)。件名を解析対象に含め(納品日が件名にある転送運用)、
+      要確認止まりの解析結果も raw_payload.parsed_orders に保存。影実行は /api/cron/shadow-diff
+      (lib/shadow/、v4接続は設定 V4_SUPABASE_URL/KEY で。差分ゼロ3営業日で切替判定)。
+      残: IMAP/Gemini/V4接続の設定投入と数日の並行運用（運用側）
+- [x] 統合 2D(コード側): print_jobs移設（migrations/0020・v4エージェント互換スキーマ+RLS・
+      storage bucket 'print-jobs'・本番適用済み）／POST /api/print-jobs（共通レンダラー
+      lib/shipping-docs/render.ts でPDF生成→Storage→キュー投入）／/field/print に
+      「事務所で自動印刷」ボタンとキュー状況表示。切替手順は docs/cutover-2d.md
+      （エージェント.env切替・v4 cron停止・ロールバック含む）。現場切替の実施は運用側
+- [ ] 統合 2E: Discord自動化移植・v4退役

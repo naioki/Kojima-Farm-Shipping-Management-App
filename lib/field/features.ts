@@ -12,20 +12,23 @@ export interface StaffFeatures {
   createOrder: boolean
   reportSpec: boolean
   approve: boolean
+  printDocs: boolean
 }
 
 export async function getStaffFeatures(): Promise<StaffFeatures> {
-  const [ocr, createOrder, reportSpec, approve] = await Promise.all([
+  const [ocr, createOrder, reportSpec, approve, printDocs] = await Promise.all([
     getSetting(STAFF_FEATURE_KEYS.ocr),
     getSetting(STAFF_FEATURE_KEYS.createOrder),
     getSetting(STAFF_FEATURE_KEYS.reportSpec),
     getSetting(STAFF_FEATURE_KEYS.approve),
+    getSetting(STAFF_FEATURE_KEYS.printDocs),
   ])
   return {
     ocr: ocr === 'on',
     createOrder: createOrder === 'on',
     reportSpec: reportSpec === 'on',
     approve: approve === 'on',
+    printDocs: printDocs === 'on',
   }
 }
 
