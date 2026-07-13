@@ -39,6 +39,8 @@ export interface PendingOrder {
   customerId: string | null
   customerName: string
   customerColor: string | null
+  /** 確定済み納入先の表示名（未確定・納入先なしの取引先は null）。取引先＞納入先の表記に使う。 */
+  destinationName: string | null
   items: PendingOrderItem[]
   /** 最低確信度（null は確信度なし＝要注意） */
   minConfidence: number | null
@@ -102,6 +104,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
 
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
+  const destLabelById = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
   const destByCustomer = new Map<string, DestinationOption[]>()
   for (const d of destRows ?? []) {
     const arr = destByCustomer.get(d.customer_id) ?? []
@@ -156,6 +159,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       customerId: o.customer_id,
       customerName: o.customer_id ? (custName.get(o.customer_id) ?? '（不明な取引先）') : '取引先 未紐付け',
       customerColor: o.customer_id ? (custColor.get(o.customer_id) ?? null) : null,
+      destinationName: o.destination_id ? (destLabelById.get(o.destination_id) ?? null) : null,
       items: orderItems,
       minConfidence,
       needsDeliveryDate,
