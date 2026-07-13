@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
-import { renderShippingDocPdf } from '@/lib/shipping-docs/render'
+import { enqueuePrintJob } from '@/lib/shipping-docs/queue'
 
 export const runtime = 'nodejs'
 
@@ -35,40 +34,15 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 })
   const { date, docType, productId } = parsed.data
 
-  const rendered = await renderShippingDocPdf({ docType, date, productId })
-  if (!rendered.ok) return NextResponse.json({ error: rendered.error }, { status: rendered.status })
+  // PDF生成 → Storage保存 → 署名URL → キュー登録は lib/shipping-docs/queue.ts に集約
+  // （チャット自動化と共有）。キュー登録は利用者クライアントで行い RLS staff_insert を効かせる。
+  const result = await enqueuePrintJob(supabase, {
+    date,
+    docType,
+    productId,
+    requestedBy: user.id,
+  })
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
 
-  // Storage へ保存（非公開バケット）→ エージェント用の署名付きURL（1年）
-  const admin = createAdminClient()
-  const ts = Date.now()
-  const path = `${date}/${docType}${productId ? `_${productId.slice(0, 8)}` : ''}_${ts}.pdf`
-  const { error: uploadErr } = await admin.storage
-    .from('print-jobs')
-    .upload(path, rendered.buffer, { contentType: 'application/pdf', upsert: true })
-  if (uploadErr) return NextResponse.json({ error: `PDF保存失敗: ${uploadErr.message}` }, { status: 500 })
-
-  const { data: signed, error: signErr } = await admin.storage
-    .from('print-jobs')
-    .createSignedUrl(path, 365 * 24 * 3600)
-  if (signErr || !signed?.signedUrl) {
-    return NextResponse.json({ error: `署名URL発行失敗: ${signErr?.message ?? 'unknown'}` }, { status: 500 })
-  }
-
-  // キュー登録は利用者コンテキストで（RLS staff_insert が適用される）
-  const { data: job, error: insertErr } = await supabase
-    .from('print_jobs')
-    .insert({
-      doc_type: docType,
-      target_date: date,
-      product_id: productId ?? null,
-      pdf_url: signed.signedUrl,
-      requested_by: user.id,
-    })
-    .select('id')
-    .maybeSingle()
-  if (insertErr || !job) {
-    return NextResponse.json({ error: `キュー登録失敗: ${insertErr?.message ?? 'unknown'}` }, { status: 500 })
-  }
-
-  return NextResponse.json({ id: job.id })
+  return NextResponse.json({ id: result.id })
 }

@@ -11,6 +11,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
+      // 'server-only' は Next ビルド時のみ提供される副作用インポート。Node/vitest では
+      // 実体が解決できないため空スタブへ差し替え、server 専用モジュールを読み込めるようにする。
+      'server-only': path.resolve(__dirname, 'tests/stubs/server-only.ts'),
     },
   },
 })

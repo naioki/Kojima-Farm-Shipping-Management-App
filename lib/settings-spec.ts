@@ -8,7 +8,7 @@ import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
 import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from '@/lib/gemini/prompts'
 import { GEMINI_MODEL_OPTIONS } from '@/lib/gemini/models'
 
-export type SettingSection = 'issuer' | 'rules' | 'field' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'ops'
+export type SettingSection = 'issuer' | 'rules' | 'field' | 'ai' | 'automation' | 'ingest' | 'storage' | 'notify' | 'chat' | 'ops'
 /** 'prompt' は専用エディタで描画（保存に確認フレーズ入力が必要）。 */
 export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select' | 'prompt'
 
@@ -38,6 +38,7 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
   ingest: '注文の取り込み（FAX画像 / メール）',
   storage: '保管（Cloudflare R2）',
   notify: '通知（Discord / LINE WORKS）',
+  chat: 'チャット連携（Discord / LINE WORKS ボット）',
   ops: '運用',
 }
 
@@ -52,10 +53,11 @@ export const SECTION_DESCRIPTIONS: Partial<Record<SettingSection, string>> = {
     'FAX画像やメールを自動で取り込むための接続先です。FAXソフトから転送された注文メールは、ここで指定したメールボックスを監視して取り込みます（FAXソフト側「送信に使うメール」と同じ箱を指定）。',
   storage: '受信したFAX/PDFの原本を保管するクラウドストレージ（Cloudflare R2）の接続情報です。',
   notify: '注文の受信などを Discord / LINE WORKS に知らせる設定です。',
+  chat: 'Discord / LINE WORKS 上のボタンから承認・取込ができるチャットボットの接続設定です（上の「通知」とは別物）。',
   ops: '運用まわりの細かい設定です。ふだんは変更不要。',
 }
 
-export const SECTION_ORDER: SettingSection[] = ['issuer', 'rules', 'field', 'ai', 'automation', 'ingest', 'storage', 'notify', 'ops']
+export const SECTION_ORDER: SettingSection[] = ['issuer', 'rules', 'field', 'ai', 'automation', 'ingest', 'storage', 'notify', 'chat', 'ops']
 
 /** 現場（スタッフ）機能トグルのキー。サーバ/クライアントで共有して可視性・権限を判定する。 */
 export const STAFF_FEATURE_KEYS = {
@@ -223,6 +225,73 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   { key: 'LINE_WORKS_WEBHOOK_URL', label: 'LINE WORKS Webhook URL', section: 'notify', secret: true, kind: 'text' },
   { key: 'NOTIFY_DISCORD', label: 'Discord通知', section: 'notify', secret: false, kind: 'toggle', hint: 'on / off' },
   { key: 'NOTIFY_LINE_WORKS', label: 'LINE WORKS通知', section: 'notify', secret: false, kind: 'toggle', hint: 'on / off' },
+  // チャット連携（統合2E-2 Discordボット・後続2E-3 LINE WORKSボット）。上の「通知（Webhook）」とは別物。
+  {
+    key: 'DISCORD_PUBLIC_KEY',
+    label: 'Discord Public Key',
+    section: 'chat',
+    secret: true,
+    kind: 'text',
+    hint: 'Discord Developer Portal の Public Key（Interactions の署名検証に使用。hex文字列）',
+  },
+  {
+    key: 'DISCORD_BOT_TOKEN',
+    label: 'Discord Bot Token',
+    section: 'chat',
+    secret: true,
+    kind: 'text',
+    hint: 'ボタン付きメッセージをチャネルへ能動送信するための Bot Token。',
+  },
+  {
+    key: 'DISCORD_CHANNEL_ID',
+    label: 'Discord 通知先チャンネルID',
+    section: 'chat',
+    secret: false,
+    kind: 'text',
+    hint: '承認ボタン付きメッセージを能動送信する先のチャンネルID。',
+  },
+  {
+    key: 'ALLOWED_DISCORD_USERS',
+    label: '操作を許可する Discord ユーザーID',
+    section: 'chat',
+    secret: false,
+    kind: 'text',
+    placeholder: '123456789012345678,234567890123456789',
+    hint: 'カンマ区切りのDiscordユーザーID。空欄の場合は全員に操作（承認等）を許可します。',
+  },
+  {
+    key: 'CHAT_BOT_ACTOR_USER_ID',
+    label: 'チャット承認の実行者ユーザー',
+    section: 'chat',
+    secret: false,
+    kind: 'text',
+    placeholder: 'users.id（UUID）',
+    hint: 'Discord/LINE WORKSからの承認操作を、このアプリ内ユーザーとして実行します。未設定時は先頭の管理者ユーザーを使用。',
+  },
+  {
+    key: 'LINE_WORKS_BOT_ID',
+    label: 'LINE WORKS Bot ID',
+    section: 'chat',
+    secret: false,
+    kind: 'text',
+    hint: '統合2E-3（LINE WORKSボット）用。現時点では枠のみ。',
+  },
+  {
+    key: 'LINE_WORKS_API_TOKEN',
+    label: 'LINE WORKS APIトークン',
+    section: 'chat',
+    secret: true,
+    kind: 'text',
+    hint: '統合2E-3（LINE WORKSボット）用。現時点では枠のみ。',
+  },
+  {
+    key: 'ALLOWED_LINE_USERS',
+    label: '操作を許可する LINE WORKS ユーザーID',
+    section: 'chat',
+    secret: false,
+    kind: 'text',
+    hint: 'カンマ区切り。統合2E-3（LINE WORKSボット）用。現時点では枠のみ。',
+  },
   // 運用
   { key: 'CRON_SECRET', label: 'cron 共有シークレット', section: 'ops', secret: true, kind: 'text', hint: 'Cloud Scheduler からの取り込み呼び出しを検証' },
   // 影実行（統合2C）: v4本番との日次突合。URL/キーが空なら影実行は動かない（設定でON/OFF）
