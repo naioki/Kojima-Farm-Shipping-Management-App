@@ -102,4 +102,13 @@ kojima-noen/
       lib/shipping-docs/render.ts でPDF生成→Storage→キュー投入）／/field/print に
       「事務所で自動印刷」ボタンとキュー状況表示。切替手順は docs/cutover-2d.md
       （エージェント.env切替・v4 cron停止・ロールバック含む）。現場切替の実施は運用側
-- [ ] 統合 2E: Discord自動化移植・v4退役
+- [x] 統合 2E(コード側): チャット自動化を本アプリへ移植 — チャネル非依存のユースケース層
+      (lib/chat/use-cases.ts: 承認+印刷/再印刷/一覧、承認は既存ゲート app/api/orders/[id]/approve を
+      共通関数 lib/orders/approve.ts に抽出して共用・抜け道なし)＋Discord Interactions webhook
+      (app/api/chat/discord、Ed25519署名検証は node:crypto のみ)＋設定画面のチャット連携セクション。
+      Cloud Run が「CPUリクエスト時のみ・min-instances=0」(コスト優先)のため、承認/再印刷は同期実行、
+      メール取込は GET /api/cron/poll-email の self-invoke に設計。**ただしオーナー判断でボットは起動しない**
+      (承認・印刷・取込は Web アプリ /admin/approvals・/field/print・/admin/inbox で行う。Discord/
+      LINE WORKS/Google Chat いずれも不使用。コードは休眠・DISCORD_PUBLIC_KEY 未設定なら webhook は401)。
+      v4退役の手順は docs/retire-v4.md(2E-7)。**kojima-farm-backend はバックアップとして保持**。
+      残: v4停止の実施(運用側・docs/retire-v4.md に沿って)
