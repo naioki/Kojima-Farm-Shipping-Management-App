@@ -4,8 +4,6 @@ import { getPendingOrders, pendingReasons } from '@/lib/orders/pending'
 import { approveOrder } from '@/lib/orders/approve'
 import { enqueuePrintJob } from '@/lib/shipping-docs/queue'
 import { formatSupplyDestination } from '@/lib/format/destination'
-import { pollEmailOnce } from '@/lib/ingestion/poll-email'
-import { shiftDateStr } from '@/lib/dates'
 
 /**
  * チャット自動化（統合2E）のチャネル非依存ユースケース層。
@@ -239,50 +237,7 @@ export async function reprint(orderId: string, deliveryDate?: string): Promise<R
   }
 }
 
-// ---------------------------------------------------------------------------
-// 5. メール即時取込（指定日ぶんの受信サマリ）
-// ---------------------------------------------------------------------------
-
-export interface IngestEmailsResult {
-  success: boolean
-  error?: string
-  /** 指定日（JST 受信日ベース）に受信した order_receipts の件数。 */
-  newCount: number
-  /** うち要確認（status='pending_review'）の件数。 */
-  pendingCount: number
-}
-
-export async function ingestEmailsForDate(date: string): Promise<IngestEmailsResult> {
-  try {
-    // 取込は既存実装（lib/ingestion/poll-email.ts）を薄くラップするだけ。
-    const poll = await pollEmailOnce()
-    if (poll.error) return { success: false, error: poll.error, newCount: 0, pendingCount: 0 }
-
-    // 受信日（JST）でその日の受信を集計。timestamptz を JST 日の境界 [00:00, 翌00:00) で絞る。
-    const admin = createAdminClient()
-    const startJst = `${date}T00:00:00+09:00`
-    const endJst = `${shiftDateStr(date, 1)}T00:00:00+09:00`
-
-    const { count: newCount, error: newErr } = await admin
-      .from('order_receipts')
-      .select('id', { count: 'exact', head: true })
-      .gte('received_at', startJst)
-      .lt('received_at', endJst)
-    if (newErr) return { success: false, error: newErr.message, newCount: 0, pendingCount: 0 }
-
-    const { count: pendingCount, error: pendErr } = await admin
-      .from('order_receipts')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending_review')
-      .gte('received_at', startJst)
-      .lt('received_at', endJst)
-    if (pendErr) {
-      return { success: false, error: pendErr.message, newCount: newCount ?? 0, pendingCount: 0 }
-    }
-
-    return { success: true, newCount: newCount ?? 0, pendingCount: pendingCount ?? 0 }
-  } catch (e) {
-    console.error('[chat] ingestEmailsForDate failed', e)
-    return { success: false, error: errMsg(e), newCount: 0, pendingCount: 0 }
-  }
-}
+// メール取込（旧 ingestEmailsForDate）は 2E-2r で削除。IMAP+Gemini は同期化も背景実行もできず、
+// Discord からは独立リクエスト GET /api/cron/poll-email の self-invoke で起動する
+// （lib/chat/discord-handlers.ts runIngest）。poll-email はメールボックス全体を Message-ID で
+// 重複排除する設計で日付スコープを持たないため、日付別取込の in-process 経路は不要になった。

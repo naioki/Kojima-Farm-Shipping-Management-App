@@ -1,37 +1,38 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// ユースケース・送信・actor 解決はすべてモック（DB/HTTP には触れない）。
+// ユースケース・actor 解決・設定取得はすべてモック（DB/HTTP には触れない）。
 vi.mock('./use-cases', () => ({
   listPendingApprovals: vi.fn(),
   listRecentConfirmed: vi.fn(),
   approveAndPrint: vi.fn(),
   reprint: vi.fn(),
-  ingestEmailsForDate: vi.fn(),
 }))
-vi.mock('./discord-api', () => ({ sendFollowup: vi.fn(), postChannelMessage: vi.fn() }))
 vi.mock('./discord-actor', () => ({ resolveChatActorUserId: vi.fn() }))
+vi.mock('@/lib/settings', () => ({ getSetting: vi.fn() }))
 
 import { approveAndPrint, reprint } from './use-cases'
-import { sendFollowup } from './discord-api'
 import { resolveChatActorUserId } from './discord-actor'
+import { getSetting } from '@/lib/settings'
 import {
   runApproveAndPrint,
   runReprint,
+  runIngest,
   buildPreviewResponse,
   buildPrintCommandResponse,
   formatDateLabel,
 } from './discord-handlers'
 import type { PendingApprovalView } from './use-cases'
 
-const APP = 'app-1'
-const TOKEN = 'tok-1'
+type EmbedPayload = { embeds: Array<{ title: string; description: string }> }
+const embedOf = (res: { data?: Record<string, unknown> }) =>
+  (res.data as unknown as EmbedPayload).embeds[0]!
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('runApproveAndPrint', () => {
-  it('approve フローは approveAndPrint を正しい引数で呼び、成功を followup する', async () => {
+describe('runApproveAndPrint（同期・type:4 で結果 embed を返す）', () => {
+  it('approve フローは approveAndPrint を正しい引数で呼び、成功 embed を返す', async () => {
     vi.mocked(resolveChatActorUserId).mockResolvedValue({ ok: true, userId: 'user-admin' })
     vi.mocked(approveAndPrint).mockResolvedValue({
       success: true,
@@ -40,27 +41,23 @@ describe('runApproveAndPrint', () => {
       jobId: 'job-123',
     })
 
-    await runApproveAndPrint(APP, TOKEN, 'order-1', {})
+    const res = await runApproveAndPrint('order-1', {})
 
     expect(approveAndPrint).toHaveBeenCalledWith('order-1', {}, 'user-admin')
-    expect(sendFollowup).toHaveBeenCalledTimes(1)
-    const [app, token, payload] = vi.mocked(sendFollowup).mock.calls[0]!
-    expect(app).toBe(APP)
-    expect(token).toBe(TOKEN)
-    const embed = (payload as { embeds: Array<{ title: string }> }).embeds[0]!
-    expect(embed.title).toContain('✅')
+    expect(res.type).toBe(4)
+    expect(embedOf(res).title).toContain('✅')
   })
 
   it('日付指定ありの承認は deliveryDate を渡す', async () => {
     vi.mocked(resolveChatActorUserId).mockResolvedValue({ ok: true, userId: 'user-admin' })
     vi.mocked(approveAndPrint).mockResolvedValue({ success: true, orderId: 'order-1', deliveryDate: '2026-06-15' })
 
-    await runApproveAndPrint(APP, TOKEN, 'order-1', { deliveryDate: '2026-06-15' })
+    await runApproveAndPrint('order-1', { deliveryDate: '2026-06-15' })
 
     expect(approveAndPrint).toHaveBeenCalledWith('order-1', { deliveryDate: '2026-06-15' }, 'user-admin')
   })
 
-  it('ゲート拒否の日本語 error がそのまま followup に載る', async () => {
+  it('ゲート拒否の日本語 error がそのまま error embed に載る', async () => {
     vi.mocked(resolveChatActorUserId).mockResolvedValue({ ok: true, userId: 'user-admin' })
     vi.mocked(approveAndPrint).mockResolvedValue({
       success: false,
@@ -68,36 +65,88 @@ describe('runApproveAndPrint', () => {
       error: '納入先を選択してください',
     })
 
-    await runApproveAndPrint(APP, TOKEN, 'order-1', {})
+    const res = await runApproveAndPrint('order-1', {})
 
-    const [, , payload] = vi.mocked(sendFollowup).mock.calls[0]!
-    const embed = (payload as { embeds: Array<{ description: string }> }).embeds[0]!
-    expect(embed.description).toBe('納入先を選択してください')
+    expect(res.type).toBe(4)
+    expect(embedOf(res).description).toBe('納入先を選択してください')
   })
 
-  it('actor 解決失敗なら approveAndPrint を呼ばず日本語エラーを followup', async () => {
+  it('actor 解決失敗なら approveAndPrint を呼ばず日本語エラー embed を返す', async () => {
     vi.mocked(resolveChatActorUserId).mockResolvedValue({
       ok: false,
       error: '承認を実行できる管理者ユーザーが見つかりません。',
     })
 
-    await runApproveAndPrint(APP, TOKEN, 'order-1', {})
+    const res = await runApproveAndPrint('order-1', {})
 
     expect(approveAndPrint).not.toHaveBeenCalled()
-    const [, , payload] = vi.mocked(sendFollowup).mock.calls[0]!
-    const embed = (payload as { embeds: Array<{ description: string }> }).embeds[0]!
-    expect(embed.description).toContain('管理者ユーザーが見つかりません')
+    expect(embedOf(res).description).toContain('管理者ユーザーが見つかりません')
   })
 })
 
-describe('runReprint', () => {
-  it('reprint を呼び失敗時は error を followup', async () => {
+describe('runReprint（同期・type:4）', () => {
+  it('reprint を呼び失敗時は error embed を返す', async () => {
     vi.mocked(reprint).mockResolvedValue({ success: false, orderId: 'order-1', error: '納品日が未確定です' })
-    await runReprint(APP, TOKEN, 'order-1', undefined)
+    const res = await runReprint('order-1', undefined)
     expect(reprint).toHaveBeenCalledWith('order-1', undefined)
-    const [, , payload] = vi.mocked(sendFollowup).mock.calls[0]!
-    const embed = (payload as { embeds: Array<{ description: string }> }).embeds[0]!
-    expect(embed.description).toBe('納品日が未確定です')
+    expect(embedOf(res).description).toBe('納品日が未確定です')
+  })
+
+  it('成功時は再印刷完了 embed を返す', async () => {
+    vi.mocked(reprint).mockResolvedValue({
+      success: true,
+      orderId: 'order-1',
+      deliveryDate: '2026-07-15',
+      jobId: 'job-9',
+    })
+    const res = await runReprint('order-1', '2026-07-15')
+    expect(res.type).toBe(4)
+    expect(embedOf(res).title).toContain('🖨️')
+  })
+})
+
+describe('runIngest（poll-email を self-invoke ＋即 ack）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('CRON_SECRET があれば poll-email を x-cron-secret 付きで叩き、即 ack embed を返す', async () => {
+    vi.mocked(getSetting).mockResolvedValue('secret-xyz')
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await runIngest('https://app.example.com')
+
+    expect(getSetting).toHaveBeenCalledWith('CRON_SECRET')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('https://app.example.com/api/cron/poll-email')
+    expect((init as RequestInit).method).toBe('GET')
+    expect((init as { headers: Record<string, string> }).headers['x-cron-secret']).toBe('secret-xyz')
+    expect(res.type).toBe(4)
+    expect(embedOf(res).title).toContain('📥')
+  })
+
+  it('fetch が落ちても ack を返す（発火だけ担保・完走は待たない）', async () => {
+    vi.mocked(getSetting).mockResolvedValue('secret-xyz')
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await runIngest('https://app.example.com')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(embedOf(res).title).toContain('📥')
+  })
+
+  it('CRON_SECRET 未設定なら fetch せず error embed を返す', async () => {
+    vi.mocked(getSetting).mockResolvedValue(null)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await runIngest('https://app.example.com')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(embedOf(res).description).toContain('CRON_SECRET')
   })
 })
 
@@ -124,7 +173,7 @@ describe('buildPreviewResponse', () => {
 })
 
 describe('buildPrintCommandResponse', () => {
-  it('承認待ちは preview、確定済みは reprint ボタンになる', () => {
+  it('承認待ちは preview、確定済みは reprint、取込は単一 ingest ボタンになる', () => {
     const res = buildPrintCommandResponse(
       [
         {
@@ -141,7 +190,8 @@ describe('buildPrintCommandResponse', () => {
     const ids = rows.flatMap((r) => r.components.map((b) => b.custom_id))
     expect(ids).toContain('preview:o1')
     expect(ids).toContain('reprint:o2:2026-07-13')
-    expect(ids).toContain('ingest_pick')
+    expect(ids).toContain('ingest')
+    expect(ids).not.toContain('ingest_pick')
   })
 })
 

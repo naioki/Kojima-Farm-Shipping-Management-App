@@ -6,16 +6,17 @@
  * custom_id 一覧（Discord上限100文字。UUID(36)・日付(YYYY-MM-DD,10)ともに ':' を含まないので
  * 単純 split(':') で安全に分解できる）:
  *   preview:<orderId>              未確定注文の明細プレビュー＋承認/日付ボタン（同期応答）
- *   approve:<orderId>              納品日確定済み → そのまま承認して印刷（deferred→followup）
+ *   approve:<orderId>              納品日確定済み → そのまま承認して印刷（同期・type:4）
  *   approve_pick:<orderId>         納品日/納入先未確定 → 日付選択ボタンを出す（同期応答）
- *   approve_on:<orderId>:<date>    選んだ日付で承認して印刷（deferred→followup）
+ *   approve_on:<orderId>:<date>    選んだ日付で承認して印刷（同期・type:4）
  *   approve_other:<orderId>        日付を手入力するモーダルを開く
- *   approve_modal:<orderId>        ↑モーダル送信（date_input を resolveDateFromText で解決）
- *   reprint:<orderId>:<date>       確定済み受注の印刷キュー再投入（deferred→followup）
- *   ingest_pick                    メール取込の日付選択ボタンを出す
- *   ingest_on:<date>               その日の受信を取込→承認待ち一覧（deferred→followup）
- *   ingest_other                   取込日を手入力するモーダルを開く
- *   ingest_modal                   ↑モーダル送信
+ *   approve_modal:<orderId>        ↑モーダル送信（date_input を resolveDateFromText で解決・同期・type:4）
+ *   reprint:<orderId>:<date>       確定済み受注の印刷キュー再投入（同期・type:4）
+ *   ingest                         メール取込を起動（poll-email を self-invoke → 即 ack。日付スコープなし）
+ *
+ * 2E-2r: poll-email はメールボックス全体を Message-ID で重複排除する設計で日付スコープを持たない
+ * ため、取込の日付ピッカー（旧 ingest_pick/ingest_on/ingest_other/ingest_modal）は廃止し
+ * 単一トリガー ingest に一本化した。
  */
 
 export interface ParsedCustomId {

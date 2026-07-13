@@ -21,31 +21,22 @@ import {
 export const runtime = 'nodejs'
 
 /**
- * Discord Interactions Webhook（統合2E-2）。
+ * Discord Interactions Webhook（統合2E-2 / 2E-2r 改修）。
  * 「今日の受注を確認 → 承認 → 事務所プリンタに自動印刷」を Discord から操作する。
  * 承認は必ず 2E-1 のユースケース層（lib/chat/use-cases）を通す（DB直操作・RPC新設なし）。
  *
- * 3秒制限対策: 重い処理（取込・承認・印刷）は type:5（deferred）で即 ACK し、結果は followup
- * webhook で送る。一覧取得・プレビュー・日付選択など軽い処理は同期応答（type:4/9）。
- *
- * 注意（Cloud Run）: deferred の後続処理はレスポンス返却後に走る。Cloud Run で確実に完走させるには
- * CPU always-allocated もしくは min-instances>=1 が望ましい（レビュー確認ポイント）。
+ * 実行モデル（Cloud Run「CPUリクエスト時のみ割当＋min-instances=0」コスト優先設計に対応）:
+ *   レスポンス返却後の背景処理は CPU が絞られ完走保証がないため使わない。
+ *   - 承認・再印刷（approve/approve_on/approve_modal/reprint）: interaction リクエスト内で
+ *     同期実行し type:4（CHANNEL_MESSAGE_WITH_SOURCE）で結果 embed を即返す。3秒制限のトレードオフは
+ *     discord-handlers.ts の実行本体コメント参照（コールドスタート超過時も承認は完了・二重承認しない）。
+ *   - メール取込（ingest）: IMAP+Gemini で確実に 3秒超のため、独立リクエストとして full CPU で走る
+ *     GET /api/cron/poll-email を self-invoke（発火だけ担保して即 ack）。
+ *   一覧取得・プレビュー・日付選択など軽い処理は従来どおり同期応答（type:4/9）。
  */
-
-/** Response 返却後もバックグラウンド処理を継続させる（v4 BackgroundTasks 相当）。例外はログのみ。 */
-function fireAndForget(work: Promise<void>): void {
-  void work.catch((e) => {
-    console.error('[chat/discord] followup 実行に失敗', e)
-  })
-}
 
 function json(res: DiscordResponse): NextResponse {
   return NextResponse.json(res)
-}
-
-/** deferred（考え中…）ACK。 */
-function deferred(): DiscordResponse {
-  return { type: RESPONSE.DEFERRED_MESSAGE }
 }
 
 export async function POST(req: Request) {
@@ -83,9 +74,6 @@ export async function POST(req: Request) {
   if (interactionType === 1) {
     return json({ type: RESPONSE.PONG })
   }
-
-  const applicationId = String(body.application_id ?? '')
-  const token = String(body.token ?? '')
 
   // 4. 許可ユーザー判定。
   const member = body.member as { user?: { id?: string } } | undefined
@@ -126,8 +114,8 @@ export async function POST(req: Request) {
         }
         case 'approve': {
           const orderId = args[0] ?? ''
-          fireAndForget(runApproveAndPrint(applicationId, token, orderId, {}))
-          return json(deferred())
+          // 同期実行（3秒トレードオフは discord-handlers.ts 参照）。
+          return json(await runApproveAndPrint(orderId, {}))
         }
         case 'approve_pick': {
           const orderId = args[0] ?? ''
@@ -141,8 +129,7 @@ export async function POST(req: Request) {
         }
         case 'approve_on': {
           const [orderId, date] = [args[0] ?? '', args[1] ?? '']
-          fireAndForget(runApproveAndPrint(applicationId, token, orderId, { deliveryDate: date }))
-          return json(deferred())
+          return json(await runApproveAndPrint(orderId, { deliveryDate: date }))
         }
         case 'approve_other': {
           const orderId = args[0] ?? ''
@@ -150,25 +137,11 @@ export async function POST(req: Request) {
         }
         case 'reprint': {
           const [orderId, date] = [args[0] ?? '', args[1] ?? '']
-          fireAndForget(runReprint(applicationId, token, orderId, date || undefined))
-          return json(deferred())
+          return json(await runReprint(orderId, date || undefined))
         }
-        case 'ingest_pick': {
-          return json(
-            buildDateSelectorResponse(
-              '📅 取り込む受信日を選択してください:',
-              (date) => buildCustomId('ingest_on', date),
-              buildCustomId('ingest_other'),
-            ),
-          )
-        }
-        case 'ingest_on': {
-          const date = args[0] ?? ''
-          fireAndForget(runIngest(applicationId, token, date))
-          return json(deferred())
-        }
-        case 'ingest_other': {
-          return json(buildDateModalResponse(buildCustomId('ingest_modal')))
+        case 'ingest': {
+          // poll-email を self-invoke（独立リクエスト=full CPU で完走）。origin は受信 URL から導出。
+          return json(await runIngest(new URL(req.url).origin))
         }
         default:
           return json(ephemeralMessage('不明な操作です。'))
@@ -185,13 +158,7 @@ export async function POST(req: Request) {
       if (action === 'approve_modal') {
         const orderId = args[0] ?? ''
         if (!date) return json(ephemeralMessage('❌ 日付を認識できませんでした（例: 2026-06-15 / 6/15 / 今日）。'))
-        fireAndForget(runApproveAndPrint(applicationId, token, orderId, { deliveryDate: date }))
-        return json(deferred())
-      }
-      if (action === 'ingest_modal') {
-        if (!date) return json(ephemeralMessage('❌ 日付を認識できませんでした（例: 2026-06-15 / 6/15 / 今日）。'))
-        fireAndForget(runIngest(applicationId, token, date))
-        return json(deferred())
+        return json(await runApproveAndPrint(orderId, { deliveryDate: date }))
       }
       return json(ephemeralMessage('不明な入力です。'))
     }

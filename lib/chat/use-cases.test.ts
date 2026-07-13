@@ -5,7 +5,6 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 vi.mock('@/lib/orders/approve', () => ({ approveOrder: vi.fn() }))
 vi.mock('@/lib/shipping-docs/queue', () => ({ enqueuePrintJob: vi.fn() }))
 vi.mock('@/lib/orders/pending', () => ({ getPendingOrders: vi.fn(), pendingReasons: vi.fn() }))
-vi.mock('@/lib/ingestion/poll-email', () => ({ pollEmailOnce: vi.fn() }))
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { approveOrder } from '@/lib/orders/approve'

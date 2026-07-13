@@ -1,24 +1,26 @@
 import 'server-only'
 import {
-  listPendingApprovals,
   approveAndPrint,
   reprint,
-  ingestEmailsForDate,
   type PendingApprovalView,
   type ConfirmedOrderView,
 } from './use-cases'
 import { resolveChatActorUserId } from './discord-actor'
-import { sendFollowup } from './discord-api'
 import { buildCustomId } from './discord-custom-id'
+import { getSetting } from '@/lib/settings'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 /**
- * Discord Interactions のビルダー（同期応答用）と deferred 実行本体（followup 送信）。
+ * Discord Interactions のビルダー（同期応答用）と実行本体（interaction 応答を組み立てて返す）。
  *
- * - 承認は必ず 2E-1 のユースケース層（approveAndPrint / reprint / ingestEmailsForDate）を通す。
- *   ここから DB を直接叩いたり RPC を新設したりしない（抜け道を作らない）。
- * - 重い処理（取込・承認・印刷）は route 側で type:5（deferred）ACK 済み。ここでは結果を
- *   followup webhook で送るだけ。エラーは握りつぶさず利用者向け日本語で followup する。
+ * - 承認は必ず 2E-1 のユースケース層（approveAndPrint / reprint）を通す。ここから DB を
+ *   直接叩いたり RPC を新設したりしない（抜け道を作らない）。
+ * - 2E-2r: Cloud Run を「CPUリクエスト時のみ割当＋min-instances=0」（コスト優先）で運用するため、
+ *   レスポンス返却後の背景処理（旧 deferred+followup）は CPU が絞られ完走保証がない。よって
+ *   承認・再印刷は interaction リクエスト内で同期実行し type:4 で即返す（runApproveAndPrint /
+ *   runReprint は DiscordResponse を返す純粋な async 関数）。メール取込は IMAP+Gemini で確実に
+ *   3秒を超えるため同期化できないので、独立リクエストとして full CPU で走る poll-email を
+ *   self-invoke する（runIngest）。エラーは握りつぶさず利用者向け日本語 embed で返す。
  */
 
 // Discord Interaction レスポンス型（数値の意味はコメント参照）。
@@ -98,8 +100,9 @@ export function buildPrintCommandResponse(
     rows.push({ type: 1, components: buttons })
   }
 
-  // メール取込（その日の受信を取り込んで承認待ちを更新）。
-  rows.push({ type: 1, components: [button('📥 メールを取込む', buildCustomId('ingest_pick'), 2)] })
+  // メール取込（poll-email を self-invoke。メールボックス全体を Message-ID で重複排除するので
+  // 日付スコープは持たない → 単一トリガー ingest）。
+  rows.push({ type: 1, components: [button('📥 メールを取込む', buildCustomId('ingest'), 2)] })
 
   if (pending.length === 0 && confirmed.length === 0) {
     lines.push('📭 承認待ち・確定済みの受注がありません。メール取込を試してください。')
@@ -209,7 +212,14 @@ export function extractModalDateInput(body: Record<string, unknown>): string | n
 }
 
 // ---------------------------------------------------------------------------
-// followup ペイロード（deferred 後の結果通知）
+// 実行本体（interaction リクエスト内で同期実行し、type:4 の embed を返す）
+//
+// 3秒制限のトレードオフ（「CPUリクエスト時のみ割当＋min-instances=0」設計の許容点）:
+//   ウォーム時は 承認(数クエリ)＋1ページPDF生成＋Storage 投入まで 3秒内に収まる。
+//   min-instances=0 のコールドスタート時は 3秒を超え Discord 側が「アプリが応答しませんでした」と
+//   表示することがあるが、サーバ側の承認・印刷投入は完走している。approveOrder は既承認を 409 で
+//   弾く（二重承認しない）ため、利用者が再タップしても安全に「既に承認済み」を返す。これはコスト
+//   優先設計に伴う許容トレードオフ。always-allocated / min-instances>=1 にすれば解消する。
 // ---------------------------------------------------------------------------
 
 function errorPayload(message: string): Record<string, unknown> {
@@ -220,34 +230,28 @@ function successPayload(title: string, description: string): Record<string, unkn
   return { embeds: [{ title, description, color: COLOR.info }] }
 }
 
-// ---------------------------------------------------------------------------
-// deferred 実行本体（route が type:5 で ACK 済み → ここは followup を送るだけ）
-// ---------------------------------------------------------------------------
+/** 失敗 embed を type:4 応答として返す。 */
+function errorResponse(message: string): DiscordResponse {
+  return { type: RESPONSE.MESSAGE, data: errorPayload(message) }
+}
 
-/** approve/approve_on/approve_modal 共通の承認→印刷実行。 */
+/** approve/approve_on/approve_modal 共通の承認→印刷実行（同期・type:4 で結果 embed を返す）。 */
 export async function runApproveAndPrint(
-  applicationId: string,
-  token: string,
   orderId: string,
   opts: { deliveryDate?: string },
-): Promise<void> {
+): Promise<DiscordResponse> {
   const actor = await resolveChatActorUserId()
-  if (!actor.ok) {
-    await sendFollowup(applicationId, token, errorPayload(actor.error))
-    return
-  }
+  if (!actor.ok) return errorResponse(actor.error)
 
   const res = await approveAndPrint(orderId, opts, actor.userId)
   if (!res.success) {
     // ゲート拒否・印刷失敗などの日本語 error をそのまま利用者に返す。
-    await sendFollowup(applicationId, token, errorPayload(res.error ?? '不明なエラー'))
-    return
+    return errorResponse(res.error ?? '不明なエラー')
   }
 
-  await sendFollowup(
-    applicationId,
-    token,
-    successPayload(
+  return {
+    type: RESPONSE.MESSAGE,
+    data: successPayload(
       '✅ 承認 ＆ 印刷キュー登録完了',
       [
         `納品日: **${res.deliveryDate ?? '—'}**`,
@@ -256,25 +260,19 @@ export async function runApproveAndPrint(
         '🖨️ 事務所のPCで自動印刷が開始されます。',
       ].join('\n'),
     ),
-  )
+  }
 }
 
-/** reprint: 確定済み受注の印刷キュー再投入。 */
+/** reprint: 確定済み受注の印刷キュー再投入（同期・type:4）。 */
 export async function runReprint(
-  applicationId: string,
-  token: string,
   orderId: string,
   deliveryDate: string | undefined,
-): Promise<void> {
+): Promise<DiscordResponse> {
   const res = await reprint(orderId, deliveryDate)
-  if (!res.success) {
-    await sendFollowup(applicationId, token, errorPayload(res.error ?? '不明なエラー'))
-    return
-  }
-  await sendFollowup(
-    applicationId,
-    token,
-    successPayload(
+  if (!res.success) return errorResponse(res.error ?? '不明なエラー')
+  return {
+    type: RESPONSE.MESSAGE,
+    data: successPayload(
       '🖨️ 再印刷キュー登録完了',
       [
         `納品日: **${res.deliveryDate ?? '—'}**`,
@@ -283,42 +281,37 @@ export async function runReprint(
         '🖨️ 事務所のPCで自動印刷が開始されます。',
       ].join('\n'),
     ),
-  )
+  }
 }
 
-/** ingest: その日の受信メールを取り込み、承認待ち一覧を followup で返す。 */
-export async function runIngest(
-  applicationId: string,
-  token: string,
-  date: string,
-): Promise<void> {
-  const ing = await ingestEmailsForDate(date)
-  if (!ing.success) {
-    await sendFollowup(applicationId, token, errorPayload(ing.error ?? 'メール取込に失敗しました'))
-    return
+/**
+ * ingest: メール取込を起動する。IMAP+Gemini は確実に 3秒を超え同期化も背景実行もできないため、
+ * 独立した Cloud Run リクエスト（full CPU で確実に完走）として GET /api/cron/poll-email を
+ * self-invoke する。origin は route が受信 interaction の URL から導出して渡す。
+ *
+ * 完走は待たない: fetch の発火だけ担保して即 ack を返す（Promise.race で最大 ~800ms 待って、
+ * 接続が張られてから戻る）。CRON_SECRET は self エンドポイントの認証ヘッダに載せるだけで、
+ * ログにもレスポンスにも出さない。
+ */
+export async function runIngest(origin: string): Promise<DiscordResponse> {
+  const secret = await getSetting('CRON_SECRET')
+  if (!secret) {
+    return errorResponse('CRON_SECRETが未設定です。設定画面から登録してください。')
   }
 
-  const pending = await listPendingApprovals()
-  const summary = `📥 ${date} の受信: 新規 ${ing.newCount}件（うち要確認 ${ing.pendingCount}件）`
+  const url = `${origin}/api/cron/poll-email`
+  // verifyCronRequest が受け付けるヘッダ（x-cron-secret）で自分の cron エンドポイントを叩く。
+  const fire = fetch(url, { method: 'GET', headers: { 'x-cron-secret': secret } })
+    .then(() => undefined)
+    .catch(() => undefined)
+  // 送信の発火だけ担保して戻る（完走は待たない）。
+  await Promise.race([fire, new Promise<void>((resolve) => setTimeout(resolve, 800))])
 
-  if (!pending.success) {
-    // 取込は成功。一覧取得だけ失敗 → 取込結果は伝える（握りつぶさない）。
-    await sendFollowup(applicationId, token, {
-      content: `${summary}\n⚠️ 承認待ち一覧の取得に失敗しました: ${pending.error}`,
-    })
-    return
+  return {
+    type: RESPONSE.MESSAGE,
+    data: successPayload(
+      '📥 メールの取り込みを開始しました',
+      '数十秒後に /印刷 で確認してください。',
+    ),
   }
-
-  if (pending.items.length === 0) {
-    await sendFollowup(applicationId, token, { content: `${summary}\n📭 承認待ちの受注はありません。` })
-    return
-  }
-
-  const buttons = pending.items
-    .slice(0, 5)
-    .map((p) => button(`📋 ${p.customerName}`, buildCustomId('preview', p.orderId), 2))
-  await sendFollowup(applicationId, token, {
-    content: `${summary}\n📋 承認待ち ${pending.items.length}件（タップして確認・承認）`,
-    components: [{ type: 1, components: buttons }],
-  })
 }
