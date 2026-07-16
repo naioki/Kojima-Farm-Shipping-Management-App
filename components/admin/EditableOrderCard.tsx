@@ -9,6 +9,7 @@ import { ColorDot } from '@/components/ui/ColorDot'
 import { ApproveOrderButton } from '@/components/admin/ApproveOrderButton'
 import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
+import { formatJpDateShort } from '@/lib/dates'
 
 export interface PackConfigOption {
   id: string
@@ -164,7 +165,7 @@ export function EditableOrderCard({
           <ColorDot color={customerColor} name={customerName} size="md" className="mt-1" />
           <div className="min-w-0 flex-1">
             <p className="font-medium text-ink">{customerName}</p>
-            <p className="text-xs text-ink-soft">のうひん {deliveryDate ?? 'みてい'}</p>
+            <p className="text-xs text-ink-soft">のうひん {deliveryDate ? formatJpDateShort(deliveryDate) : 'みてい'}</p>
           </div>
         </div>
         {caution && (

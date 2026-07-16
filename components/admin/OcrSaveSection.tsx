@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, Plus } from 'lucide-react'
+import { AlertTriangle, Plus, ArrowLeftRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
-import { ConfirmModal } from '@/components/ui/Modal'
+import { Modal } from '@/components/ui/Modal'
+import { formatJpDate } from '@/lib/dates'
 
 interface ParsedOrder {
   customer_name: string | null
@@ -121,6 +122,8 @@ export function OcrSaveSection({ order, index, customers, products, destinations
   const [customerId, setCustomerId] = useState(() => bestMatchCustomerId(order.customer_name, customers))
   const [deliveryDate, setDeliveryDate] = useState(order.delivery_date ?? '')
   const [destinationId, setDestinationId] = useState('')
+  // 「取引先⇄納入先を入れ替え」実行後、納入先の自動マッチに使うヒントを上書きする（未実行なら通常のAI読取値を使う）
+  const [destHintOverride, setDestHintOverride] = useState<string | null>(null)
 
   // 選択中の取引先に紐づく納入先だけを候補にする
   const customerDestinations = destinations.filter((d) => d.customer_id === customerId)
@@ -128,11 +131,28 @@ export function OcrSaveSection({ order, index, customers, products, destinations
   // 取引先が変わったら納入先を自動マッチ（OCRの納入先名→無ければ取引先名で寄せる）／無ければクリア
   useEffect(() => {
     const ds = destinations.filter((d) => d.customer_id === customerId)
-    const hint = order.destination_name || order.customer_name
+    const hint = destHintOverride ?? (order.destination_name || order.customer_name)
     setDestinationId(ds.length > 0 ? bestMatchDestinationId(hint, ds) : '')
     // 取引先変更時のみ再選択する
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId])
+  }, [customerId, destHintOverride])
+
+  /**
+   * AIが取引先と納入先を逆に読んだ時のための入れ替え。
+   * 「納入先名」で取引先を再検索し、その取引先の納入先候補を「取引先名」で選び直す。
+   * 対応する取引先が見つからない場合は何もしない（新規登録は手動で行ってもらう）。
+   */
+  function swapCustomerDestination() {
+    if (!order.destination_name) return
+    const swapped = bestMatchCustomerId(order.destination_name, customers)
+    if (!swapped) {
+      toast.error('納入先名に一致する取引先が見つかりませんでした（先に取引先を新規登録してください）')
+      return
+    }
+    setDestHintOverride(order.customer_name)
+    setCustomerId(swapped)
+    toast.success('取引先と納入先を入れ替えました。内容を確認してください')
+  }
 
   // 同一キー（取引先×納入先×納品日）の既存注文の商品別数量。「前回X→今回Y」差分表示用。
   const [prevQty, setPrevQty] = useState<Record<string, number>>({})
@@ -171,7 +191,7 @@ export function OcrSaveSection({ order, index, customers, products, destinations
   )
   const [saving, setSaving] = useState(false)
   const [dupConfirmOpen, setDupConfirmOpen] = useState(false)
-  const [dupCount, setDupCount] = useState(0)
+  const [dupExisting, setDupExisting] = useState<{ id: string; created_at: string; updated_at: string; item_count: number }[]>([])
 
   // 取引先のインライン追加（未登録でも画面を離れずに登録できる＝二度手間防止）
   // リストは親(ManualOcrForm)が持つ customers を共有し、追加は onCustomerAdded で親へ通知する
@@ -261,8 +281,14 @@ export function OcrSaveSection({ order, index, customers, products, destinations
     )
   }
 
-  /** confirmDuplicate=true なら重複警告を無視して登録を強行する。 */
-  async function handleSave(confirmDuplicate = false) {
+  /**
+   * mode='create': 通常保存（重複があれば409でダイアログへ）
+   * mode='add_anyway': 重複を承知で新規の別注文として追加
+   * mode={replaceOrderId,expectedUpdatedAt}: 既存注文を置き換え（訂正・再送）
+   */
+  async function handleSave(
+    mode: 'create' | 'add_anyway' | { replaceOrderId: string; expectedUpdatedAt: string } = 'create',
+  ) {
     if (!customerId) { toast.error('取引先を選択してください'); return }
     if (!deliveryDate) { toast.error('納品日を入力してください'); return }
     const invalid = rows.filter((r) => !r.product_id || isNaN(Number(r.quantity)) || Number(r.quantity) <= 0)
@@ -270,41 +296,67 @@ export function OcrSaveSection({ order, index, customers, products, destinations
 
     setSaving(true)
     try {
+      const body: Record<string, unknown> = {
+        customer_id: customerId,
+        destination_id: destinationId || undefined,
+        delivery_date: deliveryDate,
+        items: rows.map((r) => ({
+          product_id: r.product_id,
+          product_name: r.product_name,
+          quantity: Number(r.quantity),
+          unit: r.unit,
+          unit_price: 0,
+          tax_rate: 8,
+          // 入り数が入っていれば規格マスタ保存用に送る（任意）
+          packs_per_case: r.packsPerCase.trim() !== '' && Number(r.packsPerCase) > 0
+            ? Number(r.packsPerCase)
+            : undefined,
+        })),
+      }
+      if (mode === 'add_anyway') {
+        body.confirm_duplicate = true
+      } else if (typeof mode === 'object') {
+        body.replace_order_id = mode.replaceOrderId
+        body.expected_updated_at = mode.expectedUpdatedAt
+      }
+
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: customerId,
-          destination_id: destinationId || undefined,
-          delivery_date: deliveryDate,
-          confirm_duplicate: confirmDuplicate,
-          items: rows.map((r) => ({
-            product_id: r.product_id,
-            product_name: r.product_name,
-            quantity: Number(r.quantity),
-            unit: r.unit,
-            unit_price: 0,
-            tax_rate: 8,
-            // 入り数が入っていれば規格マスタ保存用に送る（任意）
-            packs_per_case: r.packsPerCase.trim() !== '' && Number(r.packsPerCase) > 0
-              ? Number(r.packsPerCase)
-              : undefined,
-          })),
-        }),
+        body: JSON.stringify(body),
       })
       const json = (await res.json().catch(() => ({}))) as {
         error?: string
         duplicate?: boolean
-        existing?: { id: string; item_count: number; created_at: string }[]
+        conflict?: boolean
+        existing?: { id: string; created_at: string; updated_at: string; item_count: number }[]
+        orderId?: string
+        replaced?: boolean
+        warnings?: Record<string, { type: 'high' | 'low'; ratio: number; histMax: number; histMin: number }>
       }
-      // 409 = 同一取引先×納品日の既存注文あり。警告ダイアログを出して判断を仰ぐ。
+      // 409 = 同一取引先×納品日の既存注文あり。3択ダイアログ（置き換え／追加／キャンセル）へ。
       if (res.status === 409 && json.duplicate) {
-        setDupCount(json.existing?.length ?? 1)
+        setDupExisting(json.existing ?? [])
         setDupConfirmOpen(true)
         return
       }
+      // 409 = 置き換え対象が他の人に更新された（楽観ロック）。保存し直しを促す。
+      if (res.status === 409 && json.conflict) {
+        toast.error(json.error ?? '他の人がこの注文を変更しました。画面を更新してください')
+        router.refresh()
+        return
+      }
       if (!res.ok) throw new Error(json.error ?? `保存失敗 (${res.status})`)
-      toast.success('注文を登録しました')
+
+      const warnEntries = Object.entries(json.warnings ?? {})
+      if (warnEntries.length > 0) {
+        const names = warnEntries
+          .map(([pid]) => rows.find((r) => r.product_id === pid)?.product_name ?? pid)
+          .join('・')
+        toast(`数量が普段と大きく違います（${names}）。念のため確認してください`, { icon: '⚠️', duration: 8000 })
+      }
+
+      toast.success(json.replaced ? '注文を置き換えました' : '注文を登録しました')
       router.push('/admin/orders')
       router.refresh()
     } catch (e) {
@@ -409,13 +461,26 @@ export function OcrSaveSection({ order, index, customers, products, destinations
       {/* 納入先（届け先）。取引先選択中に表示。「取引先 ＞ 納入先」。未登録ならその場で追加できる。 */}
       {customerId && (
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-soft">
-            納入先（届け先）
-            <span className="ml-1 text-ink-faint">
-              {customers.find((c) => c.id === customerId)?.name} ＞ …
-              {order.destination_name && <span className="ml-1">（AI読取: {order.destination_name}）</span>}
-            </span>
-          </label>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <label className="block text-xs font-medium text-ink-soft">
+              納入先（届け先）
+              <span className="ml-1 text-ink-faint">
+                {customers.find((c) => c.id === customerId)?.name} ＞ …
+                {order.destination_name && <span className="ml-1">（AI読取: {order.destination_name}）</span>}
+              </span>
+            </label>
+            {order.destination_name && (
+              <button
+                type="button"
+                onClick={swapCustomerDestination}
+                title="AIが取引先と納入先を逆に読んだ場合に、入れ替えて選び直します"
+                className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+              >
+                <ArrowLeftRight className="h-3 w-3" aria-hidden />
+                取引先と入れ替え
+              </button>
+            )}
+          </div>
           {!addingDest ? (
             <div className="flex items-center gap-2">
               {customerDestinations.length > 0 && (
@@ -559,25 +624,93 @@ export function OcrSaveSection({ order, index, customers, products, destinations
       </div>
 
       <div className="flex justify-end">
-        <Button variant="primary" onClick={() => handleSave(false)} isLoading={saving} disabled={saving}>
+        <Button variant="primary" onClick={() => handleSave('create')} isLoading={saving} disabled={saving}>
           注文として保存
         </Button>
       </div>
 
-      {/* 重複警告（同一取引先×納品日の既存注文あり）。承認すれば登録を強行する。 */}
-      <ConfirmModal
+      {/* 重複警告（同一取引先×納品日の既存注文あり）。時間差で数量違いの再送を2重登録してしまう
+          事故を防ぐため、単純な「承知で登録」ではなく「既存を置き換え／別注文として追加」を選ばせる。 */}
+      <Modal
         open={dupConfirmOpen}
         onClose={() => setDupConfirmOpen(false)}
-        onConfirm={() => {
-          setDupConfirmOpen(false)
-          void handleSave(true)
-        }}
         title="重複の可能性"
-        message={`この取引先・納品日（${deliveryDate}）の注文が既に ${dupCount} 件あります。FAXの再送・二重読み取りの可能性があります。それでも新しい注文として登録しますか？`}
-        confirmLabel="重複を承知で登録"
-        danger
-        isLoading={saving}
-      />
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setDupConfirmOpen(false)} disabled={saving}>
+              キャンセル
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={saving}
+              onClick={() => { setDupConfirmOpen(false); void handleSave('add_anyway') }}
+            >
+              別の注文として追加
+            </Button>
+            {dupExisting.length === 1 && (
+              <Button
+                variant="primary"
+                size="sm"
+                isLoading={saving}
+                onClick={() => {
+                  const d = dupExisting[0]!
+                  setDupConfirmOpen(false)
+                  void handleSave({ replaceOrderId: d.id, expectedUpdatedAt: d.updated_at })
+                }}
+              >
+                既存を置き換える（訂正・再送）
+              </Button>
+            )}
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-ink-soft">
+          <p>
+            この取引先・納品日（{formatJpDate(deliveryDate)}）の注文が既に <strong className="text-ink">{dupExisting.length}件</strong> あります。
+            FAXの再送・時間差での重複読み取りの可能性があります。
+          </p>
+          {dupExisting.length === 1 && hasPrev && (
+            <div className="space-y-1 rounded border border-line bg-bg-soft px-3 py-2">
+              <p className="text-xs font-semibold text-ink">既存注文との差分（今回の入力内容との比較）</p>
+              {rows.map((r, i) => {
+                if (!r.product_id) return null
+                const prev = prevQty[r.product_id]
+                if (prev == null) {
+                  return (
+                    <p key={i} className="text-xs font-bold text-harvest-700">
+                      {r.product_name}：既存になし → 今回 {r.quantity || '?'}（新規追加）
+                    </p>
+                  )
+                }
+                if (Number(r.quantity) !== prev) {
+                  return (
+                    <p key={i} className="text-xs font-bold text-alert">
+                      {r.product_name}：{prev} → {r.quantity || '?'}（変更）
+                    </p>
+                  )
+                }
+                return (
+                  <p key={i} className="text-xs text-ink-faint">
+                    {r.product_name}：{prev}（同じ）
+                  </p>
+                )
+              })}
+            </div>
+          )}
+          {dupExisting.length === 1 ? (
+            <p className="text-xs text-ink-faint">
+              「既存を置き換える」は<strong className="text-ink">訂正・再送で数字が変わった時</strong>に使います（1件のまま更新）。
+              「別の注文として追加」は<strong className="text-ink">本当に2便ある時</strong>に使います。
+            </p>
+          ) : (
+            <p className="text-xs text-alert">
+              既存注文が複数あるため、この画面からは自動で置き換え対象を決められません。内容を確認のうえ
+              「別の注文として追加」するか、先に注文一覧で不要な注文を削除してください。
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

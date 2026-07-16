@@ -23,3 +23,23 @@ export function shiftDateStr(date: string, days: number): string {
   dt.setUTCDate(dt.getUTCDate() + days)
   return dt.toISOString().slice(0, 10)
 }
+
+const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土']
+
+/** YYYY-MM-DD → "2026年7月15日"（日本で一般的な年月日順）。不正な値はそのまま返す。 */
+export function formatJpDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return dateStr
+  return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日`
+}
+
+/** YYYY-MM-DD → "7/15(水)"（一覧・カードの省スペース表示・曜日付き）。不正な値はそのまま返す。 */
+export function formatJpDateShort(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return dateStr
+  const [, y, mo, d] = m
+  const wd = WEEKDAY_JA[new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d))).getUTCDay()]
+  return `${Number(mo)}/${Number(d)}(${wd})`
+}
