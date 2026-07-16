@@ -91,6 +91,7 @@ export default async function FieldApprovalsPage() {
                 destinationOptions={o.destinationOptions}
                 reasons={pendingReasons(o)}
                 items={o.items}
+                receipt={o.receipt}
                 approveLabel="なおして しょうにん"
                 size="lg"
               />

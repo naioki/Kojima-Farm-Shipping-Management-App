@@ -42,6 +42,7 @@ function pendingOrderFixture(overrides: Partial<PendingOrder> = {}): PendingOrde
     needsDestination: true,
     destinationOptions: [{ id: 'd1', label: '東道野辺' }],
     staffApprovable: false,
+    receipt: null,
     items: [
       {
         id: 'i1',

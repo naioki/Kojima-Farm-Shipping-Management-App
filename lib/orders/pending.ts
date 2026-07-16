@@ -32,6 +32,20 @@ export interface DestinationOption {
   label: string
 }
 
+/** 承認画面で原本（FAX画像/PDF・メール本文）を比較表示するための最小情報。 */
+export interface ReceiptOriginalInfo {
+  id: string
+  channel: string
+  /** R2に画像/PDFがあるか（FAXはほぼ常にtrue。テキストのみのメールはfalse） */
+  hasOriginal: boolean
+  /** テキストメールの本文（原本画像が無い場合の表示用） */
+  emailText: string | null
+  /** 「同じFAXに追記して再送」された差分受信か */
+  isRevision: boolean
+  /** 再送の場合の元受信（無ければ null） */
+  parent: { id: string; hasOriginal: boolean; emailText: string | null } | null
+}
+
 export interface PendingOrder {
   id: string
   source: string
@@ -52,6 +66,8 @@ export interface PendingOrder {
   destinationOptions: DestinationOption[]
   /** スタッフでも承認できるか（高確信・取引先一致・納品日確定） */
   staffApprovable: boolean
+  /** 受信原本（手動入力・ポータル注文は null＝原本なし） */
+  receipt: ReceiptOriginalInfo | null
 }
 
 /** 要確認の理由（やさしい日本語のバッジ／注意喚起に使う・admin/field 共通）。 */
@@ -101,6 +117,30 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
         .eq('is_active', true)
         .in('product_id', productIds)
     : { data: [] as { id: string; product_id: string; customer_id: string | null; label: string }[] }
+
+  // 受信原本（承認画面での比較表示用）。手動入力・ポータル注文は receipt が無い。
+  const { data: receiptRows } = await supabase
+    .from('order_receipts')
+    .select('id, order_id, channel, r2_key, raw_payload, is_revision, parent_id')
+    .in('order_id', orderIds)
+
+  const parentIds = [...new Set((receiptRows ?? []).map((r) => r.parent_id).filter(Boolean))] as string[]
+  const { data: parentRows } = parentIds.length
+    ? await supabase.from('order_receipts').select('id, r2_key, raw_payload').in('id', parentIds)
+    : { data: [] as { id: string; r2_key: string | null; raw_payload: unknown }[] }
+  const parentById = new Map((parentRows ?? []).map((p) => [p.id, p]))
+
+  const emailTextOf = (raw: unknown): string | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const text = (raw as { text?: unknown }).text
+    return typeof text === 'string' && text.trim() ? text : null
+  }
+
+  // 1注文につき受信は1件想定（process-receipt.ts が受信ごとに新規orderを作る）。複数あれば最新を使う。
+  const receiptByOrder = new Map<string, NonNullable<typeof receiptRows>[number]>()
+  for (const r of receiptRows ?? []) {
+    if (!receiptByOrder.has(r.order_id)) receiptByOrder.set(r.order_id, r)
+  }
 
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
@@ -152,6 +192,24 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
     const staffApprovable =
       Boolean(o.customer_id) && !needsDeliveryDate && !needsDestination && !needsPackConfig && allConfident
 
+    const rr = receiptByOrder.get(o.id)
+    const receipt: ReceiptOriginalInfo | null = rr
+      ? {
+          id: rr.id,
+          channel: rr.channel,
+          hasOriginal: Boolean(rr.r2_key),
+          emailText: emailTextOf(rr.raw_payload),
+          isRevision: Boolean(rr.is_revision),
+          parent:
+            rr.parent_id && parentById.has(rr.parent_id)
+              ? (() => {
+                  const p = parentById.get(rr.parent_id)!
+                  return { id: p.id, hasOriginal: Boolean(p.r2_key), emailText: emailTextOf(p.raw_payload) }
+                })()
+              : null,
+        }
+      : null
+
     return {
       id: o.id,
       source: o.source,
@@ -166,6 +224,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       needsDestination,
       destinationOptions,
       staffApprovable,
+      receipt,
     }
   }).filter((o): o is PendingOrder => o !== null)
 }
