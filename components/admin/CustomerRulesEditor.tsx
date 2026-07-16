@@ -15,6 +15,12 @@ export interface RuleRow {
   is_default_set: boolean
   default_quantity: number | null
   fraction_policy: FractionPolicy
+  /** ラベル/シール指定（例: "Oisixラベル"/"農園独自"）。DBにはあったがこれまで未編集だった項目。 */
+  label_spec: string | null
+  /** テープ色（例: "透明"/"黄"/"赤"） */
+  tape_color: string | null
+  /** 固定の梱包指示（毎回同じ注意事項。その場限りの追記事項＝order_items.line_noteとは別） */
+  packing_notes: string | null
 }
 
 export interface CustomerRulesEditorProps {
@@ -40,6 +46,9 @@ const EMPTY: RuleRow = {
   is_default_set: false,
   default_quantity: null,
   fraction_policy: 'confirm',
+  label_spec: null,
+  tape_color: null,
+  packing_notes: null,
 }
 
 const numOrNull = (s: string): number | null => {
@@ -85,6 +94,9 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
           is_default_set: row.is_default_set,
           default_quantity: row.default_quantity,
           fraction_policy: row.fraction_policy,
+          label_spec: row.label_spec || null,
+          tape_color: row.tape_color || null,
+          packing_notes: row.packing_notes || null,
         }),
       })
       if (!res.ok) {
@@ -113,6 +125,9 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
             <th className="px-2 py-2 font-medium">荷姿</th>
             <th className="px-2 py-2 font-medium">規格</th>
             <th className="px-2 py-2 font-medium">カード</th>
+            <th className="px-2 py-2 font-medium">ラベル/シール</th>
+            <th className="px-2 py-2 font-medium">テープ色</th>
+            <th className="px-2 py-2 font-medium">固定の梱包指示</th>
             <th className="px-2 py-2 font-medium">いつものセット</th>
             <th className="px-2 py-2 font-medium">既定数量</th>
             <th className="px-2 py-2 font-medium">端数</th>
@@ -164,6 +179,33 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                     onChange={(e) => patch(p.id, { has_card: e.target.checked })}
                     aria-label={`${p.name} のカード同梱`}
                     className="h-5 w-5 accent-earth-600"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    type="text"
+                    value={row.label_spec ?? ''}
+                    onChange={(e) => patch(p.id, { label_spec: e.target.value })}
+                    className={cn(cellInput, 'w-32')}
+                    placeholder="Oisixラベル 等"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    type="text"
+                    value={row.tape_color ?? ''}
+                    onChange={(e) => patch(p.id, { tape_color: e.target.value })}
+                    className={cn(cellInput, 'w-20')}
+                    placeholder="透明/黄/赤"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    type="text"
+                    value={row.packing_notes ?? ''}
+                    onChange={(e) => patch(p.id, { packing_notes: e.target.value })}
+                    className={cn(cellInput, 'w-40')}
+                    placeholder="毎回同じ注意事項"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">

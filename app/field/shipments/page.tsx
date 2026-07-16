@@ -1,6 +1,6 @@
 import { CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { formatQty } from '@/lib/calculations/format-qty'
@@ -10,6 +10,7 @@ import { ShipmentGroupRows } from '@/components/field/ShipmentGroupRows'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import type { SpecWarning } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,16 @@ export default async function ShipmentsPage({
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const supabase = createClient()
 
+  // 「規格を直す」導線の出し分け用（admin＝取引先詳細に直リンク、staff＝規格を報告）。
+  const user = await getAuthedUser()
+  const { data: profile } = user
+    ? await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+    : { data: null }
+  const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
+  const isAdmin = role === 'admin'
+  const staffFeatures = await getStaffFeatures()
+  const canReportSpec = canStaffUse('reportSpec', role, staffFeatures)
+
   // ① その日の出荷日を持つ注文（型安全のため埋め込みを使わず段階取得）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
@@ -47,7 +58,7 @@ export default async function ShipmentsPage({
     ? (
         await supabase
           .from('order_items')
-          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings, pack_config_id')
+          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings, pack_config_id, rule_id')
           .in('order_id', orderIds)
           .order('product_name')
       ).data ?? []
@@ -73,14 +84,30 @@ export default async function ShipmentsPage({
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
   const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
 
-  // 荷姿（明細に紐づく pack_config）を取得して表示に使う
+  // 荷姿（明細に紐づく pack_config）を取得して表示に使う。needs_manual_confirm は
+  // 「組合指定等、自動確定せず人手確認」の警告に使う（現場が気づかず出荷する事故を防ぐ）。
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
   const { data: packRows } = packIds.length
-    ? await supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
-    : { data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[] }
+    ? await supabase
+        .from('pack_configs')
+        .select('id, base_per_selling, selling_unit_label, needs_manual_confirm')
+        .in('id', packIds)
+    : { data: [] as { id: string; base_per_selling: number; selling_unit_label: string; needs_manual_confirm: boolean }[] }
   const packById = new Map(
     (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
   )
+  const needsConfirmByPack = new Map((packRows ?? []).map((p) => [p.id, p.needs_manual_confirm]))
+
+  // マスタの梱包情報（ラベル/テープ色/固定の梱包指示/入り数）。order_items.rule_id で紐付け、
+  // 参考表示のみ（編集は取引先詳細の規格編集で行う。ここでの上書きはガバナンスを壊す）。
+  const ruleIds = [...new Set(items.map((i) => i.rule_id).filter(Boolean))] as string[]
+  const { data: ruleRows } = ruleIds.length
+    ? await supabase
+        .from('customer_product_rules')
+        .select('id, label_spec, tape_color, packing_notes, packs_per_case')
+        .in('id', ruleIds)
+    : { data: [] as { id: string; label_spec: string | null; tape_color: string | null; packing_notes: string | null; packs_per_case: number | null }[] }
+  const ruleById = new Map((ruleRows ?? []).map((r) => [r.id, r]))
 
   // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）
   const counts = { not_started: 0, interrupted: 0, packed: 0, shipped: 0 }
@@ -171,6 +198,7 @@ export default async function ShipmentsPage({
                 rows={rows.map((it) => {
                   const custId = orderToCustomer.get(it.order_id) ?? ''
                   const destId = orderToDestination.get(it.order_id)
+                  const rule = it.rule_id ? ruleById.get(it.rule_id) : null
                   return {
                     itemId: it.id,
                     customerName: customerName.get(custId) ?? '—',
@@ -191,6 +219,15 @@ export default async function ShipmentsPage({
                     initialShippedQty: it.shipped_qty,
                     initialFieldNote: it.field_note,
                     specWarnings: (it.spec_warnings as SpecWarning[] | null),
+                    masterLabelSpec: rule?.label_spec ?? null,
+                    masterTapeColor: rule?.tape_color ?? null,
+                    masterPackingNotes: rule?.packing_notes ?? null,
+                    masterPacksPerCase: rule?.packs_per_case ?? null,
+                    needsManualConfirm: it.pack_config_id ? (needsConfirmByPack.get(it.pack_config_id) ?? false) : false,
+                    customerId: custId || null,
+                    productId: it.product_id,
+                    canEditRulesDirectly: isAdmin,
+                    canReportSpec,
                   }
                 })}
               />

@@ -16,6 +16,14 @@ const STATUS_TEXT: Record<FieldStatus, string> = {
   shipped: 'text-ink-faint',
 }
 
+// 紙の運用（パック済み＝数字を○で囲む／出荷済み＝線を引く）をそのまま再現する。
+// アイコンだけでなく数字自体の「形」も変えることで、色だけに頼らない（design.md WCAG AA）。
+const QTY_SHAPE: Record<FieldStatus, string> = {
+  not_started: '',
+  packed: 'rounded-full border-2 border-harvest-500 px-1.5',
+  shipped: 'line-through decoration-2',
+}
+
 export interface MatrixCellProps {
   itemId: string
   initialStatus: FieldStatus
@@ -89,7 +97,7 @@ export function MatrixCell({
       )}
     >
       <Icon className="h-5 w-5" aria-hidden />
-      <span className="num text-xs text-ink">{quantityText}</span>
+      <span className={cn('num text-xs text-ink', QTY_SHAPE[status])}>{quantityText}</span>
       <span className="sr-only">{meta.label}</span>
     </button>
   )

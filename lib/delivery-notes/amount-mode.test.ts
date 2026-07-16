@@ -8,15 +8,15 @@ describe('parseAmountMode', () => {
     expect(parseAmountMode('none')).toBe('none')
   })
 
-  it('未知値・null・空は fallback（既定 full）', () => {
-    expect(parseAmountMode('xxx')).toBe('full')
-    expect(parseAmountMode(null)).toBe('full')
-    expect(parseAmountMode(undefined)).toBe('full')
-    expect(parseAmountMode('')).toBe('full')
+  it('未知値・null・空は fallback（既定 none＝金額なし。誤った金額を印字しない安全側）', () => {
+    expect(parseAmountMode('xxx')).toBe('none')
+    expect(parseAmountMode(null)).toBe('none')
+    expect(parseAmountMode(undefined)).toBe('none')
+    expect(parseAmountMode('')).toBe('none')
   })
 
   it('fallback を明示できる', () => {
-    expect(parseAmountMode(null, 'none')).toBe('none')
+    expect(parseAmountMode(null, 'full')).toBe('full')
     expect(parseAmountMode('bad', 'blank')).toBe('blank')
   })
 })

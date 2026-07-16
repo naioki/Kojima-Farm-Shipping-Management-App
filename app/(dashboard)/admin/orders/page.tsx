@@ -8,11 +8,20 @@ import { OrderStatusBadge, sourceLabel, ORDER_STATUS_OPTIONS } from '@/component
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { formatJpDateShort } from '@/lib/dates'
+import { formatJpDate, formatJpDateShort, jstTodayStr } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
 const mdShort = (d: string | null) => (d ? formatJpDateShort(d) : '—')
+
+/** 今月の初日・末日（JST基準）。受注一覧の既定期間に使う。 */
+function currentMonthRange(): { start: string; end: string } {
+  const today = jstTodayStr() // YYYY-MM-DD
+  const [y, m] = today.split('-').map(Number) as [number, number]
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate() // 翌月0日＝今月末日
+  const mm = String(m).padStart(2, '0')
+  return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(lastDay).padStart(2, '0')}` }
+}
 
 const inputCls =
   'h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100'
@@ -22,24 +31,34 @@ const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v
 /**
  * 受注一覧（管理者）。状態・取引先・期間で絞り込み、各行から受注詳細へ遷移する。
  * 絞り込み条件はそのまま CSV 出力にも適用される。承認待ちだけは /admin/approvals。
+ * 期間は未指定なら「今月」を既定にする（実務で見るのはほぼ今月。全件は重く目的も薄い）。
+ * 既定が効いていることは画面に明示し、「全期間」(?all=1) でいつでも外せる。
  */
 export default async function AdminOrdersPage({
   searchParams,
 }: {
-  searchParams: { status?: string; customerId?: string; start?: string; end?: string }
+  searchParams: { status?: string; customerId?: string; start?: string; end?: string; all?: string }
 }) {
   const guard = await requireAdmin('受注一覧は管理者のみです。')
   if (guard) return guard
 
   const supabase = createClient()
 
+  const showAll = first(searchParams.all) === '1'
+  const rawStart = first(searchParams.start)
+  const rawEnd = first(searchParams.end)
+  // 期間の指定も「全期間」指定も無い＝初回表示 → 今月を既定にする
+  const usingDefaultPeriod = !showAll && !rawStart && !rawEnd
+  const period = usingDefaultPeriod ? currentMonthRange() : { start: rawStart, end: rawEnd }
+
   const filter: OrderFilter = {
     status: first(searchParams.status),
     customerId: first(searchParams.customerId),
-    start: first(searchParams.start),
-    end: first(searchParams.end),
+    start: period.start,
+    end: period.end,
   }
-  const hasFilter = Boolean(filter.status || filter.customerId || filter.start || filter.end)
+  // 既定の「今月」は絞り込み扱いにしない（クリアの対象はユーザーが自分で入れた条件）
+  const hasFilter = Boolean(filter.status || filter.customerId || (!usingDefaultPeriod && (filter.start || filter.end)))
 
   const csvQuery = new URLSearchParams()
   if (filter.status) csvQuery.set('status', filter.status)
@@ -88,8 +107,23 @@ export default async function AdminOrdersPage({
       </div>
 
       {/* 絞り込みバー（GET フォーム：JS不要・URLに条件が残る） */}
-      <Card className="p-3">
+      <Card className="space-y-2 p-3">
+        {/* 既定で今月に絞っていることを必ず明示する（黙って絞ると「データが消えた」と誤解される） */}
+        {usingDefaultPeriod && (
+          <p className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+            <span className="inline-flex items-center gap-1 rounded-full bg-trust-50 px-2 py-0.5 font-medium text-trust-700">
+              <Filter className="h-3 w-3" aria-hidden />
+              今月（既定）
+            </span>
+            <span>受注日 {formatJpDate(filter.start)} 〜 {formatJpDate(filter.end)} で絞り込んでいます。</span>
+            <Link href="/admin/orders?all=1" className="font-medium text-trust-600 hover:underline">
+              全期間を表示
+            </Link>
+          </p>
+        )}
         <form method="get" className="flex flex-wrap items-end gap-3">
+          {/* 「全期間」表示中に他の条件で絞っても今月に戻らないよう、all を引き継ぐ */}
+          {showAll && <input type="hidden" name="all" value="1" />}
           <label className="space-y-1">
             <span className="block text-xs font-medium text-ink-soft">状態</span>
             <select name="status" defaultValue={filter.status} className={inputCls}>
@@ -128,8 +162,13 @@ export default async function AdminOrdersPage({
             絞り込む
           </button>
           {hasFilter && (
+            <Link href="/admin/orders?all=1" className="text-sm font-medium text-trust-600 hover:underline">
+              クリア（全期間）
+            </Link>
+          )}
+          {showAll && (
             <Link href="/admin/orders" className="text-sm font-medium text-trust-600 hover:underline">
-              クリア
+              今月に戻す
             </Link>
           )}
         </form>
