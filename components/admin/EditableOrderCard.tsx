@@ -7,6 +7,8 @@ import toast from 'react-hot-toast'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { ApproveOrderButton } from '@/components/admin/ApproveOrderButton'
+import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
+import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 
 export interface PackConfigOption {
   id: string
@@ -43,6 +45,8 @@ export interface EditableOrderCardProps {
   /** 要確認の理由（あれば注意喚起バナーを出す） */
   reasons?: string[]
   items: EditableOrderItem[]
+  /** 受信原本（FAX画像/PDF・メール本文）。手動入力・ポータル注文は null。 */
+  receipt?: ReceiptOriginalInfo | null
   /** 承認ボタンのラベル（現場はやさしい日本語＋大きめ） */
   approveLabel?: string
   size?: 'sm' | 'md' | 'lg'
@@ -70,6 +74,7 @@ export function EditableOrderCard({
   destinationOptions = [],
   reasons = [],
   items,
+  receipt = null,
   approveLabel = '承認する',
   size = 'sm',
 }: EditableOrderCardProps) {
@@ -171,6 +176,7 @@ export function EditableOrderCard({
             ))}
           </div>
         )}
+        {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
       </div>
 
       {caution && (

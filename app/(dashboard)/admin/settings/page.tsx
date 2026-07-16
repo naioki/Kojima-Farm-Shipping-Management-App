@@ -31,6 +31,7 @@ export default async function SettingsPage() {
       key: spec.key,
       label: spec.label,
       section: spec.section,
+      layer: spec.layer,
       secret: spec.secret,
       kind: spec.kind,
       placeholder: spec.placeholder,
@@ -42,6 +43,9 @@ export default async function SettingsPage() {
       // 秘密は値を返さない。非秘密のみ現在値（DB→env）を渡す。
       value: spec.secret ? undefined : dbVal ?? envVal ?? '',
       defaultPrompt: spec.defaultPrompt,
+      dependsOn: spec.dependsOn,
+      danger: spec.danger,
+      status: spec.status,
     }
   })
 

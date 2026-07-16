@@ -44,6 +44,7 @@ export default async function AdminApprovalsPage() {
                 destinationOptions={o.destinationOptions}
                 reasons={pendingReasons(o)}
                 items={o.items}
+                receipt={o.receipt}
                 approveLabel="承認する"
                 size="md"
               />
