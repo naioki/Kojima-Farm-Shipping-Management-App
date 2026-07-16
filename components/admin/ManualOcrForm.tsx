@@ -87,6 +87,8 @@ export function ManualOcrForm({
   const [prompt, setPrompt] = useState(basePrompt)
   const [promptOpen, setPromptOpen] = useState(false)
 
+  const [showOriginal, setShowOriginal] = useState(false)
+
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<OcrResult | null>(null)
   // 取引先・納入先リストは全注文で共有する（ある注文で新規登録したら次の注文でも選べるように）
@@ -254,22 +256,39 @@ export function ManualOcrForm({
         <div>
           {imageBase64 ? (
             isPdf ? (
-              <div className="relative flex items-center gap-3 rounded-lg border border-line bg-bg-soft px-4 py-4">
-                <div className="rounded-lg bg-alert/10 p-3">
-                  <FileType className="h-7 w-7 text-alert" aria-hidden />
+              <div className="space-y-2">
+                <div className="relative flex items-center gap-3 rounded-lg border border-line bg-bg-soft px-4 py-4">
+                  <div className="rounded-lg bg-alert/10 p-3">
+                    <FileType className="h-7 w-7 text-alert" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{fileName}</p>
+                    <p className="text-xs text-ink-faint">PDF — AIが全ページを読み取ります</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowOriginal((v) => !v)}
+                    className="inline-flex shrink-0 items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-bg-soft"
+                  >
+                    {showOriginal ? <ChevronUp className="h-3.5 w-3.5" aria-hidden /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
+                    原本を見る
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearImage}
+                    aria-label="PDFを削除"
+                    className="absolute -right-2 -top-2 rounded-full bg-alert p-1 text-white shadow-md hover:bg-alert/90"
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </button>
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{fileName}</p>
-                  <p className="text-xs text-ink-faint">PDF — AIが全ページを読み取ります</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  aria-label="PDFを削除"
-                  className="absolute -right-2 -top-2 rounded-full bg-alert p-1 text-white shadow-md hover:bg-alert/90"
-                >
-                  <X className="h-4 w-4" aria-hidden />
-                </button>
+                {showOriginal && (
+                  <iframe
+                    src={`data:application/pdf;base64,${imageBase64}`}
+                    title="原本PDF"
+                    className="h-[60vh] w-full rounded-lg border border-line"
+                  />
+                )}
               </div>
             ) : (
               <div className="relative inline-block">
