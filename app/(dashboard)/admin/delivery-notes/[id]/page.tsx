@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
 import { DeliveryNoteDocument } from '@/components/admin/DeliveryNoteDocument'
 import { parseAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { formatJpDateTime } from '@/lib/dates'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
@@ -55,7 +56,7 @@ export default async function SavedDeliveryNotePage({ params }: { params: { id: 
       </div>
 
       <p className="text-sm text-ink-faint print:hidden">
-        発行日時: <span className="num">{new Date(note.issued_at).toLocaleString('ja-JP')}</span>
+        発行日時: <span className="num">{formatJpDateTime(note.issued_at)}</span>
         （発行時のスナップショット。元注文を編集してもこの内容は変わりません）
       </p>
 

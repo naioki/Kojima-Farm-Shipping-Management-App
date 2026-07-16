@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jstDateStr, shiftDateStr, formatJpDate, formatJpDateShort } from './dates'
+import { jstDateStr, shiftDateStr, formatJpDate, formatJpDateShort, formatJpMonth, formatJpDateTime } from './dates'
 
 describe('jstDateStr', () => {
   it('UTC深夜でも日本時間の日付を返す（Cloud Run/UTCで「昨日」にならない）', () => {
@@ -48,5 +48,29 @@ describe('formatJpDateShort', () => {
     expect(formatJpDateShort(null)).toBe('')
     expect(formatJpDateShort(undefined)).toBe('')
     expect(formatJpDateShort('不正')).toBe('不正')
+  })
+})
+
+describe('formatJpMonth', () => {
+  it('YYYY-MM を「年月」で整形する', () => {
+    expect(formatJpMonth('2026-07')).toBe('2026年7月')
+    expect(formatJpMonth('2026-01')).toBe('2026年1月')
+  })
+  it('null/undefined/不正値は安全に扱う', () => {
+    expect(formatJpMonth(null)).toBe('')
+    expect(formatJpMonth(undefined)).toBe('')
+    expect(formatJpMonth('不正')).toBe('不正')
+  })
+})
+
+describe('formatJpDateTime', () => {
+  it('日本時間の年月日+時刻で整形する', () => {
+    // 2026-07-15T11:05:00Z = 日本時間 2026-07-15 20:05
+    expect(formatJpDateTime('2026-07-15T11:05:00Z')).toBe('2026年7月15日 20:05')
+  })
+  it('null/undefined/不正値は安全に扱う', () => {
+    expect(formatJpDateTime(null)).toBe('')
+    expect(formatJpDateTime(undefined)).toBe('')
+    expect(formatJpDateTime('不正')).toBe('不正')
   })
 })

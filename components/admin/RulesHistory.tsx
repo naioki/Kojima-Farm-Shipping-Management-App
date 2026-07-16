@@ -1,5 +1,6 @@
 import { History } from 'lucide-react'
 import type { RuleChange } from '@/lib/rules/format'
+import { formatJpDateTime } from '@/lib/dates'
 
 export interface RuleHistoryEntry {
   at: string
@@ -25,7 +26,7 @@ export function RulesHistory({ entries }: { entries: RuleHistoryEntry[] }) {
             <History className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
             <span className="font-medium text-ink">{e.productName}</span>
             <span className={e.isNew ? 'text-harvest-700' : 'text-trust-700'}>{e.isNew ? '新規登録' : '変更'}</span>
-            <span className="num text-xs text-ink-faint">{new Date(e.at).toLocaleString('ja-JP')}</span>
+            <span className="num text-xs text-ink-faint">{formatJpDateTime(e.at)}</span>
             <span className="text-xs text-ink-faint">／ {e.who}</span>
           </div>
           {e.changes.length > 0 && (

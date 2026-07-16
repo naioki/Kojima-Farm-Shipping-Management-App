@@ -8,6 +8,7 @@ import { ConfidenceBar } from '@/components/admin/ConfidenceBar'
 import { IngestButton } from '@/components/admin/IngestButton'
 import { InboxReceiptActions } from '@/components/admin/InboxReceiptActions'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { formatJpDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -149,7 +150,7 @@ export default async function InboxPage({
                       )}
                     </div>
                     <time className="num shrink-0 text-xs text-ink-faint">
-                      {new Date(r.received_at).toLocaleString('ja-JP')}
+                      {formatJpDateTime(r.received_at)}
                     </time>
                   </div>
 

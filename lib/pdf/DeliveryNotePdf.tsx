@@ -2,6 +2,7 @@ import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 import { formatYen } from '@/lib/calculations/tax'
 import { amountVisibility, type DeliveryAmountMode } from '@/lib/delivery-notes/amount-mode'
 import { docTypeMeta, type DeliveryDocType } from '@/lib/delivery-notes/doc-type'
+import { formatJpDate } from '@/lib/dates'
 
 /** 納品書 / ご注文確認書 PDF（@react-pdf・A4）。金額あり／後から手書き／金額なしを切替。 */
 
@@ -52,7 +53,7 @@ export function DeliveryNotePdf({ customerName, date, mode = 'full', docType = '
         <View style={s.headerRow}>
           <Text style={s.title}>{meta.title}</Text>
           <View style={s.metaR}>
-            <Text>{meta.dateLabel}: {date}</Text>
+            <Text>{meta.dateLabel}: {formatJpDate(date)}</Text>
           </View>
         </View>
 

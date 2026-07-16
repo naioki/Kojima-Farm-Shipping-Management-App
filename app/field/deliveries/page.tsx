@@ -5,7 +5,7 @@ import { PrintButton } from '@/components/admin/PrintButton'
 import { DateNav } from '@/components/field/DateNav'
 import { DeliveryCheckCard, type DeliveryCheckItem } from '@/components/field/DeliveryCheckCard'
 import { formatQty } from '@/lib/calculations/format-qty'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, formatJpDate } from '@/lib/dates'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -159,7 +159,7 @@ export default async function DeliveriesPage({
 
           {/* 印刷帳票ヘッダー（印刷時のみ） */}
           <div className="hidden print:block">
-            <h1 className="text-xl font-bold">配送一覧　{date}</h1>
+            <h1 className="text-xl font-bold">配送一覧　{formatJpDate(date)}</h1>
             <p className="mt-1 text-sm">
               配送先 {sorted.length} 件 ／ 明細 {totalItems} 行　　確認者：＿＿＿＿＿＿＿＿
             </p>

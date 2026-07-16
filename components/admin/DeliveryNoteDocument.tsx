@@ -1,6 +1,7 @@
 import { formatYen } from '@/lib/calculations/tax'
 import { amountVisibility, type DeliveryAmountMode } from '@/lib/delivery-notes/amount-mode'
 import { docTypeMeta, type DeliveryDocType } from '@/lib/delivery-notes/doc-type'
+import { formatJpDate } from '@/lib/dates'
 
 export interface DeliveryNoteDocumentProps {
   /** 保存済み納品書なら番号を表示（ライブプレビューでは省略） */
@@ -39,7 +40,7 @@ export function DeliveryNoteDocument({
         <h1 className="font-display text-2xl font-bold text-ink">{meta.title}</h1>
         <div className="text-right text-sm text-ink-soft">
           {noteNumber && <p className="num font-bold text-ink">{noteNumber}</p>}
-          <p>{meta.dateLabel}: <span className="num">{date}</span></p>
+          <p>{meta.dateLabel}: <span className="num">{formatJpDate(date)}</span></p>
         </div>
       </header>
 

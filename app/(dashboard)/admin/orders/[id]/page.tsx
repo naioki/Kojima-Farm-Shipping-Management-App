@@ -9,14 +9,11 @@ import { DeleteOrderButton } from '@/components/admin/DeleteOrderButton'
 import { getOrderDetail } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { formatJpDate } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
-const fullDate = (d: string | null) => {
-  if (!d) return '未定'
-  const dt = new Date(`${d}T00:00:00Z`)
-  return `${dt.getUTCFullYear()}/${String(dt.getUTCMonth() + 1).padStart(2, '0')}/${String(dt.getUTCDate()).padStart(2, '0')}`
-}
+const fullDate = (d: string | null) => (d ? formatJpDate(d) : '未定')
 
 const FIELD_STATUS: Record<string, { label: string; cls: string }> = {
   not_started: { label: '未着手', cls: 'text-ink-faint' },
