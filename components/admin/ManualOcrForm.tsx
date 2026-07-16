@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { downscaleImage } from '@/lib/image/downscale'
 import { OcrSaveSection } from '@/components/admin/OcrSaveSection'
-import { formatJpDate } from '@/lib/dates'
+import { formatJpDateTime } from '@/lib/dates'
 
 const SAVE_PHRASE = '変更を理解しました'
 const MAX_FILE_MB = 10
@@ -274,7 +274,7 @@ export function ManualOcrForm({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
             <strong>このファイルは既に取り込み済みです</strong>
-            （{formatJpDate(duplicateInfo.receivedAt.slice(0, 10))} {duplicateInfo.receivedAt.slice(11, 16)} ・
+            （{formatJpDateTime(duplicateInfo.receivedAt)} ・
             {CHANNEL_LABEL[duplicateInfo.channel] ?? duplicateInfo.channel}）。
             同じFAXを2重に登録していないか確認してください。
             {duplicateInfo.orderId && (

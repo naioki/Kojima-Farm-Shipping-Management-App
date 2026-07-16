@@ -8,14 +8,11 @@ import { OrderStatusBadge, sourceLabel, ORDER_STATUS_OPTIONS } from '@/component
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { formatJpDateShort } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
-const mdShort = (d: string | null) => {
-  if (!d) return '—'
-  const dt = new Date(`${d}T00:00:00Z`)
-  return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
-}
+const mdShort = (d: string | null) => (d ? formatJpDateShort(d) : '—')
 
 const inputCls =
   'h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100'

@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { LotForm } from '@/components/admin/LotForm'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { formatJpDateShort } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,7 +74,7 @@ export default async function LotsPage() {
                 <tr key={l.id} className="border-b border-line last:border-0">
                   <td className="py-2 pr-2 font-medium text-ink">{l.lot_no}</td>
                   <td className="py-2 pr-2 text-ink">{productName.get(l.product_id) ?? '—'}</td>
-                  <td className="num py-2 pr-2 tabular-nums text-ink">{l.harvest_date ?? '—'}</td>
+                  <td className="num py-2 pr-2 tabular-nums text-ink">{l.harvest_date ? formatJpDateShort(l.harvest_date) : '—'}</td>
                   <td className="py-2 pr-2 text-xs text-ink-soft">{l.gap_record_ref ?? '—'}</td>
                   <td className="num py-2 text-right tabular-nums text-ink">{countByLot.get(l.id) ?? 0}</td>
                 </tr>

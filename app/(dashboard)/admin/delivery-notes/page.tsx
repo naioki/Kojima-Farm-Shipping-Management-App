@@ -7,6 +7,7 @@ import { DeliveryNoteForm } from '@/components/admin/DeliveryNoteForm'
 import { getSetting } from '@/lib/settings'
 import { formatYen } from '@/lib/calculations/tax'
 import { parseAmountMode, amountModeLabel } from '@/lib/delivery-notes/amount-mode'
+import { formatJpDateShort } from '@/lib/dates'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
@@ -64,7 +65,7 @@ export default async function DeliveryNotesPage() {
                   <div className="min-w-0">
                     <p className="num font-bold text-ink">{n.note_number}</p>
                     <p className="truncate text-sm text-ink-soft">
-                      {n.customer_name}・納品 {n.delivery_date}
+                      {n.customer_name}・納品 {formatJpDateShort(n.delivery_date)}
                       <span className="ml-2 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
                         {amountModeLabel(parseAmountMode(n.amount_mode))}
                       </span>

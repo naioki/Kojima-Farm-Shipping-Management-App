@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/ui/States'
 import { InvoiceActions } from '@/components/admin/InvoiceActions'
 import { getSetting } from '@/lib/settings'
 import { formatYen } from '@/lib/calculations/tax'
+import { formatJpDate, formatJpMonth } from '@/lib/dates'
 import type { InvoiceStatus } from '@/types/database'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -72,11 +73,11 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
           </div>
           <div className="text-right text-sm">
             <p className="num font-bold text-ink">{invoice.invoice_number}</p>
-            {invoice.issue_date && <p className="text-ink-soft">発行日: {invoice.issue_date}</p>}
+            {invoice.issue_date && <p className="text-ink-soft">発行日: {formatJpDate(invoice.issue_date)}</p>}
             <p className="text-ink-soft">
               {invoice.period_start && invoice.period_end
-                ? `対象期間: ${invoice.period_start} 〜 ${invoice.period_end}`
-                : `対象月: ${invoice.billing_month}`}
+                ? `対象期間: ${formatJpDate(invoice.period_start)} 〜 ${formatJpDate(invoice.period_end)}`
+                : `対象月: ${formatJpMonth(invoice.billing_month)}`}
             </p>
           </div>
         </header>

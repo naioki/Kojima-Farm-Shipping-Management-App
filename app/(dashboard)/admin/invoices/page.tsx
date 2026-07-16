@@ -7,6 +7,7 @@ import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
 import { BulkInvoiceForm } from '@/components/admin/BulkInvoiceForm'
 import { InvoiceCsvExport } from '@/components/admin/InvoiceCsvExport'
 import { formatYen } from '@/lib/calculations/tax'
+import { formatJpMonth } from '@/lib/dates'
 import type { InvoiceStatus } from '@/types/database'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -85,7 +86,7 @@ export default async function InvoicesPage() {
                   <div className="min-w-0">
                     <p className="num font-bold text-ink">{inv.invoice_number}</p>
                     <p className="truncate text-sm text-ink-soft">
-                      {customerName.get(inv.customer_id) ?? '—'}・{inv.billing_month}
+                      {customerName.get(inv.customer_id) ?? '—'}・{formatJpMonth(inv.billing_month)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

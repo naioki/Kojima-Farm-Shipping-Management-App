@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
+import { formatJpDateShort } from '@/lib/dates'
 
 export interface MatrixGridProps {
   productId: string
@@ -20,12 +21,8 @@ export interface MatrixGridProps {
   packsByCustomer: Record<string, number | null>
 }
 
-const WD = ['日', '月', '火', '水', '木', '金', '土']
 const key = (c: string, d: string) => `${c}|${d}`
-function mmdd(date: string) {
-  const dt = new Date(`${date}T00:00:00`)
-  return `${dt.getMonth() + 1}/${dt.getDate()}(${WD[dt.getDay()]})`
-}
+const mmdd = formatJpDateShort
 
 type CellState = 'idle' | 'saving' | 'saved' | 'error'
 

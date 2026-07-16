@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
 import { formatYen } from '@/lib/calculations/tax'
+import { formatJpDate, formatJpMonth } from '@/lib/dates'
 
 /**
  * 請求書 PDF（@react-pdf・A4 固定デザイン）。インボイス制度対応。
@@ -57,8 +58,8 @@ const s = StyleSheet.create({
 export function InvoicePdf({ invoice, customerName, issuer, items }: InvoicePdfProps) {
   const period =
     invoice.period_start && invoice.period_end
-      ? `対象期間: ${invoice.period_start} 〜 ${invoice.period_end}`
-      : `対象月: ${invoice.billing_month}`
+      ? `対象期間: ${formatJpDate(invoice.period_start)} 〜 ${formatJpDate(invoice.period_end)}`
+      : `対象月: ${formatJpMonth(invoice.billing_month)}`
   return (
     <Document>
       <Page size="A4" style={s.page}>
@@ -66,7 +67,7 @@ export function InvoicePdf({ invoice, customerName, issuer, items }: InvoicePdfP
           <Text style={s.title}>請求書</Text>
           <View style={s.metaR}>
             <Text style={s.num}>{invoice.invoice_number}</Text>
-            {invoice.issue_date ? <Text>発行日: {invoice.issue_date}</Text> : null}
+            {invoice.issue_date ? <Text>発行日: {formatJpDate(invoice.issue_date)}</Text> : null}
             <Text>{period}</Text>
           </View>
         </View>

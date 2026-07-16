@@ -6,6 +6,7 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { SpecReportActions } from '@/components/admin/SpecReportActions'
 import { getReceiptSignedUrl } from '@/lib/r2'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { formatJpDateTime } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,7 +78,7 @@ export default async function SpecReportsPage() {
                       )}
                     </p>
                     <p className="text-xs text-ink-faint">
-                      {reporterName.get(r.reported_by ?? '') ?? '不明'}・{new Date(r.created_at).toLocaleString('ja-JP')}
+                      {reporterName.get(r.reported_by ?? '') ?? '不明'}・{formatJpDateTime(r.created_at)}
                     </p>
                   </div>
                   {r.customer_id && (

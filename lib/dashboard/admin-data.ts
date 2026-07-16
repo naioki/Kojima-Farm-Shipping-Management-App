@@ -3,6 +3,7 @@ import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { yen } from '@/lib/format'
+import { formatJpDateShort } from '@/lib/dates'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
 import type { OrderStatusKey, RecentOrderRow, TrendPoint } from '@/components/dashboard/types'
@@ -204,10 +205,9 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   }
   const recentRows = (recentOrdersRes.data ?? []) as unknown as RecentRow[]
   const recentOrders: RecentOrderRow[] = recentRows.map((o) => {
-    const dt = new Date(`${o.order_date}T00:00:00Z`)
     return {
       id: o.id,
-      date: `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`,
+      date: formatJpDateShort(o.order_date),
       customer: o.customers?.name ?? '（未紐付け）',
       itemCount: o.order_items?.length ?? 0,
       amount: sumLineTotals(o.order_items),

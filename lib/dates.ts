@@ -43,3 +43,21 @@ export function formatJpDateShort(dateStr: string | null | undefined): string {
   const wd = WEEKDAY_JA[new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d))).getUTCDay()]
   return `${Number(mo)}/${Number(d)}(${wd})`
 }
+
+/** YYYY-MM → "2026年7月"（請求対象月・締め表示）。不正な値はそのまま返す。 */
+export function formatJpMonth(monthStr: string | null | undefined): string {
+  if (!monthStr) return ''
+  const m = monthStr.match(/^(\d{4})-(\d{2})/)
+  if (!m) return monthStr
+  return `${Number(m[1])}年${Number(m[2])}月`
+}
+
+/** ISO日時（timestamptz）→ "2026年7月15日 20:05"（監査ログ・受信日時等）。日本時間で表示。不正な値はそのまま返す。 */
+export function formatJpDateTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return iso
+  const datePart = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: 'long', day: 'numeric' }).format(dt)
+  const timePart = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).format(dt)
+  return `${datePart} ${timePart}`
+}

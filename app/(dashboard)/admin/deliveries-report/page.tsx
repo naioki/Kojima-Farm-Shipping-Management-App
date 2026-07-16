@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, formatJpDateShort } from '@/lib/dates'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -244,7 +244,7 @@ export default async function DeliveriesReportPage({
               <ul className="space-y-1.5 text-sm">
                 {recentIssues.map((i, idx) => (
                   <li key={idx} className="flex items-baseline gap-2">
-                    <span className="num shrink-0 text-xs tabular-nums text-ink-soft">{i.at}</span>
+                    <span className="num shrink-0 text-xs tabular-nums text-ink-soft">{formatJpDateShort(i.at)}</span>
                     <span className="shrink-0 font-medium text-ink">{labelByDelivery.get(i.deliveryId) ?? '—'}</span>
                     <span className="text-ink-soft">{i.note}</span>
                   </li>

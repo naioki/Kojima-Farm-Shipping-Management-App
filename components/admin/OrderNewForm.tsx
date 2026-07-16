@@ -6,7 +6,7 @@ import { Plus, Trash2, AlertTriangle, ShoppingCart, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
 import { cn } from '@/lib/cn'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, formatJpDateShort } from '@/lib/dates'
 import { Button } from '@/components/ui/Button'
 import { ColorDot } from '@/components/ui/ColorDot'
 
@@ -260,7 +260,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
             <span className="font-medium text-ink">{selectedCustomer?.name}</span>
           </div>
           <p className="text-sm text-ink-soft">
-            出荷日: <span className="font-medium text-ink">{deliveryDate}</span>
+            出荷日: <span className="font-medium text-ink">{formatJpDateShort(deliveryDate)}</span>
             {shippingTime && <span className="ml-2 text-ink-soft">({shippingTime === 'am' ? '午前' : '午後'})</span>}
           </p>
           <div className="divide-y divide-line">
