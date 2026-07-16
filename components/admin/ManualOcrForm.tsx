@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Image as ImageIcon, FileText, Upload, Sparkles, X, ChevronDown, ChevronUp, AlertTriangle, Save, FileType, Ban } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -88,6 +88,20 @@ export function ManualOcrForm({
   const [promptOpen, setPromptOpen] = useState(false)
 
   const [showOriginal, setShowOriginal] = useState(false)
+  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null)
+
+  // data: URI を <iframe> に直接渡すと一部ブラウザでダウンロード扱い・別遷移になるため、
+  // Blob URL に変換してから渡す（同じPDFのままブラウザ標準ビューアにその場で埋め込める）。
+  useEffect(() => {
+    if (!isPdf || !imageBase64) {
+      setPdfObjectUrl(null)
+      return
+    }
+    const bytes = Uint8Array.from(atob(imageBase64), (c) => c.charCodeAt(0))
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'application/pdf' }))
+    setPdfObjectUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [isPdf, imageBase64, mimeType])
 
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<OcrResult | null>(null)
@@ -282,9 +296,9 @@ export function ManualOcrForm({
                     <X className="h-4 w-4" aria-hidden />
                   </button>
                 </div>
-                {showOriginal && (
+                {showOriginal && pdfObjectUrl && (
                   <iframe
-                    src={`data:application/pdf;base64,${imageBase64}`}
+                    src={pdfObjectUrl}
                     title="原本PDF"
                     className="h-[60vh] w-full rounded-lg border border-line"
                   />
