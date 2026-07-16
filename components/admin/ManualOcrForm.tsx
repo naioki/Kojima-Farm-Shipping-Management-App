@@ -10,6 +10,7 @@ import { ConfirmModal } from '@/components/ui/Modal'
 import { downscaleImage } from '@/lib/image/downscale'
 import { OcrSaveSection } from '@/components/admin/OcrSaveSection'
 import { formatJpDateTime } from '@/lib/dates'
+import { usePdfViewableInline } from '@/hooks/usePdfViewableInline'
 
 const SAVE_PHRASE = '変更を理解しました'
 const MAX_FILE_MB = 10
@@ -91,6 +92,9 @@ export function ManualOcrForm({
 
   const [showOriginal, setShowOriginal] = useState(false)
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null)
+  // モバイルの多くはiframeでPDFを描画できず「OPEN」ボタンだけの空白になるため、
+  // 描画できると判定できた時だけ折りたたみ表示を出し、それ以外は別タブで開くリンクにする。
+  const canViewPdfInline = usePdfViewableInline()
 
   // data: URI を <iframe> に直接渡すと一部ブラウザでダウンロード扱い・別遷移になるため、
   // Blob URL に変換してから渡す（同じPDFのままブラウザ標準ビューアにその場で埋め込める）。
@@ -329,14 +333,26 @@ export function ManualOcrForm({
                     <p className="truncate text-sm font-medium text-ink">{fileName}</p>
                     <p className="text-xs text-ink-faint">PDF — AIが全ページを読み取ります</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowOriginal((v) => !v)}
-                    className="inline-flex shrink-0 items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-bg-soft"
-                  >
-                    {showOriginal ? <ChevronUp className="h-3.5 w-3.5" aria-hidden /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
-                    原本を見る
-                  </button>
+                  {canViewPdfInline === true && (
+                    <button
+                      type="button"
+                      onClick={() => setShowOriginal((v) => !v)}
+                      className="inline-flex shrink-0 items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-bg-soft"
+                    >
+                      {showOriginal ? <ChevronUp className="h-3.5 w-3.5" aria-hidden /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
+                      原本を見る
+                    </button>
+                  )}
+                  {canViewPdfInline === false && pdfObjectUrl && (
+                    <a
+                      href={pdfObjectUrl}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex shrink-0 items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-bg-soft"
+                    >
+                      原本を見る（別タブ）
+                    </a>
+                  )}
                   <button
                     type="button"
                     onClick={clearImage}
@@ -346,7 +362,7 @@ export function ManualOcrForm({
                     <X className="h-4 w-4" aria-hidden />
                   </button>
                 </div>
-                {showOriginal && pdfObjectUrl && (
+                {canViewPdfInline === true && showOriginal && pdfObjectUrl && (
                   <iframe
                     src={pdfObjectUrl}
                     title="原本PDF"
