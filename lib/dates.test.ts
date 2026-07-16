@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jstDateStr, shiftDateStr } from './dates'
+import { jstDateStr, shiftDateStr, formatJpDate, formatJpDateShort } from './dates'
 
 describe('jstDateStr', () => {
   it('UTC深夜でも日本時間の日付を返す（Cloud Run/UTCで「昨日」にならない）', () => {
@@ -22,5 +22,31 @@ describe('shiftDateStr', () => {
   it('うるう年を正しく扱う', () => {
     expect(shiftDateStr('2028-02-28', 1)).toBe('2028-02-29')
     expect(shiftDateStr('2026-02-28', 1)).toBe('2026-03-01')
+  })
+})
+
+describe('formatJpDate', () => {
+  it('日本の一般的な年月日順で整形する', () => {
+    expect(formatJpDate('2026-07-05')).toBe('2026年7月5日')
+    expect(formatJpDate('2026-01-31')).toBe('2026年1月31日')
+  })
+  it('null/undefined/不正値は安全に扱う', () => {
+    expect(formatJpDate(null)).toBe('')
+    expect(formatJpDate(undefined)).toBe('')
+    expect(formatJpDate('不正')).toBe('不正')
+  })
+})
+
+describe('formatJpDateShort', () => {
+  it('月/日(曜日)の省スペース表示にする', () => {
+    // 2026-07-15 は水曜日
+    expect(formatJpDateShort('2026-07-15')).toBe('7/15(水)')
+    // 2026-01-05 は月曜日
+    expect(formatJpDateShort('2026-01-05')).toBe('1/5(月)')
+  })
+  it('null/undefined/不正値は安全に扱う', () => {
+    expect(formatJpDateShort(null)).toBe('')
+    expect(formatJpDateShort(undefined)).toBe('')
+    expect(formatJpDateShort('不正')).toBe('不正')
   })
 })

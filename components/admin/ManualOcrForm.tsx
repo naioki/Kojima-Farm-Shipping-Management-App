@@ -9,9 +9,11 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { downscaleImage } from '@/lib/image/downscale'
 import { OcrSaveSection } from '@/components/admin/OcrSaveSection'
+import { formatJpDate } from '@/lib/dates'
 
 const SAVE_PHRASE = '変更を理解しました'
 const MAX_FILE_MB = 10
+const CHANNEL_LABEL: Record<string, string> = { fax: 'FAX', email: 'メール', portal: 'ポータル', manual: '手動OCR' }
 
 interface ParsedItem {
   raw_name: string
@@ -119,6 +121,31 @@ export function ManualOcrForm({
   const isCustomPrompt = prompt.trim() !== basePrompt.trim()
   const canAnalyze = (mode === 'image' ? Boolean(imageBase64) : text.trim() !== '') && !analyzing
 
+  interface DuplicateInfo {
+    receivedAt: string
+    orderId: string | null
+    channel: string
+  }
+  const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null)
+
+  /**
+   * 元ファイル（圧縮前）のMD5で、既に取り込み済み（自動取込・過去の手動OCR）でないか確認する。
+   * Geminiを呼ぶ前にサーバー側で判定するため、同じFAXを2回読ませてしまう事故とAI費用を防げる。
+   * ネットワーク不調時は警告なしで通す（ブロックしない＝安全側だが業務を止めない）。
+   */
+  async function checkDuplicate(file: File) {
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/ocr/check-duplicate', { method: 'POST', body: fd })
+      if (!res.ok) { setDuplicateInfo(null); return }
+      const json = (await res.json()) as { duplicate: boolean } & Partial<DuplicateInfo>
+      setDuplicateInfo(json.duplicate ? { receivedAt: json.receivedAt!, orderId: json.orderId ?? null, channel: json.channel! } : null)
+    } catch {
+      setDuplicateInfo(null)
+    }
+  }
+
   async function handleFile(file: File) {
     const pdf = file.type === 'application/pdf'
     if (!file.type.startsWith('image/') && !pdf) {
@@ -131,6 +158,8 @@ export function ManualOcrForm({
     }
     setFileName(file.name)
     setIsPdf(pdf)
+    setDuplicateInfo(null)
+    void checkDuplicate(file) // 圧縮前の元ファイルで判定（並行実行・結果を待たない）
 
     if (pdf) {
       // PDF は縮小できないのでそのまま base64 化（プレビューはファイルカードで代替）
@@ -161,6 +190,7 @@ export function ManualOcrForm({
     setImagePreview(null)
     setIsPdf(false)
     setFileName('')
+    setDuplicateInfo(null)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -236,6 +266,26 @@ export function ManualOcrForm({
         <div className="flex items-center gap-2 rounded-lg border border-harvest-300 bg-harvest-50 px-3 py-2 text-sm text-harvest-800">
           <span className="shrink-0">📠</span>
           <span>受信トレイの原本を読み込みました。「読み取る」を押してください。</span>
+        </div>
+      )}
+
+      {duplicateInfo && (
+        <div className="flex items-start gap-2 rounded-lg border border-alert/40 bg-alert-bg/40 px-3 py-2 text-sm text-alert">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            <strong>このファイルは既に取り込み済みです</strong>
+            （{formatJpDate(duplicateInfo.receivedAt.slice(0, 10))} {duplicateInfo.receivedAt.slice(11, 16)} ・
+            {CHANNEL_LABEL[duplicateInfo.channel] ?? duplicateInfo.channel}）。
+            同じFAXを2重に登録していないか確認してください。
+            {duplicateInfo.orderId && (
+              <>
+                {' '}
+                <a href={`/admin/orders/${duplicateInfo.orderId}`} target="_blank" rel="noopener" className="underline">
+                  登録済みの注文を見る
+                </a>
+              </>
+            )}
+          </span>
         </div>
       )}
 

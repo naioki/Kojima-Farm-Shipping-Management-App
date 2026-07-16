@@ -27,8 +27,12 @@ const orderSchema = z.object({
   shipping_time: z.enum(['am', 'pm']).optional(),
   note: z.string().optional(),
   items: z.array(itemSchema).min(1),
-  /** 同一取引先×納品日の既存注文があっても登録を強行する（重複警告を承認した）。 */
+  /** 同一取引先×納品日の既存注文があっても新規として登録を強行する（重複警告を承認した）。 */
   confirm_duplicate: z.boolean().optional(),
+  /** 指定すると新規INSERTでなく、この注文を置き換える（訂正・再送）。 */
+  replace_order_id: z.string().uuid().optional(),
+  /** 置換時の楽観ロック。取得時の orders.updated_at と一致しないと409（他の人が触った）。 */
+  expected_updated_at: z.string().optional(),
 })
 
 /**
@@ -59,15 +63,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '入力値が不正です', details: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { customer_id, destination_id, delivery_date, shipping_time, note, items, confirm_duplicate } = parsed.data
+  const {
+    customer_id,
+    destination_id,
+    delivery_date,
+    shipping_time,
+    note,
+    items,
+    confirm_duplicate,
+    replace_order_id,
+    expected_updated_at,
+  } = parsed.data
   const admin = createAdminClient()
 
   // 重複警告（dedupe.ts の sender_date_key と同思想：取引先×納入先×納品日）。
-  // ブロックせず 409 で既存を知らせ、ユーザーが confirm_duplicate=true で再送信したら通す。
-  if (!confirm_duplicate) {
+  // ブロックせず 409 で既存を知らせ、ユーザーが「追加」か「置き換え」かを選んだら通す。
+  // replace_order_id 指定時は、その置き換え先が既に確認済みなのでこの検知はスキップする。
+  if (!confirm_duplicate && !replace_order_id) {
     let dupeQuery = admin
       .from('orders')
-      .select('id, created_at, order_items(count)')
+      .select('id, created_at, updated_at, order_items(count)')
       .eq('customer_id', customer_id)
       .eq('delivery_date', delivery_date)
       .neq('status', 'cancelled')
@@ -82,6 +97,7 @@ export async function POST(req: NextRequest) {
           existing: dupes.map((o) => ({
             id: o.id as string,
             created_at: o.created_at as string,
+            updated_at: o.updated_at as string,
             item_count: (o.order_items as unknown as { count: number }[])?.[0]?.count ?? 0,
           })),
         },
@@ -132,47 +148,135 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 注文作成（approved で直接登録）
-  const { data: order, error: orderErr } = await admin
-    .from('orders')
-    .insert({
-      customer_id,
-      destination_id: destination_id ?? null,
-      source: 'manual',
-      status: 'approved',
-      order_date: jstTodayStr(),
-      delivery_date,
-      delivery_date_source: 'manual',
-      shipping_time: shipping_time ?? null,
-      note: note ?? null,
-      created_by: user.id,
+  let orderId: string
+  let replaced = false
+
+  if (replace_order_id) {
+    // 置き換え（訂正・再送）。「取引先を間違えてFAXが2件になった」等の事故を、
+    // 新規並存でなくこの注文を上書きする形で解消する（features.md §6のUndo思想＝audit_logに必ず残す）。
+    const { data: existingOrder, error: fetchErr } = await admin
+      .from('orders')
+      .select('id, status, updated_at, delivery_date, destination_id')
+      .eq('id', replace_order_id)
+      .maybeSingle()
+
+    if (fetchErr || !existingOrder) {
+      return NextResponse.json({ error: '置き換え対象の注文が見つかりません' }, { status: 404 })
+    }
+    if (existingOrder.status === 'shipped' || existingOrder.status === 'invoiced') {
+      return NextResponse.json(
+        { error: '出荷済み・請求済みの注文は置き換えできません。別の注文として登録してください。' },
+        { status: 409 },
+      )
+    }
+    if (expected_updated_at && existingOrder.updated_at !== expected_updated_at) {
+      return NextResponse.json(
+        { error: '他の人がこの注文を変更しました。画面を更新してから、もう一度お試しください。', conflict: true },
+        { status: 409 },
+      )
+    }
+
+    const { data: oldItems } = await admin
+      .from('order_items')
+      .select('product_id, product_name, quantity, unit, unit_price, tax_rate, pack_config_id')
+      .eq('order_id', replace_order_id)
+
+    const { error: delErr } = await admin.from('order_items').delete().eq('order_id', replace_order_id)
+    if (delErr) {
+      console.error('[POST /api/orders] replace: delete old items failed', delErr)
+      return NextResponse.json({ error: '既存明細の削除に失敗しました' }, { status: 500 })
+    }
+
+    const { error: updErr } = await admin
+      .from('orders')
+      .update({
+        customer_id,
+        destination_id: destination_id ?? null,
+        delivery_date,
+        delivery_date_source: 'manual',
+        shipping_time: shipping_time ?? null,
+        note: note ?? null,
+      })
+      .eq('id', replace_order_id)
+    if (updErr) {
+      console.error('[POST /api/orders] replace: order update failed', updErr)
+      return NextResponse.json({ error: '注文の更新に失敗しました' }, { status: 500 })
+    }
+
+    const { error: itemsErr } = await admin.from('order_items').insert(
+      items.map((it) => ({
+        order_id: replace_order_id,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        quantity: it.quantity,
+        unit: it.unit,
+        unit_price: it.unit_price,
+        tax_rate: it.tax_rate,
+        pack_config_id: it.pack_config_id ?? null,
+      })),
+    )
+    if (itemsErr) {
+      console.error('[POST /api/orders] replace: items insert error', itemsErr)
+      return NextResponse.json({ error: '新しい明細の登録に失敗しました' }, { status: 500 })
+    }
+
+    await admin.from('audit_log').insert({
+      entity_type: 'orders',
+      entity_id: replace_order_id,
+      action: 'UPDATE',
+      changed_fields: ['order_items', 'delivery_date', 'destination_id'],
+      old_values: { items: oldItems, delivery_date: existingOrder.delivery_date, destination_id: existingOrder.destination_id },
+      new_values: { items, delivery_date, destination_id: destination_id ?? null },
+      user_id: user.id,
     })
-    .select('id')
-    .single()
 
-  if (orderErr || !order) {
-    console.error('[POST /api/orders] order insert error', orderErr)
-    return NextResponse.json({ error: '注文の登録に失敗しました' }, { status: 500 })
-  }
+    orderId = replace_order_id
+    replaced = true
+  } else {
+    // 注文作成（approved で直接登録）
+    const { data: order, error: orderErr } = await admin
+      .from('orders')
+      .insert({
+        customer_id,
+        destination_id: destination_id ?? null,
+        source: 'manual',
+        status: 'approved',
+        order_date: jstTodayStr(),
+        delivery_date,
+        delivery_date_source: 'manual',
+        shipping_time: shipping_time ?? null,
+        note: note ?? null,
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
 
-  const { error: itemsErr } = await admin.from('order_items').insert(
-    items.map((it) => ({
-      order_id: order.id,
-      product_id: it.product_id,
-      product_name: it.product_name,
-      quantity: it.quantity,
-      unit: it.unit,
-      unit_price: it.unit_price,
-      tax_rate: it.tax_rate,
-      pack_config_id: it.pack_config_id ?? null,
-    })),
-  )
+    if (orderErr || !order) {
+      console.error('[POST /api/orders] order insert error', orderErr)
+      return NextResponse.json({ error: '注文の登録に失敗しました' }, { status: 500 })
+    }
 
-  if (itemsErr) {
-    console.error('[POST /api/orders] items insert error', itemsErr)
-    // ロールバック（order だけ残さない）
-    await admin.from('orders').delete().eq('id', order.id)
-    return NextResponse.json({ error: '明細の登録に失敗しました' }, { status: 500 })
+    const { error: itemsErr } = await admin.from('order_items').insert(
+      items.map((it) => ({
+        order_id: order.id,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        quantity: it.quantity,
+        unit: it.unit,
+        unit_price: it.unit_price,
+        tax_rate: it.tax_rate,
+        pack_config_id: it.pack_config_id ?? null,
+      })),
+    )
+
+    if (itemsErr) {
+      console.error('[POST /api/orders] items insert error', itemsErr)
+      // ロールバック（order だけ残さない）
+      await admin.from('orders').delete().eq('id', order.id)
+      return NextResponse.json({ error: '明細の登録に失敗しました' }, { status: 500 })
+    }
+
+    orderId = order.id
   }
 
   // 入り数(P/C)を規格マスタに保存（未設定のときのみ。既存値は誤上書きしない）。
@@ -210,5 +314,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ orderId: order.id, warnings })
+  return NextResponse.json({ orderId, replaced, warnings })
 }
