@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2, Settings, Camera } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus, SpecWarning } from '@/types/database'
@@ -18,6 +19,13 @@ const STATUS_TEXT: Record<FieldStatus, string> = {
   not_started: 'text-line-strong',
   packed: 'text-trust-500',
   shipped: 'text-harvest-500',
+}
+
+// 紙の運用（パック済み＝数字を○で囲む／出荷済み＝線を引く）を数量表示にも再現する（MatrixCellと同方針）。
+const QTY_SHAPE: Record<FieldStatus, string> = {
+  not_started: '',
+  packed: 'rounded-full border-2 border-trust-500 px-2',
+  shipped: 'line-through decoration-2',
 }
 
 export interface ShipmentRowProps {
@@ -43,7 +51,21 @@ export interface ShipmentRowProps {
   initialFieldNote: string | null
   /** 梱包時注意事項（禁止事項・必須事項）。常時表示 */
   specWarnings?: SpecWarning[] | null
-  /** 出荷済みに前進した瞬間に呼ばれる（親が一定時間後に末尾へ並べ替えるため） */
+  /** マスタ（customer_product_rules）の参考情報。ここでは編集不可（取引先詳細の規格編集で変更）。 */
+  masterLabelSpec?: string | null
+  masterTapeColor?: string | null
+  masterPackingNotes?: string | null
+  masterPacksPerCase?: number | null
+  /** 荷姿が組合指定等で自動確定できない（pack_configs.needs_manual_confirm）。常時警告表示。 */
+  needsManualConfirm?: boolean
+  /** 規格を直す導線に使う（取引先詳細への直リンク／規格報告への事前入力）。 */
+  customerId?: string | null
+  productId?: string
+  /** admin: 取引先詳細の規格編集へ直リンクできる */
+  canEditRulesDirectly?: boolean
+  /** staff/admin: 規格報告が使える（STAFF_CAN_REPORT_SPEC。adminは常時true） */
+  canReportSpec?: boolean
+  /** 出荷済みに前進した瞬間に呼ばれる（親が一定時間後に並べ替えるため） */
   onShipped?: (itemId: string) => void
   /** 削除された瞬間に呼ばれる（親が並びから除く） */
   onDeleted?: (itemId: string) => void
@@ -71,6 +93,15 @@ export function ShipmentRow({
   initialShippedQty,
   initialFieldNote,
   specWarnings,
+  masterLabelSpec,
+  masterTapeColor,
+  masterPackingNotes,
+  masterPacksPerCase,
+  needsManualConfirm,
+  customerId,
+  productId,
+  canEditRulesDirectly,
+  canReportSpec,
   onShipped,
   onDeleted,
 }: ShipmentRowProps) {
@@ -100,7 +131,7 @@ export function ShipmentRow({
 
   const meta = FIELD_STATUS_META[status]
   const Icon = ICONS[meta.icon]
-  const hasDetails = spec || container || hasCard || lineNote
+  const hasDetails = spec || container || hasCard || lineNote || masterLabelSpec || masterTapeColor || masterPackingNotes
   // 「途中で止まった」= できた数が受注総数に満たない。出荷前でも記録できる。
   const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
   const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
@@ -273,7 +304,7 @@ export function ShipmentRow({
               )}
             </span>
             <span className="flex flex-wrap items-center gap-1.5 mt-0.5">
-              <span className="num text-base font-bold tabular-nums text-ink">{quantityText}</span>
+              <span className={cn('num text-base font-bold tabular-nums text-ink', QTY_SHAPE[status])}>{quantityText}</span>
               {hasDetails && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-soft">
                   {hasCard && <IdCard className="h-3 w-3" aria-hidden />}
@@ -362,6 +393,16 @@ export function ShipmentRow({
         </div>
       )}
 
+      {/* 荷姿の自動確定不可（組合指定等）— specWarningsと同様、常時1行表示。見落とすと誤梱包に直結する */}
+      {needsManualConfirm && (
+        <div className="flex items-center gap-1.5 border-t border-line bg-warning-bg/30 px-3 py-1.5">
+          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-alert bg-alert/10">
+            <AlertTriangle className="h-3 w-3" aria-hidden />
+            荷姿は要確認（自動確定できない指定あり）
+          </span>
+        </div>
+      )}
+
       {quickOpen && (
         // 行から開かずに「できた数」だけを素早く記録（中断時）。荷姿/メモは下のアコーディオン。
         <div className="flex items-center gap-2 border-t border-line bg-harvest-50/40 px-3 py-2">
@@ -396,6 +437,41 @@ export function ShipmentRow({
 
       {open && (
         <div className="space-y-3 border-t border-line bg-bg-soft/40 px-3 py-3">
+          {/* マスタ参考情報（読み取り専用）。編集は取引先詳細の規格編集で行う（規格ロックのガバナンスを
+              ここでは壊さない）。値が無ければ何も出さない（情報過多を避ける）。 */}
+          {(masterLabelSpec || masterTapeColor || masterPackingNotes || masterPacksPerCase) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line bg-bg-card/60 px-3 py-2 text-xs text-ink-soft">
+              <span className="font-medium text-ink-faint">マスタ（参考）</span>
+              {masterPacksPerCase != null && <span>入り数 {masterPacksPerCase}</span>}
+              {masterLabelSpec && <span>ラベル: {masterLabelSpec}</span>}
+              {masterTapeColor && <span>テープ: {masterTapeColor}</span>}
+              {masterPackingNotes && <span>{masterPackingNotes}</span>}
+            </div>
+          )}
+
+          {/* 規格を直す導線。admin=取引先詳細の規格編集へ直リンク（RULES_EDIT_LOCKのガバナンスは
+              そちら側で判定される）。staff=規格の報告へ（直接は変更させない）。 */}
+          {customerId && canEditRulesDirectly && (
+            <Link
+              href={`/admin/customers/${customerId}`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+            >
+              <Settings className="h-3.5 w-3.5" aria-hidden />
+              この取引先の規格を直す
+            </Link>
+          )}
+          {customerId && !canEditRulesDirectly && canReportSpec && (
+            <Link
+              href={`/field/report-spec?customerId=${customerId}${productId ? `&productId=${productId}` : ''}`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+            >
+              <Camera className="h-3.5 w-3.5" aria-hidden />
+              規格を報告する
+            </Link>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1">
               <span className="text-xs font-medium text-ink-soft">荷姿</span>

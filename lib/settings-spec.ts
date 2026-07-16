@@ -116,7 +116,9 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     secret: false,
     kind: 'select',
     options: DELIVERY_AMOUNT_MODES.map((m) => ({ value: m.value, label: m.label })),
-    selectDefault: 'full',
+    // 既定は「金額なし」。価格は後決め（出荷後に price_rules で確定）のため、
+    // 納品時点の金額は未確定であることが多く、誤った金額を印字するリスクを避ける。
+    selectDefault: 'none',
     hint: '納品書発行時の初期値。発行ごとに切り替えもできます（金額あり／後から手書き／金額なし）',
   },
 

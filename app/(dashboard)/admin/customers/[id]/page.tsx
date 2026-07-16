@@ -45,7 +45,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
     supabase
       .from('customer_product_rules')
-      .select('product_id, packs_per_case, container_type, spec, has_card, is_default_set, default_quantity, fraction_policy')
+      .select('product_id, packs_per_case, container_type, spec, has_card, is_default_set, default_quantity, fraction_policy, label_spec, tape_color, packing_notes')
       .eq('customer_id', params.id),
     supabase
       .from('audit_log')
@@ -79,6 +79,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       is_default_set: r.is_default_set,
       default_quantity: r.default_quantity,
       fraction_policy: r.fraction_policy as FractionPolicy,
+      label_spec: r.label_spec,
+      tape_color: r.tape_color,
+      packing_notes: r.packing_notes,
     }
   }
   const productName = new Map((products ?? []).map((p) => [p.id, p.name]))

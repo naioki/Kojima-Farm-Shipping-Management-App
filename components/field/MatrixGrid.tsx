@@ -51,6 +51,9 @@ export function MatrixGrid({
   // 直近に保存済みの値（変更検知用）
   const [saved, setSaved] = useState<Record<string, string>>(() => ({ ...values }))
   const [states, setStates] = useState<Record<string, CellState>>({})
+  // 今フォーカス中のセル（c記法の展開プレビュー用）。表内は狭いので、表の下に1箇所だけ出す
+  // 「数式バー」方式にする（初見でも「10c2」の意味がすぐ分かるように）。
+  const [focused, setFocused] = useState<{ customerId: string; date: string } | null>(null)
 
   function setCell(k: string, val: string) {
     setValues((prev) => ({ ...prev, [k]: val }))
@@ -131,7 +134,7 @@ export function MatrixGrid({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink-soft">
-          単位: <span className="font-medium text-ink">{productUnit}</span>　セルに <span className="num">15c2</span> 等を入力 → 離れると保存（空欄で削除）
+          単位: <span className="font-medium text-ink">{productUnit}</span>　セルに <span className="num">15c2</span>（c=ケース、端数2）等を入力 → 離れると保存（空欄で削除）
         </p>
         <Button variant="secondary" size="sm" onClick={exportCsv}>
           <Download className="h-4 w-4" aria-hidden />
@@ -169,7 +172,11 @@ export function MatrixGrid({
                         inputMode="text"
                         value={values[k] ?? ''}
                         onChange={(e) => setCell(k, e.target.value)}
-                        onBlur={() => saveCell(c.id, d)}
+                        onFocus={() => setFocused({ customerId: c.id, date: d })}
+                        onBlur={() => {
+                          saveCell(c.id, d)
+                          setFocused((prev) => (prev && prev.customerId === c.id && prev.date === d ? null : prev))
+                        }}
                         aria-label={`${c.name} ${mmdd(d)}`}
                         className={cn(
                           'num h-11 w-full min-w-[60px] bg-transparent px-2 text-center tabular-nums text-ink',
@@ -187,6 +194,63 @@ export function MatrixGrid({
           </tbody>
         </table>
       </div>
+
+      {/* c記法の即時展開（数式バー）。「10c2」が初見でも分かるよう、入力中のセルだけその場で展開して見せる。 */}
+      {focused && (
+        <QuantityPreviewBar
+          raw={values[key(focused.customerId, focused.date)] ?? ''}
+          packsPerCase={packsByCustomer[focused.customerId] ?? null}
+          unit={productUnit}
+        />
+      )}
     </div>
+  )
+}
+
+/** フォーカス中セルの生入力を、その場で「15ケース×12入+端数2=182個」等に展開して見せる。 */
+function QuantityPreviewBar({
+  raw,
+  packsPerCase,
+  unit,
+}: {
+  raw: string
+  packsPerCase: number | null
+  unit: string
+}) {
+  if (raw.trim() === '') return null
+  const result = parseQuantity(raw, { packsPerCase })
+
+  if (result.type === 'error') {
+    if (result.reason === 'packs_per_case_required') {
+      return (
+        <p className="rounded border border-alert/40 bg-alert-bg/40 px-3 py-2 text-xs text-alert">
+          「{raw}」はケース記法ですが、この取引先はP/C（1ケースの入数）が未設定のため換算できません。取引先設定で登録してください。
+        </p>
+      )
+    }
+    return null // 入力途中は解釈不能でも静かに待つ（毎キー入力でエラーを出さない）
+  }
+  if (result.type === 'delete') return null
+
+  // プレーン数値（そのままの総数）は展開の必要が薄いので、確認だけ軽く示す
+  if (result.interpretation === 'plain') {
+    return (
+      <p className="num text-xs text-ink-faint">
+        {result.total.toString()} {unit} として保存されます
+      </p>
+    )
+  }
+
+  const detail =
+    result.interpretation === 'cases'
+      ? `${result.cases}ケース × ${packsPerCase}入${result.loose ? ` + 端数${result.loose}` : ''}`
+      : 'x記法（合計個数）'
+
+  return (
+    <p className="num flex items-center gap-1.5 rounded border border-trust-200 bg-trust-50 px-3 py-2 text-xs text-trust-700">
+      <span>{detail}</span>
+      <span aria-hidden>=</span>
+      <span className="text-sm font-bold">{result.total.toString()} {unit}</span>
+    </p>
   )
 }

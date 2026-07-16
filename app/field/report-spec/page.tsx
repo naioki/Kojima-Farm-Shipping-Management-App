@@ -13,7 +13,11 @@ export const dynamic = 'force-dynamic'
  * 設定「STAFF_CAN_REPORT_SPEC」ON 時のみスタッフが使える（admin は常時可）。
  * ここからは直接マスタを編集しない。報告→管理者が確認して反映する。
  */
-export default async function ReportSpecPage() {
+export default async function ReportSpecPage({
+  searchParams,
+}: {
+  searchParams: { customerId?: string; productId?: string }
+}) {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
@@ -54,6 +58,8 @@ export default async function ReportSpecPage() {
         <SpecReportForm
           customers={(customers ?? []).map((c) => ({ id: c.id, name: c.name }))}
           products={(products ?? []).map((p) => ({ id: p.id, name: p.name }))}
+          initialCustomerId={searchParams.customerId ?? ''}
+          initialProductId={searchParams.productId ?? ''}
         />
       </Card>
     </div>

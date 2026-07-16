@@ -17,11 +17,22 @@ interface Option {
 /**
  * 規格の現場報告フォーム（やさしい日本語＋アイコン）。
  * 「どの取引先・どの商品が・どう変わったか」を写真＋メモで送る。直接マスタは変えない。
+ * initialCustomerId/initialProductId は出荷一覧からの遷移時に事前入力する（二度手間防止）。
  */
-export function SpecReportForm({ customers, products }: { customers: Option[]; products: Option[] }) {
+export function SpecReportForm({
+  customers,
+  products,
+  initialCustomerId = '',
+  initialProductId = '',
+}: {
+  customers: Option[]
+  products: Option[]
+  initialCustomerId?: string
+  initialProductId?: string
+}) {
   const router = useRouter()
-  const [customerId, setCustomerId] = useState('')
-  const [productId, setProductId] = useState('')
+  const [customerId, setCustomerId] = useState(initialCustomerId)
+  const [productId, setProductId] = useState(initialProductId)
   const [note, setNote] = useState('')
   const [photoBase64, setPhotoBase64] = useState<string | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)

@@ -21,10 +21,15 @@ const LABELS = Object.fromEntries(DELIVERY_AMOUNT_MODES.map((m) => [m.value, m.l
   string
 >
 
-/** クエリ/設定値を安全に DeliveryAmountMode へ。未知値は fallback。 */
+/**
+ * クエリ/設定値を安全に DeliveryAmountMode へ。未知値は fallback。
+ * 既定を 'none'（金額なし）にしているのは、価格が後決め（出荷後に price_rules で確定）で
+ * 納品時点では未確定なことが多く、誤った金額を印字するより出さない方が安全なため。
+ * 保存済み納品書は amount_mode を明示保持しているのでフォールバックは効かない。
+ */
 export function parseAmountMode(
   value: string | null | undefined,
-  fallback: DeliveryAmountMode = 'full',
+  fallback: DeliveryAmountMode = 'none',
 ): DeliveryAmountMode {
   return value === 'full' || value === 'blank' || value === 'none' ? value : fallback
 }
