@@ -21,11 +21,6 @@ export function SkeletonBar({ className }: { className?: string }) {
   return <div className={cn(PULSE, 'rounded-lg bg-line/50', className)} aria-hidden />
 }
 
-/** 画面見出し（h1）のプレースホルダ。 */
-export function PageHeaderSkeleton({ className }: { className?: string }) {
-  return <div className={cn(PULSE, 'h-8 w-48 rounded-lg bg-line/60', className)} aria-hidden />
-}
-
 /** カードを縦に n 件並べたプレースホルダ（一覧・ボックス系の汎用）。 */
 export function CardListSkeleton({ count = 4, className }: { count?: number; className?: string }) {
   return (
@@ -84,7 +79,7 @@ export function GenericPageSkeleton({
 }) {
   return (
     <div className={cn('mx-auto max-w-3xl space-y-4', className)} role="status" aria-label="読み込み中">
-      <PageHeaderSkeleton />
+      <SkeletonBar className="h-8 w-48" />
       <CardListSkeleton count={cards} />
     </div>
   )

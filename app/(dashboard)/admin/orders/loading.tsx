@@ -1,22 +1,23 @@
-import { Card } from '@/components/ui/Card'
+import { TableSkeleton, SkeletonBar } from '@/components/skeletons'
 
-/** 受注一覧の読み込み中スケルトン（遷移直後に即表示してワンテンポ遅れを体感させない）。 */
+/** 受注一覧の読み込み中スケルトン（見出し + 操作 + フィルタカード + 一覧表）。 */
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
-      <div className="h-8 w-40 animate-pulse rounded bg-bg-soft" />
-      <Card className="p-3">
+    <div className="mx-auto max-w-4xl space-y-4" role="status" aria-label="読み込み中">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SkeletonBar className="h-8 w-40" />
+        <SkeletonBar className="h-10 w-32" />
+      </div>
+      <div className="rounded-xl border border-line p-3">
         <div className="flex flex-wrap gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-10 w-40 animate-pulse rounded bg-bg-soft" />
+            <SkeletonBar key={i} className="h-10 w-40" />
           ))}
         </div>
-      </Card>
-      <Card variant="elevated" className="space-y-3 p-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-9 w-full animate-pulse rounded bg-bg-soft" />
-        ))}
-      </Card>
+      </div>
+      <div className="rounded-xl border border-line p-4">
+        <TableSkeleton rows={6} />
+      </div>
     </div>
   )
 }
