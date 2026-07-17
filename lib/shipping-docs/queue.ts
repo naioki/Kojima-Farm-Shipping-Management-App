@@ -20,6 +20,8 @@ export interface EnqueuePrintJobParams {
   date: string
   docType: ShippingDocType
   productId?: string | null
+  /** 複数取引先での絞り込み（印刷画面のチェックボックス）。 */
+  customerIds?: string[] | null
   /** ラベルのみ: 供給先順を逆にする（積み込み順）。 */
   reverse?: boolean
   /** print_jobs.requested_by。無セッションの自動投入は null 可。 */
@@ -34,9 +36,9 @@ export async function enqueuePrintJob(
   db: SupabaseClient<Database>,
   params: EnqueuePrintJobParams,
 ): Promise<EnqueuePrintJobResult> {
-  const { date, docType, productId = null, reverse, requestedBy } = params
+  const { date, docType, productId = null, customerIds = null, reverse, requestedBy } = params
 
-  const rendered = await renderShippingDocPdf({ docType, date, productId, reverse })
+  const rendered = await renderShippingDocPdf({ docType, date, productId, customerIds, reverse })
   if (!rendered.ok) return { ok: false, status: rendered.status, error: rendered.error }
 
   // Storage へ保存（非公開バケット）→ エージェント用の署名付きURL（1年）。常に service_role。

@@ -1,5 +1,4 @@
-import { FileText, Tags } from 'lucide-react'
-import { QueuePrintButton } from '@/components/field/QueuePrintButton'
+import { PrintCustomerFilter } from '@/components/field/PrintCustomerFilter'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
@@ -36,13 +35,21 @@ export default async function FieldPrintPage({
     return <ErrorState message="帳票印刷は解放されていません（設定 → 現場機能の解放）" />
   }
 
-  // この日の出荷対象の品目（品目別印刷ボタン用）
+  // この日の出荷対象の注文（品目別印刷・取引先しぼり込み用）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('id')
+    .select('id, customer_id')
     .eq('delivery_date', date)
   if (ordersErr) return <ErrorState message={ordersErr.message} />
   const orderIds = (orders ?? []).map((o) => o.id)
+
+  // この日に出荷がある取引先だけを列挙（取引先しぼり込みのチェックボックス用）。
+  const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
+  const { data: custRows, error: custErr } = customerIds.length
+    ? await supabase.from('customers').select('id, name').in('id', customerIds).order('name')
+    : { data: [], error: null }
+  if (custErr) return <ErrorState message={custErr.message} />
+  const customers = custRows ?? []
   const items = orderIds.length
     ? (
         await supabase
@@ -67,9 +74,6 @@ export default async function FieldPrintPage({
   const labelsHref = (product?: string) =>
     `/api/shipping-docs/labels?date=${date}${product ? `&product=${product}` : ''}`
 
-  const bigBtn =
-    'flex min-h-[96px] flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-earth-200 bg-bg-card p-4 text-center hover:bg-earth-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100'
-
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -84,26 +88,8 @@ export default async function FieldPrintPage({
         />
       ) : (
         <>
-          {/* 主動線: 大ボタン2つ（この日の全品目） */}
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <a href={sheetHref()} target="_blank" rel="noopener" className={bigBtn}>
-              <FileText className="h-8 w-8 text-earth-500" aria-hidden />
-              <span className="text-lg font-bold text-ink">出荷表を 印刷</span>
-              <span className="text-xs text-ink-soft">コンテナに はる 紙（1枚ずつ）</span>
-            </a>
-            <a href={labelsHref()} target="_blank" rel="noopener" className={bigBtn}>
-              <Tags className="h-8 w-8 text-earth-500" aria-hidden />
-              <span className="text-lg font-bold text-ink">ラベルを 印刷</span>
-              <span className="text-xs text-ink-soft">8分割ラベル ＋ 出荷一覧表</span>
-            </a>
-          </div>
-
-          {/* 事務所の常駐プリンタへ自動印刷（print_jobs キュー・統合2D） */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-soft">その場で開かずに印刷:</span>
-            <QueuePrintButton date={date} docType="sheet" label="出荷表を事務所で自動印刷" />
-            <QueuePrintButton date={date} docType="labels" label="ラベルを事務所で自動印刷" />
-          </div>
+          {/* 主動線: 取引先しぼり込み ＋ 大ボタン2つ ＋ 自動印刷（Issue#7） */}
+          <PrintCustomerFilter date={date} customers={customers} />
 
           {(jobs ?? []).length > 0 && (
             <Card className="space-y-1">

@@ -16,6 +16,7 @@ const bodySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   docType: z.enum(['sheet', 'labels']),
   productId: z.string().uuid().nullish(),
+  customerIds: z.array(z.string().uuid()).nullish(),
 })
 
 export async function POST(req: Request) {
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body' }, { status: 400 })
-  const { date, docType, productId } = parsed.data
+  const { date, docType, productId, customerIds } = parsed.data
 
   // PDF生成 → Storage保存 → 署名URL → キュー登録は lib/shipping-docs/queue.ts に集約
   // （チャット自動化と共有）。キュー登録は利用者クライアントで行い RLS staff_insert を効かせる。
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
     date,
     docType,
     productId,
+    customerIds,
     requestedBy: user.id,
   })
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })

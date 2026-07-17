@@ -14,25 +14,35 @@ export function QueuePrintButton({
   date,
   docType,
   productId,
+  customerIds,
+  disabled,
   label = '事務所で自動印刷',
   className,
 }: {
   date: string
   docType: 'sheet' | 'labels'
   productId?: string
+  /** 選択された取引先での絞り込み（未指定/空は全件）。 */
+  customerIds?: string[]
+  disabled?: boolean
   label?: string
   className?: string
 }) {
   const [sending, setSending] = useState(false)
 
   async function send() {
-    if (sending) return
+    if (sending || disabled) return
     setSending(true)
     try {
       const res = await fetch('/api/print-jobs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ date, docType, productId }),
+        body: JSON.stringify({
+          date,
+          docType,
+          productId,
+          customerIds: customerIds && customerIds.length ? customerIds : undefined,
+        }),
       })
       const body = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
@@ -51,7 +61,7 @@ export function QueuePrintButton({
     <button
       type="button"
       onClick={send}
-      disabled={sending}
+      disabled={sending || disabled}
       className={cn(
         'inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-sm text-ink-soft',
         'hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',

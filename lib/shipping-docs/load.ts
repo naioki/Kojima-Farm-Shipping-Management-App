@@ -20,6 +20,8 @@ import {
 export interface ShippingDocsQuery {
   date: string
   customerId?: string | null
+  /** 複数取引先での絞り込み（印刷画面のチェックボックス）。指定時は customerId より優先。 */
+  customerIds?: string[] | null
   productId?: string | null
 }
 
@@ -44,7 +46,8 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
     .from('orders')
     .select('id, customer_id, destination_id')
     .eq('delivery_date', q.date)
-  if (q.customerId) ordersQuery = ordersQuery.eq('customer_id', q.customerId)
+  if (q.customerIds && q.customerIds.length) ordersQuery = ordersQuery.in('customer_id', q.customerIds)
+  else if (q.customerId) ordersQuery = ordersQuery.eq('customer_id', q.customerId)
   const { data: orders, error: ordersErr } = await ordersQuery
   if (ordersErr) return empty(ordersErr.message)
   if (!orders?.length) return empty()

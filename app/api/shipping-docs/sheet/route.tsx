@@ -20,11 +20,15 @@ export async function GET(req: Request) {
   const date = searchParams.get('date') ?? ''
   const customerId = searchParams.get('customer')
   const productId = searchParams.get('product')
+  const customerIdsRaw = searchParams.get('customer_ids')
   if (!DATE_RE.test(date)) return NextResponse.json({ error: 'invalid_date' }, { status: 400 })
   if (customerId && !UUID_RE.test(customerId)) return NextResponse.json({ error: 'invalid_customer' }, { status: 400 })
   if (productId && !UUID_RE.test(productId)) return NextResponse.json({ error: 'invalid_product' }, { status: 400 })
+  const customerIds = customerIdsRaw ? customerIdsRaw.split(',').filter(Boolean) : null
+  if (customerIds && !customerIds.every((id) => UUID_RE.test(id)))
+    return NextResponse.json({ error: 'invalid_customer' }, { status: 400 })
 
-  const result = await renderShippingDocPdf({ docType: 'sheet', date, customerId, productId })
+  const result = await renderShippingDocPdf({ docType: 'sheet', date, customerId, customerIds, productId })
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
 
   return new Response(new Uint8Array(result.buffer), {

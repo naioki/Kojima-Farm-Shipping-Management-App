@@ -18,6 +18,8 @@ export interface RenderShippingDocParams {
   docType: ShippingDocType
   date: string
   customerId?: string | null
+  /** 複数取引先での絞り込み（印刷画面のチェックボックス）。指定時は customerId より優先。 */
+  customerIds?: string[] | null
   productId?: string | null
   /** ラベルのみ: 供給先順を逆にする（積み込み順） */
   reverse?: boolean
@@ -31,6 +33,7 @@ export async function renderShippingDocPdf(params: RenderShippingDocParams): Pro
   const { entries, dateDisplay, dateDisplayWide, error } = await loadShippingDocEntries({
     date: params.date,
     customerId: params.customerId,
+    customerIds: params.customerIds,
     productId: params.productId,
   })
   if (error) return { ok: false, status: 500, error }
