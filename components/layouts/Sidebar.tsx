@@ -37,14 +37,20 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
               {group.items.map(({ href, label, icon: Icon }) => {
                 const active = href === activeHref
                 return (
-                  <li key={href}>
+                  <li key={href} className="relative">
+                    {active && (
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-1 left-0 w-[3px] rounded-full bg-earth-400"
+                      />
+                    )}
                     <Link
                       href={href}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
                         'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60',
                         active
-                          ? 'bg-forest-600 text-white shadow-sm'
+                          ? 'bg-forest-600 pl-3.5 text-white shadow-sm'
                           : 'text-forest-100/80 hover:bg-forest-700 hover:text-white',
                       )}
                     >
@@ -69,12 +75,21 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
                 type="button"
                 onClick={() => toggleGroup(group.label!)}
                 aria-expanded={open}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-forest-200 transition-colors hover:text-white"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-forest-200 transition-colors hover:bg-forest-700/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
               >
                 {group.label}
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
               </button>
-              {open && <div className="mt-0.5">{items}</div>}
+              <div
+                className={cn(
+                  'grid transition-[grid-template-rows] duration-300 ease-organic motion-reduce:transition-none',
+                  open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+                )}
+              >
+                <div className="overflow-hidden">
+                  <div className="mt-0.5">{items}</div>
+                </div>
+              </div>
             </div>
           )
         })}

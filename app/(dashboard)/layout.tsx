@@ -25,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex min-h-screen">
       <Sidebar role={role} user={{ name, roleLabel }} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav role={role} />
+        <MobileNav role={role} user={{ name, roleLabel }} />
         <main className="flex-1 p-4 lg:p-8">{children}</main>
       </div>
     </div>

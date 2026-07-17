@@ -17,8 +17,14 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   if (!user) redirect('/login')
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role, full_name')
+    .eq('id', user.id)
+    .maybeSingle()
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
+  const name = profile?.full_name?.trim() || user.email?.split('@')[0] || 'ユーザー'
+  const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
 
   // 解放済み機能を「その他」ドロワーに並べる（admin は常に全許可）。
   const features = await getStaffFeatures()
@@ -41,7 +47,7 @@ export default async function FieldLayout({ children }: { children: React.ReactN
 
   return (
     <div className="flex min-h-screen flex-col">
-      <MobileNav role={role} persistent />
+      <MobileNav role={role} persistent user={{ name, roleLabel }} />
       <main className="flex-1 p-4 pb-0 lg:p-8">{children}</main>
       <FieldBottomBar actions={actions} />
     </div>

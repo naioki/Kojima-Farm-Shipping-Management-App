@@ -1,30 +1,46 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LogOut, ChevronDown, Leaf } from 'lucide-react'
+import { Menu, X, LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navFor } from '@/components/layouts/nav-items'
 import { useNavState } from '@/components/layouts/use-nav'
+import type { SidebarUser } from '@/components/layouts/Sidebar'
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /**
  * モバイル用ナビ（lg 未満）。上部バー＋ハンバーガー → スライドドロワー。
  * タップ対象は大きめ（h-14・text-base）にして手袋・屋外でも押しやすくする（design.md）。
  * 画面遷移・背景タップ・×・Esc で閉じる。印刷時は非表示。
+ * ドロワーは role="dialog" + フォーカストラップ（開時に閉じるボタンへ、Tab循環、閉時にハンバーガーへ復帰）。
  */
-export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff'; persistent?: boolean }) {
+export function MobileNav({
+  role,
+  persistent = false,
+  user,
+}: {
+  role: 'admin' | 'staff'
+  persistent?: boolean
+  user?: SidebarUser
+}) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const nav = navFor(role)
   const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
 
   // ルート変更で自動的に閉じる
   useEffect(() => {
     setOpen(false)
   }, [pathname])
 
-  // 開いている間は背面スクロールを止める
+  // 開いている間は背面スクロールを止める・Escで閉じる
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -35,6 +51,32 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
       document.body.style.overflow = prev
       window.removeEventListener('keydown', onKey)
     }
+  }, [open])
+
+  // フォーカストラップ：開時に閉じるボタンへフォーカス、Tabで循環、閉時にハンバーガーへ復帰
+  useEffect(() => {
+    if (!open) {
+      menuButtonRef.current?.focus()
+      return
+    }
+    closeButtonRef.current?.focus()
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !drawerRef.current) return
+      const focusable = Array.from(drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
   }, [open])
 
   const current = nav.find((n) => n.href === activeHref)
@@ -49,6 +91,7 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
         )}
       >
         <button
+          ref={menuButtonRef}
           type="button"
           onClick={() => setOpen(true)}
           aria-label="メニューを開く"
@@ -73,6 +116,9 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
             className="absolute inset-0 bg-ink/40"
           />
           <nav
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
             aria-label="メニュー"
             className="absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col bg-forest-800 p-4 text-forest-100 shadow-xl animate-slide-in-left"
           >
@@ -84,6 +130,7 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
                 小島農園
               </span>
               <button
+                ref={closeButtonRef}
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="閉じる"
@@ -92,6 +139,17 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
                 <X className="h-6 w-6" aria-hidden />
               </button>
             </div>
+            {user && (
+              <div className="mb-2 flex items-center gap-2.5 rounded-lg bg-forest-700/60 px-3 py-2.5">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forest-500 text-white">
+                  <UserRound className="h-4 w-4" aria-hidden />
+                </span>
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate text-sm font-medium text-white">{user.name}</div>
+                  <div className="text-[11px] text-forest-200">{user.roleLabel}</div>
+                </div>
+              </div>
+            )}
             <div className="flex-1 space-y-2 overflow-y-auto">
               {groups.map((group, gi) => {
                 const items = (
