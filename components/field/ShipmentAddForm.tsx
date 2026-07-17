@@ -116,7 +116,7 @@ export function ShipmentAddForm({ deliveryDate, customers, products, destination
   }
 
   return (
-    <Card className="space-y-3">
+    <Card className="space-y-3" data-guide="smart-add">
       <h2 className="font-display text-base font-bold text-ink">スマート追加</h2>
       <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
         <Select

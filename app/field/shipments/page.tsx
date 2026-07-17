@@ -10,6 +10,8 @@ import { ShipmentGroupRows } from '@/components/field/ShipmentGroupRows'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
+import { SHIPMENTS_TOUR } from '@/lib/guide/tours'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import type { SpecWarning, PackPhotoKind } from '@/types/database'
 import type { PackInstructionValues, PackInstructionPhoto } from '@/components/admin/PackInstructions'
@@ -235,6 +237,7 @@ export default async function ShipmentsPage({
         <div className="flex items-center gap-3">
           <h1 className="font-display text-2xl font-bold text-ink">出荷一覧</h1>
           <FieldViewSwitch active="day" date={date} />
+          <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
         <DateNav date={date} basePath={PATH} />
       </div>

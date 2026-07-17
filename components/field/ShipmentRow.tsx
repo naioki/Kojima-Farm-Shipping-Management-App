@@ -394,6 +394,7 @@ export function ShipmentRow({
             onClick={() => setConfirmOpen(true)}
             disabled={busy || status === 'not_started'}
             aria-label="1段戻す"
+            data-guide="reset"
             className="flex h-12 w-12 items-center justify-center rounded border border-line text-ink-soft hover:bg-bg-soft disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
           >
             <ChevronLeft className="h-5 w-5" aria-hidden />
@@ -417,6 +418,7 @@ export function ShipmentRow({
             onClick={advance}
             disabled={busy || !canAdvance(status)}
             aria-label="次のステータスへ進める"
+            data-guide="advance"
             className="flex h-12 w-12 items-center justify-center rounded border border-line text-ink-soft hover:bg-bg-soft disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
           >
             <ChevronRight className="h-5 w-5" aria-hidden />
@@ -443,7 +445,10 @@ export function ShipmentRow({
           猶予が過ぎると親がステータス順に並べ替える。サーバーには反映済みなので
           この間に画面を離れても状態は失われない。 */}
       {undoGrace && (
-        <div className="flex items-center justify-between gap-2 border-t border-line bg-harvest-50/60 px-3 py-2 motion-reduce:transition-none">
+        <div
+          data-guide="undo-bar"
+          className="flex items-center justify-between gap-2 border-t border-line bg-harvest-50/60 px-3 py-2 motion-reduce:transition-none"
+        >
           <span className="flex items-center gap-1.5 text-xs font-medium text-harvest-700">
             <Check className="h-4 w-4" aria-hidden />
             {meta.label}にしました

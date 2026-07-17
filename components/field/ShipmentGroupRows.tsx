@@ -105,6 +105,7 @@ export function ShipmentGroupRows({ rows }: { rows: ShipmentRowProps[] }) {
           type="button"
           onClick={() => setShowShipped((v) => !v)}
           aria-expanded={showShipped}
+          data-guide="shipped-fold"
           className="flex h-11 w-full items-center justify-center gap-1.5 rounded border border-dashed border-line text-sm font-medium text-ink-soft hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
         >
           <Truck className="h-4 w-4" aria-hidden />
