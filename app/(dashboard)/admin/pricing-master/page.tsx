@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card'
 import { PackConfigManager, type PackConfigRow } from '@/components/admin/PackConfigManager'
 import { PriceRuleManager, type PriceRuleListRow } from '@/components/admin/PriceRuleManager'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { ErrorState } from '@/components/ui/States'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export default async function PricingMasterPage() {
 
   const supabase = createClient()
 
-  const [{ data: products }, { data: customers }, { data: packs }, { data: prices }] = await Promise.all([
+  const [productsRes, customersRes, packsRes, pricesRes] = await Promise.all([
     supabase.from('products').select('id, name, base_unit').eq('is_active', true).order('name'),
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
     supabase
@@ -31,6 +32,17 @@ export default async function PricingMasterPage() {
       .select('id, product_id, customer_id, channel, price_unit, unit_price, tax_rate, effective_from, effective_to')
       .order('effective_from', { ascending: false }),
   ])
+
+  // クエリエラーを空表示に化けさせない（CLAUDE.md: NEVER swallow errors）。
+  // 特に migration 未適用時の「column does not exist」はここで顕在化させる。
+  const queryError =
+    productsRes.error ?? customersRes.error ?? packsRes.error ?? pricesRes.error
+  if (queryError) return <ErrorState message={`マスタの読み込みに失敗しました: ${queryError.message}`} />
+
+  const { data: products } = productsRes
+  const { data: customers } = customersRes
+  const { data: packs } = packsRes
+  const { data: prices } = pricesRes
 
   const productOpts = (products ?? []).map((p) => ({ id: p.id, name: p.name }))
   const customerOpts = (customers ?? []).map((c) => ({ id: c.id, name: c.name }))

@@ -96,12 +96,14 @@ export default async function ShipmentsPage({
   // 荷姿（明細に紐づく pack_config）を取得して表示に使う。needs_manual_confirm は
   // 「組合指定等、自動確定せず人手確認」の警告に使う（現場が気づかず出荷する事故を防ぐ）。
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
-  const { data: packRows } = packIds.length
+  const { data: packRows, error: packErr } = packIds.length
     ? await supabase
         .from('pack_configs')
         .select('id, base_per_selling, selling_unit_label, needs_manual_confirm, spec_note, has_card, has_seal, tape_color, label_spec, price_tag_required, returnable_container, quality_note, standing_notes, field_memo')
         .in('id', packIds)
-    : { data: [] as PackInstructionRow[] }
+    : { data: [] as PackInstructionRow[], error: null }
+  // 作業指示が黙って欠落すると出荷ミス防止の意味がないため、取得失敗は顕在化させる
+  if (packErr) return <ErrorState message={`荷姿情報の読み込みに失敗しました: ${packErr.message}`} />
   const packById = new Map(
     (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
   )
@@ -126,13 +128,14 @@ export default async function ShipmentsPage({
   )
 
   // 荷姿の作業写真（完成見本/注意点）。閲覧は /api/pack-photos/[id] の署名URL経由。
-  const { data: photoRows } = packIds.length
+  const { data: photoRows, error: photoErr } = packIds.length
     ? await supabase
         .from('pack_config_photos')
         .select('id, pack_config_id, kind, sort_order')
         .in('pack_config_id', packIds)
         .order('sort_order')
-    : { data: [] as { id: string; pack_config_id: string; kind: PackPhotoKind; sort_order: number }[] }
+    : { data: [] as { id: string; pack_config_id: string; kind: PackPhotoKind; sort_order: number }[], error: null }
+  if (photoErr) return <ErrorState message={`荷姿写真の読み込みに失敗しました: ${photoErr.message}`} />
   const photosByPack = new Map<string, PackInstructionPhoto[]>()
   for (const ph of photoRows ?? []) {
     const arr = photosByPack.get(ph.pack_config_id) ?? []
