@@ -34,7 +34,8 @@ const ADD_ERRORS: Record<string, string> = {
  * 取引先・品目・数量（"15c2" 等の混在記号可）を入れて1件追加。
  * 入力中はスマートパース結果をライブプレビュー（誤解釈を投入前に気づける・features.md §5）。
  */
-export function ShipmentAddForm({ deliveryDate, customers, products, destinations, packsByPair }: ShipmentAddFormProps) {
+// destinations は既定 [] で防御（HMR/古いチャンク混在で prop が欠けても画面全体を落とさない）
+export function ShipmentAddForm({ deliveryDate, customers, products, destinations = [], packsByPair }: ShipmentAddFormProps) {
   const router = useRouter()
   const [customerId, setCustomerId] = useState('')
   const [productId, setProductId] = useState('')
