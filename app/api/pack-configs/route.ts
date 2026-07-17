@@ -31,6 +31,17 @@ export async function POST(req: Request) {
       selling_unit_label: d.selling_unit_label,
       base_per_selling: d.base_per_selling,
       needs_manual_confirm: d.needs_manual_confirm ?? false,
+      // 作業指示（詳細）— migrations/0021。未入力は null。
+      spec_note: d.spec_note ?? null,
+      has_card: d.has_card ?? null,
+      has_seal: d.has_seal ?? null,
+      tape_color: d.tape_color ?? null,
+      label_spec: d.label_spec ?? null,
+      price_tag_required: d.price_tag_required ?? null,
+      returnable_container: d.returnable_container ?? null,
+      quality_note: d.quality_note ?? null,
+      standing_notes: d.standing_notes ?? null,
+      field_memo: d.field_memo ?? null,
     })
     .select('id')
     .single()

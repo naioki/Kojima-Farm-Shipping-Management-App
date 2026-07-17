@@ -23,7 +23,7 @@ export default async function PricingMasterPage() {
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
     supabase
       .from('pack_configs')
-      .select('id, product_id, customer_id, label, selling_unit_label, base_per_selling, needs_manual_confirm')
+      .select('id, product_id, customer_id, label, selling_unit_label, base_per_selling, needs_manual_confirm, spec_note, has_card, has_seal, tape_color, label_spec, price_tag_required, returnable_container, quality_note, standing_notes, field_memo')
       .eq('is_active', true)
       .order('created_at', { ascending: false }),
     supabase

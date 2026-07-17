@@ -712,6 +712,28 @@ export interface PackConfig {
   needs_manual_confirm: boolean
   is_active: boolean
   created_at: ISODateTime
+  // 作業指示（詳細）— migrations/0021。値が入っている項目だけ表示する（値駆動）。
+  spec_note: string | null
+  has_card: boolean | null
+  has_seal: boolean | null
+  tape_color: string | null
+  label_spec: string | null
+  price_tag_required: boolean | null
+  returnable_container: boolean | null
+  quality_note: string | null
+  standing_notes: string | null
+  field_memo: string | null
+}
+
+/** 荷姿の作業写真（完成見本/注意点）。migrations/0021。閲覧は署名URL経由のみ。 */
+export type PackPhotoKind = 'finish' | 'caution'
+export interface PackConfigPhoto {
+  id: UUID
+  pack_config_id: UUID
+  storage_path: string
+  kind: PackPhotoKind
+  sort_order: number
+  created_at: ISODateTime
 }
 
 export interface PriceRuleRow {
@@ -743,8 +765,35 @@ export const packConfigUpsertSchema = z.object({
   base_per_selling: z.number().positive(),
   needs_manual_confirm: z.boolean().optional(),
   is_active: z.boolean().optional(),
+  // 作業指示（詳細）— migrations/0021。すべて任意（未設定は null）。
+  spec_note: z.string().nullish(),
+  has_card: z.boolean().nullish(),
+  has_seal: z.boolean().nullish(),
+  tape_color: z.string().nullish(),
+  label_spec: z.string().nullish(),
+  price_tag_required: z.boolean().nullish(),
+  returnable_container: z.boolean().nullish(),
+  quality_note: z.string().nullish(),
+  standing_notes: z.string().nullish(),
+  field_memo: z.string().nullish(),
 })
 export type PackConfigUpsertInput = z.infer<typeof packConfigUpsertSchema>
+
+/** 荷姿の作業指示の部分更新（PATCH）。荷姿の基本項目は含めず作業指示のみを対象にする。 */
+export const packConfigInstructionsSchema = z.object({
+  spec_note: z.string().nullish(),
+  has_card: z.boolean().nullish(),
+  has_seal: z.boolean().nullish(),
+  tape_color: z.string().nullish(),
+  label_spec: z.string().nullish(),
+  price_tag_required: z.boolean().nullish(),
+  returnable_container: z.boolean().nullish(),
+  quality_note: z.string().nullish(),
+  standing_notes: z.string().nullish(),
+  field_memo: z.string().nullish(),
+  needs_manual_confirm: z.boolean().optional(),
+})
+export type PackConfigInstructionsInput = z.infer<typeof packConfigInstructionsSchema>
 
 /** 印刷キュー（統合2D・migrations/0020）。常駐エージェント(print_agent.py)がv4互換のREST操作で消化する。 */
 export type PrintJobStatus = 'pending' | 'processing' | 'printed' | 'failed'

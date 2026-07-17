@@ -71,8 +71,8 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
       : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string; sort_order: number }[] }),
     supabase.from('products').select('id, container_capacity').in('id', productIds),
     packIds.length
-      ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
-      : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[] }),
+      ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label, standing_notes').in('id', packIds)
+      : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string; standing_notes: string | null }[] }),
   ])
 
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
@@ -105,7 +105,8 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
       customerName: cust,
       storeName,
       item: it.product_name,
-      spec: it.spec ?? '',
+      // 規格に加え、荷姿の固定追記（standing_notes）も帳票に載せる（毎回出す作業指示）。
+      spec: [it.spec ?? '', pack?.standing_notes ?? ''].filter(Boolean).join(' / '),
       unitsPerBox,
       unitLabel: it.unit || '個',
       boxLabel: it.container_type || pack?.selling_unit_label || 'ケース',

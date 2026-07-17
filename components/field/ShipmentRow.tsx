@@ -11,6 +11,7 @@ import { ColorDot } from '@/components/ui/ColorDot'
 import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto } from '@/components/admin/PackInstructions'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
@@ -58,6 +59,10 @@ export interface ShipmentRowProps {
   masterPacksPerCase?: number | null
   /** 荷姿が組合指定等で自動確定できない（pack_configs.needs_manual_confirm）。常時警告表示。 */
   needsManualConfirm?: boolean
+  /** 荷姿マスタの作業指示（値駆動表示）。値が入っている項目だけバッジ/行で出す。 */
+  packInstructions?: PackInstructionValues | null
+  /** 荷姿の作業写真（完成見本/注意点）。横スクロールのサムネイル帯＋タップで拡大。 */
+  packPhotos?: PackInstructionPhoto[]
   /** 規格を直す導線に使う（取引先詳細への直リンク／規格報告への事前入力）。 */
   customerId?: string | null
   productId?: string
@@ -98,6 +103,8 @@ export function ShipmentRow({
   masterPackingNotes,
   masterPacksPerCase,
   needsManualConfirm,
+  packInstructions,
+  packPhotos,
   customerId,
   productId,
   canEditRulesDirectly,
@@ -437,6 +444,12 @@ export function ShipmentRow({
 
       {open && (
         <div className="space-y-3 border-t border-line bg-bg-soft/40 px-3 py-3">
+          {/* 荷姿マスタの作業指示（値駆動）。規格・カード/シール・テープ色・ラベル種別・品質注意・
+              固定追記・現場メモ・作業写真。値が無ければ何も出さない（PackInstructions が判定）。 */}
+          {packInstructions && (
+            <PackInstructions values={packInstructions} photos={packPhotos ?? []} variant="field" />
+          )}
+
           {/* マスタ参考情報（読み取り専用）。編集は取引先詳細の規格編集で行う（規格ロックのガバナンスを
               ここでは壊さない）。値が無ければ何も出さない（情報過多を避ける）。 */}
           {(masterLabelSpec || masterTapeColor || masterPackingNotes || masterPacksPerCase) && (

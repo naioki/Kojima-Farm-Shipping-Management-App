@@ -11,7 +11,16 @@ import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
-import type { SpecWarning } from '@/types/database'
+import type { SpecWarning, PackPhotoKind } from '@/types/database'
+import type { PackInstructionValues, PackInstructionPhoto } from '@/components/admin/PackInstructions'
+
+// 荷姿の作業指示付き行（select の戻り型）。値駆動表示に使う。
+type PackInstructionRow = {
+  id: string
+  base_per_selling: number
+  selling_unit_label: string
+  needs_manual_confirm: boolean
+} & PackInstructionValues
 
 export const dynamic = 'force-dynamic'
 
@@ -90,13 +99,46 @@ export default async function ShipmentsPage({
   const { data: packRows } = packIds.length
     ? await supabase
         .from('pack_configs')
-        .select('id, base_per_selling, selling_unit_label, needs_manual_confirm')
+        .select('id, base_per_selling, selling_unit_label, needs_manual_confirm, spec_note, has_card, has_seal, tape_color, label_spec, price_tag_required, returnable_container, quality_note, standing_notes, field_memo')
         .in('id', packIds)
-    : { data: [] as { id: string; base_per_selling: number; selling_unit_label: string; needs_manual_confirm: boolean }[] }
+    : { data: [] as PackInstructionRow[] }
   const packById = new Map(
     (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
   )
   const needsConfirmByPack = new Map((packRows ?? []).map((p) => [p.id, p.needs_manual_confirm]))
+  // 作業指示（値駆動）— 荷姿ごとの規格・カード/シール・テープ色・ラベル種別・品質注意・固定追記・現場メモ
+  const packInstructionsById = new Map(
+    (packRows ?? []).map((p) => [
+      p.id,
+      {
+        spec_note: p.spec_note,
+        has_card: p.has_card,
+        has_seal: p.has_seal,
+        tape_color: p.tape_color,
+        label_spec: p.label_spec,
+        price_tag_required: p.price_tag_required,
+        returnable_container: p.returnable_container,
+        quality_note: p.quality_note,
+        standing_notes: p.standing_notes,
+        field_memo: p.field_memo,
+      } as PackInstructionValues,
+    ]),
+  )
+
+  // 荷姿の作業写真（完成見本/注意点）。閲覧は /api/pack-photos/[id] の署名URL経由。
+  const { data: photoRows } = packIds.length
+    ? await supabase
+        .from('pack_config_photos')
+        .select('id, pack_config_id, kind, sort_order')
+        .in('pack_config_id', packIds)
+        .order('sort_order')
+    : { data: [] as { id: string; pack_config_id: string; kind: PackPhotoKind; sort_order: number }[] }
+  const photosByPack = new Map<string, PackInstructionPhoto[]>()
+  for (const ph of photoRows ?? []) {
+    const arr = photosByPack.get(ph.pack_config_id) ?? []
+    arr.push({ id: ph.id, kind: ph.kind })
+    photosByPack.set(ph.pack_config_id, arr)
+  }
 
   // マスタの梱包情報（ラベル/テープ色/固定の梱包指示/入り数）。order_items.rule_id で紐付け、
   // 参考表示のみ（編集は取引先詳細の規格編集で行う。ここでの上書きはガバナンスを壊す）。
@@ -224,6 +266,8 @@ export default async function ShipmentsPage({
                     masterPackingNotes: rule?.packing_notes ?? null,
                     masterPacksPerCase: rule?.packs_per_case ?? null,
                     needsManualConfirm: it.pack_config_id ? (needsConfirmByPack.get(it.pack_config_id) ?? false) : false,
+                    packInstructions: it.pack_config_id ? (packInstructionsById.get(it.pack_config_id) ?? null) : null,
+                    packPhotos: it.pack_config_id ? (photosByPack.get(it.pack_config_id) ?? []) : [],
                     customerId: custId || null,
                     productId: it.product_id,
                     canEditRulesDirectly: isAdmin,
