@@ -34,6 +34,8 @@ export function MobileNav({
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
+  // 初回マウント時（open=false）にハンバーガーへフォーカスを奪わないためのフラグ
+  const wasOpenRef = useRef(false)
 
   // ルート変更で自動的に閉じる
   useEffect(() => {
@@ -56,9 +58,11 @@ export function MobileNav({
   // フォーカストラップ：開時に閉じるボタンへフォーカス、Tabで循環、閉時にハンバーガーへ復帰
   useEffect(() => {
     if (!open) {
-      menuButtonRef.current?.focus()
+      if (wasOpenRef.current) menuButtonRef.current?.focus()
+      wasOpenRef.current = false
       return
     }
+    wasOpenRef.current = true
     closeButtonRef.current?.focus()
 
     const onKeyDown = (e: KeyboardEvent) => {
