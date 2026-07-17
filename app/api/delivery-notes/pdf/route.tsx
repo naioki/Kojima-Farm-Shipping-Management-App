@@ -52,7 +52,7 @@ export async function GET(req: Request) {
         .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
         .in('order_id', orderIds)
         .order('product_name')
-    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number | null; tax_rate: number; subtotal: number | null }[], error: null }
+    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number; tax_rate: number; subtotal: number }[], error: null }
   if (itemsRes.error) return NextResponse.json({ error: `明細の取得に失敗しました: ${itemsRes.error.message}` }, { status: 500 })
   const items = itemsRes.data ?? []
 

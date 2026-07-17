@@ -71,7 +71,7 @@ export default async function DeliveryNoteView({
         .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
         .in('order_id', orderIds)
         .order('product_name')
-    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number | null; tax_rate: number; subtotal: number | null }[], error: null }
+    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number; tax_rate: number; subtotal: number }[], error: null }
   // 明細は納品書本体。取得失敗を「明細なし」に化けさせない。
   if (itemsRes.error) return <ErrorState message="納品書の明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
   const items = itemsRes.data ?? []
