@@ -15,11 +15,14 @@
 - [ホーム画面（管理ダッシュボード）](#ホーム画面管理ダッシュボード)
 - [写真からマスタ一括取込（OCR）](#写真からマスタ一括取込ocr)
 - [技術スタック / アーキテクチャ](#技術スタック--アーキテクチャ)
+- [主要機能とデータフロー](#主要機能とデータフロー)
+- [DBスキーマ概観](#dbスキーマ概観)
 - [ディレクトリ構成](#ディレクトリ構成)
 - [セットアップ（ローカル開発）](#セットアップローカル開発)
 - [環境変数・シークレット](#環境変数シークレット)
 - [よく使うコマンド](#よく使うコマンド)
 - [デプロイ（Cloud Run）](#デプロイcloud-run)
+- [設計上の重要ルール（要約）](#設計上の重要ルール要約)
 - [セキュリティ方針](#セキュリティ方針)
 - [テスト](#テスト)
 
@@ -101,17 +104,33 @@
 
 ## 技術スタック / アーキテクチャ
 
-```
-ユーザー
-  ↓
-Cloudflare DNS + CDN + WAF
-  ↓
-Google Cloud Run（asia-northeast1）
-  └─ Next.js 14 standalone コンテナ 1つ
-     ├─ 画面（Server / Client Components）
-     └─ API（Route Handlers）← PDF生成・OCR等の重い処理もここ
-  ↓
-Supabase (PostgreSQL + RLS) + Cloudflare R2（ファイル原本）
+```mermaid
+flowchart TD
+    subgraph channels["受注4チャネル"]
+        FAX["FAX（自作受信→Drive）"]
+        MAIL["メール（IMAP）"]
+        PORTAL_IN["B2Bポータル（構造化入力）"]
+        MANUAL["手動入力（admin）"]
+    end
+
+    U["ユーザー（admin / staff / customer）"] --> CF["Cloudflare DNS + CDN + WAF"]
+    CF --> CR["Google Cloud Run（asia-northeast1）\nNext.js 14 standalone 1コンテナ"]
+    CR -->|"画面 Server/Client Components"| Screens["/admin /field /portal"]
+    CR -->|"API Route Handlers"| API["OCR・PDF生成・cron 等"]
+    API --> DB[("Supabase\nPostgreSQL + Auth + RLS")]
+    API --> R2[("Cloudflare R2\n原本ファイル 7年保存")]
+    Gemini["Google Gemini"] -.->|"FAX/メール画像のOCR/構造化"| API
+
+    FAX --> API
+    MAIL --> API
+    PORTAL_IN --> API
+    MANUAL --> API
+    API --> Review["承認待ち（pending_review）"]
+    Review -->|"承認ゲート"| Approve["承認 → harvest_tasks 生成"]
+    Approve --> Field["圃場マトリックス（/field）"]
+    Field --> Ship["出荷確定"]
+    Ship --> Price["価格確定（price_rules）"]
+    Price --> Invoice["請求書 / 納品書（PDF・スナップショット）"]
 ```
 
 - **フレームワーク**：Next.js 14（App Router・`output:'standalone'`）/ TypeScript strict
@@ -122,7 +141,72 @@ Supabase (PostgreSQL + RLS) + Cloudflare R2（ファイル原本）
 - **AI**：Gemini（受注OCRは SDK、マスタ一括取込は生fetch+responseSchema）
 - **PDF**：@react-pdf/renderer（Route Handler 内）
 
+### 主要パッケージ（package.json 実値）
+
+| 用途 | パッケージ | バージョン |
+|---|---|---|
+| フレームワーク | `next` | ^14.2.20 |
+| DB/Auth | `@supabase/supabase-js` | 2.47.10（固定） |
+| DB/Auth | `@supabase/ssr` | 0.5.2（固定） |
+| データ取得 | `@tanstack/react-query` | ^5.62.7 |
+| テーブル | `@tanstack/react-table` | ^8.20.5 |
+| フォーム | `react-hook-form` | ^7.54.1 |
+| バリデーション | `zod` | ^3.24.1 |
+| 金額計算 | `decimal.js` | ^10.4.3 |
+| 日付 | `date-fns` | ^3.6.0 |
+| PDF | `@react-pdf/renderer` | ^4.1.0 |
+| AI | `@google/generative-ai` | ^0.21.0 |
+| メール取込 | `imapflow` / `mailparser` | ^1.0.171 / ^3.7.1 |
+| R2 (S3互換) | `@aws-sdk/client-s3` | ^3.700.0 |
+| 画像処理 | `sharp` | ^0.35.2 |
+| オフライン | `idb` | ^8.0.0 |
+| テスト | `vitest` | ^2.1.8 |
+
 詳細は `.claude/rules/`（stack.md / structure.md / security.md / design.md / features.md / tax.md）を参照。
+
+---
+
+## 主要機能とデータフロー
+
+受注ボックス → 承認ゲート → 出荷一覧 → 価格確定 → 請求、という一本のパイプラインが核。
+
+| フェーズ | 画面 | 主要API / lib | 関連テーブル |
+|---|---|---|---|
+| 受注（受信） | `/admin/inbox`, `/admin/approvals`（統合済み「受注ボックス」） | `app/api/receipts/**`, `lib/ingestion/`, `lib/gemini/` | `order_receipts`, `orders`, `order_items` |
+| 承認ゲート | `/admin/approvals` | `app/api/orders/[id]/approve/route.ts` → `lib/orders/approve.ts` | `orders`, `delivery_destinations`, `pack_configs` |
+| 圃場（収穫） | `/field/matrix` | `lib/field/`, `harvest_tasks` 生成ロジック | `harvest_tasks`, `order_items` |
+| 出荷 | `/field/shipments`, `/admin/deliveries` | `app/api/shipments/**`, `app/api/deliveries/confirm` | `deliveries`, `delivery_events`, `lots` |
+| 帳票 | `/field/print`, `/admin/delivery-notes` | `app/api/shipping-docs/**`, `app/api/print-jobs` | `print_jobs`, `delivery_notes` |
+| 価格確定 | `/admin/pricing`, `/admin/pricing-master` | `lib/pricing/` | `price_rules`, `pack_configs` |
+| 請求 | `/admin/invoices` | `lib/calculations/tax.ts`（Decimal.js） | `invoices`, `invoice_items`, `invoice_counters` |
+| ポータル受注 | `/portal/order` | `app/api/portal/**` | `orders`（`source='portal'`） |
+
+詳細な業務フロー（4チャネル・スマートパース・タップループ等）は [.claude/rules/features.md](.claude/rules/features.md)。
+
+---
+
+## DBスキーマ概観
+
+マイグレーションは `migrations/*.sql` に連番で追加（ORM 無し・手書きSQL）。追加したら本番Supabase
+にも忘れず適用し、`types/database.ts` を手動で追従させる（`supabase gen types` は未導入）。
+
+| テーブル | 役割 |
+|---|---|
+| `users` | 社内ユーザー（admin/staff）とロール |
+| `customers` | 取引先マスタ（`channel_identifiers` でFAX/メール等の識別子を保持） |
+| `delivery_destinations` | 取引先の納入先（1取引先に複数ありうる。表示は必ず「取引先＞納入先」） |
+| `products` | 品目マスタ |
+| `pack_configs` | 荷姿マスタ（総数→箱数の換算基準・作業指示） |
+| `price_rules` | 価格マスタ（期間×取引先の単価。過去実績には遡及しない） |
+| `orders` / `order_items` | 受注ヘッダー・明細（`order_items.version` で楽観ロック） |
+| `order_receipts` | 受信の生ログ（チャネル横断の重複・再送判定の中核） |
+| `harvest_tasks` | 圃場への収穫・出荷タスク（承認時に生成） |
+| `deliveries` / `delivery_events` / `lots` | 配送状態遷移・イベント記録・ロット管理 |
+| `invoices` / `invoice_items` / `invoice_counters` | 請求書（発行時点のスナップショット・欠番なし採番） |
+| `delivery_notes` / `delivery_note_items` | 納品書（同じくスナップショット） |
+| `print_jobs` | 帳票印刷キュー（事務所自動印刷） |
+| `spec_reports` | 規格レポート |
+| `audit_log` | 変更履歴（Undo の基盤にもなる） |
 
 ---
 
@@ -152,8 +236,8 @@ Dockerfile / .dockerignore / next.config.js
 > ファイルロック等で失敗します。**ローカルにクローンして検証してください**（例：`C:\dev\kojima-noen`）。
 
 ```bash
-git clone https://github.com/naioki/kojima-farm-task-manager.git
-cd kojima-farm-task-manager
+git clone https://github.com/naioki/Kojima-Farm-Shipping-Management-App.git
+cd Kojima-Farm-Shipping-Management-App
 npm ci
 cp .env.example .env.local   # 値を埋める（なければ下記キーを手で作成）
 npm run dev                   # http://localhost:3000
@@ -212,6 +296,24 @@ gcloud run deploy kojima-noen \
 - リポジトリルートの `Dockerfile`（マルチステージ・node:20-slim・非root `USER node`）でビルドします。
 - タイムアウトは既定300秒（請求書一括生成・OCRも余裕）。シークレットは必ず Secret Manager 経由で。
 - 取り込み cron（Drive/メール）は Cloud Scheduler から OIDC + `CRON_SECRET` で呼び出します。
+- **`git push` だけでは本番に反映されません**（デプロイトリガー未設定）。手順とスクリプトは
+  [DEPLOY.md](DEPLOY.md) を参照。デプロイ後は必ずトラフィックが **`--to-latest`** になっているか
+  確認すること（過去に特定リビジョン固定が残り、新デプロイが反映されない事故があったため）。
+
+---
+
+## 設計上の重要ルール（要約）
+
+実装前に必ず目を通すべきルール。詳細は各リンク先（`.claude/rules/`）。
+
+| ルール | 概要 | 詳細 |
+|---|---|---|
+| 取引先＞納入先表示 | 一覧・詳細・帳票のどこでも「取引先＞納入先」で表示。納入先単独は出さない | [features.md](.claude/rules/features.md) |
+| 承認ゲート | 納品日・納入先・荷姿が未確定だと承認不可（出荷一覧到達時点で計算可能を保証） | [app/api/orders/[id]/approve/route.ts](app/api/orders/%5Bid%5D/approve/route.ts) |
+| 楽観ロック | `order_items.version` で `WHERE id=$ AND version=$expected`。0件は409で再読込を促す | CLAUDE.md |
+| スナップショット凍結 | `invoices`・`delivery_notes` は発行時点の内容を別テーブルへ複製。元データ変更の影響を受けない | [tax.md](.claude/rules/tax.md) |
+| 税率・金額計算 | `order_items.tax_rate`（注文時確定値）を使用。浮動小数点禁止・Decimal.js 必須 | [tax.md](.claude/rules/tax.md) |
+| エラー握りつぶし禁止 | 一覧・詳細ページはエラー時に必ず `<ErrorState>`、空状態は必ず `<EmptyState>` | CLAUDE.md |
 
 ---
 
