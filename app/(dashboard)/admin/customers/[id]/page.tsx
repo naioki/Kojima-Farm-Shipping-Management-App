@@ -31,9 +31,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
   const [
     { data: customer, error: custErr },
     { data: products, error: prodErr },
-    { data: rules },
-    { data: auditRows },
-    { data: destinations },
+    { data: rules, error: rulesErr },
+    { data: auditRows, error: auditErr },
+    { data: destinations, error: destErr },
     lockRaw,
     masterRaw,
   ] = await Promise.all([
@@ -62,9 +62,20 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
   ])
-  if (custErr) return <ErrorState message={custErr.message} />
-  if (prodErr) return <ErrorState message={prodErr.message} />
-  if (!customer) return <ErrorState title="取引先が見つかりません" message="削除されたか、IDが不正です。" />
+  // 取引ルール・納入先は編集の主データ。取得失敗を「未登録（空）」に化けさせない
+  // （荷姿マスタが空に見えた実害と同種の事故を防ぐ・CLAUDE.md）。
+  const detailErr = custErr ?? prodErr ?? rulesErr ?? destErr
+  if (detailErr) {
+    return (
+      <ErrorState
+        message="取引先の情報を読み込めませんでした。時間をおいて再度お試しください。"
+        detail={detailErr.message}
+      />
+    )
+  }
+  if (!customer) return <ErrorState title="取引先が見つかりません" message="削除されたか、IDが不正の可能性があります。" />
+  // 変更履歴は補助表示。失敗しても本体は殺さず、履歴だけ空で続行する。
+  if (auditErr) console.error('[customers/[id]] 規格変更履歴の取得に失敗:', auditErr.message)
 
   const lock = lockRaw === 'on'
   const canEdit = canEditRules({ lock, masterEmails: parseMasterEmails(masterRaw), userEmail: user?.email })
@@ -94,9 +105,11 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     return nv?.customer_id === params.id || ov?.customer_id === params.id
   })
   const editorIds = [...new Set(relevant.map((a) => a.user_id).filter(Boolean))] as string[]
-  const { data: editors } = editorIds.length
+  const { data: editors, error: editorsErr } = editorIds.length
     ? await supabase.from('users').select('id, email, full_name').in('id', editorIds)
-    : { data: [] as { id: string; email: string | null; full_name: string | null }[] }
+    : { data: [] as { id: string; email: string | null; full_name: string | null }[], error: null }
+  // 履歴の編集者名の解決（補助）。失敗しても履歴は「不明」で表示し本体は殺さない。
+  if (editorsErr) console.error('[customers/[id]] 編集者名の解決に失敗:', editorsErr.message)
   const editorById = new Map((editors ?? []).map((u) => [u.id, u.full_name || u.email || '不明']))
 
   const history: RuleHistoryEntry[] = relevant.slice(0, 30).map((a) => {

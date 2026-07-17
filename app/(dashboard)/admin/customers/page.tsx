@@ -22,7 +22,7 @@ export default async function CustomersPage() {
     .from('customers')
     .select('id, name, name_kana, payment_terms, is_active, display_color')
     .order('name')
-  if (error) return <ErrorState message={error.message} />
+  if (error) return <ErrorState message="取引先を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

@@ -25,7 +25,7 @@ export default async function OrderNewPage() {
   const qtyInputMode = qtyModeSetting === 'cases' ? 'cases' : 'total'
 
   // 取引先・商品・デフォルトセットを並列取得
-  const [{ data: customers }, { data: products }, { data: defaultRules }] = await Promise.all([
+  const [customersRes, productsRes, defaultRulesRes] = await Promise.all([
     supabase
       .from('customers')
       .select('id, name, display_color')
@@ -41,16 +41,28 @@ export default async function OrderNewPage() {
       .select('customer_id, product_id, packs_per_case, container_type, label_spec, is_default_set, default_quantity'),
   ])
 
-  if (!customers || !products) {
-    return <ErrorState message="マスタデータの取得に失敗しました" />
+  // マスタ取得の失敗を「空」に化けさせない（migration 未適用の顕在化・CLAUDE.md）。
+  const masterErr = customersRes.error ?? productsRes.error ?? defaultRulesRes.error
+  if (masterErr) {
+    return (
+      <ErrorState
+        message="マスタデータを読み込めませんでした。時間をおいて再度お試しください。"
+        detail={masterErr.message}
+      />
+    )
   }
+  const customers = customersRes.data
+  const products = productsRes.data
+  const defaultRules = defaultRulesRes.data
 
   // 商品ごとの荷姿（共通＝customer_id null）を構築。注文入力の単位選択に使う。
-  const { data: packRows } = await supabase
+  const { data: packRows, error: packErr } = await supabase
     .from('pack_configs')
     .select('id, product_id, label, selling_unit_label, base_per_selling')
     .is('customer_id', null)
     .eq('is_active', true)
+  // 単位選択の補助。失敗しても既定単位で入力は続けられるので本体は殺さない。
+  if (packErr) console.error('[orders/new] 荷姿マスタの取得に失敗:', packErr.message)
   const packsByProduct: Record<string, { id: string; label: string; selling_unit_label: string; base_per_selling: number }[]> = {}
   for (const p of packRows ?? []) {
     const arr = (packsByProduct[p.product_id] ??= [])

@@ -34,19 +34,23 @@ export default async function InvoicesPage() {
     .from('invoices')
     .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date')
     .order('created_at', { ascending: false })
-  if (error) return <ErrorState message={error.message} />
+  if (error) return <ErrorState message="請求書の一覧を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
 
   const customerIds = [...new Set((invoices ?? []).map((i) => i.customer_id))]
-  const { data: custRows } = customerIds.length
+  const { data: custRows, error: custErr } = customerIds.length
     ? await supabase.from('customers').select('id, name').in('id', customerIds)
-    : { data: [] as { id: string; name: string }[] }
+    : { data: [] as { id: string; name: string }[], error: null }
+  // 取引先名の解決（補助）。失敗しても一覧本体は殺さず、名前未解決で続行する。
+  if (custErr) console.error('[invoices] 取引先名の解決に失敗:', custErr.message)
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
 
-  const { data: activeCustomers } = await supabase
+  const { data: activeCustomers, error: activeErr } = await supabase
     .from('customers')
     .select('id, name')
     .eq('is_active', true)
     .order('name')
+  // 作成フォームの取引先候補（補助）。失敗しても一覧本体は表示する。
+  if (activeErr) console.error('[invoices] 作成フォーム用の取引先取得に失敗:', activeErr.message)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

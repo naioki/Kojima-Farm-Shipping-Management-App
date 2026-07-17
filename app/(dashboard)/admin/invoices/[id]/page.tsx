@@ -35,10 +35,10 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
     .select('*')
     .eq('id', params.id)
     .maybeSingle()
-  if (error) return <ErrorState message={error.message} />
-  if (!invoice) return <ErrorState title="請求書が見つかりません" message="削除されたか、IDが不正です。" />
+  if (error) return <ErrorState message="請求書を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
+  if (!invoice) return <ErrorState title="請求書が見つかりません" message="削除されたか、IDが不正の可能性があります。" />
 
-  const [{ data: items }, { data: customer }, farmName, farmReg, farmAddr, farmTel, farmPay] =
+  const [itemsRes, customerRes, farmName, farmReg, farmAddr, farmTel, farmPay] =
     await Promise.all([
       supabase
         .from('invoice_items')
@@ -51,6 +51,19 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
       getSetting('FARM_TEL'),
       getSetting('FARM_PAYMENT_INFO'),
     ])
+  // 明細は請求書本体。取得失敗を「明細なし」に化けさせない（誤った帳票を出さない）。
+  if (itemsRes.error) {
+    return (
+      <ErrorState
+        message="請求書の明細を読み込めませんでした。時間をおいて再度お試しください。"
+        detail={itemsRes.error.message}
+      />
+    )
+  }
+  const items = itemsRes.data
+  // 宛名（取引先名）の解決は補助。失敗しても帳票本体は出す。
+  if (customerRes.error) console.error('[invoices/[id]] 宛名の取得に失敗:', customerRes.error.message)
+  const customer = customerRes.data
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
