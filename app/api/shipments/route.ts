@@ -22,8 +22,21 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { customer_id, product_id, delivery_date, quantity_raw } = parsed.data
+  const { customer_id, product_id, delivery_date, quantity_raw, destination_id } = parsed.data
   const supabase = createClient()
+
+  // 納入先が指定されたら、その取引先の配下（有効）であることを検証（他取引先の届け先を混入させない）。
+  if (destination_id) {
+    const { data: dest, error: destErr } = await supabase
+      .from('delivery_destinations')
+      .select('id')
+      .eq('id', destination_id)
+      .eq('customer_id', customer_id)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (destErr) return NextResponse.json({ error: destErr.message }, { status: 500 })
+    if (!dest) return NextResponse.json({ error: 'invalid_destination' }, { status: 400 })
+  }
 
   // 商品マスタ（単価・税率・名称・単位）
   const { data: product, error: prodErr } = await supabase
@@ -52,13 +65,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: result.reason, input: result.input }, { status: 400 })
   }
 
-  // 同一 (取引先 × 出荷日 × manual) の注文を再利用、無ければ作成
-  const { data: existing, error: findErr } = await supabase
+  // 同一 (取引先 × 納入先 × 出荷日 × manual) の注文を再利用、無ければ作成。
+  // 納入先が別なら別注文として分ける（表示は常に「取引先＞納入先」。届け先違いを1注文に混ぜない）。
+  const findQuery = supabase
     .from('orders')
     .select('id')
     .eq('customer_id', customer_id)
     .eq('delivery_date', delivery_date)
     .eq('source', 'manual')
+  const { data: existing, error: findErr } = await (
+    destination_id ? findQuery.eq('destination_id', destination_id) : findQuery.is('destination_id', null)
+  )
     .limit(1)
     .maybeSingle()
   if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 })
@@ -69,6 +86,7 @@ export async function POST(req: Request) {
       .from('orders')
       .insert({
         customer_id,
+        destination_id: destination_id ?? null,
         source: 'manual',
         status: 'approved',
         delivery_date,

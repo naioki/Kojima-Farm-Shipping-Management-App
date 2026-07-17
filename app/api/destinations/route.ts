@@ -2,6 +2,7 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { normalizeOrgName } from '@/lib/normalize/org-name'
 
 export const runtime = 'nodejs'
 
@@ -26,6 +27,21 @@ export async function POST(req: Request) {
   }
 
   const supabase = createClient()
+
+  // 重複登録防止（Issue#6-(5)）: 同一取引先の配下で正規化名が一致する既存を先に探す。
+  // DB の UNIQUE INDEX(uq_dest_norm_fullname) が最終防波堤。ここで 409＋既存候補を返し、
+  // UI が「既存の◯◯を使いますか？」を提示できるようにする。
+  const norm = normalizeOrgName(parsed.data.full_name)
+  const { data: siblings, error: listErr } = await supabase
+    .from('delivery_destinations')
+    .select('id, code, full_name, aliases, is_active')
+    .eq('customer_id', parsed.data.customer_id)
+  if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
+  const existing = (siblings ?? []).find((d) => normalizeOrgName(d.full_name) === norm)
+  if (existing) {
+    return NextResponse.json({ error: 'duplicate', existing }, { status: 409 })
+  }
+
   const { data, error } = await supabase
     .from('delivery_destinations')
     .insert({

@@ -213,6 +213,15 @@ export function OcrSaveSection({ order, index, customers, products, destinations
       const json = (await res.json().catch(() => ({}))) as {
         customer?: { id: string; name: string }
         error?: string
+        existing?: { id: string; name: string }
+      }
+      // 409＝正規化名が一致する既存あり（法人格・全半角ゆれ）。二重登録せず既存を使う（Issue#6-(5)）。
+      if (res.status === 409 && json.error === 'duplicate' && json.existing) {
+        onCustomerAdded?.(json.existing) // 共有リストになければ足す（既にあれば親側で重複しない実装）
+        setCustomerId(json.existing.id)
+        setAddingCustomer(false)
+        toast(`同名の取引先「${json.existing.name}」が既にあります。既存を選択しました`, { icon: 'ℹ️' })
+        return
       }
       if (!res.ok || !json.customer) throw new Error(json.error ?? `登録失敗 (${res.status})`)
       onCustomerAdded?.(json.customer) // 親の共有リストに追加（次の注文でも選べる）
@@ -246,6 +255,17 @@ export function OcrSaveSection({ order, index, customers, products, destinations
       const json = (await res.json().catch(() => ({}))) as {
         destination?: { id: string; code: string | null; full_name: string; aliases: string[] }
         error?: string
+        existing?: { id: string; code: string | null; full_name: string; aliases: string[] }
+      }
+      // 409＝この取引先配下に正規化名が一致する既存納入先あり。二重登録せず既存を使う（Issue#6-(5)）。
+      if (res.status === 409 && json.error === 'duplicate' && json.existing) {
+        const dup: Destination = { ...json.existing, customer_id: customerId }
+        onDestinationAdded?.(dup)
+        setDestinationId(dup.id)
+        setAddingDest(false)
+        setNewDestCode(''); setNewDestFullName('')
+        toast(`同名の納入先「${dup.code?.trim() || dup.full_name}」が既にあります。既存を選択しました`, { icon: 'ℹ️' })
+        return
       }
       if (!res.ok || !json.destination) throw new Error(json.error ?? `登録失敗 (${res.status})`)
       const dest: Destination = { ...json.destination, customer_id: customerId }

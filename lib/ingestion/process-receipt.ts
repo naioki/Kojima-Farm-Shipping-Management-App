@@ -401,15 +401,22 @@ async function saveOrder({
     return { saved: false, needsReview: true }
   }
 
-  // 納入先の名寄せ（取引先配下の delivery_destinations を code/full_name/aliases で照合）
+  // 納入先の名寄せ（取引先配下の delivery_destinations を code/full_name/aliases で照合）。
+  // 記載なし=null は正常値（バリデーションエラーにしない）。ただし後段の承認ゲート思想に合わせ、
+  // 複数納入先を持つ取引先で届け先を確定できないときは自動承認せず人手確認へ回す。
+  const { data: activeDests } = await admin
+    .from('delivery_destinations')
+    .select('id, code, full_name, aliases')
+    .eq('customer_id', customerId)
+    .eq('is_active', true)
   let destinationId: string | null = null
   if (order.destination_name) {
-    const { data: dests } = await admin
-      .from('delivery_destinations')
-      .select('id, code, full_name, aliases')
-      .eq('customer_id', customerId)
-      .eq('is_active', true)
-    destinationId = matchDestinationId(order.destination_name, dests ?? [])
+    destinationId = matchDestinationId(order.destination_name, activeDests ?? [])
+  }
+  // 納入先が複数ある取引先なのに届け先が決まらない（記載なし or 不一致）→ 自動確定せず要確認。
+  // これで承認済み注文が destination_id=NULL のまま出荷一覧に来て届け先ミスになる事故を防ぐ。
+  if (!destinationId && (activeDests?.length ?? 0) >= 2) {
+    return { saved: false, needsReview: true }
   }
 
   // G7: parseQuantity で総数を確定。解釈不能は pending_review へ

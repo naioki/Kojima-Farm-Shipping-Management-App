@@ -469,6 +469,8 @@ export const shipmentAddSchema = z.object({
   product_id: z.string().uuid(),
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   quantity_raw: z.string().min(1),
+  /** 納入先（届け先）。複数納入先を持つ取引先で確定させる。単一/無しの取引先は null。 */
+  destination_id: z.string().uuid().nullish(),
 })
 export type ShipmentAddInput = z.infer<typeof shipmentAddSchema>
 

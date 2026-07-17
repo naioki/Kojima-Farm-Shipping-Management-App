@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, ArrowRight } from 'lucide-react'
@@ -15,6 +15,8 @@ export interface ShipmentAddFormProps {
   deliveryDate: string
   customers: { id: string; name: string }[]
   products: { id: string; name: string; unit: string }[]
+  /** 取引先配下の納入先（届け先）。複数持つ取引先で「納入先」セレクトを出す。 */
+  destinations: { id: string; customerId: string; label: string }[]
   /** `${customer_id}:${product_id}` → packs_per_case（c記法プレビュー用） */
   packsByPair: Record<string, number | null>
 }
@@ -32,12 +34,25 @@ const ADD_ERRORS: Record<string, string> = {
  * 取引先・品目・数量（"15c2" 等の混在記号可）を入れて1件追加。
  * 入力中はスマートパース結果をライブプレビュー（誤解釈を投入前に気づける・features.md §5）。
  */
-export function ShipmentAddForm({ deliveryDate, customers, products, packsByPair }: ShipmentAddFormProps) {
+export function ShipmentAddForm({ deliveryDate, customers, products, destinations, packsByPair }: ShipmentAddFormProps) {
   const router = useRouter()
   const [customerId, setCustomerId] = useState('')
   const [productId, setProductId] = useState('')
+  const [destinationId, setDestinationId] = useState('')
   const [qtyRaw, setQtyRaw] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // 選択中の取引先に紐づく納入先だけを候補にする（表示は常に「取引先＞納入先」）。
+  const customerDestinations = useMemo(
+    () => destinations.filter((d) => d.customerId === customerId),
+    [destinations, customerId],
+  )
+
+  // 取引先が変わったら納入先を初期化：1件なら自動確定・複数なら未選択・0件なら空。
+  useEffect(() => {
+    if (customerDestinations.length === 1) setDestinationId(customerDestinations[0]!.id)
+    else setDestinationId('')
+  }, [customerId, customerDestinations])
 
   const unit = products.find((p) => p.id === productId)?.unit ?? '個'
   const packsPerCase = customerId && productId ? packsByPair[`${customerId}:${productId}`] ?? null : null
@@ -61,9 +76,16 @@ export function ShipmentAddForm({ deliveryDate, customers, products, packsByPair
     return { kind: 'ok' as const, text: parts.join(' ') }
   })()
 
+  // 複数納入先を持つ取引先は届け先未選択だと出荷先が定まらないため必須にする。
+  const destinationRequired = customerDestinations.length >= 2
+
   async function submit() {
     if (!customerId || !productId || qtyRaw.trim() === '') {
       toast.error('取引先・品目・数量をすべて入力してください')
+      return
+    }
+    if (destinationRequired && !destinationId) {
+      toast.error('納入先を選択してください')
       return
     }
     setSubmitting(true)
@@ -76,6 +98,7 @@ export function ShipmentAddForm({ deliveryDate, customers, products, packsByPair
           product_id: productId,
           delivery_date: deliveryDate,
           quantity_raw: qtyRaw,
+          destination_id: destinationId || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
@@ -123,6 +146,19 @@ export function ShipmentAddForm({ deliveryDate, customers, products, packsByPair
           追加
         </Button>
       </div>
+      {/* 納入先セレクト：複数納入先を持つ取引先のときだけ表示（1件は自動確定・0件は非表示）。
+          「取引先 ＞ 納入先」の表示ルールに従い、取引先選択後に出す。 */}
+      {customerDestinations.length >= 2 && (
+        <Select
+          label="納入先"
+          required
+          placeholder="選択"
+          value={destinationId}
+          onChange={(e) => setDestinationId(e.target.value)}
+          options={customerDestinations.map((d) => ({ value: d.id, label: d.label }))}
+          className="sm:max-w-xs"
+        />
+      )}
       {previewText && (
         <p className={`text-sm ${previewText.kind === 'error' ? 'text-alert' : 'text-ink-soft'}`}>
           {previewText.text}

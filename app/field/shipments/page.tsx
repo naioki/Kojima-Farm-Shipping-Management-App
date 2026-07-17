@@ -202,12 +202,26 @@ export default async function ShipmentsPage({
     groups.set(it.product_name, arr)
   }
 
-  // 追加フォーム用マスタ
-  const [{ data: allCustomers }, { data: allProducts }, { data: rules }] = await Promise.all([
+  // 追加フォーム用マスタ（納入先も取得。複数納入先を持つ取引先はスマート追加で届け先を選ばせる）
+  const [
+    { data: allCustomers, error: custErr },
+    { data: allProducts, error: prodErr2 },
+    { data: rules },
+    { data: allDestinations, error: destListErr },
+  ] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
     supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
     supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case'),
+    supabase
+      .from('delivery_destinations')
+      .select('id, customer_id, code, full_name')
+      .eq('is_active', true)
+      .order('sort_order'),
   ])
+  // マスタ取得失敗はサイレントにしない（追加フォームの選択肢が黙って欠けると出荷先ミスに直結）
+  if (custErr) return <ErrorState message={`取引先の読み込みに失敗しました: ${custErr.message}`} />
+  if (prodErr2) return <ErrorState message={`商品の読み込みに失敗しました: ${prodErr2.message}`} />
+  if (destListErr) return <ErrorState message={`納入先の読み込みに失敗しました: ${destListErr.message}`} />
   const packsByPair: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
 
@@ -253,6 +267,11 @@ export default async function ShipmentsPage({
         deliveryDate={date}
         customers={(allCustomers ?? []).map((c) => ({ id: c.id, name: c.name }))}
         products={(allProducts ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit }))}
+        destinations={(allDestinations ?? []).map((d) => ({
+          id: d.id,
+          customerId: d.customer_id,
+          label: d.code?.trim() || d.full_name,
+        }))}
         packsByPair={packsByPair}
       />
 
