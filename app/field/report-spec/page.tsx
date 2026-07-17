@@ -22,7 +22,8 @@ export default async function ReportSpecPage({
   if (!user) redirect('/login')
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  if (profileErr) console.error('[field/report-spec] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
 
   const features = await getStaffFeatures()

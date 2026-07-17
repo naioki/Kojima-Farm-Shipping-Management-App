@@ -117,9 +117,11 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   ])
 
   // --- 名前・あいさつ・日付 ---
-  const { data: profile } = user
+  const { data: profile, error: profileErr } = user
     ? await supabase.from('users').select('full_name').eq('id', user.id).maybeSingle()
-    : { data: null }
+    : { data: null, error: null }
+  // 表示名は補助。取得失敗してもメール名にフォールバックする。無言にはしない。
+  if (profileErr) console.error('[admin-data] 表示名の取得に失敗:', profileErr.message)
   const name = profile?.full_name?.trim() || user?.email?.split('@')[0] || 'ユーザー'
   const dateLabel = `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日 (${WEEKDAYS[jst.getUTCDay()]})`
 

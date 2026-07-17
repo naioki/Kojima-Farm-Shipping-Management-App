@@ -28,7 +28,9 @@ export default async function FieldPrintPage({
   const user = await getAuthedUser()
   if (!user) return <ErrorState message="ログインが必要です" />
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
+  if (profileErr) console.error('[field/print] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const features = await getStaffFeatures()
   if (!canStaffUse('printDocs', role, features)) {
@@ -50,24 +52,27 @@ export default async function FieldPrintPage({
     : { data: [], error: null }
   if (custErr) return <ErrorState message={custErr.message} />
   const customers = custRows ?? []
-  const items = orderIds.length
-    ? (
-        await supabase
-          .from('order_items')
-          .select('product_id, product_name')
-          .in('order_id', orderIds)
-          .order('product_name')
-      ).data ?? []
-    : []
+  const itemsRes = orderIds.length
+    ? await supabase
+        .from('order_items')
+        .select('product_id, product_name')
+        .in('order_id', orderIds)
+        .order('product_name')
+    : { data: [] as { product_id: string; product_name: string }[], error: null }
+  // 品目一覧は印刷対象の絞り込みの本体。取得失敗を「品目なし」に化けさせない。
+  if (itemsRes.error) return <ErrorState message="出荷品目を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
+  const items = itemsRes.data ?? []
   const products = [...new Map(items.map((i) => [i.product_id, i.product_name])).entries()]
 
   // この日の印刷キュー状況（エージェントが拾ったかどうかを現場でも確認できるように）
-  const { data: jobs } = await supabase
+  const { data: jobs, error: jobsErr } = await supabase
     .from('print_jobs')
     .select('id, doc_type, status, created_at')
     .eq('target_date', date)
     .order('created_at', { ascending: false })
     .limit(10)
+  // キュー状況は補助表示。失敗しても本体（印刷ボタン）は殺さない。
+  if (jobsErr) console.error('[field/print] 印刷キュー状況の取得に失敗:', jobsErr.message)
 
   const sheetHref = (product?: string) =>
     `/api/shipping-docs/sheet?date=${date}${product ? `&product=${product}` : ''}`

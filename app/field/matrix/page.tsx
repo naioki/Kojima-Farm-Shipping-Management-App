@@ -48,22 +48,26 @@ export default async function MatrixPage({
   const selected = products.find((p) => p.id === searchParams.product) ?? products[0]!
 
   // 当該週の注文（出荷日 in dates）→ 明細（選択品目）を取得して (取引先|日付)→総数 に展開
-  const { data: orders } = await supabase
+  const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, customer_id, delivery_date')
     .in('delivery_date', dates)
+  // 注文はマトリックスの本体。取得失敗を「空マトリックス」に化けさせない。
+  if (ordersErr)
+    return <ErrorState message="注文を読み込めませんでした。時間をおいて再度お試しください。" detail={ordersErr.message} />
   const orderIds = (orders ?? []).map((o) => o.id)
   const orderMeta = new Map((orders ?? []).map((o) => [o.id, o]))
 
-  const items = orderIds.length
-    ? (
-        await supabase
-          .from('order_items')
-          .select('order_id, quantity')
-          .eq('product_id', selected.id)
-          .in('order_id', orderIds)
-      ).data ?? []
-    : []
+  const itemsRes = orderIds.length
+    ? await supabase
+        .from('order_items')
+        .select('order_id, quantity')
+        .eq('product_id', selected.id)
+        .in('order_id', orderIds)
+    : { data: [] as { order_id: string; quantity: number }[], error: null }
+  if (itemsRes.error)
+    return <ErrorState message="注文明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
+  const items = itemsRes.data ?? []
 
   const initial: Record<string, number> = {}
   for (const it of items) {
@@ -72,10 +76,12 @@ export default async function MatrixPage({
   }
 
   // 選択品目の取引先別 P/C
-  const { data: rules } = await supabase
+  const { data: rules, error: rulesErr } = await supabase
     .from('customer_product_rules')
     .select('customer_id, packs_per_case')
     .eq('product_id', selected.id)
+  // P/C は補助表示（端数計算の基準）。失敗しても本体は殺さず未設定扱いにする。
+  if (rulesErr) console.error('[field/matrix] P/Cの読み込みに失敗:', rulesErr.message)
   const packsByCustomer: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByCustomer[r.customer_id] = r.packs_per_case
 

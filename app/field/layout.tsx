@@ -17,11 +17,13 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   if (!user) redirect('/login')
 
   const supabase = createClient()
-  const { data: profile } = await supabase
+  const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role, full_name')
     .eq('id', user.id)
     .maybeSingle()
+  // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
+  if (profileErr) console.error('[field/layout] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const name = profile?.full_name?.trim() || user.email?.split('@')[0] || 'ユーザー'
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'

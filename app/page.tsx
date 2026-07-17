@@ -16,7 +16,9 @@ export default async function Home() {
   if (customerId) redirect('/portal/order')
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決に失敗したら現場（最小権限）に振り分ける。無言にはしない。
+  if (profileErr) console.error('[app/page] ロールの取得に失敗:', profileErr.message)
   // スタッフはログイン直後に「今日の出荷」へ直行（即業務）。週次計画(matrix)は脇役。
   redirect(profile?.role === 'admin' ? '/admin' : '/field/shipments')
 }

@@ -28,11 +28,14 @@ export default async function SavedDeliveryNotePage({ params }: { params: { id: 
   if (error) return <ErrorState message={error.message} />
   if (!note) return <ErrorState title="納品書が見つかりません" message="削除されたか、IDが不正です。" />
 
-  const { data: items } = await supabase
+  // 明細は納品書の本体。取得失敗を「明細なし」に化けさせない。
+  const { data: items, error: itemsErr } = await supabase
     .from('delivery_note_items')
     .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
     .eq('delivery_note_id', params.id)
     .order('sort_order')
+  if (itemsErr)
+    return <ErrorState message="納品書の明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsErr.message} />
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">

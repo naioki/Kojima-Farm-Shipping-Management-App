@@ -46,9 +46,11 @@ export default async function ShipmentsPage({
 
   // 「規格を直す」導線の出し分け用（admin＝取引先詳細に直リンク、staff＝規格を報告）。
   const user = await getAuthedUser()
-  const { data: profile } = user
+  const { data: profile, error: profileErr } = user
     ? await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-    : { data: null }
+    : { data: null, error: null }
+  // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
+  if (profileErr) console.error('[field/shipments] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const isAdmin = role === 'admin'
   const staffFeatures = await getStaffFeatures()
@@ -178,12 +180,14 @@ export default async function ShipmentsPage({
   // マスタの梱包情報（ラベル/テープ色/固定の梱包指示/入り数）。order_items.rule_id で紐付け、
   // 参考表示のみ（編集は取引先詳細の規格編集で行う。ここでの上書きはガバナンスを壊す）。
   const ruleIds = [...new Set(items.map((i) => i.rule_id).filter(Boolean))] as string[]
-  const { data: ruleRows } = ruleIds.length
+  const { data: ruleRows, error: ruleRowsErr } = ruleIds.length
     ? await supabase
         .from('customer_product_rules')
         .select('id, label_spec, tape_color, packing_notes, packs_per_case')
         .in('id', ruleIds)
-    : { data: [] as { id: string; label_spec: string | null; tape_color: string | null; packing_notes: string | null; packs_per_case: number | null }[] }
+    : { data: [] as { id: string; label_spec: string | null; tape_color: string | null; packing_notes: string | null; packs_per_case: number | null }[], error: null }
+  // 梱包情報は参考表示（補助）。失敗しても本体（出荷リスト）は殺さない。
+  if (ruleRowsErr) console.error('[field/shipments] 梱包マスタの取得に失敗:', ruleRowsErr.message)
   const ruleById = new Map((ruleRows ?? []).map((r) => [r.id, r]))
 
   // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）

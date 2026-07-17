@@ -28,11 +28,13 @@ export default async function ManualOcrPage({
   let preloadedImage: { base64: string; mimeType: string; fileName: string } | null = null
   if (searchParams.receipt) {
     const admin = createAdminClient()
-    const { data: receipt } = await admin
+    const { data: receipt, error: receiptErr } = await admin
       .from('order_receipts')
       .select('r2_key, channel, received_at')
       .eq('id', searchParams.receipt)
       .maybeSingle()
+    // 原本プリロードは補助（失敗しても手動アップロードで続行可）。無言で握りつぶさない。
+    if (receiptErr) console.error('[admin/ocr] 原本プリロード用の受信取得に失敗:', receiptErr.message)
 
     if (receipt?.r2_key) {
       try {
@@ -45,8 +47,9 @@ export default async function ManualOcrPage({
           mimeType,
           fileName: receipt.r2_key.split('/').pop() ?? 'receipt',
         }
-      } catch {
-        // 取得失敗は無視（通常フローにフォールバック）
+      } catch (e) {
+        // 原本取得失敗は通常フロー（手動アップロード）にフォールバック。無言にはしない。
+        console.error('[admin/ocr] 原本画像のプリロードに失敗:', e instanceof Error ? e.message : e)
       }
     }
   }

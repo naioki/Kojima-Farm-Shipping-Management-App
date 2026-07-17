@@ -31,9 +31,11 @@ export default async function LotsPage() {
 
   // ロット別の紐付け明細数（直近30ロット分だけ集計）
   const lotIds = (lots ?? []).map((l) => l.id)
-  const { data: itemRows } = lotIds.length
+  const { data: itemRows, error: itemRowsErr } = lotIds.length
     ? await supabase.from('order_items').select('lot_id').in('lot_id', lotIds)
-    : { data: [] as { lot_id: string | null }[] }
+    : { data: [] as { lot_id: string | null }[], error: null }
+  // 紐付け明細数は補助表示。失敗しても本体（ロット一覧）は殺さず0件扱いにする。
+  if (itemRowsErr) console.error('[lots] 紐付け明細数の集計に失敗:', itemRowsErr.message)
   const countByLot = new Map<string, number>()
   for (const r of itemRows ?? []) {
     if (r.lot_id) countByLot.set(r.lot_id, (countByLot.get(r.lot_id) ?? 0) + 1)
