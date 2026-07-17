@@ -30,9 +30,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: '同じ品目には統合できません' }, { status: 400 })
   }
 
-  const { data: source } = await supabase.from('products').select('id, name, unit').eq('id', sourceId).maybeSingle()
+  const { data: source, error: sourceErr } = await supabase.from('products').select('id, name, unit').eq('id', sourceId).maybeSingle()
+  // DBエラーを not_found（404）に化けさせない。
+  if (sourceErr) return NextResponse.json({ error: sourceErr.message }, { status: 500 })
   if (!source) return NextResponse.json({ error: '統合元の品目が見つかりません' }, { status: 404 })
-  const { data: target } = await supabase.from('products').select('id, name').eq('id', d.target_product_id).maybeSingle()
+  const { data: target, error: targetErr } = await supabase.from('products').select('id, name').eq('id', d.target_product_id).maybeSingle()
+  if (targetErr) return NextResponse.json({ error: targetErr.message }, { status: 500 })
   if (!target) return NextResponse.json({ error: '統合先の品目が見つかりません' }, { status: 404 })
 
   // ① 統合先に荷姿を作成

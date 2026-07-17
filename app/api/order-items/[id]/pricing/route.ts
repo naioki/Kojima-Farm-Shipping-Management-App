@@ -28,11 +28,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const d = parsed.data
   const admin = createAdminClient()
 
-  const { data: before } = await admin
+  const { data: before, error: beforeErr } = await admin
     .from('order_items')
     .select('unit_price, tax_rate, billable_qty, price_status')
     .eq('id', params.id)
     .maybeSingle()
+  // DBエラーを「明細が見つかりません」（404）に化けさせない。
+  if (beforeErr) return NextResponse.json({ error: beforeErr.message }, { status: 500 })
   if (!before) return NextResponse.json({ error: '明細が見つかりません' }, { status: 404 })
 
   const { error } = await admin

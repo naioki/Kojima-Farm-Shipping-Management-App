@@ -54,10 +54,12 @@ export async function POST(req: Request) {
   let rules: PriceRule[] = []
   if (mode === 'resolve') {
     const productIds = [...new Set(items.map((it) => it.product_id))]
-    const { data: ruleRows } = await admin
+    const { data: ruleRows, error: ruleRowsErr } = await admin
       .from('price_rules')
       .select('id, product_id, customer_id, pack_config_id, channel, price_unit, unit_price, tax_rate, effective_from, effective_to')
       .in('product_id', productIds)
+    // 価格表の取得失敗を「該当ルールなし＝全件skip」に化けさせない。
+    if (ruleRowsErr) return NextResponse.json({ error: `価格表の取得に失敗しました: ${ruleRowsErr.message}` }, { status: 500 })
     rules = (ruleRows ?? []) as PriceRule[]
   }
 

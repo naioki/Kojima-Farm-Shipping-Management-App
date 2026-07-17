@@ -26,12 +26,14 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const { data: orders } = await admin
+  const { data: orders, error: ordersErr } = await admin
     .from('orders')
     .select('id, delivery_date')
     .eq('customer_id', customerId)
     .gte('delivery_date', since)
     .in('status', ['approved', 'shipped', 'invoiced'])
+  // DBエラーを「統計なし」に化けさせない。
+  if (ordersErr) return NextResponse.json({ error: ordersErr.message }, { status: 500 })
 
   if (!orders || orders.length === 0) {
     return NextResponse.json({ stats: {} })
@@ -40,10 +42,11 @@ export async function GET(req: NextRequest) {
   const orderIds = orders.map((o) => o.id)
   const dateByOrderId = new Map(orders.map((o) => [o.id, o.delivery_date]))
 
-  const { data: items } = await admin
+  const { data: items, error: itemsErr } = await admin
     .from('order_items')
     .select('product_id, product_name, quantity, order_id')
     .in('order_id', orderIds)
+  if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
 
   const byProduct: Record<
     string,

@@ -90,7 +90,9 @@ export async function POST(req: NextRequest) {
       .neq('status', 'cancelled')
     // 納入先が指定されていれば同じ納入先のみ、無ければ納入先なしの注文のみを重複対象にする
     dupeQuery = destination_id ? dupeQuery.eq('destination_id', destination_id) : dupeQuery.is('destination_id', null)
-    const { data: dupes } = await dupeQuery
+    const { data: dupes, error: dupesErr } = await dupeQuery
+    // 重複検知のDBエラーを「重複なし」に化けさせない（同一注文の二重登録を防ぐ）。
+    if (dupesErr) return NextResponse.json({ error: dupesErr.message }, { status: 500 })
     if (dupes && dupes.length > 0) {
       return NextResponse.json(
         {
@@ -111,20 +113,23 @@ export async function POST(req: NextRequest) {
   // 過去90日の同取引先×商品の最大数量を取得（異常値検知）
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const { data: histOrders } = await admin
+  const { data: histOrders, error: histOrdersErr } = await admin
     .from('orders')
     .select('id')
     .eq('customer_id', customer_id)
     .gte('delivery_date', since)
+  // 異常値検知は補助。取得失敗しても登録は続行（統計なし扱い）。無言にはしない。
+  if (histOrdersErr) console.error('[api/orders] 履歴注文の取得に失敗（異常値検知）:', histOrdersErr.message)
 
   const histOrderIds = (histOrders ?? []).map((o) => o.id)
   const histStats: Record<string, { max: number; min: number; avg: number }> = {}
   if (histOrderIds.length > 0 && productIds.length > 0) {
-    const { data: histItems } = await admin
+    const { data: histItems, error: histItemsErr } = await admin
       .from('order_items')
       .select('product_id, quantity')
       .in('order_id', histOrderIds)
       .in('product_id', productIds)
+    if (histItemsErr) console.error('[api/orders] 履歴明細の取得に失敗（異常値検知）:', histItemsErr.message)
 
     const byProduct: Record<string, number[]> = {}
     for (const it of histItems ?? []) {
@@ -178,10 +183,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { data: oldItems } = await admin
+    const { data: oldItems, error: oldItemsErr } = await admin
       .from('order_items')
       .select('product_id, product_name, quantity, unit, unit_price, tax_rate, pack_config_id')
       .eq('order_id', replace_order_id)
+    // 差し替え前スナップショット（監査用）。取得失敗しても処理は続けるが無言にはしない。
+    if (oldItemsErr) console.error('[api/orders] 差し替え前明細の取得に失敗（監査）:', oldItemsErr.message)
 
     const { error: delErr } = await admin.from('order_items').delete().eq('order_id', replace_order_id)
     if (delErr) {
@@ -286,11 +293,13 @@ export async function POST(req: NextRequest) {
   const withPacks = items.filter((it) => typeof it.packs_per_case === 'number' && it.packs_per_case > 0)
   if (withPacks.length > 0) {
     const pids = [...new Set(withPacks.map((it) => it.product_id))]
-    const { data: existing } = await admin
+    const { data: existing, error: existingErr } = await admin
       .from('customer_product_rules')
       .select('product_id, packs_per_case')
       .eq('customer_id', customer_id)
       .in('product_id', pids)
+    // P/C保存は best-effort（注文本体は登録済み）。失敗しても巻き戻さないが無言にはしない。
+    if (existingErr) console.error('[api/orders] P/Cルールの取得に失敗（best-effort保存）:', existingErr.message)
     const ruleByProduct = new Map((existing ?? []).map((r) => [r.product_id as string, r]))
 
     for (const it of withPacks) {

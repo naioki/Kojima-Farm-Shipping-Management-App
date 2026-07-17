@@ -16,15 +16,17 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   const supabase = createClient()
 
-  const { data: item } = await supabase
+  const { data: item, error: itemErr } = await supabase
     .from('order_items')
     .select('*')
     .eq('id', params.id)
     .maybeSingle()
+  // DBエラーを not_found（404）に化けさせない。
+  if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
   if (!item) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
   // 取り消す対象＝最新の UPDATE 監査
-  const { data: lastChange } = await supabase
+  const { data: lastChange, error: lastChangeErr } = await supabase
     .from('audit_log')
     .select('*')
     .eq('entity_type', 'order_items')
@@ -33,13 +35,17 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+  // DBエラーを nothing_to_undo（404）に化けさせない。
+  if (lastChangeErr) return NextResponse.json({ error: lastChangeErr.message }, { status: 500 })
   if (!lastChange) return NextResponse.json({ error: 'nothing_to_undo' }, { status: 404 })
 
   // 請求確定の有無（この明細が確定済み請求書に載っていれば Undo 不可）
-  const { data: invoiceRows } = await supabase
+  const { data: invoiceRows, error: invoiceRowsErr } = await supabase
     .from('invoice_items')
     .select('invoices!inner(status)')
     .eq('order_item_id', params.id)
+  // 確定請求チェックのDBエラーを「未確定」に化けさせない（確定済み請求のUndoを防ぐ）。
+  if (invoiceRowsErr) return NextResponse.json({ error: invoiceRowsErr.message }, { status: 500 })
   // invoices!inner はネスト配列で返るため flat にして判定する
   const isInvoiceFinalized = (invoiceRows ?? [])
     .flatMap((row) => row.invoices)

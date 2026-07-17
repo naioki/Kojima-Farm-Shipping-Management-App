@@ -45,14 +45,17 @@ export async function GET(req: NextRequest) {
     .eq('delivery_date', delivery_date)
     .neq('status', 'cancelled')
   q = destination_id ? q.eq('destination_id', destination_id) : q.is('destination_id', null)
-  const { data: orders } = await q
+  const { data: orders, error: ordersErr } = await q
+  // DBエラーを「既存注文なし」に化けさせない。
+  if (ordersErr) return NextResponse.json({ error: ordersErr.message }, { status: 500 })
   const orderIds = (orders ?? []).map((o) => o.id as string)
   if (orderIds.length === 0) return NextResponse.json({ items: [] })
 
-  const { data: items } = await admin
+  const { data: items, error: itemsErr } = await admin
     .from('order_items')
     .select('product_id, quantity')
     .in('order_id', orderIds)
+  if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
 
   // 商品別に数量を合計（同キーに複数注文があっても合算して「現在の記録値」とする）
   const byProduct = new Map<string, number>()

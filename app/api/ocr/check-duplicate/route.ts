@@ -39,11 +39,13 @@ export async function POST(req: Request) {
   const hash = crypto.createHash('md5').update(buf).digest('hex')
 
   const admin = createAdminClient()
-  const { data: receipt } = await admin
+  const { data: receipt, error: receiptErr } = await admin
     .from('order_receipts')
     .select('id, received_at, order_id, channel')
     .eq('exact_hash', hash)
     .maybeSingle()
+  // 重複チェックのDBエラーを「重複なし」に化けさせない（二重取込を防ぐ）。
+  if (receiptErr) return NextResponse.json({ error: receiptErr.message }, { status: 500 })
 
   if (!receipt) return NextResponse.json({ duplicate: false })
 

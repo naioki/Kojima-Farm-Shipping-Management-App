@@ -115,11 +115,13 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   }
 
   const admin = createAdminClient()
-  const { data: item } = await admin
+  const { data: item, error: itemErr } = await admin
     .from('order_items')
     .select('*, orders!inner(status)')
     .eq('id', params.id)
     .maybeSingle()
+  // DBエラーを not_found（404）に化けさせない。
+  if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
   if (!item) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
   const orderStatus = (item.orders as unknown as { status: string }).status

@@ -35,15 +35,17 @@ export async function PUT(req: Request) {
   if (!product) return NextResponse.json({ error: 'unknown_product' }, { status: 400 })
 
   // P/C ルール
-  const { data: rule } = await supabase
+  const { data: rule, error: ruleErr } = await supabase
     .from('customer_product_rules')
     .select('id, packs_per_case, spec, container_type, has_card')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
+  // P/C は換算の補助（未設定でも動く）。取得失敗しても続行するが無言にはしない。
+  if (ruleErr) console.error('[api/shipments/cell] P/Cルールの取得に失敗:', ruleErr.message)
 
   // 既存の注文（取引先×出荷日×manual）と当該明細
-  const { data: order } = await supabase
+  const { data: order, error: orderErr } = await supabase
     .from('orders')
     .select('id')
     .eq('customer_id', customer_id)
@@ -51,6 +53,8 @@ export async function PUT(req: Request) {
     .eq('source', 'manual')
     .limit(1)
     .maybeSingle()
+  // 既存注文判定のDBエラーを「既存なし」に化けさせない（重複注文の作成を防ぐ）。
+  if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
 
   const existingItem = order
     ? (

@@ -48,12 +48,14 @@ export async function POST(req: Request) {
   if (!product) return NextResponse.json({ error: 'unknown_product' }, { status: 400 })
 
   // 取引先×商品ルール（P/C＝c記法換算の基準値）
-  const { data: rule } = await supabase
+  const { data: rule, error: ruleErr } = await supabase
     .from('customer_product_rules')
     .select('id, packs_per_case, spec, container_type, has_card')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
+  // P/C は c記法換算の補助（未設定でも動く）。取得失敗しても続行するが無言にはしない。
+  if (ruleErr) console.error('[api/shipments] P/Cルールの取得に失敗:', ruleErr.message)
 
   // スマートパース（誤解釈防止のため lib に集約・Decimal.js）
   const result = parseQuantity(quantity_raw, { packsPerCase: rule?.packs_per_case ?? null })
