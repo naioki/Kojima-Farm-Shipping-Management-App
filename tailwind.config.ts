@@ -38,7 +38,10 @@ const config: Config = {
         line: { DEFAULT: 'var(--line)', strong: 'var(--line-strong)' },
       },
       fontFamily: {
-        display: ['var(--font-display)', 'serif'],
+        // フォールバックは明朝体(serif)ではなくゴシック体(sans-serif)にする。
+        // カスタムフォントの読み込みが遅延・失敗した瞬間、見出しが意図せず明朝体で
+        // 表示される問題があった（design.mdの「丸ゴシックで親しみやすさ」の意図に反する）。
+        display: ['var(--font-display)', 'sans-serif'],
         sans: ['var(--font-body)', 'sans-serif'],
         mono: ['var(--font-mono)', 'monospace'],
       },
