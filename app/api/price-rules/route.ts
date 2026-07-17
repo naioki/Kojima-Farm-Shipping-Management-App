@@ -9,7 +9,9 @@ async function requireAdmin() {
   const user = await getAuthedUser()
   if (!user) return { error: '認証が必要です', status: 401 as const }
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/price-rules/route.ts] ロールの取得に失敗:', profileErr.message)
   if (profile?.role !== 'admin') return { error: '管理者のみ操作できます', status: 403 as const }
   return { user, supabase }
 }

@@ -16,7 +16,9 @@ export async function GET(req: NextRequest) {
   if (!customerId) return NextResponse.json({ error: 'customer_id は必須です' }, { status: 400 })
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/orders/stats/route.ts] ロールの取得に失敗:', profileErr.message)
   if (profile?.role !== 'admin') {
     return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
   }

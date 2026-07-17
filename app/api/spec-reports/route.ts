@@ -19,7 +19,9 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/spec-reports/route.ts] ロールの取得に失敗:', profileErr.message)
   const role = profile?.role
   if (role !== 'admin') {
     const features = await getStaffFeatures()

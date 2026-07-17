@@ -9,7 +9,9 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/price-rules/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
   if (profile?.role !== 'admin') return NextResponse.json({ error: '管理者のみ操作できます' }, { status: 403 })
 
   const { error } = await supabase.from('price_rules').delete().eq('id', params.id)

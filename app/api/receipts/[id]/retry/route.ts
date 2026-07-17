@@ -15,7 +15,9 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/receipts/[id]/retry/route.ts] ロールの取得に失敗:', profileErr.message)
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   // read-then-update は二重クリックで競合する（両リクエストが status='ai_failed' を読んでしまう）。

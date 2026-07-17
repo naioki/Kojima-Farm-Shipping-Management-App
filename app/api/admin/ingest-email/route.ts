@@ -16,7 +16,9 @@ export async function POST() {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
   const sb = createClient()
-  const { data: profile } = await sb.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await sb.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/admin/ingest-email/route.ts] ロールの取得に失敗:', profileErr.message)
   if (profile?.role !== 'admin') {
     return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
   }

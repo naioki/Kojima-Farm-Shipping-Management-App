@@ -34,7 +34,9 @@ export async function POST(req: Request) {
 
   // 管理者は常時可。スタッフはフラグONのときのみ。取引先（portal）は不可。
   const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
+  if (profileErr) console.error('[app/api/ocr/analyze/route.ts] ロールの取得に失敗:', profileErr.message)
   const role = profile?.role
   if (role !== 'admin') {
     const features = await getStaffFeatures()
