@@ -5,8 +5,10 @@ import { getReceiptSignedUrl } from '@/lib/r2'
 export const runtime = 'nodejs'
 
 /**
- * 受信原本（FAX画像・メール添付）の一時署名URLへリダイレクト（admin専用）。
- * R2 の認証情報をクライアントに晒さず、検証画面から原本を確認できるようにする。
+ * 受信原本（FAX画像・メール添付）の一時署名URLへリダイレクト（社内ユーザー専用）。
+ * R2 の認証情報をクライアントに晒さず、検証画面・出荷一覧から原本を確認できるようにする。
+ * staff も許可する（出荷一覧の原本直リンク・Issue#5。users テーブルに行がある社内ロールのみで、
+ * ポータル取引先ユーザーは users に行が無く profile が取れないため弾かれる）。
  */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
@@ -14,7 +16,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const supabase = createClient()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  if (profile?.role !== 'admin' && profile?.role !== 'staff')
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   const { data: receipt, error } = await supabase
     .from('order_receipts')

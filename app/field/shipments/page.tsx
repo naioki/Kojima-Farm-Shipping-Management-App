@@ -13,6 +13,7 @@ import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import type { SpecWarning, PackPhotoKind } from '@/types/database'
 import type { PackInstructionValues, PackInstructionPhoto } from '@/components/admin/PackInstructions'
+import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 
 // 荷姿の作業指示付き行（select の戻り型）。値駆動表示に使う。
 type PackInstructionRow = {
@@ -141,6 +142,35 @@ export default async function ShipmentsPage({
     const arr = photosByPack.get(ph.pack_config_id) ?? []
     arr.push({ id: ph.id, kind: ph.kind })
     photosByPack.set(ph.pack_config_id, arr)
+  }
+
+  // 受注原本（FAX/PDF・メール本文）への直リンク用（Issue#5・トレーサビリティ）。
+  // 注文に紐づく order_receipts を order_id で逆引き。手動追加・ポータルは原本なし＝リンク非表示。
+  const { data: receiptRows, error: receiptErr } = orderIds.length
+    ? await supabase
+        .from('order_receipts')
+        .select('id, order_id, channel, r2_key, raw_payload, is_revision')
+        .in('order_id', orderIds)
+    : { data: [] as { id: string; order_id: string | null; channel: string; r2_key: string | null; raw_payload: unknown; is_revision: boolean | null }[], error: null }
+  if (receiptErr) return <ErrorState message={`受注原本の読み込みに失敗しました: ${receiptErr.message}`} />
+  const emailTextOf = (raw: unknown): string | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const text = (raw as { text?: unknown }).text
+    return typeof text === 'string' && text.trim() ? text : null
+  }
+  const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
+  for (const rr of receiptRows ?? []) {
+    if (!rr.order_id) continue
+    const info: ReceiptOriginalInfo = {
+      id: rr.id,
+      channel: rr.channel,
+      hasOriginal: Boolean(rr.r2_key),
+      emailText: emailTextOf(rr.raw_payload),
+      isRevision: Boolean(rr.is_revision),
+      parent: null,
+    }
+    // 原本もメール本文も無い受信は出しても意味がないので除外
+    if (info.hasOriginal || info.emailText) receiptByOrder.set(rr.order_id, info)
   }
 
   // マスタの梱包情報（ラベル/テープ色/固定の梱包指示/入り数）。order_items.rule_id で紐付け、
@@ -275,6 +305,7 @@ export default async function ShipmentsPage({
                     productId: it.product_id,
                     canEditRulesDirectly: isAdmin,
                     canReportSpec,
+                    receipt: receiptByOrder.get(it.order_id) ?? null,
                   }
                 })}
               />

@@ -1,17 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2, Settings, Camera } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2, Settings, Camera, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus, SpecWarning } from '@/types/database'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
+import { rowStatusKey, type RowStatusKey } from '@/lib/field/shipment-sort'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto } from '@/components/admin/PackInstructions'
+import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
+import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
@@ -22,12 +25,21 @@ const STATUS_TEXT: Record<FieldStatus, string> = {
   shipped: 'text-harvest-500',
 }
 
-// 紙の運用（パック済み＝数字を○で囲む／出荷済み＝線を引く）を数量表示にも再現する（MatrixCellと同方針）。
-const QTY_SHAPE: Record<FieldStatus, string> = {
-  not_started: '',
-  packed: 'rounded-full border-2 border-trust-500 px-2',
-  shipped: 'line-through decoration-2',
+/**
+ * ステータス別のカード配色（Issue#5）。打消し線・○囲みをやめ、カード自体の
+ * 左ボーダー＋背景トーンで4区分を一目で分からせる。色だけに頼らず、
+ * 中央のステータスラベル文字と併用する（WCAG・design.md）。
+ * サマリーチップ（ShipmentStatusSummary）と同じ系統色に揃える。
+ */
+const CARD_TONE: Record<RowStatusKey, string> = {
+  not_started: 'border-l-line-strong bg-bg-card',
+  interrupted: 'border-l-warning bg-warning-bg/20',
+  packed: 'border-l-trust-500 bg-trust-50/40',
+  shipped: 'border-l-line bg-bg-soft/60 opacity-80',
 }
+
+/** ステータス変更後、その場に留まって「元に戻す」を出す時間（ms）。誤タップ対策。 */
+const UNDO_GRACE_MS = 5000
 
 export interface ShipmentRowProps {
   itemId: string
@@ -70,8 +82,10 @@ export interface ShipmentRowProps {
   canEditRulesDirectly?: boolean
   /** staff/admin: 規格報告が使える（STAFF_CAN_REPORT_SPEC。adminは常時true） */
   canReportSpec?: boolean
-  /** 出荷済みに前進した瞬間に呼ばれる（親が一定時間後に並べ替えるため） */
-  onShipped?: (itemId: string) => void
+  /** 受注原本（FAX/PDF・メール本文）。無ければリンク非表示（手動追加など） */
+  receipt?: ReceiptOriginalInfo | null
+  /** ステータス確定（Undo猶予経過 or 戻す操作）時に呼ばれる。親がステータス順に並べ替える */
+  onStatusSettled?: (itemId: string, status: RowStatusKey) => void
   /** 削除された瞬間に呼ばれる（親が並びから除く） */
   onDeleted?: (itemId: string) => void
 }
@@ -109,7 +123,8 @@ export function ShipmentRow({
   productId,
   canEditRulesDirectly,
   canReportSpec,
-  onShipped,
+  receipt,
+  onStatusSettled,
   onDeleted,
 }: ShipmentRowProps) {
   const router = useRouter()
@@ -118,6 +133,9 @@ export function ShipmentRow({
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // ステータス変更直後の「元に戻す」猶予（誤タップ対策・Issue#5）。猶予中は並べ替えない。
+  const [undoGrace, setUndoGrace] = useState<FieldStatus | null>(null)
+  const undoTimerRef = useRef<number | null>(null)
   // 削除確認
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -144,6 +162,25 @@ export function ShipmentRow({
   const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
   // 中断＝できた数が受注未満で、まだ出荷していない。梱包完了（全量）と明確に区別する。
   const interrupted = isPartial && status !== 'shipped'
+  const statusKey = rowStatusKey(status, isPartial ? shippedNum : null, orderedQty)
+
+  // アンマウント時に猶予タイマーを掃除（画面遷移してもサーバー状態は反映済み）
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current != null) window.clearTimeout(undoTimerRef.current)
+    }
+  }, [])
+
+  /** 猶予タイマーを開始。経過したら親に確定を通知し、所属グループへ並べ替えてもらう。 */
+  function startUndoGrace(from: FieldStatus, settled: FieldStatus) {
+    if (undoTimerRef.current != null) window.clearTimeout(undoTimerRef.current)
+    setUndoGrace(from)
+    undoTimerRef.current = window.setTimeout(() => {
+      undoTimerRef.current = null
+      setUndoGrace(null)
+      onStatusSettled?.(itemId, rowStatusKey(settled, isPartial ? shippedNum : null, orderedQty))
+    }, UNDO_GRACE_MS)
+  }
 
   async function advance() {
     if (!canAdvance(status) || busy) return
@@ -167,14 +204,24 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setConflict(false)
-      // 出荷済みに到達したら、親に通知（一定時間後に末尾へ並べ替え）
-      if (target === 'shipped') onShipped?.(itemId)
+      // すぐには並べ替えず、猶予中は「元に戻す」を出す（誤タップ対策・Issue#5）
+      startUndoGrace(prev, target)
     } catch (e) {
       setStatus(prev)
       toast.error(e instanceof Error ? e.message : '更新に失敗しました')
     } finally {
       setBusy(false)
     }
+  }
+
+  /** 猶予中の「元に戻す」。既存の reset API（1段戻す・楽観ロック）をそのまま使う。 */
+  async function undoAdvance() {
+    if (undoTimerRef.current != null) {
+      window.clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+    setUndoGrace(null)
+    await reset()
   }
 
   async function reset() {
@@ -196,6 +243,11 @@ export function ShipmentRow({
       setStatus(json.item.field_status)
       setVersion(json.item.version)
       setConflict(false)
+      // 戻した結果は即座に確定として親へ通知（並び順を最新化）
+      onStatusSettled?.(
+        itemId,
+        rowStatusKey(json.item.field_status, isPartial ? shippedNum : null, orderedQty),
+      )
     } catch (e) {
       setStatus(prev)
       toast.error(e instanceof Error ? e.message : '戻す操作に失敗しました')
@@ -290,7 +342,13 @@ export function ShipmentRow({
     'h-10 w-full rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
 
   return (
-    <div className={cn('rounded border', conflict ? 'animate-pulse-alert border-alert' : 'border-line')}>
+    <div
+      className={cn(
+        'rounded border border-l-4 transition-colors duration-300',
+        CARD_TONE[statusKey],
+        conflict ? 'animate-pulse-alert border-alert' : 'border-line',
+      )}
+    >
       <div className="px-3 py-2">
         {/* 1行目: 取引先＞納入先（折り返し可・省略しない）＋数量。狭い画面でも読める幅を優先する。 */}
         <button
@@ -311,7 +369,7 @@ export function ShipmentRow({
               )}
             </span>
             <span className="flex flex-wrap items-center gap-1.5 mt-0.5">
-              <span className={cn('num text-base font-bold tabular-nums text-ink', QTY_SHAPE[status])}>{quantityText}</span>
+              <span className={cn('num text-base font-bold tabular-nums', status === 'shipped' ? 'text-ink-soft' : 'text-ink')}>{quantityText}</span>
               {hasDetails && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-soft">
                   {hasCard && <IdCard className="h-3 w-3" aria-hidden />}
@@ -381,6 +439,27 @@ export function ShipmentRow({
         </div>
       </div>
 
+      {/* ステータス変更直後の「元に戻す」猶予バー（誤タップ対策・Issue#5）。
+          猶予が過ぎると親がステータス順に並べ替える。サーバーには反映済みなので
+          この間に画面を離れても状態は失われない。 */}
+      {undoGrace && (
+        <div className="flex items-center justify-between gap-2 border-t border-line bg-harvest-50/60 px-3 py-2 motion-reduce:transition-none">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-harvest-700">
+            <Check className="h-4 w-4" aria-hidden />
+            {meta.label}にしました
+          </span>
+          <button
+            type="button"
+            onClick={undoAdvance}
+            disabled={busy}
+            className="inline-flex h-9 items-center gap-1 rounded border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+          >
+            <Undo2 className="h-3.5 w-3.5" aria-hidden />
+            元に戻す
+          </button>
+        </div>
+      )}
+
       {/* 規格警告（禁止事項・必須事項）— 常時1行表示。アコーディオンを開かずに確認できる */}
       {specWarnings && specWarnings.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-warning-bg/30 px-3 py-1.5">
@@ -444,6 +523,10 @@ export function ShipmentRow({
 
       {open && (
         <div className="space-y-3 border-t border-line bg-bg-soft/40 px-3 py-3">
+          {/* 受注原本への直リンク（Issue#5・トレーサビリティ）。FAX/PDFは埋め込み表示、
+              メールは本文表示。手動追加・ポータル注文は原本が無いので出ない。 */}
+          {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
+
           {/* 荷姿マスタの作業指示（値駆動）。規格・カード/シール・テープ色・ラベル種別・品質注意・
               固定追記・現場メモ・作業写真。値が無ければ何も出さない（PackInstructions が判定）。 */}
           {packInstructions && (

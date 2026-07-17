@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 
 /**
  * 出荷一覧・マトリックスの日付コントロール（features.md §8）。
@@ -23,17 +23,22 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
         <ChevronLeft className="h-5 w-5" aria-hidden />
       </Link>
 
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => {
-          if (!e.target.value) return
-          router.push(hrefFor(e.target.value))
-          router.refresh()
-        }}
-        aria-label="表示日"
-        className="num h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100"
-      />
+      {/* ブラウザ標準の date 入力はOSロケール依存（DD/MM/YYYY等に見える）ため、
+          日本標準の「月/日(曜)」を隣に明示して直感的に読めるようにする（Issue#5-F）。 */}
+      <label className="flex items-center gap-2">
+        <span className="num text-sm font-bold tabular-nums text-ink">{formatJpDateShort(date)}</span>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => {
+            if (!e.target.value) return
+            router.push(hrefFor(e.target.value))
+            router.refresh()
+          }}
+          aria-label="表示日"
+          className="num h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100"
+        />
+      </label>
 
       <Link href={hrefFor(shiftDateStr(date, 1))} aria-label="次の日" className={btn}>
         <ChevronRight className="h-5 w-5" aria-hidden />
