@@ -38,11 +38,12 @@ export async function POST(req: Request) {
   // delivery_notes に専用列を追加せず、既存の customer_name スナップショットに含める。
   let customerNameSnapshot = customer.name
   if (destination_id) {
-    const { data: dest } = await supabase
+    const { data: dest, error: destErr } = await supabase
       .from('delivery_destinations')
       .select('code, full_name')
       .eq('id', destination_id)
       .maybeSingle()
+    if (destErr) console.error('[api/delivery-notes] 納入先名の取得に失敗:', destErr.message)
     if (dest) customerNameSnapshot = `${customer.name}＞${dest.code || dest.full_name}`
   }
 
@@ -50,17 +51,19 @@ export async function POST(req: Request) {
   // （表示のプレビューと発行内容がズレないように・複数納入先混在時の事故防止）。
   let ordersQuery = supabase.from('orders').select('id').eq('customer_id', customer_id).eq('delivery_date', delivery_date)
   if (destination_id) ordersQuery = ordersQuery.eq('destination_id', destination_id)
-  const { data: orders } = await ordersQuery
+  const { data: orders, error: ordersErr } = await ordersQuery
+  // 発行スナップショットの元データ。取得失敗を「明細なし」に化けさせない（誤った空伝票の凍結を防ぐ）。
+  if (ordersErr) return NextResponse.json({ error: `対象注文の取得に失敗しました: ${ordersErr.message}` }, { status: 500 })
   const orderIds = (orders ?? []).map((o) => o.id)
-  const items = orderIds.length
-    ? (
-        await supabase
-          .from('order_items')
-          .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
-          .in('order_id', orderIds)
-          .order('product_name')
-      ).data ?? []
-    : []
+  const itemsRes = orderIds.length
+    ? await supabase
+        .from('order_items')
+        .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
+        .in('order_id', orderIds)
+        .order('product_name')
+    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number | null; tax_rate: number; subtotal: number | null }[], error: null }
+  if (itemsRes.error) return NextResponse.json({ error: `明細の取得に失敗しました: ${itemsRes.error.message}` }, { status: 500 })
+  const items = itemsRes.data ?? []
   if (items.length === 0) {
     return NextResponse.json({ error: 'no_items' }, { status: 400 })
   }

@@ -67,11 +67,13 @@ export async function POST(req: Request) {
   // 一括紐付け：指定出荷日の同品目・未紐付け明細に lot_id を付与
   let assigned = 0
   if (assign_delivery_date) {
-    const { data: orders } = await supabase
+    const { data: orders, error: ordersErr } = await supabase
       .from('orders')
       .select('id')
       .eq('delivery_date', assign_delivery_date)
       .neq('status', 'cancelled')
+    // 紐付け対象の注文取得。失敗を「対象なし」に化けさせない。
+    if (ordersErr) return NextResponse.json({ error: `紐付け対象の注文取得に失敗しました: ${ordersErr.message}` }, { status: 500 })
     const orderIds = (orders ?? []).map((o) => o.id)
     if (orderIds.length) {
       const { data: updated, error: updErr } = await supabase

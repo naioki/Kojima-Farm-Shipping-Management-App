@@ -48,12 +48,14 @@ export async function PUT(req: Request) {
   }
 
   // 旧値（監査・差分・新規/更新判定）
-  const { data: oldRule } = await supabase
+  const { data: oldRule, error: oldRuleErr } = await supabase
     .from('customer_product_rules')
     .select('*')
     .eq('customer_id', input.customer_id)
     .eq('product_id', input.product_id)
     .maybeSingle()
+  // 旧値は監査差分・新規/更新判定の補助。取得失敗しても upsert は続行。無言にはしない。
+  if (oldRuleErr) console.error('[api/customer-product-rules] 旧値の取得に失敗:', oldRuleErr.message)
 
   const { data: rule, error } = await supabase
     .from('customer_product_rules')

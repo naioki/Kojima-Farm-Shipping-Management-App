@@ -19,11 +19,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   const supabase = createClient()
 
-  const { data: current } = await supabase
+  const { data: current, error: currentErr } = await supabase
     .from('invoices')
     .select('id, status')
     .eq('id', params.id)
     .maybeSingle()
+  // DBエラーを not_found（404）に化けさせない。
+  if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 })
   if (!current) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
   const { data: updated, error } = await supabase

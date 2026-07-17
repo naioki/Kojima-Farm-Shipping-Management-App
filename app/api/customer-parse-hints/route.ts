@@ -20,12 +20,14 @@ export async function POST(req: Request) {
   const { customer_id, raw_name, product_id, corrected_name, note } = parsed.data
   const supabase = createClient()
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingErr } = await supabase
     .from('customer_parse_hints')
     .select('id, hit_count')
     .eq('customer_id', customer_id)
     .eq('raw_name', raw_name)
     .maybeSingle()
+  // 既存判定の失敗を新規INSERTに化けさせない（一意制約違反・重複を防ぐ）。
+  if (existingErr) return NextResponse.json({ error: existingErr.message }, { status: 500 })
 
   if (existing) {
     const { data, error } = await supabase

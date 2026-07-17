@@ -42,11 +42,12 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
   const supabase = createClient()
-  const { data: profile } = await supabase
+  const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role')
     .eq('id', user.id)
     .maybeSingle()
+  if (profileErr) console.error('[api/master-import/analyze] ロールの取得に失敗:', profileErr.message)
   if (profile?.role !== 'admin') {
     return NextResponse.json({ error: 'マスタ一括取込は管理者のみ利用できます' }, { status: 403 })
   }

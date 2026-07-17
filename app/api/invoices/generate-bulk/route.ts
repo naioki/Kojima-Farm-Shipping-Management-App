@@ -40,11 +40,13 @@ export async function POST(req: Request) {
   if (custErr) return NextResponse.json({ error: custErr.message }, { status: 500 })
 
   // 同一期間の既存請求書（二重作成防止）
-  const { data: existing } = await supabase
+  const { data: existing, error: existingErr } = await supabase
     .from('invoices')
     .select('customer_id')
     .eq('period_start', period_start)
     .eq('period_end', period_end)
+  // 二重作成防止の要。取得失敗を「既存なし」に化けさせない（重複請求＝二重課金を防ぐ）。
+  if (existingErr) return NextResponse.json({ error: `既存請求書の確認に失敗しました: ${existingErr.message}` }, { status: 500 })
   const alreadyBilled = new Set((existing ?? []).map((e) => e.customer_id))
 
   const created: { customer: string; invoice_number: string; total: number }[] = []
