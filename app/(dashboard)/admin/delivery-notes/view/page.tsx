@@ -39,18 +39,22 @@ export default async function DeliveryNoteView({
     .select('name')
     .eq('id', customerId)
     .maybeSingle()
-  if (custErr) return <ErrorState message={custErr.message} />
+  if (custErr) return <ErrorState message="取引先を読み込めませんでした。時間をおいて再度お試しください。" detail={custErr.message} />
 
-  // その日・その取引先の全注文（納入先ごとに混在していないか確認するため destination_id も取得）
-  const { data: allOrders } = await supabase
+  // その日・その取引先の全注文（納入先ごとに混在していないか確認するため destination_id も取得）。
+  // 納品書に載る対象なので、取得失敗を「明細なし」に化けさせない（誤った空伝票を防ぐ）。
+  const { data: allOrders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, destination_id')
     .eq('customer_id', customerId)
     .eq('delivery_date', date)
+  if (ordersErr) return <ErrorState message="納品書の対象注文を読み込めませんでした。時間をおいて再度お試しください。" detail={ordersErr.message} />
   const distinctDestIds = [...new Set((allOrders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
-  const { data: destRows } = distinctDestIds.length
+  const { data: destRows, error: destErr } = distinctDestIds.length
     ? await supabase.from('delivery_destinations').select('id, code, full_name').in('id', distinctDestIds)
-    : { data: [] as { id: string; code: string | null; full_name: string }[] }
+    : { data: [] as { id: string; code: string | null; full_name: string }[], error: null }
+  // 納入先の表示名（補助）。失敗しても本体は殺さない。
+  if (destErr) console.error('[delivery-notes/view] 納入先名の解決に失敗:', destErr.message)
   const destLabel = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
 
   // 納入先を1つに絞り込み中なら、その納入先の注文だけを対象にする（表示は常に「取引先＞納入先」）。
@@ -61,15 +65,16 @@ export default async function DeliveryNoteView({
     ? `${customer?.name ?? '—'}＞${destLabel.get(destinationId)}`
     : customer?.name ?? '—'
 
-  const items = orderIds.length
-    ? (
-        await supabase
-          .from('order_items')
-          .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
-          .in('order_id', orderIds)
-          .order('product_name')
-      ).data ?? []
-    : []
+  const itemsRes = orderIds.length
+    ? await supabase
+        .from('order_items')
+        .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
+        .in('order_id', orderIds)
+        .order('product_name')
+    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number | null; tax_rate: number; subtotal: number | null }[], error: null }
+  // 明細は納品書本体。取得失敗を「明細なし」に化けさせない。
+  if (itemsRes.error) return <ErrorState message="納品書の明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
+  const items = itemsRes.data ?? []
 
   const [farmName, farmAddr, farmTel, amountDefault] = await Promise.all([
     getSetting('FARM_NAME'),
