@@ -74,38 +74,43 @@ export function ShipmentGroupRows({ rows }: { rows: ShipmentRowProps[] }) {
     setOrder((prev) => prev.filter((x) => x !== id))
   }, [])
 
-  const activeIds = order.filter((id) => statusById.get(id) !== 'shipped')
-  const shippedIds = order.filter((id) => statusById.get(id) === 'shipped')
+  const shippedCount = order.filter((id) => statusById.get(id) === 'shipped').length
 
-  const renderRow = (id: string) => {
-    const r = byId.get(id)
-    if (!r) return null
-    return (
-      <div key={id} className={cn(justMovedId === id && 'animate-slide-up motion-reduce:animate-none')}>
-        <ShipmentRow {...r} onStatusSettled={handleSettled} onDeleted={handleDeleted} />
-      </div>
-    )
-  }
-
+  // ★全行を同一の親の下に置いたまま、出荷済みは CSS で隠す（折りたたみ）。
+  //   別の親へ移す実装だと React が行を再マウントし、行内部の楽観ロック version が
+  //   ページ描画時の古い値に戻って以後のタップが毎回409（競合）になるため。
   return (
     <div className="space-y-2">
-      {activeIds.map(renderRow)}
-
-      {/* 出荷済みは折りたたみへ（当日の完了分。既定は畳んで「やること」に集中させる） */}
-      {shippedIds.length > 0 && (
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setShowShipped((v) => !v)}
-            aria-expanded={showShipped}
-            className="flex h-11 w-full items-center justify-center gap-1.5 rounded border border-dashed border-line text-sm font-medium text-ink-soft hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+      {order.map((id) => {
+        const r = byId.get(id)
+        if (!r) return null
+        const hidden = statusById.get(id) === 'shipped' && !showShipped
+        return (
+          <div
+            key={id}
+            className={cn(
+              hidden && 'hidden',
+              justMovedId === id && 'animate-slide-up motion-reduce:animate-none',
+            )}
           >
-            <Truck className="h-4 w-4" aria-hidden />
-            出荷済み {shippedIds.length}件
-            <ChevronDown className={cn('h-4 w-4 transition-transform', showShipped && 'rotate-180')} aria-hidden />
-          </button>
-          {showShipped && <div className="mt-2 space-y-2">{shippedIds.map(renderRow)}</div>}
-        </div>
+            <ShipmentRow {...r} onStatusSettled={handleSettled} onDeleted={handleDeleted} />
+          </div>
+        )
+      })}
+
+      {/* 出荷済みは折りたたみへ（当日の完了分。既定は畳んで「やること」に集中させる）。
+          出荷済み行はステータス順ソートで常に末尾に集まるので、このトグルの直上に並ぶ。 */}
+      {shippedCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowShipped((v) => !v)}
+          aria-expanded={showShipped}
+          className="flex h-11 w-full items-center justify-center gap-1.5 rounded border border-dashed border-line text-sm font-medium text-ink-soft hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+        >
+          <Truck className="h-4 w-4" aria-hidden />
+          出荷済み {shippedCount}件を{showShipped ? '隠す' : '表示'}
+          <ChevronDown className={cn('h-4 w-4 transition-transform', showShipped && 'rotate-180')} aria-hidden />
+        </button>
       )}
     </div>
   )
