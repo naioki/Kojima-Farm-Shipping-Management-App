@@ -10,7 +10,6 @@ import {
   Settings,
   ClipboardList,
   Camera,
-  CheckCircle2,
   Tag,
   Coins,
   Images,
@@ -36,8 +35,9 @@ export interface NavGroup {
  * 管理（経営）サーフェスのナビ。業務フェーズでグルーピングして俯瞰しやすくする。
  *
  * 整理方針（2026-07）:
- *  - 受注: 「受信トレイ（取り込み＋手動読み取り）→ 承認 → 一覧」の一直線。
- *    旧「注文を読む」は受信トレイ内の手動アップロードに統合しメニューから除外。
+ *  - 受注: 「受注ボックス（受信＋解析＋承認を1画面に統合）→ 一覧」の一直線。
+ *    旧「受信トレイ」と「注文の承認」は受注ボックス（/admin/inbox）に統合（Issue#3）。
+ *    旧 /admin/approvals は /admin/inbox?filter=pending へリダイレクト（ブックマーク互換）。
  *  - 受注一覧をメニューに追加（従来はダッシュボード経由でしか行けなかった不整合を解消）。
  *  - 「規格の未登録」はToDo性が強いためメニューから外し、ダッシュボードのアラートで通知。
  *  - 価格系は役割が一目で分かる名称へ（月次の価格確定／単価・荷姿マスタ）。
@@ -48,8 +48,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
   {
     label: '受注',
     items: [
-      { href: '/admin/inbox', label: '受信トレイ', icon: Inbox },
-      { href: '/admin/approvals', label: '注文の承認', icon: CheckCircle2 },
+      { href: '/admin/inbox', label: '受注ボックス', icon: Inbox },
       { href: '/admin/orders', label: '受注一覧', icon: ClipboardList },
     ],
   },
