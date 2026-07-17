@@ -36,7 +36,12 @@ export default async function InboxPage({
   try {
     data = await getInboxData()
   } catch (e) {
-    return <ErrorState message={e instanceof Error ? e.message : '受注ボックスの読み込みに失敗しました'} />
+    return (
+      <ErrorState
+        message="受注ボックスを読み込めませんでした。時間をおいて再度お試しください。"
+        detail={e instanceof Error ? e.message : String(e)}
+      />
+    )
   }
   const { receipts, pendingOrders, approvedOrders, counts } = data
 

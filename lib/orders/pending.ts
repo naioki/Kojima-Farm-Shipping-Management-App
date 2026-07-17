@@ -85,49 +85,65 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   const supabase = createClient()
   const threshold = parseThreshold(await getSetting('AUTO_APPROVE_THRESHOLD'))
 
-  const { data: orders } = await supabase
+  // 承認画面の主データ。取得失敗を空表示に化けさせない（承認漏れ・ゲート誤りを防ぐ）。
+  const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, source, delivery_date, customer_id, destination_id')
     .eq('status', 'pending_review')
     .order('created_at', { ascending: true })
+  if (ordersErr) throw new Error(`承認待ち注文の取得に失敗しました: ${ordersErr.message}`)
 
   if (!orders || orders.length === 0) return []
 
   const orderIds = orders.map((o) => o.id)
   const customerIds = [...new Set(orders.map((o) => o.customer_id).filter(Boolean))] as string[]
 
-  const [{ data: items }, { data: custs }, { data: destRows }] = await Promise.all([
+  const [itemsRes, custsRes, destsRes] = await Promise.all([
     supabase
       .from('order_items')
       .select('id, order_id, product_id, product_name, quantity, unit, confidence, version, pack_config_id')
       .in('order_id', orderIds),
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
+      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[], error: null }),
     customerIds.length
       ? supabase.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).in('customer_id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; customer_id: string; code: string | null; full_name: string }[] }),
+      : Promise.resolve({ data: [] as { id: string; customer_id: string; code: string | null; full_name: string }[], error: null }),
   ])
+  // 明細は承認ゲート（数量・荷姿）に直結する主データ。取得失敗は顕在化させる。
+  if (itemsRes.error) throw new Error(`承認待ち明細の取得に失敗しました: ${itemsRes.error.message}`)
+  const items = itemsRes.data
+  // 取引先名・納入先は補助表示。失敗しても承認自体は殺さず、名前未解決で続行する。
+  if (custsRes.error) console.error('[pending] 取引先名の解決に失敗:', custsRes.error.message)
+  if (destsRes.error) console.error('[pending] 納入先の解決に失敗:', destsRes.error.message)
+  const custs = custsRes.data
+  const destRows = destsRes.data
 
   const productIds = [...new Set((items ?? []).map((it) => it.product_id).filter(Boolean))] as string[]
-  const { data: packConfigs } = productIds.length
+  // 荷姿は承認ゲート（needsPackConfig）の判定に使う。取得失敗を空扱いにすると
+  // 未確定を確定と誤判定しかねないので顕在化させる。
+  const { data: packConfigs, error: packErr } = productIds.length
     ? await supabase
         .from('pack_configs')
         .select('id, product_id, customer_id, label')
         .eq('is_active', true)
         .in('product_id', productIds)
-    : { data: [] as { id: string; product_id: string; customer_id: string | null; label: string }[] }
+    : { data: [] as { id: string; product_id: string; customer_id: string | null; label: string }[], error: null }
+  if (packErr) throw new Error(`荷姿マスタの取得に失敗しました: ${packErr.message}`)
 
   // 受信原本（承認画面での比較表示用）。手動入力・ポータル注文は receipt が無い。
-  const { data: receiptRows } = await supabase
+  // 補助表示なので、失敗しても承認は続行し原本リンクだけ落とす。
+  const { data: receiptRows, error: receiptErr } = await supabase
     .from('order_receipts')
     .select('id, order_id, channel, r2_key, raw_payload, is_revision, parent_id')
     .in('order_id', orderIds)
+  if (receiptErr) console.error('[pending] 受信原本の取得に失敗:', receiptErr.message)
 
   const parentIds = [...new Set((receiptRows ?? []).map((r) => r.parent_id).filter(Boolean))] as string[]
-  const { data: parentRows } = parentIds.length
+  const { data: parentRows, error: parentErr } = parentIds.length
     ? await supabase.from('order_receipts').select('id, r2_key, raw_payload').in('id', parentIds)
-    : { data: [] as { id: string; r2_key: string | null; raw_payload: unknown }[] }
+    : { data: [] as { id: string; r2_key: string | null; raw_payload: unknown }[], error: null }
+  if (parentErr) console.error('[pending] 元受信（再送親）の取得に失敗:', parentErr.message)
   const parentById = new Map((parentRows ?? []).map((p) => [p.id, p]))
 
   const emailTextOf = (raw: unknown): string | null => {

@@ -4,22 +4,47 @@
     {
       "name": "kojima-noen",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "cwd": "C:\\dev\\kojima-noen"
     },
     {
       "name": "kojima-noen-drive",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "kojima-fax-3100",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3100"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3100"
+      ],
       "port": 3100,
       "cwd": "C:\\Users\\kagay\\Kojima-Farm-Shipping-Management-App-local"
+    },
+    {
+      "name": "kojimanouen-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3010"
+      ],
+      "port": 3010,
+      "cwd": "C:/Users/naiok/repos/kojimanouen-web"
     }
   ]
 }

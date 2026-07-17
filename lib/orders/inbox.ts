@@ -99,9 +99,11 @@ export async function getInboxData(): Promise<InboxData> {
       ) as string[],
     ),
   ]
-  const { data: custs } = customerIds.length
+  const { data: custs, error: custErr } = customerIds.length
     ? await supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-    : { data: [] as { id: string; name: string; display_color: string | null }[] }
+    : { data: [] as { id: string; name: string; display_color: string | null }[], error: null }
+  // 補助データ（取引先名の解決）。失敗しても受信リスト本体は殺さず、名前は未解決で続行する。
+  if (custErr) console.error('[inbox] 取引先名の解決に失敗:', custErr.message)
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
 
@@ -109,10 +111,12 @@ export async function getInboxData(): Promise<InboxData> {
   const approvedIds = approvedRows.map((o) => o.id)
   const itemCountByOrder = new Map<string, number>()
   if (approvedIds.length) {
-    const { data: itemRows } = await supabase
+    const { data: itemRows, error: itemErr } = await supabase
       .from('order_items')
       .select('order_id')
       .in('order_id', approvedIds)
+    // 補助データ（承認済み注文の品目件数）。失敗しても本体は殺さず、件数0で続行する。
+    if (itemErr) console.error('[inbox] 承認済み注文の品目件数取得に失敗:', itemErr.message)
     for (const it of itemRows ?? []) {
       itemCountByOrder.set(it.order_id, (itemCountByOrder.get(it.order_id) ?? 0) + 1)
     }
