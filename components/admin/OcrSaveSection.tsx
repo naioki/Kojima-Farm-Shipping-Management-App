@@ -376,8 +376,12 @@ export function OcrSaveSection({ order, index, customers, products, destinations
         toast(`数量が普段と大きく違います（${names}）。念のため確認してください`, { icon: '⚠️', duration: 8000 })
       }
 
-      toast.success(json.replaced ? '注文を置き換えました' : '注文を登録しました')
-      router.push('/admin/orders')
+      toast.success(
+        json.replaced
+          ? '注文を置き換えました。受注ボックスの承認待ちに反映されます'
+          : '注文を登録しました。受注ボックスの承認待ちに追加されました',
+      )
+      router.push('/admin/inbox?filter=pending')
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')

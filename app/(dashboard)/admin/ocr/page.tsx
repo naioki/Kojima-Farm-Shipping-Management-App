@@ -1,4 +1,5 @@
-import { ScanLine } from 'lucide-react'
+import Link from 'next/link'
+import { ScanLine, ArrowLeft } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { ManualOcrForm } from '@/components/admin/ManualOcrForm'
@@ -52,6 +53,14 @@ export default async function ManualOcrPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      <Link
+        href="/admin/inbox"
+        className="inline-flex items-center gap-1 text-sm font-medium text-trust-600 hover:underline"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+        受注ボックスへ戻る
+      </Link>
+
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-earth-100 p-2">
           <ScanLine className="h-5 w-5 text-earth-700" aria-hidden />
