@@ -1,14 +1,9 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { navGroupsFor } from '@/components/layouts/nav-items'
-
-const isActiveHref = (pathname: string, href: string) =>
-  pathname === href || pathname.startsWith(`${href}/`)
+import { useNavState } from '@/components/layouts/use-nav'
 
 export interface SidebarUser {
   name: string
@@ -17,18 +12,7 @@ export interface SidebarUser {
 
 /** lg 以上で固定表示。それ以下は MobileNav（ハンバーガー）が担う（design.md）。深緑のナビ地。 */
 export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: SidebarUser }) {
-  const pathname = usePathname()
-  const groups = navGroupsFor(role)
-
-  // アコーディオン開閉。初期は「現在地を含むグループだけ開く」（見出し無しは常に表示）。
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {}
-    for (const g of groups) {
-      if (!g.label) continue
-      init[g.label] = g.items.some((it) => isActiveHref(pathname, it.href))
-    }
-    return init
-  })
+  const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
 
   return (
     <nav
@@ -51,7 +35,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
           const items = (
             <ul className="space-y-0.5">
               {group.items.map(({ href, label, icon: Icon }) => {
-                const active = isActiveHref(pathname, href)
+                const active = href === activeHref
                 return (
                   <li key={href}>
                     <Link
@@ -83,7 +67,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
             <div key={group.label}>
               <button
                 type="button"
-                onClick={() => setOpenGroups((p) => ({ ...p, [group.label!]: !open }))}
+                onClick={() => toggleGroup(group.label!)}
                 aria-expanded={open}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-forest-200 transition-colors hover:text-white"
               >

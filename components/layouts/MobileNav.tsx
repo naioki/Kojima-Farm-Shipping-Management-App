@@ -5,10 +5,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X, LogOut, ChevronDown, Leaf } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { navFor, navGroupsFor } from '@/components/layouts/nav-items'
-
-const isActiveHref = (pathname: string, href: string) =>
-  pathname === href || pathname.startsWith(`${href}/`)
+import { navFor } from '@/components/layouts/nav-items'
+import { useNavState } from '@/components/layouts/use-nav'
 
 /**
  * モバイル用ナビ（lg 未満）。上部バー＋ハンバーガー → スライドドロワー。
@@ -19,16 +17,7 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const nav = navFor(role)
-  const groups = navGroupsFor(role)
-  // アコーディオン開閉（初期は現在地のグループだけ開く）
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {}
-    for (const g of groups) {
-      if (!g.label) continue
-      init[g.label] = g.items.some((it) => isActiveHref(pathname, it.href))
-    }
-    return init
-  })
+  const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
 
   // ルート変更で自動的に閉じる
   useEffect(() => {
@@ -48,7 +37,7 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
     }
   }, [open])
 
-  const current = nav.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`))
+  const current = nav.find((n) => n.href === activeHref)
 
   return (
     <>
@@ -108,7 +97,7 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
                 const items = (
                   <ul className="space-y-1">
                     {group.items.map(({ href, label, icon: Icon }) => {
-                      const active = isActiveHref(pathname, href)
+                      const active = href === activeHref
                       return (
                         <li key={href}>
                           <Link
@@ -133,7 +122,7 @@ export function MobileNav({ role, persistent = false }: { role: 'admin' | 'staff
                   <div key={group.label}>
                     <button
                       type="button"
-                      onClick={() => setOpenGroups((p) => ({ ...p, [group.label!]: !gOpen }))}
+                      onClick={() => toggleGroup(group.label!)}
                       aria-expanded={gOpen}
                       className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-forest-200 hover:text-white"
                     >
