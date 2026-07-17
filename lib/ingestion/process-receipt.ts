@@ -44,11 +44,13 @@ function matchDestinationId(
 export async function processReceipt(receiptId: string): Promise<ProcessReceiptResult> {
   const admin = createAdminClient()
 
-  const { data: receipt } = await admin
+  const { data: receipt, error: receiptErr } = await admin
     .from('order_receipts')
     .select('id, channel, r2_key, raw_payload, sender_date_key, customer_id, is_revision, status')
     .eq('id', receiptId)
     .maybeSingle()
+  // 取得失敗を「コンテンツなしスキップ」に化けさせない（再試行対象として顕在化）。
+  if (receiptErr) return await failReceipt(receiptId, `受信レコードの取得に失敗: ${receiptErr.message}`)
 
   if (!receipt || receipt.status !== 'pending_ai') {
     return { receiptId, status: 'skipped_no_content', orderCount: 0 }
@@ -84,21 +86,24 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   if (!customerId && receipt.sender_date_key && receipt.channel === 'fax') {
     const faxNum = receipt.sender_date_key.split('_')[0] ?? ''
     if (faxNum) {
-      const { data: matched } = await admin
+      const { data: matched, error: matchedErr } = await admin
         .from('customers')
         .select('id')
         .contains('channel_identifiers', { fax: [faxNum] })
         .maybeSingle()
+      // 取引先特定は補助（未特定なら unmatched で人間が紐付ける）。無言にはしない。
+      if (matchedErr) console.error('[process-receipt] FAX番号での取引先特定に失敗:', matchedErr.message)
       customerId = matched?.id ?? null
     }
   }
 
   // メールは送信元アドレス→件名キーワードの順で取引先を特定（マスタ駆動・lib/ingestion/match-customer.ts）
   if (!customerId && receipt.channel === 'email') {
-    const { data: allCustomers } = await admin
+    const { data: allCustomers, error: allCustomersErr } = await admin
       .from('customers')
       .select('id, channel_identifiers')
       .eq('is_active', true)
+    if (allCustomersErr) console.error('[process-receipt] 取引先一覧の取得に失敗（メール突合）:', allCustomersErr.message)
     customerId = matchEmailCustomer(
       emailFrom,
       emailSubject,
@@ -112,12 +117,14 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   // 取引先別の学習ヒントを取得
   let hintText = ''
   if (customerId) {
-    const { data: hints } = await admin
+    const { data: hints, error: hintsErr } = await admin
       .from('customer_parse_hints')
       .select('raw_name, corrected_name, hit_count')
       .eq('customer_id', customerId)
       .order('hit_count', { ascending: false })
       .limit(30)
+    // 学習ヒントは解析精度の補助。取得失敗しても解析は続行する。無言にはしない。
+    if (hintsErr) console.error('[process-receipt] 学習ヒントの取得に失敗:', hintsErr.message)
     if (hints && hints.length > 0) {
       const parsed: ParseHint[] = hints.map((h) => ({
         rawName: h.raw_name as string,
@@ -202,10 +209,12 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   const ocrConfidence = allConfidences.length > 0 ? Math.min(...allConfidences) : null
 
   // 商品マスタ取得（名寄せ用）
-  const { data: products } = await admin
+  const { data: products, error: productsErr } = await admin
     .from('products')
     .select('id, name, aliases')
     .eq('is_active', true)
+  // 名寄せ候補は補助（未一致は要確認フラグになる）。取得失敗しても続行。無言にはしない。
+  if (productsErr) console.error('[process-receipt] 商品マスタの取得に失敗（名寄せ）:', productsErr.message)
   const candidates: ProductCandidate[] = (products ?? []).map((p) => ({
     id: p.id as string,
     name: p.name as string,
@@ -242,11 +251,13 @@ export async function processReceipt(receiptId: string): Promise<ProcessReceiptR
   // 解析結果を raw_payload に保存する（既存の text/subject/from は保持してマージ）。
   // 要確認で注文化されなかった場合でも「何と読んだか」が残り、
   // 影実行（/api/cron/shadow-diff）のv4突合と受信トレイ表示に使える。
-  const { data: currentReceipt } = await admin
+  const { data: currentReceipt, error: currentReceiptErr } = await admin
     .from('order_receipts')
     .select('raw_payload')
     .eq('id', receiptId)
     .maybeSingle()
+  // 既存payloadの取得失敗時は空マージにフォールバック（parsed_orders は残す）。無言にはしない。
+  if (currentReceiptErr) console.error('[process-receipt] 既存payloadの取得に失敗:', currentReceiptErr.message)
   const mergedPayload = {
     ...((currentReceipt?.raw_payload as Record<string, unknown> | null) ?? {}),
     parsed_orders: result.orders,
@@ -303,11 +314,13 @@ async function failReceipt(receiptId: string, error: string): Promise<ProcessRec
   const admin = createAdminClient()
 
   // 現在の retry_count を読んでバックオフを計算（5分→30分→3時間）
-  const { data: current } = await admin
+  const { data: current, error: currentErr } = await admin
     .from('order_receipts')
     .select('retry_count')
     .eq('id', receiptId)
     .maybeSingle()
+  // 取得失敗時は retry_count=0 扱いでバックオフを最短にフォールバック。無言にはしない。
+  if (currentErr) console.error('[process-receipt] retry_count の取得に失敗:', currentErr.message)
 
   const retryCount = (current?.retry_count as number | null) ?? 0
   const backoffMinutes = retryCount === 0 ? 5 : retryCount === 1 ? 30 : 180
@@ -369,14 +382,16 @@ async function saveOrder({
 
   // G7: マッチした商品の packs_per_case をバッチ取得
   const matchedProductIds = resolvedItems.filter((it) => it.product_id).map((it) => it.product_id!)
-  const { data: rules } =
+  const { data: rules, error: rulesErr } =
     customerId && matchedProductIds.length > 0
       ? await admin
           .from('customer_product_rules')
           .select('product_id, packs_per_case')
           .eq('customer_id', customerId)
           .in('product_id', matchedProductIds)
-      : { data: [] }
+      : { data: [] as { product_id: string; packs_per_case: number | null }[], error: null }
+  // P/C は端数換算の補助。取得失敗しても続行（未設定扱い）。無言にはしない。
+  if (rulesErr) console.error('[process-receipt] P/Cルールの取得に失敗:', rulesErr.message)
 
   const packsPerCaseMap = new Map<string, number | null>(
     (rules ?? []).map((r) => [r.product_id as string, r.packs_per_case as number | null]),
@@ -404,11 +419,13 @@ async function saveOrder({
   // 納入先の名寄せ（取引先配下の delivery_destinations を code/full_name/aliases で照合）。
   // 記載なし=null は正常値（バリデーションエラーにしない）。ただし後段の承認ゲート思想に合わせ、
   // 複数納入先を持つ取引先で届け先を確定できないときは自動承認せず人手確認へ回す。
-  const { data: activeDests } = await admin
+  const { data: activeDests, error: activeDestsErr } = await admin
     .from('delivery_destinations')
     .select('id, code, full_name, aliases')
     .eq('customer_id', customerId)
     .eq('is_active', true)
+  // 納入先候補の取得失敗時は「確定できない」扱いにフォールバック（人手確認へ）。無言にはしない。
+  if (activeDestsErr) console.error('[process-receipt] 納入先候補の取得に失敗:', activeDestsErr.message)
   let destinationId: string | null = null
   if (order.destination_name) {
     destinationId = matchDestinationId(order.destination_name, activeDests ?? [])

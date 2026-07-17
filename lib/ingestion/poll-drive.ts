@@ -64,25 +64,29 @@ export async function pollDriveOnce(): Promise<PollDriveResult> {
     const exactHash = crypto.createHash('md5').update(bytes).digest('hex')
 
     // 重複の事前チェック（DB一意制約 uq_receipt_exact がバックストップ）
-    const { data: existingExact } = await supabase
+    const { data: existingExact, error: existingExactErr } = await supabase
       .from('order_receipts')
       .select('id')
       .eq('exact_hash', exactHash)
       .maybeSingle()
+    // 事前チェック失敗はDB一意制約(uq_receipt_exact)がバックストップ。無言にはしない。
+    if (existingExactErr) console.error('[poll-drive] 完全重複の事前チェックに失敗:', existingExactErr.message)
 
     const parsed = await parseFaxFilename(f.name)
     const senderDateKey = parsed
       ? buildSenderDateKey('fax', parsed.faxNumber, new Date(f.createdTime ?? Date.now()))
       : null
 
-    const { data: existingRevision } = senderDateKey
+    const { data: existingRevision, error: existingRevisionErr } = senderDateKey
       ? await supabase
           .from('order_receipts')
           .select('id')
           .eq('sender_date_key', senderDateKey)
           .limit(1)
           .maybeSingle()
-      : { data: null }
+      : { data: null, error: null }
+    // 再送判定の失敗は新規扱いにフォールバック（重複はDB制約で弾く）。無言にはしない。
+    if (existingRevisionErr) console.error('[poll-drive] 再送判定に失敗:', existingRevisionErr.message)
 
     const disposition = decideReceiptDisposition({
       exactHashMatch: Boolean(existingExact),
@@ -95,7 +99,7 @@ export async function pollDriveOnce(): Promise<PollDriveResult> {
 
     const status = disposition === 'duplicate' ? 'duplicate' : parsed ? 'pending_ai' : 'unmatched'
 
-    const { data: newReceipt } = await supabase
+    const { data: newReceipt, error: newReceiptErr } = await supabase
       .from('order_receipts')
       .insert({
         channel: 'fax',
@@ -108,6 +112,8 @@ export async function pollDriveOnce(): Promise<PollDriveResult> {
       })
       .select('id')
       .maybeSingle()
+    // 受信レコードのINSERT失敗は取り込み漏れに直結する。無言にはしない（uq制約による重複弾きは想定内）。
+    if (newReceiptErr) console.error(`[poll-drive] 受信レコードのINSERTに失敗（${f.name}）:`, newReceiptErr.message)
 
     results.push({
       file: f.name,
@@ -125,13 +131,15 @@ export async function pollDriveOnce(): Promise<PollDriveResult> {
     const newIds = results.filter((r) => r.receiptId).map((r) => r.receiptId!)
 
     // G10: next_retry_at が到来した ai_failed を追加で拾う
-    const { data: retryRows } = await supabase
+    const { data: retryRows, error: retryRowsErr } = await supabase
       .from('order_receipts')
       .select('id')
       .eq('status', 'ai_failed')
       .lte('next_retry_at', new Date().toISOString())
       .lt('retry_count', 3)
       .limit(MAX_PROCESS_PER_POLL)
+    // 再試行対象の取得失敗は今回分のみで続行。無言にはしない。
+    if (retryRowsErr) console.error('[poll-drive] 再試行対象の取得に失敗:', retryRowsErr.message)
 
     // 再試行前に status を pending_ai に戻す（processReceipt が pending_ai しか処理しない）
     const retryIds = (retryRows ?? []).map((r) => r.id as string)

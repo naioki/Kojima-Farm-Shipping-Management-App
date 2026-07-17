@@ -92,17 +92,19 @@ export async function runShadowDiff(date: string): Promise<ShadowRunResult> {
   // ── 本アプリ側: 対象取引先の 承認済み注文 ＋ 未注文化の解析結果 ────────────
   const admin = createAdminClient()
 
-  const { data: customer } = await admin
+  const { data: customer, error: customerErr } = await admin
     .from('customers')
     .select('id')
     .eq('name', targetCustomerName)
     .maybeSingle()
+  if (customerErr) return { date, error: `取引先の照会に失敗しました: ${customerErr.message}` }
   if (!customer) return { date, error: `取引先「${targetCustomerName}」が本アプリに未登録です` }
 
-  const { data: dests } = await admin
+  const { data: dests, error: destsErr } = await admin
     .from('delivery_destinations')
     .select('code, full_name, aliases')
     .eq('customer_id', customer.id)
+  if (destsErr) console.error('[shadow/run] 納入先の取得に失敗:', destsErr.message)
   // 納入先名の正規化（code/aliases → full_name）。v4店舗名との文字列一致を安定させる
   const destMap = new Map<string, string>()
   for (const d of dests ?? []) {
@@ -115,24 +117,27 @@ export async function runShadowDiff(date: string): Promise<ShadowRunResult> {
   const appLines: ShadowLine[] = []
 
   // a) 承認済み注文（手動・自動を問わず本アプリに存在する注文）
-  const { data: appOrders } = await admin
+  const { data: appOrders, error: appOrdersErr } = await admin
     .from('orders')
     .select('id, destination_id')
     .eq('customer_id', customer.id)
     .eq('delivery_date', date)
+  if (appOrdersErr) console.error('[shadow/run] 本アプリ注文の取得に失敗:', appOrdersErr.message)
   const appOrderIds = (appOrders ?? []).map((o) => o.id as string)
   if (appOrderIds.length > 0) {
     const destIds = [...new Set((appOrders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
-    const { data: destRows } = destIds.length
+    const { data: destRows, error: destRowsErr } = destIds.length
       ? await admin.from('delivery_destinations').select('id, code, full_name').in('id', destIds)
-      : { data: [] as { id: string; code: string | null; full_name: string }[] }
+      : { data: [] as { id: string; code: string | null; full_name: string }[], error: null }
+    if (destRowsErr) console.error('[shadow/run] 納入先名の解決に失敗:', destRowsErr.message)
     const destName = new Map((destRows ?? []).map((d) => [d.id, d.full_name]))
     const orderDest = new Map((appOrders ?? []).map((o) => [o.id as string, o.destination_id as string | null]))
 
-    const { data: items } = await admin
+    const { data: items, error: itemsErr } = await admin
       .from('order_items')
       .select('order_id, product_name, quantity')
       .in('order_id', appOrderIds)
+    if (itemsErr) console.error('[shadow/run] 注文明細の取得に失敗:', itemsErr.message)
     for (const it of items ?? []) {
       const destId = orderDest.get(it.order_id as string)
       appLines.push({
@@ -144,13 +149,14 @@ export async function runShadowDiff(date: string): Promise<ShadowRunResult> {
   }
 
   // b) 注文化されず要確認で止まっている解析結果（影実行の主対象）
-  const { data: receipts } = await admin
+  const { data: receipts, error: receiptsErr } = await admin
     .from('order_receipts')
     .select('raw_payload, order_id')
     .eq('channel', 'email')
     .eq('customer_id', customer.id)
     .in('status', ['pending_review', 'unmatched'])
     .is('order_id', null)
+  if (receiptsErr) console.error('[shadow/run] 要確認レシートの取得に失敗:', receiptsErr.message)
   for (const r of receipts ?? []) {
     const payload = r.raw_payload as { parsed_orders?: unknown } | null
     const orders = Array.isArray(payload?.parsed_orders) ? payload!.parsed_orders : []
@@ -172,7 +178,8 @@ export async function runShadowDiff(date: string): Promise<ShadowRunResult> {
   }
 
   // v4側の店舗名にも同じ正規化をかけ、品目は products.aliases で正規化して突合
-  const { data: products } = await admin.from('products').select('name, aliases')
+  const { data: products, error: productsErr } = await admin.from('products').select('name, aliases')
+  if (productsErr) console.error('[shadow/run] 商品マスタの取得に失敗（正規化）:', productsErr.message)
   const canonItem = buildCanonicalizer(
     (products ?? []).map((p) => ({ name: p.name as string, aliases: p.aliases as string[] | null })),
   )

@@ -86,11 +86,13 @@ export async function approveOrder(
   // 荷姿ゲート: その商品×取引先に選べる荷姿マスタがあるのに未確定なら承認させない
   const productIds = [...new Set(items.map((it) => it.product_id).filter(Boolean))] as string[]
   if (productIds.length > 0) {
-    const { data: packConfigs } = await admin
+    const { data: packConfigs, error: packErr } = await admin
       .from('pack_configs')
       .select('id, product_id, customer_id')
       .in('product_id', productIds)
       .eq('is_active', true)
+    // 荷姿の取得失敗を「荷姿マスタなし」に化けさせない（ゲートをすり抜けさせない）。
+    if (packErr) return { ok: false, status: 500, error: `荷姿マスタの確認に失敗しました: ${packErr.message}` }
     for (const it of items) {
       if (it.pack_config_id || !it.product_id) continue
       const hasOption = (packConfigs ?? []).some(

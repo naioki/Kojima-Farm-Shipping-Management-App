@@ -152,13 +152,14 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
 
   if (allowed) {
     // ai_failed でリトライ期限が来たものを pending_ai に戻す（自動リトライ）
-    const { data: retryRows } = await supabase
+    const { data: retryRows, error: retryRowsErr } = await supabase
       .from('order_receipts')
       .select('id')
       .eq('status', 'ai_failed')
       .lte('next_retry_at', new Date().toISOString())
       .lt('retry_count', 3)
       .limit(MAX_PROCESS_PER_POLL)
+    if (retryRowsErr) console.error('[poll-email] 再試行対象の取得に失敗:', retryRowsErr.message)
 
     const retryIds = (retryRows ?? []).map((r) => r.id as string)
     if (retryIds.length > 0) {
@@ -168,12 +169,13 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
     // pending_ai を DB から直接拾う。今回取り込んだ分（pendingReceiptIds）だけでなく、
     // 過去に取り込まれたが未処理のまま残った「孤児」レコード（quota切れ・上限超過・
     // 途中中断で滞留したもの）も確実に処理する。古い順（received_at 昇順）に最大 MAX_PROCESS_PER_POLL 件。
-    const { data: pendingRows } = await supabase
+    const { data: pendingRows, error: pendingRowsErr } = await supabase
       .from('order_receipts')
       .select('id')
       .eq('status', 'pending_ai')
       .order('received_at', { ascending: true })
       .limit(MAX_PROCESS_PER_POLL)
+    if (pendingRowsErr) console.error('[poll-email] 未処理レシートの取得に失敗:', pendingRowsErr.message)
 
     const ids = (pendingRows ?? []).map((r) => r.id as string)
     for (const rid of ids) {
@@ -217,23 +219,26 @@ async function ingestFaxAttachment(
   const bytes = att.content as Buffer
   const exactHash = crypto.createHash('md5').update(bytes).digest('hex')
 
-  const { data: existingExact } = await supabase
+  const { data: existingExact, error: existingExactErr } = await supabase
     .from('order_receipts')
     .select('id')
     .eq('exact_hash', exactHash)
     .maybeSingle()
+  // 事前チェック失敗はDB一意制約がバックストップ。無言にはしない。
+  if (existingExactErr) console.error('[poll-email] 完全重複の事前チェックに失敗:', existingExactErr.message)
 
   const faxNumber = await extractFaxNumber(parsed, att)
   const senderDateKey = buildSenderDateKey('fax', faxNumber, date)
 
-  const { data: existingRevision } = senderDateKey
+  const { data: existingRevision, error: existingRevisionErr } = senderDateKey
     ? await supabase
         .from('order_receipts')
         .select('id')
         .eq('sender_date_key', senderDateKey)
         .limit(1)
         .maybeSingle()
-    : { data: null }
+    : { data: null, error: null }
+  if (existingRevisionErr) console.error('[poll-email] 再送判定に失敗:', existingRevisionErr.message)
 
   const disposition = decideReceiptDisposition({
     exactHashMatch: Boolean(existingExact),
@@ -274,11 +279,13 @@ async function ingestTextEmail(
   messageId: string,
   date: Date,
 ): Promise<IngestOutcome> {
-  const { data: seen } = await supabase
+  const { data: seen, error: seenErr } = await supabase
     .from('order_receipts')
     .select('id')
     .eq('message_id', messageId)
     .maybeSingle()
+  // 既処理チェックの失敗は message_id 一意制約がバックストップ。無言にはしない。
+  if (seenErr) console.error('[poll-email] 既処理チェック（message_id）に失敗:', seenErr.message)
   if (seen) return { ok: true, receiptId: null }
 
   const text = parsed.text ?? parsed.html?.toString() ?? ''

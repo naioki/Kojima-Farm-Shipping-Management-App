@@ -15,7 +15,9 @@ const TTL_MS = 30_000
 async function loadFromDb(): Promise<Map<string, string>> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.map
   const admin = createAdminClient()
-  const { data } = await admin.from('app_settings').select('key, value')
+  const { data, error } = await admin.from('app_settings').select('key, value')
+  // 設定取得失敗時は env のみで解決する（安全側）。無言にせずログに残す。
+  if (error) console.error('[settings] app_settings の読み込みに失敗（env にフォールバック）:', error.message)
   const map = new Map<string, string>()
   for (const row of data ?? []) {
     if (row.value != null && row.value !== '') map.set(row.key, row.value)

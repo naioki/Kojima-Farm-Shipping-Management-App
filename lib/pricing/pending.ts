@@ -28,32 +28,39 @@ export interface PricingFlatItem {
 export async function getPricingItemsFlat(): Promise<PricingFlatItem[]> {
   const supabase = createClient()
 
-  const { data: orders } = await supabase
+  // DBエラーを「確定待ちゼロ（＝全部済み）」に化けさせない。呼び出し元（価格確定ページ）で
+  // error.tsx に拾わせるため、握りつぶさず throw する（CLAUDE.md: NEVER swallow errors）。
+  const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, customer_id, source, delivery_date')
     .in('status', ['approved', 'shipped'])
+  if (ordersErr) throw new Error(`価格確定対象の注文取得に失敗しました: ${ordersErr.message}`)
   if (!orders || orders.length === 0) return []
 
   const orderById = new Map(orders.map((o) => [o.id, o]))
   const orderIds = orders.map((o) => o.id)
 
-  const { data: items } = await supabase
+  const { data: items, error: itemsErr } = await supabase
     .from('order_items')
     .select('id, order_id, product_id, product_name, quantity, shipped_qty, billable_qty, price_status, unit_price, tax_rate, pack_config_id')
     .in('order_id', orderIds)
     .neq('price_status', 'confirmed')
+  if (itemsErr) throw new Error(`価格確定対象の明細取得に失敗しました: ${itemsErr.message}`)
   if (!items || items.length === 0) return []
 
   const customerIds = [...new Set(orders.map((o) => o.customer_id).filter(Boolean))] as string[]
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
-  const [{ data: custs }, { data: packs }] = await Promise.all([
+  const [{ data: custs, error: custsErr }, { data: packs, error: packsErr }] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
+      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[], error: null }),
     packIds.length
       ? supabase.from('pack_configs').select('id, selling_unit_label').in('id', packIds)
-      : Promise.resolve({ data: [] as { id: string; selling_unit_label: string }[] }),
+      : Promise.resolve({ data: [] as { id: string; selling_unit_label: string }[], error: null }),
   ])
+  // 取引先名・荷姿名は補助表示。失敗しても本体は返し、名前は「（不明）」等にフォールバック。
+  if (custsErr) console.error('[pricing/pending] 取引先名の取得に失敗:', custsErr.message)
+  if (packsErr) console.error('[pricing/pending] 荷姿名の取得に失敗:', packsErr.message)
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
   const packLabelById = new Map((packs ?? []).map((p) => [p.id, p.selling_unit_label]))

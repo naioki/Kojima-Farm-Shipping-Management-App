@@ -63,11 +63,13 @@ export async function generateInvoiceForCustomer(
   if (seqErr) return { ok: false, reason: 'error', message: seqErr.message }
   const invoiceNumber = formatInvoiceNumber(billingMonth, seq as number)
 
-  const { data: customer } = await supabase
+  const { data: customer, error: customerErr } = await supabase
     .from('customers')
     .select('invoice_reg_num')
     .eq('id', customerId)
     .maybeSingle()
+  // 登録番号は帳票の補助情報。取得失敗しても請求書生成は続行（番号は空扱い）。無言にはしない。
+  if (customerErr) console.error('[invoices/generate] 取引先の登録番号取得に失敗:', customerErr.message)
 
   const { data: invoice, error: invErr } = await supabase
     .from('invoices')
