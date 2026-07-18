@@ -21,6 +21,12 @@ export interface ShipmentAddFormProps {
   packsByPair: Record<string, number | null>
 }
 
+/** セレクト末尾に出す「＋新規追加」の番兵値（実 UUID とは衝突しない）。 */
+const NEW_OPTION = '__new__'
+
+type LocalCustomer = { id: string; name: string }
+type LocalProduct = { id: string; name: string; unit: string; category?: string | null }
+
 const ADD_ERRORS: Record<string, string> = {
   packs_per_case_required: 'ケース記法ですが P/C（1ケースの入数）が未設定です。取引先設定で登録してください。',
   unparseable: '数量を解釈できませんでした（例: 10 / 15c2 / x58）。',
@@ -35,13 +41,94 @@ const ADD_ERRORS: Record<string, string> = {
  * 入力中はスマートパース結果をライブプレビュー（誤解釈を投入前に気づける・features.md §5）。
  */
 // destinations は既定 [] で防御（HMR/古いチャンク混在で prop が欠けても画面全体を落とさない）
-export function ShipmentAddForm({ deliveryDate, customers, products, destinations = [], packsByPair }: ShipmentAddFormProps) {
+export function ShipmentAddForm({
+  deliveryDate,
+  customers: initialCustomers,
+  products: initialProducts,
+  destinations = [],
+  packsByPair,
+}: ShipmentAddFormProps) {
   const router = useRouter()
+  // 現場がその場で作った取引先・品目を即リストへ反映する（楽観追加）ためローカル state で保持。
+  const [customers, setCustomers] = useState<LocalCustomer[]>(initialCustomers)
+  const [products, setProducts] = useState<LocalProduct[]>(initialProducts)
   const [customerId, setCustomerId] = useState('')
   const [productId, setProductId] = useState('')
   const [destinationId, setDestinationId] = useState('')
   const [qtyRaw, setQtyRaw] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // インライン新規作成パネルの開閉と入力値。
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [creatingCustomer, setCreatingCustomer] = useState(false)
+  const [newProductName, setNewProductName] = useState('')
+  const [newProductUnit, setNewProductUnit] = useState('')
+  const [creatingProduct, setCreatingProduct] = useState(false)
+
+  // 親からの再取得で初期リストが更新されたら追従（router.refresh 後など）。
+  useEffect(() => setCustomers(initialCustomers), [initialCustomers])
+  useEffect(() => setProducts(initialProducts), [initialProducts])
+
+  const showNewCustomer = customerId === NEW_OPTION
+  const showNewProduct = productId === NEW_OPTION
+
+  /** 取引先をその場で作成（既存があれば既存に紐付け）。成功で選択状態にする。 */
+  async function createCustomer() {
+    const name = newCustomerName.trim()
+    if (!name) {
+      toast.error('取引先名を入力してください')
+      return
+    }
+    setCreatingCustomer(true)
+    try {
+      const res = await fetch('/api/customers/quick', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const json = (await res.json().catch(() => ({}))) as { id?: string; name?: string; existed?: boolean; error?: string }
+      if (!res.ok || !json.id) throw new Error(json.error ?? `作成に失敗 (${res.status})`)
+      setCustomers((prev) => (prev.some((c) => c.id === json.id) ? prev : [...prev, { id: json.id!, name: json.name! }]))
+      setCustomerId(json.id)
+      setNewCustomerName('')
+      toast.success(json.existed ? `既存の「${json.name}」に紐付けました` : `「${json.name}」を作成しました`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '取引先の作成に失敗しました')
+    } finally {
+      setCreatingCustomer(false)
+    }
+  }
+
+  /** 品目をその場で作成（同名があれば既存に紐付け）。成功で選択状態にする。 */
+  async function createProduct() {
+    const name = newProductName.trim()
+    if (!name) {
+      toast.error('品目名を入力してください')
+      return
+    }
+    setCreatingProduct(true)
+    try {
+      const res = await fetch('/api/products/quick', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, base_unit: newProductUnit.trim() || '個' }),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        id?: string; name?: string; unit?: string; existed?: boolean; error?: string
+      }
+      if (!res.ok || !json.id) throw new Error(json.error ?? `作成に失敗 (${res.status})`)
+      const unit = json.unit ?? newProductUnit.trim() ?? '個'
+      setProducts((prev) => (prev.some((p) => p.id === json.id) ? prev : [...prev, { id: json.id!, name: json.name!, unit }]))
+      setProductId(json.id)
+      setNewProductName('')
+      setNewProductUnit('')
+      toast.success(json.existed ? `既存の「${json.name}」に紐付けました` : `「${json.name}」を作成しました`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '品目の作成に失敗しました')
+    } finally {
+      setCreatingProduct(false)
+    }
+  }
 
   // 選択中の取引先に紐づく納入先だけを候補にする（表示は常に「取引先＞納入先」）。
   const customerDestinations = useMemo(
@@ -81,7 +168,7 @@ export function ShipmentAddForm({ deliveryDate, customers, products, destination
   const destinationRequired = customerDestinations.length >= 2
 
   async function submit() {
-    if (!customerId || !productId || qtyRaw.trim() === '') {
+    if (!customerId || customerId === NEW_OPTION || !productId || productId === NEW_OPTION || qtyRaw.trim() === '') {
       toast.error('取引先・品目・数量をすべて入力してください')
       return
     }
@@ -125,14 +212,20 @@ export function ShipmentAddForm({ deliveryDate, customers, products, destination
           placeholder="選択"
           value={customerId}
           onChange={(e) => setCustomerId(e.target.value)}
-          options={customers.map((c) => ({ value: c.id, label: c.name }))}
+          options={[
+            ...customers.map((c) => ({ value: c.id, label: c.name })),
+            { value: NEW_OPTION, label: '＋ 新しい取引先を追加' },
+          ]}
         />
         <Select
           label="品目"
           placeholder="選択"
           value={productId}
           onChange={(e) => setProductId(e.target.value)}
-          options={products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined }))}
+          options={[
+            ...products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined })),
+            { value: NEW_OPTION, label: '＋ 新しい品目を追加' },
+          ]}
         />
         <Input
           label="数量"
@@ -147,6 +240,73 @@ export function ShipmentAddForm({ deliveryDate, customers, products, destination
           追加
         </Button>
       </div>
+      {/* インライン新規作成（Issue#20）：admin が登録し忘れても現場が止まらないよう、
+          その場で取引先・品目を最小登録できる。同名は自動で既存に紐付く（重複防止）。 */}
+      {showNewCustomer && (
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-earth-200 bg-earth-50/60 p-3">
+          <Input
+            label="新しい取引先の名前"
+            placeholder="例：マルショク青果"
+            value={newCustomerName}
+            onChange={(e) => setNewCustomerName(e.target.value)}
+            className="min-w-[12rem] flex-1"
+            autoFocus
+          />
+          <Button onClick={createCustomer} isLoading={creatingCustomer} className="h-11">
+            作成して使う
+          </Button>
+          <Button
+            variant="tertiary"
+            onClick={() => {
+              setCustomerId('')
+              setNewCustomerName('')
+            }}
+            className="h-11"
+          >
+            やめる
+          </Button>
+          <p className="w-full text-xs text-ink-soft">
+            名前だけで登録します。色・締め日・規格などは後で管理者が設定できます。
+          </p>
+        </div>
+      )}
+      {showNewProduct && (
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-earth-200 bg-earth-50/60 p-3">
+          <Input
+            label="新しい品目の名前"
+            placeholder="例：ミニトマト"
+            value={newProductName}
+            onChange={(e) => setNewProductName(e.target.value)}
+            className="min-w-[12rem] flex-1"
+            autoFocus
+          />
+          <Input
+            label="基準単位"
+            placeholder="個 / 本 / 束 / kg"
+            value={newProductUnit}
+            onChange={(e) => setNewProductUnit(e.target.value)}
+            className="w-28"
+          />
+          <Button onClick={createProduct} isLoading={creatingProduct} className="h-11">
+            作成して使う
+          </Button>
+          <Button
+            variant="tertiary"
+            onClick={() => {
+              setProductId('')
+              setNewProductName('')
+              setNewProductUnit('')
+            }}
+            className="h-11"
+          >
+            やめる
+          </Button>
+          <p className="w-full text-xs text-ink-soft">
+            名前と基準単位だけで登録します。荷姿・単価・品目グループは後で管理者が設定できます。
+          </p>
+        </div>
+      )}
+
       {/* 納入先セレクト：複数納入先を持つ取引先のときだけ表示（1件は自動確定・0件は非表示）。
           「取引先 ＞ 納入先」の表示ルールに従い、取引先選択後に出す。 */}
       {customerDestinations.length >= 2 && (

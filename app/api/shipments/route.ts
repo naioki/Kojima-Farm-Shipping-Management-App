@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
@@ -16,6 +18,12 @@ export const runtime = 'nodejs'
 export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）だけを通す。純 staff は orders/order_items への
+  // INSERT ポリシーを持たないため、RLS を緩めず検証済み経路を admin client で通す（Issue#20）。
+  // 抜け道を作らない: 社内ユーザー以外（ポータル取引先など）は 403。
+  if (!(await isStaffUser(user.id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const body = await req.json().catch(() => null)
   const parsed = shipmentAddSchema.safeParse(body)
@@ -23,7 +31,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const { customer_id, product_id, delivery_date, quantity_raw, destination_id } = parsed.data
-  const supabase = createClient()
+  // 社内判定を通したので admin client（service_role）で書き込む。バリデーション・監査ログ・
+  // 楽観ロックは以下のとおり維持する。
+  const supabase = createAdminClient()
 
   // 納入先が指定されたら、その取引先の配下（有効）であることを検証（他取引先の届け先を混入させない）。
   if (destination_id) {
