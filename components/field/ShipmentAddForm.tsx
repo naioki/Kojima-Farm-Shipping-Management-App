@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, ArrowRight } from 'lucide-react'
+import { Plus, ArrowRight, UserPlus, PackagePlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -20,9 +20,6 @@ export interface ShipmentAddFormProps {
   /** `${customer_id}:${product_id}` → packs_per_case（c記法プレビュー用） */
   packsByPair: Record<string, number | null>
 }
-
-/** セレクト末尾に出す「＋新規追加」の番兵値（実 UUID とは衝突しない）。 */
-const NEW_OPTION = '__new__'
 
 type LocalCustomer = { id: string; name: string }
 type LocalProduct = { id: string; name: string; unit: string; category?: string | null }
@@ -58,9 +55,12 @@ export function ShipmentAddForm({
   const [qtyRaw, setQtyRaw] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  // インライン新規作成パネルの開閉と入力値。
+  // インライン新規作成パネルの開閉と入力値。ドロップダウンの選択肢には混ぜず、
+  // 「たまにしか使わない」操作として控えめなリンクの開閉だけで出す（日常操作の邪魔をしない）。
+  const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState('')
   const [creatingCustomer, setCreatingCustomer] = useState(false)
+  const [showNewProduct, setShowNewProduct] = useState(false)
   const [newProductName, setNewProductName] = useState('')
   const [newProductUnit, setNewProductUnit] = useState('')
   const [creatingProduct, setCreatingProduct] = useState(false)
@@ -68,9 +68,6 @@ export function ShipmentAddForm({
   // 親からの再取得で初期リストが更新されたら追従（router.refresh 後など）。
   useEffect(() => setCustomers(initialCustomers), [initialCustomers])
   useEffect(() => setProducts(initialProducts), [initialProducts])
-
-  const showNewCustomer = customerId === NEW_OPTION
-  const showNewProduct = productId === NEW_OPTION
 
   /** 取引先をその場で作成（既存があれば既存に紐付け）。成功で選択状態にする。 */
   async function createCustomer() {
@@ -91,6 +88,7 @@ export function ShipmentAddForm({
       setCustomers((prev) => (prev.some((c) => c.id === json.id) ? prev : [...prev, { id: json.id!, name: json.name! }]))
       setCustomerId(json.id)
       setNewCustomerName('')
+      setShowNewCustomer(false)
       toast.success(json.existed ? `既存の「${json.name}」に紐付けました` : `「${json.name}」を作成しました`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '取引先の作成に失敗しました')
@@ -122,6 +120,7 @@ export function ShipmentAddForm({
       setProductId(json.id)
       setNewProductName('')
       setNewProductUnit('')
+      setShowNewProduct(false)
       toast.success(json.existed ? `既存の「${json.name}」に紐付けました` : `「${json.name}」を作成しました`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '品目の作成に失敗しました')
@@ -168,7 +167,7 @@ export function ShipmentAddForm({
   const destinationRequired = customerDestinations.length >= 2
 
   async function submit() {
-    if (!customerId || customerId === NEW_OPTION || !productId || productId === NEW_OPTION || qtyRaw.trim() === '') {
+    if (!customerId || !productId || qtyRaw.trim() === '') {
       toast.error('取引先・品目・数量をすべて入力してください')
       return
     }
@@ -207,26 +206,45 @@ export function ShipmentAddForm({
     <Card className="space-y-3" data-guide="smart-add">
       <h2 className="font-display text-base font-bold text-ink">スマート追加</h2>
       <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
-        <Select
-          label="取引先"
-          placeholder="選択"
-          value={customerId}
-          onChange={(e) => setCustomerId(e.target.value)}
-          options={[
-            ...customers.map((c) => ({ value: c.id, label: c.name })),
-            { value: NEW_OPTION, label: '＋ 新しい取引先を追加' },
-          ]}
-        />
-        <Select
-          label="品目"
-          placeholder="選択"
-          value={productId}
-          onChange={(e) => setProductId(e.target.value)}
-          options={[
-            ...products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined })),
-            { value: NEW_OPTION, label: '＋ 新しい品目を追加' },
-          ]}
-        />
+        <div className="space-y-1">
+          <Select
+            label="取引先"
+            placeholder="選択"
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            options={customers.map((c) => ({ value: c.id, label: c.name }))}
+          />
+          {/* たまにしか使わない操作なので、普段のドロップダウンには混ぜず控えめなリンクにする。 */}
+          {!showNewCustomer && (
+            <button
+              type="button"
+              onClick={() => setShowNewCustomer(true)}
+              className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
+            >
+              <UserPlus className="h-3 w-3" aria-hidden />
+              新しい取引先を追加
+            </button>
+          )}
+        </div>
+        <div className="space-y-1">
+          <Select
+            label="品目"
+            placeholder="選択"
+            value={productId}
+            onChange={(e) => setProductId(e.target.value)}
+            options={products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined }))}
+          />
+          {!showNewProduct && (
+            <button
+              type="button"
+              onClick={() => setShowNewProduct(true)}
+              className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
+            >
+              <PackagePlus className="h-3 w-3" aria-hidden />
+              新しい品目を追加
+            </button>
+          )}
+        </div>
         <Input
           label="数量"
           placeholder="10 / 15c2 / x58"
@@ -258,7 +276,7 @@ export function ShipmentAddForm({
           <Button
             variant="tertiary"
             onClick={() => {
-              setCustomerId('')
+              setShowNewCustomer(false)
               setNewCustomerName('')
             }}
             className="h-11"
@@ -293,7 +311,7 @@ export function ShipmentAddForm({
           <Button
             variant="tertiary"
             onClick={() => {
-              setProductId('')
+              setShowNewProduct(false)
               setNewProductName('')
               setNewProductUnit('')
             }}
