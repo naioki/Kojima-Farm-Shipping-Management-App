@@ -206,45 +206,20 @@ export function ShipmentAddForm({
     <Card className="space-y-3" data-guide="smart-add">
       <h2 className="font-display text-base font-bold text-ink">スマート追加</h2>
       <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
-        <div className="space-y-1">
-          <Select
-            label="取引先"
-            placeholder="選択"
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            options={customers.map((c) => ({ value: c.id, label: c.name }))}
-          />
-          {/* たまにしか使わない操作なので、普段のドロップダウンには混ぜず控えめなリンクにする。 */}
-          {!showNewCustomer && (
-            <button
-              type="button"
-              onClick={() => setShowNewCustomer(true)}
-              className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
-            >
-              <UserPlus className="h-3 w-3" aria-hidden />
-              新しい取引先を追加
-            </button>
-          )}
-        </div>
-        <div className="space-y-1">
-          <Select
-            label="品目"
-            placeholder="選択"
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            options={products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined }))}
-          />
-          {!showNewProduct && (
-            <button
-              type="button"
-              onClick={() => setShowNewProduct(true)}
-              className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
-            >
-              <PackagePlus className="h-3 w-3" aria-hidden />
-              新しい品目を追加
-            </button>
-          )}
-        </div>
+        <Select
+          label="取引先"
+          placeholder="選択"
+          value={customerId}
+          onChange={(e) => setCustomerId(e.target.value)}
+          options={customers.map((c) => ({ value: c.id, label: c.name }))}
+        />
+        <Select
+          label="品目"
+          placeholder="選択"
+          value={productId}
+          onChange={(e) => setProductId(e.target.value)}
+          options={products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined }))}
+        />
         <Input
           label="数量"
           placeholder="10 / 15c2 / x58"
@@ -257,6 +232,34 @@ export function ShipmentAddForm({
           <Plus className="h-4 w-4" aria-hidden />
           追加
         </Button>
+      </div>
+      {/* たまにしか使わない操作なので、普段の入力行とは別の行にして控えめなリンクだけにする
+          （メイン行のsm:items-endを崩さないよう、列テンプレートを揃えた別グリッドにする）。 */}
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+        <div>
+          {!showNewCustomer && (
+            <button
+              type="button"
+              onClick={() => setShowNewCustomer(true)}
+              className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
+            >
+              <UserPlus className="h-3 w-3" aria-hidden />
+              新しい取引先を追加
+            </button>
+          )}
+        </div>
+        <div>
+          {!showNewProduct && (
+            <button
+              type="button"
+              onClick={() => setShowNewProduct(true)}
+              className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
+            >
+              <PackagePlus className="h-3 w-3" aria-hidden />
+              新しい品目を追加
+            </button>
+          )}
+        </div>
       </div>
       {/* インライン新規作成（Issue#20）：admin が登録し忘れても現場が止まらないよう、
           その場で取引先・品目を最小登録できる。同名は自動で既存に紐付く（重複防止）。 */}
