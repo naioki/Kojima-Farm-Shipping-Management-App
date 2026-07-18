@@ -33,8 +33,9 @@ export default async function OrderNewPage() {
       .order('name'),
     supabase
       .from('products')
-      .select('id, name, unit, photo_url, default_tax_rate, default_unit_price')
+      .select('id, name, unit, category, photo_url, default_tax_rate, default_unit_price')
       .eq('is_active', true)
+      .order('category', { nullsFirst: false })
       .order('name'),
     supabase
       .from('customer_product_rules')
@@ -126,6 +127,7 @@ export default async function OrderNewPage() {
             id: p.id,
             name: p.name,
             unit: p.unit,
+            category: p.category,
             photo_url: p.photo_url,
             default_tax_rate: (p.default_tax_rate as 8 | 10),
             default_unit_price: p.default_unit_price != null ? Number(p.default_unit_price) : null,

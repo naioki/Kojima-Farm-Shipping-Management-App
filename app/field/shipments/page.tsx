@@ -216,7 +216,7 @@ export default async function ShipmentsPage({
     { data: allDestinations, error: destListErr },
   ] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
-    supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
+    supabase.from('products').select('id, name, unit, category').eq('is_active', true).order('category', { nullsFirst: false }).order('name'),
     supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case'),
     supabase
       .from('delivery_destinations')
@@ -273,7 +273,7 @@ export default async function ShipmentsPage({
       <ShipmentAddForm
         deliveryDate={date}
         customers={(allCustomers ?? []).map((c) => ({ id: c.id, name: c.name }))}
-        products={(allProducts ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit }))}
+        products={(allProducts ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
         destinations={(allDestinations ?? []).map((d) => ({
           id: d.id,
           customerId: d.customer_id,

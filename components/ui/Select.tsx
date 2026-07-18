@@ -7,6 +7,8 @@ import { cn } from '@/lib/cn'
 export interface SelectOption {
   value: string
   label: string
+  /** 指定すると同じ group 名の選択肢を <optgroup> でまとめる（表示グルーピング）。 */
+  group?: string
 }
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -15,6 +17,42 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   hint?: string
   options: SelectOption[]
   placeholder?: string
+}
+
+/**
+ * group を持つ選択肢は <optgroup> でまとめる。group 無しはそのまま平置き（後方互換）。
+ * 出現順を保ちつつ、同一 group を最初の出現位置にまとめる。未分類は末尾の「その他」へ。
+ */
+function renderOptions(options: SelectOption[]) {
+  const hasGroups = options.some((o) => o.group)
+  if (!hasGroups) {
+    return options.map((o) => (
+      <option key={o.value} value={o.value}>
+        {o.label}
+      </option>
+    ))
+  }
+  const groupOrder: string[] = []
+  const byGroup = new Map<string, SelectOption[]>()
+  const UNGROUPED = 'その他'
+  for (const o of options) {
+    const g = o.group || UNGROUPED
+    if (!byGroup.has(g)) {
+      byGroup.set(g, [])
+      if (g !== UNGROUPED) groupOrder.push(g)
+    }
+    byGroup.get(g)!.push(o)
+  }
+  if (byGroup.has(UNGROUPED)) groupOrder.push(UNGROUPED) // 未分類は常に最後
+  return groupOrder.map((g) => (
+    <optgroup key={g} label={g}>
+      {byGroup.get(g)!.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </optgroup>
+  ))
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
@@ -62,11 +100,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                 {placeholder}
               </option>
             )}
-            {options.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
+            {renderOptions(options)}
           </select>
           <ChevronDown
             className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"

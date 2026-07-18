@@ -14,7 +14,7 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 export interface ShipmentAddFormProps {
   deliveryDate: string
   customers: { id: string; name: string }[]
-  products: { id: string; name: string; unit: string }[]
+  products: { id: string; name: string; unit: string; category?: string | null }[]
   /** 取引先配下の納入先（届け先）。複数持つ取引先で「納入先」セレクトを出す。 */
   destinations: { id: string; customerId: string; label: string }[]
   /** `${customer_id}:${product_id}` → packs_per_case（c記法プレビュー用） */
@@ -132,7 +132,7 @@ export function ShipmentAddForm({ deliveryDate, customers, products, destination
           placeholder="選択"
           value={productId}
           onChange={(e) => setProductId(e.target.value)}
-          options={products.map((p) => ({ value: p.id, label: p.name }))}
+          options={products.map((p) => ({ value: p.id, label: p.name, group: p.category ?? undefined }))}
         />
         <Input
           label="数量"

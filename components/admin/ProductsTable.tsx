@@ -14,6 +14,7 @@ export interface ProductRow {
   name: string
   name_kana: string | null
   base_unit: string
+  category: string | null
   default_tax_rate: TaxRate
   stock_qty: number
   is_active: boolean
@@ -32,7 +33,7 @@ const numOrNull = (s: string): number | null => {
  * 「統合」＝重複品目（例トマト箱）を別品目の荷姿に寄せて重複を解消する。
  * 削除は未使用のみ。使用中は履歴保護のため「有効」オフに誘導。
  */
-export function ProductsTable({ products }: { products: ProductRow[] }) {
+export function ProductsTable({ products, categories = [] }: { products: ProductRow[]; categories?: string[] }) {
   const router = useRouter()
   const [rows, setRows] = useState<Record<string, ProductRow>>(() =>
     Object.fromEntries(products.map((p) => [p.id, { ...p }])),
@@ -70,6 +71,7 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
           name: r.name,
           name_kana: r.name_kana || null,
           base_unit: r.base_unit || '個',
+          category: r.category?.trim() || null,
           default_tax_rate: r.default_tax_rate,
           stock_qty: r.stock_qty,
           is_active: r.is_active,
@@ -156,10 +158,16 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
 
   return (
     <div className="overflow-x-auto">
+      <datalist id="products-table-category-list">
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="text-left text-ink-soft">
             <th className="px-2 py-2 font-medium">品目名</th>
+            <th className="px-2 py-2 font-medium">品目グループ</th>
             <th className="px-2 py-2 font-medium">基準単位</th>
             <th className="px-2 py-2 font-medium">税率</th>
             <th className="px-2 py-2 font-medium">在庫</th>
@@ -174,6 +182,16 @@ export function ProductsTable({ products }: { products: ProductRow[] }) {
               <tr key={id} className="border-t border-line">
                 <td className="px-2 py-2">
                   <input className={cn(inp, 'w-32')} value={r.name} onChange={(e) => patch(id, { name: e.target.value })} />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    className={cn(inp, 'w-24')}
+                    list="products-table-category-list"
+                    placeholder="その他"
+                    value={r.category ?? ''}
+                    onChange={(e) => patch(id, { category: e.target.value })}
+                    aria-label={`${r.name} の品目グループ`}
+                  />
                 </td>
                 <td className="px-2 py-2">
                   <input className={cn(inp, 'w-16')} value={r.base_unit} onChange={(e) => patch(id, { base_unit: e.target.value })} />

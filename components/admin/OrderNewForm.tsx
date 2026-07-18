@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import Image from 'next/image'
 import { cn } from '@/lib/cn'
 import { jstTodayStr, formatJpDateShort } from '@/lib/dates'
+import { groupByCategory } from '@/lib/products/group'
 import { Button } from '@/components/ui/Button'
 import { ColorDot } from '@/components/ui/ColorDot'
 
@@ -20,6 +21,7 @@ export interface ProductOption {
   id: string
   name: string
   unit: string
+  category?: string | null
   photo_url: string | null
   default_tax_rate: 8 | 10
   default_unit_price: number | null
@@ -475,13 +477,15 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
                   autoFocus
                 >
                   <option value="">商品を選択…</option>
-                  {products
-                    .filter((p) => !items.some((it) => it.product_id === p.id))
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}（{p.unit}）
-                      </option>
-                    ))}
+                  {groupByCategory(products.filter((p) => !items.some((it) => it.product_id === p.id))).map((g) => (
+                    <optgroup key={g.group} label={g.group}>
+                      {g.items.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}（{p.unit}）
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
                 <Button size="sm" onClick={addProduct} disabled={!addProductId}>
                   追加

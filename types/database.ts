@@ -542,6 +542,8 @@ export const productCreateSchema = z.object({
   /** 基準単位（個・本・束・kg 等）。荷姿・価格は pack_configs / price_rules で管理。 */
   base_unit: z.string().min(1).default('個'),
   unit: z.string().min(1).optional(),
+  /** 品目グループ（表示上の分類のみ。換算・価格・税に非関与）。空文字は null 扱い。 */
+  category: z.string().trim().min(1).nullish(),
   default_tax_rate: taxRateSchema.default(8),
   container_capacity: z.number().positive().nullish(),
   default_unit_price: z.number().nonnegative().nullish(),
@@ -570,6 +572,7 @@ export const productUpdateSchema = z.object({
   name_kana: z.string().nullish(),
   base_unit: z.string().min(1).optional(),
   unit: z.string().min(1).optional(),
+  category: z.string().trim().min(1).nullish(),
   default_tax_rate: taxRateSchema.optional(),
   container_capacity: z.number().positive().nullish(),
   default_unit_price: z.number().nonnegative().nullish(),

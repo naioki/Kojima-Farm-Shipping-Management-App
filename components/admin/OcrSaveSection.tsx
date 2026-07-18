@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { formatJpDate } from '@/lib/dates'
+import { groupByCategory } from '@/lib/products/group'
 
 interface ParsedOrder {
   customer_name: string | null
@@ -34,7 +35,7 @@ interface Props {
   order: ParsedOrder
   index: number
   customers: { id: string; name: string }[]
-  products: { id: string; name: string }[]
+  products: { id: string; name: string; category?: string | null }[]
   /** 取引先配下の納入先（届け先）。選択中の取引先のものだけ絞って表示する。 */
   destinations?: Destination[]
   /** 新規取引先を登録したとき親へ通知（同じ画面の他の注文でも選べるようにする）。 */
@@ -582,8 +583,12 @@ export function OcrSaveSection({ order, index, customers, products, destinations
                     className={selectCls}
                   >
                     <option value="">— 選択 —</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
+                    {groupByCategory(products).map((g) => (
+                      <optgroup key={g.group} label={g.group}>
+                        {g.items.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </td>

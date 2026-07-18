@@ -21,7 +21,8 @@ export default async function ProductsPage() {
   const supabase = createClient()
   const { data: products, error } = await supabase
     .from('products')
-    .select('id, name, name_kana, unit, base_unit, default_tax_rate, stock_qty, is_active')
+    .select('id, name, name_kana, unit, base_unit, category, default_tax_rate, stock_qty, is_active')
+    .order('category', { nullsFirst: false })
     .order('name')
   if (error) return <ErrorState message={error.message} />
 
@@ -30,10 +31,14 @@ export default async function ProductsPage() {
     name: p.name,
     name_kana: p.name_kana,
     base_unit: p.base_unit ?? p.unit ?? '個',
+    category: p.category ?? null,
     default_tax_rate: p.default_tax_rate as TaxRate,
     stock_qty: p.stock_qty,
     is_active: p.is_active,
   }))
+
+  // 既存の品目グループを重複なく集めて追加フォームの候補（datalist）にする（表記ゆれ防止）。
+  const categories = [...new Set((products ?? []).map((p) => p.category).filter((c): c is string => !!c))].sort()
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -56,7 +61,7 @@ export default async function ProductsPage() {
 
       <Card className="space-y-3">
         <h2 className="font-display text-base font-bold text-ink">品目を追加</h2>
-        <AddProductForm />
+        <AddProductForm categories={categories} />
       </Card>
 
       {!rows.length ? (
@@ -64,7 +69,7 @@ export default async function ProductsPage() {
       ) : (
         <Card className="space-y-3">
           <h2 className="font-display text-base font-bold text-ink">品目一覧・在庫</h2>
-          <ProductsTable products={rows} />
+          <ProductsTable products={rows} categories={categories} />
         </Card>
       )}
     </div>

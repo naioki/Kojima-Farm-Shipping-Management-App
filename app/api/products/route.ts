@@ -29,6 +29,7 @@ export async function POST(req: Request) {
       name_kana: parsed.data.name_kana ?? null,
       base_unit: baseUnit,
       unit: parsed.data.unit ?? baseUnit,
+      category: parsed.data.category ?? null,
       default_tax_rate: parsed.data.default_tax_rate,
       container_capacity: parsed.data.container_capacity ?? null,
       default_unit_price: parsed.data.default_unit_price ?? null,

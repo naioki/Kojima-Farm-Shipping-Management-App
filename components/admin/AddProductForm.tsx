@@ -13,10 +13,11 @@ import { Select } from '@/components/ui/Select'
  * 荷姿（多形態）と価格は「価格・荷姿」マスタ（pack_configs / price_rules）で管理する。
  * 税率は 8（農産物・軽減）/10（資材・送料）のみ（tax.md）。
  */
-export function AddProductForm() {
+export function AddProductForm({ categories = [] }: { categories?: string[] }) {
   const [name, setName] = useState('')
   const [kana, setKana] = useState('')
   const [baseUnit, setBaseUnit] = useState('個')
+  const [category, setCategory] = useState('')
   const [taxRate, setTaxRate] = useState('8')
   const [submitting, setSubmitting] = useState(false)
 
@@ -34,6 +35,7 @@ export function AddProductForm() {
           name,
           name_kana: kana || null,
           base_unit: baseUnit || '個',
+          category: category.trim() || null,
           default_tax_rate: Number(taxRate),
         }),
       })
@@ -45,6 +47,7 @@ export function AddProductForm() {
       setName('')
       setKana('')
       setBaseUnit('個')
+      setCategory('')
       setTaxRate('8')
       // ページ側で一覧を再取得
       window.location.reload()
@@ -57,9 +60,22 @@ export function AddProductForm() {
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Input label="品目名" placeholder="トマト" value={name} onChange={(e) => setName(e.target.value)} required />
-        <Input label="カナ" placeholder="トマト" value={kana} onChange={(e) => setKana(e.target.value)} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Input label="品目名" placeholder="トマトバラ" value={name} onChange={(e) => setName(e.target.value)} required />
+        <Input label="カナ" placeholder="トマトバラ" value={kana} onChange={(e) => setKana(e.target.value)} />
+        <Input
+          label="品目グループ"
+          hint="選択メニューでまとめる分類（例: トマト）。空欄可＝「その他」"
+          placeholder="トマト"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          list="product-category-list"
+        />
+        <datalist id="product-category-list">
+          {categories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
         <Input
           label="基準単位"
           hint="個 / 本 / 束 / kg。在庫・集計の基準"

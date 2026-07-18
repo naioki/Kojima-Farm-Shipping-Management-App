@@ -48,7 +48,7 @@ interface ManualOcrFormProps {
   /** 取引先一覧（保存フォームの選択肢）。渡さない場合は保存セクション非表示。 */
   customers?: { id: string; name: string }[]
   /** 商品一覧（保存フォームの選択肢）。渡さない場合は保存セクション非表示。 */
-  products?: { id: string; name: string }[]
+  products?: { id: string; name: string; category?: string | null }[]
   /** 納入先一覧（取引先配下の届け先）。保存フォームで「取引先 ＞ 納入先」を選ぶのに使う。 */
   destinations?: { id: string; customer_id: string; code: string | null; full_name: string; aliases: string[] }[]
   /** 受信トレイからの遷移時にサーバーが取得した原本画像。設定済みなら自動プリロード。 */

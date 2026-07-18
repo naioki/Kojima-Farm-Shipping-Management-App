@@ -29,6 +29,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   } else if (d.unit !== undefined) {
     updates.unit = d.unit
   }
+  if (d.category !== undefined) updates.category = d.category ?? null
   if (d.default_tax_rate !== undefined) updates.default_tax_rate = d.default_tax_rate
   if (d.container_capacity !== undefined) updates.container_capacity = d.container_capacity
   if (d.default_unit_price !== undefined) updates.default_unit_price = d.default_unit_price
