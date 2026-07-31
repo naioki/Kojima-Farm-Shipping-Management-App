@@ -1,4 +1,4 @@
-import { Clock, PackageCheck, Truck, TrendingUp } from 'lucide-react'
+import { Clock, PackageCheck, Truck, TrendingUp, AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { yen } from '@/lib/format'
 import type { TodayShipmentStats } from './types'
@@ -32,7 +32,13 @@ export function ShipmentStatusCards({ stats }: { stats: TodayShipmentStats }) {
         count={stats.shipped}
         amount={a?.shipped}
       />
-      <ProgressCard pct={stats.progressPct} shipped={stats.shipped} total={stats.totalItems} />
+      <ProgressCard
+        pct={stats.progressPct}
+        shipped={stats.shipped}
+        total={stats.totalItems}
+        deliveries={stats.deliveries}
+        mismatchCount={stats.mismatchCount}
+      />
     </div>
   )
 }
@@ -80,13 +86,31 @@ function StatCard({
   )
 }
 
-function ProgressCard({ pct, shipped, total }: { pct: number; shipped: number; total: number }) {
+/**
+ * 進捗カード。「出荷（明細単位）」と「納品（配送先単位）」を分母つきで並べる。
+ * 以前は明細単位の割合だけを「進捗率」と表示していたため、配送実績の完了率
+ * （配送先単位）と食い違い、経営側に答えが2つある状態になっていた。
+ * 数字を1つに丸めず、単位を書いて併記することで誤読を防ぐ。
+ */
+function ProgressCard({
+  pct,
+  shipped,
+  total,
+  deliveries,
+  mismatchCount,
+}: {
+  pct: number
+  shipped: number
+  total: number
+  deliveries?: { total: number; delivered: number; pct: number }
+  mismatchCount?: number
+}) {
   return (
     <Card variant="elevated" className="relative">
       <span className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-trust-100 text-trust-600">
         <TrendingUp className="h-5 w-5" aria-hidden />
       </span>
-      <p className="text-sm font-medium text-ink-soft">進捗率</p>
+      <p className="text-sm font-medium text-ink-soft">出荷の進捗</p>
       <p className="mt-1 flex items-baseline gap-1">
         <span className="num text-3xl font-bold text-trust-600">{pct}</span>
         <span className="text-sm text-ink-faint">%</span>
@@ -98,8 +122,21 @@ function ProgressCard({ pct, shipped, total }: { pct: number; shipped: number; t
         />
       </div>
       <p className="num mt-1.5 text-xs text-ink-faint">
-        {shipped} / {total} 件
+        明細 {shipped} / {total} 件
       </p>
+
+      {deliveries && (
+        <p className="num mt-1 text-xs text-ink-faint">
+          納品 {deliveries.delivered} / {deliveries.total} 配送先（{deliveries.pct}%）
+        </p>
+      )}
+
+      {mismatchCount != null && mismatchCount > 0 && (
+        <p className="mt-1.5 flex items-center gap-1 text-xs font-medium text-warning">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          記録が合わない配送先 {mismatchCount}件
+        </p>
+      )}
     </Card>
   )
 }

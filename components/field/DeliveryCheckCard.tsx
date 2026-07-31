@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { fieldErrorMessage } from '@/lib/field/net-error'
+import { deliveryUnitKey } from '@/lib/deliveries/unit'
 import {
   progressKey,
   parseProgress,
@@ -65,7 +66,7 @@ export function DeliveryCheckCard({
   // 出荷一覧でまだ梱包完了になっていない品目。積込の前に気づかせる（止めはしない）。
   const notPacked = items.filter((it) => !it.packed)
 
-  const storageKey = progressKey(deliveryDate, `${customerId}:${destinationId ?? ''}`)
+  const storageKey = progressKey(deliveryDate, deliveryUnitKey(customerId, destinationId))
 
   // 確認の途中経過を端末から復元する（リロード・アプリ切替で消さない）。
   // 積込OK 以降は業務記録側が正なので復元しない。ついでに前日までの残骸を掃除する。

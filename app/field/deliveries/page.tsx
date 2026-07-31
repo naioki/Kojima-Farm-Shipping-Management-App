@@ -7,6 +7,7 @@ import { DeliveryCheckCard, type DeliveryCheckItem } from '@/components/field/De
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, formatJpDate } from '@/lib/dates'
 import { FIELD_APPROVED_STATUSES } from '@/lib/orders/field-scope'
+import { deliveryUnitKey } from '@/lib/deliveries/unit'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -104,7 +105,7 @@ export default async function DeliveriesPage({
   )
   const deliveryByKey = new Map(
     (deliveryRows ?? []).map((d) => [
-      `${d.customer_id}:${d.destination_id ?? ''}`,
+      deliveryUnitKey(d.customer_id, d.destination_id),
       { id: d.id, status: d.status as DeliveryStatus, photoUrl: d.photo_url },
     ]),
   )
@@ -115,7 +116,7 @@ export default async function DeliveriesPage({
   for (const it of items) {
     const order = orderById.get(it.order_id)
     if (!order) continue
-    const key = `${order.customer_id}:${order.destination_id ?? ''}`
+    const key = deliveryUnitKey(order.customer_id, order.destination_id)
     let g = groups.get(key)
     if (!g) {
       g = {

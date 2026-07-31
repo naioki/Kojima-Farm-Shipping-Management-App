@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { yen } from '@/lib/format'
 import { formatJpDateShort } from '@/lib/dates'
+import { FIELD_APPROVED_STATUSES } from '@/lib/orders/field-scope'
+import { computeTodayProgress } from '@/lib/dashboard/today-progress'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
 import type { OrderStatusKey, RecentOrderRow, TrendPoint } from '@/components/dashboard/types'
@@ -83,13 +85,17 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     curInvoiceRes,
     prevInvoiceRes,
     recentOrdersRes,
+    todayDeliveriesRes,
   ] = await Promise.all([
     getAuthedUser(),
+    // 今日の出荷対象。現場画面と同じ絞り込み（lib/orders/field-scope.ts）を使う。
+    // 以前は ['approved','shipped'] 直書きで invoiced が抜けており、当日中に
+    // 請求まで進んだ注文が経営側の「今日の出荷」から消えていた。
     supabase
       .from('order_items')
-      .select('field_status, quantity, shipped_qty, line_total, orders!inner(delivery_date,status)')
+      .select('field_status, quantity, shipped_qty, line_total, orders!inner(delivery_date,status,customer_id,destination_id)')
       .eq('orders.delivery_date', today)
-      .in('orders.status', ['approved', 'shipped']),
+      .in('orders.status', FIELD_APPROVED_STATUSES),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).in('status', ['ai_failed', 'unmatched']),
@@ -114,6 +120,8 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .select('id, order_date, status, customers(name), order_items(line_total)')
       .order('created_at', { ascending: false })
       .limit(5),
+    // 配送側の記録。明細（field_status）と突き合わせて食い違いを出すために取る。
+    supabase.from('deliveries').select('customer_id, destination_id, status').eq('delivery_date', today),
   ])
 
   // --- 名前・あいさつ・日付 ---
@@ -126,25 +134,47 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const dateLabel = `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日 (${WEEKDAYS[jst.getUTCDay()]})`
 
   // --- 本日の出荷状況 ---
-  type TodayItem = { field_status: string | null; quantity: number; shipped_qty: number | null; line_total: number | null }
-  const todayItems = (todayItemsRes.data ?? []) as unknown as TodayItem[]
-  const counts = { not_started: 0, packed: 0, shipped: 0 }
-  const amt = { notStarted: 0, packed: 0, shipped: 0 }
-  for (const it of todayItems) {
-    const lt = it.line_total ?? 0
-    if (it.field_status === 'shipped') {
-      counts.shipped++
-      amt.shipped += lt
-    } else if (it.field_status === 'packed') {
-      counts.packed++
-      amt.packed += lt
-    } else {
-      counts.not_started++
-      amt.notStarted += lt
-    }
+  // 明細（品目行）と配送先（取引先＞納入先）の両方を1回で計算する。
+  // 単位の違う2つの数字を別々の場所で別々に出していたのが、経営側の
+  // 「今日どれだけ終わったか」が2つあった原因（lib/dashboard/today-progress.ts）。
+  type TodayItem = {
+    field_status: string | null
+    quantity: number
+    shipped_qty: number | null
+    line_total: number | null
+    orders: { customer_id: string; destination_id: string | null } | null
   }
-  const totalItems = todayItems.length
-  const progressPct = totalItems > 0 ? Math.round((counts.shipped / totalItems) * 100) : 0
+  const todayItems = (todayItemsRes.data ?? []) as unknown as TodayItem[]
+  const todayDeliveries = (todayDeliveriesRes.data ?? []) as unknown as {
+    customer_id: string
+    destination_id: string | null
+    status: string | null
+  }[]
+  const progress = computeTodayProgress({
+    items: todayItems.map((it) => ({
+      customerId: it.orders?.customer_id ?? '',
+      destinationId: it.orders?.destination_id ?? null,
+      fieldStatus: it.field_status,
+      lineTotal: it.line_total,
+    })),
+    deliveries: todayDeliveries.map((d) => ({
+      customerId: d.customer_id,
+      destinationId: d.destination_id,
+      status: d.status,
+    })),
+  })
+  const counts = {
+    not_started: progress.items.notStarted,
+    packed: progress.items.packed,
+    shipped: progress.items.shipped,
+  }
+  const amt = progress.items.amounts
+  const totalItems = progress.items.total
+  const progressPct = progress.items.pct
+
+  // 明細と配送の記録が食い違っている配送先を、取引先名に直して警告に載せる。
+  // 放置すると「納品したのに売上に立たない」「出荷したのに配送証跡が無い」まま月末を迎える。
+  const mismatchCount = progress.mismatches.length
 
   // --- 要対応アラート ---
   const pendingOrders = pendingOrdersRes.count ?? 0
@@ -162,6 +192,16 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     alerts.push({ id: 'fr', tone: 'alert', label: `解析失敗・未紐付けが ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox?filter=review' })
   if (missingSpecsCount > 0)
     alerts.push({ id: 'ms', tone: 'warning', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
+  // 出荷一覧と配送リストの記録が食い違っている配送先。どちらかの記録が漏れており、
+  // 放置すると「納品したのに売上に立たない」まま月末（請求）に進んでしまう。
+  if (mismatchCount > 0)
+    alerts.push({
+      id: 'mm',
+      tone: 'warning',
+      label: `出荷と配送の記録が合わない配送先が ${mismatchCount}件 あります`,
+      count: mismatchCount,
+      href: '/admin/deliveries-report',
+    })
   const notificationCount = pendingOrders + pendingReceipts + failedReceipts
 
   // --- 今月の出荷推移（日次） ---
@@ -232,6 +272,13 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       progressPct,
       totalItems,
       amounts: { notStarted: amt.notStarted, packed: amt.packed, shipped: amt.shipped },
+      // 配送先（取引先＞納入先）単位。明細単位の数字と混同させないため別に持つ
+      deliveries: {
+        total: progress.deliveries.total,
+        delivered: progress.deliveries.delivered,
+        pct: progress.deliveries.pct,
+      },
+      mismatchCount,
     },
     trend,
     alerts,

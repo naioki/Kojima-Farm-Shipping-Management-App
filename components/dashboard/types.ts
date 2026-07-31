@@ -9,12 +9,19 @@ export interface TodayShipmentStats {
   notStarted: number
   packed: number
   shipped: number
-  /** 進捗率（0..100）。総件数に対する出荷済みの割合。 */
+  /** 梱包・出荷の進捗率（0..100）。単位は【明細（品目行）】。 */
   progressPct: number
   /** 総明細件数（進捗の分母表示用）。 */
   totalItems: number
   /** ステータス別の金額（円）。null は未集計（— 表示）。 */
   amounts?: { notStarted: number | null; packed: number | null; shipped: number | null }
+  /**
+   * 納品の進捗。単位は【配送先（取引先＞納入先）】で、上の明細単位とは分母が違う。
+   * 同じ「進捗」でも数字が一致しないのが正常なので、画面では必ず単位を書く。
+   */
+  deliveries?: { total: number; delivered: number; pct: number }
+  /** 出荷（明細）と配送の記録が食い違っている配送先の数。0 が正常。 */
+  mismatchCount?: number
 }
 
 /** 今月の出荷推移（日次）。 */

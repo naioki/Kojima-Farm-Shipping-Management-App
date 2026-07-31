@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { jstTodayStr, formatJpDateShort } from '@/lib/dates'
+import { deliveryUnitKey } from '@/lib/deliveries/unit'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -93,7 +94,7 @@ export default async function DeliveriesReportPage({
   // 配送先（取引先＞納入先）単位に集計
   const stats = new Map<string, DestStat & { leadSumMin: number; leadCount: number }>()
   for (const d of deliveries) {
-    const key = `${d.customer_id}:${d.destination_id ?? ''}`
+    const key = deliveryUnitKey(d.customer_id, d.destination_id)
     let s = stats.get(key)
     if (!s) {
       const dest = d.destination_id ? destinationName.get(d.destination_id) : null
@@ -183,12 +184,16 @@ export default async function DeliveriesReportPage({
             <Card className="space-y-1 text-center">
               <p className="text-xs text-ink-soft">配送件数</p>
               <p className="num text-2xl font-bold tabular-nums text-ink">{totals.total}</p>
+              <p className="text-[11px] text-ink-faint">配送先ごとに1件</p>
             </Card>
             <Card className="space-y-1 text-center">
               <p className="text-xs text-ink-soft">納品完了率</p>
               <p className="num text-2xl font-bold tabular-nums text-harvest-700">
                 {totals.total > 0 ? Math.round((totals.delivered / totals.total) * 100) : 0}%
               </p>
+              {/* ダッシュボードの「出荷の進捗」は明細（品目行）単位。分母が違うので
+                  一致しなくて正常。誤読を防ぐため単位を明記する。 */}
+              <p className="text-[11px] text-ink-faint">配送先 {totals.delivered}/{totals.total}</p>
             </Card>
             <Card className="space-y-1 text-center">
               <p className="text-xs text-ink-soft">もどす回数</p>
