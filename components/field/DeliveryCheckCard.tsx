@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { DeliveryStatus } from '@/types/database'
 
 export interface DeliveryCheckItem {
@@ -90,6 +91,10 @@ export function DeliveryCheckCard({
       if (action === 'loaded') toast.success('積込チェックを記録しました')
       if (action === 'delivered') toast.success('納品完了を記録しました')
       router.refresh()
+    } catch (e) {
+      // 配送中は電波が切れやすい。catch が無いと「押しても何も起きない」だけになり、
+      // 記録できていないことに気づかないまま次の配送先へ行ってしまう。
+      toast.error(fieldErrorMessage(e, '記録できませんでした'))
     } finally {
       setBusy(false)
     }
@@ -121,6 +126,9 @@ export function DeliveryCheckCard({
           if (res.ok) toast.success('問題を記録しました')
           else toast.error('記録できませんでした')
           router.refresh()
+        } catch (e) {
+          // 圏外だと問題の記録が消える。書いた内容が無駄になったことは必ず知らせる
+          toast.error(fieldErrorMessage(e, '問題を記録できませんでした'))
         } finally {
           setBusy(false)
         }
@@ -140,6 +148,9 @@ export function DeliveryCheckCard({
       if (res.ok) toast.success('写真を保存しました')
       else toast.error('写真を保存できませんでした')
       router.refresh()
+    } catch (e) {
+      // 写真は容量が大きく、弱い電波では途中で切れやすい。失敗を黙らせない
+      toast.error(fieldErrorMessage(e, '写真を保存できませんでした'))
     } finally {
       setBusy(false)
     }
@@ -183,7 +194,12 @@ export function DeliveryCheckCard({
             return (
               <tr
                 key={it.id}
-                onClick={() => toggle(it.id)}
+                // 行のどこをタップしても確認できる（手袋・急ぎでも押しやすい）。
+                // ただしセル内のボタン由来のクリックは二重トグルになるので無視する。
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('button')) return
+                  toggle(it.id)
+                }}
                 className={cn(
                   'border-b border-line last:border-0 print:border-black',
                   status === 'planned' && 'cursor-pointer active:bg-bg-soft',
@@ -199,19 +215,27 @@ export function DeliveryCheckCard({
                 {/* 紙用の□欄（印刷のみ） */}
                 <td className="hidden py-2.5 text-center text-lg leading-none text-ink-soft print:table-cell">□</td>
                 <td className="hidden py-2.5 text-center text-lg leading-none text-ink-soft print:table-cell">□</td>
-                {/* 画面用のタップ確認（48pxターゲット） */}
+                {/* 画面用のタップ確認（48pxターゲット）。
+                    実ボタンにして、キーボード（Tab＋Enter/Space）と読み上げでも
+                    チェックできるようにする。aria-pressed で「確認済みか」が伝わる。 */}
                 <td className="py-1 text-center print:hidden">
-                  <span
-                    aria-hidden
+                  <button
+                    type="button"
+                    onClick={() => toggle(it.id)}
+                    disabled={status !== 'planned'}
+                    aria-pressed={isChecked}
+                    aria-label={`${it.productName} ${it.quantityText}${it.unit} を かくにん`}
                     className={cn(
-                      'inline-flex h-10 w-10 items-center justify-center rounded-full border-2',
+                      'inline-flex h-12 w-12 items-center justify-center rounded-full border-2',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
                       isChecked
                         ? 'border-harvest-500 bg-harvest-500 text-white'
                         : 'border-line-strong bg-bg-card text-transparent',
+                      status !== 'planned' && 'cursor-default',
                     )}
                   >
-                    <Check className="h-6 w-6" />
-                  </span>
+                    <Check className="h-6 w-6" aria-hidden />
+                  </button>
                 </td>
               </tr>
             )

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { MobileNav } from '@/components/layouts/MobileNav'
 import { FieldBottomBar, type FieldAction } from '@/components/field/FieldBottomBar'
+import { ConnectionStatus } from '@/components/field/ConnectionStatus'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 
 /**
@@ -51,6 +52,8 @@ export default async function FieldLayout({ children }: { children: React.ReactN
     <div className="flex min-h-screen flex-col">
       <MobileNav role={role} persistent user={{ name, roleLabel }} />
       <main className="flex-1 p-4 pb-0 lg:p-8">{children}</main>
+      {/* 圏外インジケーター（features.md §10 失敗#4）。下部バーの真上に固定表示する。 */}
+      <ConnectionStatus />
       <FieldBottomBar actions={actions} />
     </div>
   )

@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { formatJpDateShort } from '@/lib/dates'
+import { fieldErrorMessage } from '@/lib/field/net-error'
 
 export interface MatrixGridProps {
   productId: string
@@ -106,7 +107,7 @@ export function MatrixGrid({
       setState(k, 'saved')
     } catch (e) {
       setState(k, 'error')
-      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+      toast.error(fieldErrorMessage(e, '保存に失敗しました'))
     }
   }
 

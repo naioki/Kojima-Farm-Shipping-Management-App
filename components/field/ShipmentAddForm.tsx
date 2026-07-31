@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
+import { fieldErrorMessage } from '@/lib/field/net-error'
 
 export interface ShipmentAddFormProps {
   deliveryDate: string
@@ -91,7 +92,7 @@ export function ShipmentAddForm({
       setShowNewCustomer(false)
       toast.success(json.existed ? `既存の「${json.name}」に紐付けました` : `「${json.name}」を作成しました`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '取引先の作成に失敗しました')
+      toast.error(fieldErrorMessage(e, '取引先の作成に失敗しました'))
     } finally {
       setCreatingCustomer(false)
     }
@@ -123,7 +124,7 @@ export function ShipmentAddForm({
       setShowNewProduct(false)
       toast.success(json.existed ? `既存の「${json.name}」に紐付けました` : `「${json.name}」を作成しました`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '品目の作成に失敗しました')
+      toast.error(fieldErrorMessage(e, '品目の作成に失敗しました'))
     } finally {
       setCreatingProduct(false)
     }
@@ -196,7 +197,7 @@ export function ShipmentAddForm({
       setQtyRaw('')
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '追加に失敗しました')
+      toast.error(fieldErrorMessage(e, '追加に失敗しました'))
     } finally {
       setSubmitting(false)
     }

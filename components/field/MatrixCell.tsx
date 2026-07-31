@@ -6,21 +6,17 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus } from '@/types/database'
 import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
+import { fieldErrorMessage } from '@/lib/field/net-error'
+import { fieldStatusStyle } from '@/lib/field/status-style'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
-// Tailwind JIT は実行時生成のクラス名を拾えないため、status→色クラスは literal で持つ。
-const STATUS_TEXT: Record<FieldStatus, string> = {
-  not_started: 'text-line-strong',
-  packed: 'text-harvest-500',
-  shipped: 'text-ink-faint',
-}
-
 // 紙の運用（パック済み＝数字を○で囲む／出荷済み＝線を引く）をそのまま再現する。
 // アイコンだけでなく数字自体の「形」も変えることで、色だけに頼らない（design.md WCAG AA）。
+// 色そのものは lib/field/status-style.ts（単一の正）から取る。
 const QTY_SHAPE: Record<FieldStatus, string> = {
   not_started: '',
-  packed: 'rounded-full border-2 border-harvest-500 px-1.5',
+  packed: 'rounded-full border-2 border-trust-500 px-1.5',
   shipped: 'line-through decoration-2',
 }
 
@@ -52,6 +48,7 @@ export function MatrixCell({
 
   const meta = FIELD_STATUS_META[status]
   const Icon = ICONS[meta.icon]
+  const style = fieldStatusStyle(status)
 
   async function handleTap() {
     if (!canAdvance(status) || busy) return
@@ -77,7 +74,7 @@ export function MatrixCell({
       setConflict(false)
     } catch (e) {
       setStatus(prev) // ロールバック
-      toast.error(e instanceof Error ? e.message : '更新に失敗しました')
+      toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {
       setBusy(false)
     }
@@ -93,7 +90,7 @@ export function MatrixCell({
         'flex min-h-[48px] min-w-[48px] flex-col items-center justify-center gap-0.5 rounded border p-2 transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
         conflict ? 'animate-pulse-alert border-alert' : 'border-line',
-        STATUS_TEXT[status],
+        style.text,
       )}
     >
       <Icon className="h-5 w-5" aria-hidden />

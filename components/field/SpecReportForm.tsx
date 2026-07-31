@@ -6,6 +6,7 @@ import { Camera, X, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { fieldErrorMessage } from '@/lib/field/net-error'
 
 const MAX_PHOTO_MB = 8
 
@@ -90,7 +91,7 @@ export function SpecReportForm({
       router.push('/field/shipments')
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'そうしん できませんでした')
+      toast.error(fieldErrorMessage(e, 'そうしん できませんでした'))
     } finally {
       setSending(false)
     }
