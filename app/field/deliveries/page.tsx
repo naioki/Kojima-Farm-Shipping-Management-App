@@ -44,37 +44,56 @@ export default async function DeliveriesPage({
   if (ordersErr) return <ErrorState message={ordersErr.message} />
 
   const orderIds = (orders ?? []).map((o) => o.id)
-  const items = orderIds.length
-    ? (
-        await supabase
-          .from('order_items')
-          .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id')
-          .in('order_id', orderIds)
-          .order('product_name')
-      ).data ?? []
-    : []
+  // ★取得失敗を「この日の配送はありません」に化けさせない。出発前ダブルチェックの
+  //   対象が空で出ると、積み忘れたまま出発してしまう。必ずエラーとして見せる。
+  const itemsRes = orderIds.length
+    ? await supabase
+        .from('order_items')
+        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id')
+        .in('order_id', orderIds)
+        .order('product_name')
+    : null
+  if (itemsRes?.error)
+    return <ErrorState message="配送明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
+  const items = itemsRes?.data ?? []
 
   // 表示用マスタ（表示は常に「取引先＞納入先」）＋その日の配送チェック状態
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
-  const [{ data: custRows }, { data: destRows }, { data: prodRows }, { data: packRows }, { data: deliveryRows }] =
-    await Promise.all([
-      customerIds.length
-        ? supabase.from('customers').select('id, name').in('id', customerIds)
-        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
-      destinationIds.length
-        ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
-        : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[] }),
-      productIds.length
-        ? supabase.from('products').select('id, container_capacity').in('id', productIds)
-        : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[] }),
-      packIds.length
-        ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
-        : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[] }),
-      supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url').eq('delivery_date', date),
-    ])
+  // ★配送先名・数量換算・チェック状態が黙って欠けると、誤った積み分け／二重納品に直結する。
+  //   （特に deliveries の取得失敗は「全部まだ未チェック」に見えるため、納品済みを再配送しかねない）
+  const [custRes, destRes, prodRes, packRes, deliveryRes] = await Promise.all([
+    customerIds.length
+      ? supabase.from('customers').select('id, name').in('id', customerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+    destinationIds.length
+      ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
+      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[], error: null }),
+    productIds.length
+      ? supabase.from('products').select('id, container_capacity').in('id', productIds)
+      : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
+    packIds.length
+      ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
+      : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
+    supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url').eq('delivery_date', date),
+  ])
+  if (custRes.error)
+    return <ErrorState message="取引先名を読み込めませんでした。時間をおいて再度お試しください。" detail={custRes.error.message} />
+  if (destRes.error)
+    return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destRes.error.message} />
+  if (prodRes.error)
+    return <ErrorState message="商品情報を読み込めませんでした。時間をおいて再度お試しください。" detail={prodRes.error.message} />
+  if (packRes.error)
+    return <ErrorState message="荷姿情報を読み込めませんでした。時間をおいて再度お試しください。" detail={packRes.error.message} />
+  if (deliveryRes.error)
+    return <ErrorState message="配送チェックの状態を読み込めませんでした。時間をおいて再度お試しください。" detail={deliveryRes.error.message} />
+  const { data: custRows } = custRes
+  const { data: destRows } = destRes
+  const { data: prodRows } = prodRes
+  const { data: packRows } = packRes
+  const { data: deliveryRows } = deliveryRes
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))

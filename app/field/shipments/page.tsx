@@ -68,31 +68,45 @@ export default async function ShipmentsPage({
   const orderToDestination = new Map((orders ?? []).map((o) => [o.id, o.destination_id]))
 
   // ② 明細（出荷対象）— spec_warnings も取得して常時表示
-  const items = orderIds.length
-    ? (
-        await supabase
-          .from('order_items')
-          .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings, pack_config_id, rule_id')
-          .in('order_id', orderIds)
-          .order('product_name')
-      ).data ?? []
-    : []
+  // ★取得失敗を「この日の出荷対象はありません」に化けさせない。現場がその表示を信じて
+  //   何も出荷しないまま1日が終わる（＝出荷漏れ）ため、必ずエラーとして見せる。
+  const itemsRes = orderIds.length
+    ? await supabase
+        .from('order_items')
+        .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings, pack_config_id, rule_id')
+        .in('order_id', orderIds)
+        .order('product_name')
+    : null
+  if (itemsRes?.error)
+    return <ErrorState message="出荷明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
+  const items = itemsRes?.data ?? []
 
   // ③ 取引先名・識別色・商品の荷姿容量・納入先名（表示用。表示は常に「取引先＞納入先」）
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
-  const [{ data: custRows }, { data: prodRows }, { data: destRows }] = await Promise.all([
+  // ★これらが黙って失敗すると取引先名が「—」・数量の箱数換算が消えたまま画面が出てしまう。
+  //   現場は名前を見て積み分けるので、誤配送に直結する。必ずエラーとして見せる。
+  const [custRes, prodRes, destRes] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[] }),
+      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[], error: null }),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
-      : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[] }),
+      : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
     destinationIds.length
       ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
-      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[] }),
+      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[], error: null }),
   ])
+  if (custRes.error)
+    return <ErrorState message="取引先名を読み込めませんでした。時間をおいて再度お試しください。" detail={custRes.error.message} />
+  if (prodRes.error)
+    return <ErrorState message="商品情報を読み込めませんでした。時間をおいて再度お試しください。" detail={prodRes.error.message} />
+  if (destRes.error)
+    return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destRes.error.message} />
+  const { data: custRows } = custRes
+  const { data: prodRows } = prodRes
+  const { data: destRows } = destRes
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const customerColor = new Map((custRows ?? []).map((c) => [c.id, c.display_color]))
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
@@ -212,7 +226,7 @@ export default async function ShipmentsPage({
   const [
     { data: allCustomers, error: custErr },
     { data: allProducts, error: prodErr2 },
-    { data: rules },
+    { data: rules, error: rulesErr },
     { data: allDestinations, error: destListErr },
   ] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
@@ -228,6 +242,9 @@ export default async function ShipmentsPage({
   if (custErr) return <ErrorState message={`取引先の読み込みに失敗しました: ${custErr.message}`} />
   if (prodErr2) return <ErrorState message={`商品の読み込みに失敗しました: ${prodErr2.message}`} />
   if (destListErr) return <ErrorState message={`納入先の読み込みに失敗しました: ${destListErr.message}`} />
+  // 入り数（P/C）はスマート追加の換算補助。失敗しても本体（出荷リスト）は殺さないが、
+  // 黙って「入り数なし」に化けると追加時の箱数がずれるのでログには必ず残す。
+  if (rulesErr) console.error('[field/shipments] 取引ルール（入り数）の取得に失敗:', rulesErr.message)
   const packsByPair: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
 

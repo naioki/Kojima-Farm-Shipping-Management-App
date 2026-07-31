@@ -10,33 +10,21 @@ import type { FieldStatus, SpecWarning } from '@/types/database'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
 import { rowStatusKey, type RowStatusKey } from '@/lib/field/shipment-sort'
+import { FIELD_STATUS_STYLE, fieldStatusStyle } from '@/lib/field/status-style'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto } from '@/components/admin/PackInstructions'
 import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
+import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
-// Tailwind JIT は動的クラス名を拾えないため status→色は literal で持つ（MatrixCell と同方針）。
-const STATUS_TEXT: Record<FieldStatus, string> = {
-  not_started: 'text-line-strong',
-  packed: 'text-trust-500',
-  shipped: 'text-harvest-500',
-}
-
 /**
- * ステータス別のカード配色（Issue#5）。打消し線・○囲みをやめ、カード自体の
- * 左ボーダー＋背景トーンで4区分を一目で分からせる。色だけに頼らず、
- * 中央のステータスラベル文字と併用する（WCAG・design.md）。
- * サマリーチップ（ShipmentStatusSummary）と同じ系統色に揃える。
+ * ステータス別の配色は lib/field/status-style.ts（単一の正）から取る。
+ * カードは左ボーダー＋背景トーンで4区分を一目で分からせる（打消し線・○囲みは使わない）。
+ * 色だけに頼らず、中央のステータスラベル文字と併用する（WCAG・design.md）。
  */
-const CARD_TONE: Record<RowStatusKey, string> = {
-  not_started: 'border-l-line-strong bg-bg-card',
-  interrupted: 'border-l-warning bg-warning-bg/20',
-  packed: 'border-l-trust-500 bg-trust-50/40',
-  shipped: 'border-l-line bg-bg-soft/60 opacity-80',
-}
 
 /** ステータス変更後、その場に留まって「元に戻す」を出す時間（ms）。誤タップ対策。 */
 const UNDO_GRACE_MS = 5000
@@ -208,7 +196,7 @@ export function ShipmentRow({
       startUndoGrace(prev, target)
     } catch (e) {
       setStatus(prev)
-      toast.error(e instanceof Error ? e.message : '更新に失敗しました')
+      toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {
       setBusy(false)
     }
@@ -250,7 +238,7 @@ export function ShipmentRow({
       )
     } catch (e) {
       setStatus(prev)
-      toast.error(e instanceof Error ? e.message : '戻す操作に失敗しました')
+      toast.error(fieldErrorMessage(e, '戻す操作に失敗しました'))
     } finally {
       setBusy(false)
       setConfirmOpen(false)
@@ -271,7 +259,7 @@ export function ShipmentRow({
       // サーバー集計（品目グループ見出し・ステータス件数・「のこり」）を最新化する
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '削除に失敗しました')
+      toast.error(fieldErrorMessage(e, '削除に失敗しました'))
     } finally {
       setDeleting(false)
     }
@@ -303,7 +291,7 @@ export function ShipmentRow({
       setVersion(json.item.version)
       toast.success('記録を保存しました')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+      toast.error(fieldErrorMessage(e, '保存に失敗しました'))
     } finally {
       setSavingDetails(false)
     }
@@ -332,7 +320,7 @@ export function ShipmentRow({
       toast.success('できた数を記録しました')
       setQuickOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存に失敗しました')
+      toast.error(fieldErrorMessage(e, '保存に失敗しました'))
     } finally {
       setSavingQuick(false)
     }
@@ -345,7 +333,7 @@ export function ShipmentRow({
     <div
       className={cn(
         'rounded border border-l-4 transition-colors duration-300',
-        CARD_TONE[statusKey],
+        FIELD_STATUS_STYLE[statusKey].card,
         conflict ? 'animate-pulse-alert border-alert' : 'border-line',
       )}
     >
@@ -408,7 +396,7 @@ export function ShipmentRow({
               </>
             ) : (
               <>
-                <Icon className={cn('h-5 w-5', STATUS_TEXT[status])} aria-hidden />
+                <Icon className={cn('h-5 w-5', fieldStatusStyle(status).text)} aria-hidden />
                 <span className="text-xs text-ink-soft">{meta.label}</span>
               </>
             )}
@@ -453,13 +441,15 @@ export function ShipmentRow({
             <Check className="h-4 w-4" aria-hidden />
             {meta.label}にしました
           </span>
+          {/* 誤タップからの復帰口。約5秒しか出ないうえ、手袋・急ぎの状況で押される。
+              ここだけ小さいと取り消せないまま猶予が切れるので 48px を厳守する（design.md）。 */}
           <button
             type="button"
             onClick={undoAdvance}
             disabled={busy}
-            className="inline-flex h-9 items-center gap-1 rounded border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+            className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-4 text-sm font-bold text-ink hover:bg-bg-soft disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
           >
-            <Undo2 className="h-3.5 w-3.5" aria-hidden />
+            <Undo2 className="h-4 w-4" aria-hidden />
             元に戻す
           </button>
         </div>

@@ -37,16 +37,19 @@ export function resetOneStep(current: FieldStatus): FieldStatus {
   return back[current]
 }
 
-/** UI 表示用のメタ（色は CSS Variables 名で返し、ハードコード色を避ける・design.md）。 */
+/**
+ * UI 表示用のメタ（ラベルとアイコン）。
+ * 色は持たない —— 配色は lib/field/status-style.ts が単一の正。
+ * （以前ここに colorToken があったが、どの画面からも参照されないまま実際の配色と
+ *   食い違い、「梱包完了=緑」という誤った定義が残っていた。二重定義を復活させないこと。）
+ */
 export interface FieldStatusMeta {
   label: string
-  /** Tailwind カスタムテーマのトークン名（例: 'harvest-500'） */
-  colorToken: string
   icon: 'circle' | 'check' | 'truck'
 }
 
 export const FIELD_STATUS_META: Record<FieldStatus, FieldStatusMeta> = {
-  not_started: { label: '未着手', colorToken: 'line-strong', icon: 'circle' },
-  packed: { label: '梱包完了', colorToken: 'harvest-500', icon: 'check' },
-  shipped: { label: '出荷済', colorToken: 'ink-faint', icon: 'truck' },
+  not_started: { label: '未着手', icon: 'circle' },
+  packed: { label: '梱包完了', icon: 'check' },
+  shipped: { label: '出荷済', icon: 'truck' },
 }
