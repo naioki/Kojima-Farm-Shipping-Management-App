@@ -441,13 +441,15 @@ export function ShipmentRow({
             <Check className="h-4 w-4" aria-hidden />
             {meta.label}にしました
           </span>
+          {/* 誤タップからの復帰口。約5秒しか出ないうえ、手袋・急ぎの状況で押される。
+              ここだけ小さいと取り消せないまま猶予が切れるので 48px を厳守する（design.md）。 */}
           <button
             type="button"
             onClick={undoAdvance}
             disabled={busy}
-            className="inline-flex h-9 items-center gap-1 rounded border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+            className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-4 text-sm font-bold text-ink hover:bg-bg-soft disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
           >
-            <Undo2 className="h-3.5 w-3.5" aria-hidden />
+            <Undo2 className="h-4 w-4" aria-hidden />
             元に戻す
           </button>
         </div>
