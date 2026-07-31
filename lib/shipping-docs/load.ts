@@ -1,6 +1,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { formatSupplyDestination } from '@/lib/format/destination'
+import { FIELD_APPROVED_STATUSES } from '@/lib/orders/field-scope'
 import {
   aggregateEntries,
   decomposeQty,
@@ -42,10 +43,13 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
 
   const supabase = createClient()
 
+  // 帳票に載せてよいのは承認ゲートを通った注文だけ。未承認（未検証の解析結果）や
+  // キャンセル済みが紙に出ると、現場はそれを正として荷を作ってしまう（lib/orders/field-scope.ts）。
   let ordersQuery = supabase
     .from('orders')
     .select('id, customer_id, destination_id')
     .eq('delivery_date', q.date)
+    .in('status', FIELD_APPROVED_STATUSES)
   if (q.customerIds && q.customerIds.length) ordersQuery = ordersQuery.in('customer_id', q.customerIds)
   else if (q.customerId) ordersQuery = ordersQuery.eq('customer_id', q.customerId)
   const { data: orders, error: ordersErr } = await ordersQuery

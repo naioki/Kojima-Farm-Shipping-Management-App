@@ -47,10 +47,13 @@ export function FieldBottomBar({ actions }: { actions: FieldAction[] }) {
   }, [open])
 
   const onShipments = pathname.startsWith('/field/shipments')
+  const onDeliveries = pathname.startsWith('/field/deliveries')
 
   return (
     <>
-      {/* 下部固定バー */}
+      {/* 下部固定バー。1日の流れ（出荷をつくる → 配送に出す）が2大動線なので、
+          配送リストは「その他」の中ではなくここに出す。ドロワーを開いて選ぶ
+          2タップを毎日繰り返させない。 */}
       <nav
         className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-line bg-bg-card/95 backdrop-blur"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
@@ -66,6 +69,17 @@ export function FieldBottomBar({ actions }: { actions: FieldAction[] }) {
         >
           <PackageCheck className="h-6 w-6" aria-hidden />
           今日の出荷
+        </Link>
+        <Link
+          href="/field/deliveries"
+          className={cn(
+            'flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-medium',
+            onDeliveries ? 'text-forest-700' : 'text-ink-soft',
+          )}
+          aria-current={onDeliveries ? 'page' : undefined}
+        >
+          <Truck className="h-6 w-6" aria-hidden />
+          配送
         </Link>
         <button
           type="button"

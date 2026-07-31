@@ -5,6 +5,7 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
 import { jstTodayStr } from '@/lib/dates'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
+import { FIELD_APPROVED_STATUSES } from '@/lib/orders/field-scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,11 +38,15 @@ export default async function FieldPrintPage({
     return <ErrorState message="帳票印刷は解放されていません（設定 → 現場機能の解放）" />
   }
 
-  // この日の出荷対象の注文（品目別印刷・取引先しぼり込み用）
+  // この日の出荷対象の注文（品目別印刷・取引先しぼり込み用）。
+  // 承認済みだけを対象にする（未承認・キャンセルは帳票に載せない。lib/orders/field-scope.ts）。
+  // ここの絞り込みは loadShippingDocEntries と必ず一致させること
+  // （ずれると「印刷ボタンには出るのに紙には出ない」品目が生まれる）。
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, customer_id')
     .eq('delivery_date', date)
+    .in('status', FIELD_APPROVED_STATUSES)
   if (ordersErr) return <ErrorState message={ordersErr.message} />
   const orderIds = (orders ?? []).map((o) => o.id)
 

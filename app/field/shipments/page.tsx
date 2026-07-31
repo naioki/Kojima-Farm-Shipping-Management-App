@@ -1,4 +1,5 @@
-import { CheckCircle2 } from 'lucide-react'
+import Link from 'next/link'
+import { CheckCircle2, AlertTriangle, Truck } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
@@ -13,6 +14,7 @@ import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
 import { SHIPMENTS_TOUR } from '@/lib/guide/tours'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
+import { FIELD_VISIBLE_STATUSES, isAwaitingApproval } from '@/lib/orders/field-scope'
 import type { SpecWarning, PackPhotoKind } from '@/types/database'
 import type { PackInstructionValues, PackInstructionPhoto } from '@/components/admin/PackInstructions'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
@@ -56,12 +58,19 @@ export default async function ShipmentsPage({
   const staffFeatures = await getStaffFeatures()
   const canReportSpec = canStaffUse('reportSpec', role, staffFeatures)
 
-  // ① その日の出荷日を持つ注文（型安全のため埋め込みを使わず段階取得）
+  // ① その日の出荷日を持つ注文（型安全のため埋め込みを使わず段階取得）。
+  // キャンセルは除外し、未承認（pending_review）は「みかくにん」として別枠に回す。
+  // 以前は delivery_date だけで拾っていたため、承認ゲートが素通りしていた
+  // （未検証の解析結果とキャンセル分が作業リストに混ざっていた）。lib/orders/field-scope.ts
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('id, customer_id, destination_id')
+    .select('id, customer_id, destination_id, status')
     .eq('delivery_date', date)
+    .in('status', FIELD_VISIBLE_STATUSES)
   if (ordersErr) return <ErrorState message={ordersErr.message} />
+
+  // 未承認の注文IDは、通常の作業リストから外して警告枠にまとめる
+  const unapprovedOrderIds = new Set((orders ?? []).filter((o) => isAwaitingApproval(o.status)).map((o) => o.id))
 
   const orderIds = (orders ?? []).map((o) => o.id)
   const orderToCustomer = new Map((orders ?? []).map((o) => [o.id, o.customer_id]))
@@ -204,9 +213,14 @@ export default async function ShipmentsPage({
   if (ruleRowsErr) console.error('[field/shipments] 梱包マスタの取得に失敗:', ruleRowsErr.message)
   const ruleById = new Map((ruleRows ?? []).map((r) => [r.id, r]))
 
+  // 承認済み＝今日の作業対象。未承認は下の「みかくにん」枠にまとめ、
+  // 件数・進捗・「のこり」には数えない（現場が数える対象を確定した分だけにする）。
+  const workItems = items.filter((it) => !unapprovedOrderIds.has(it.order_id))
+  const pendingItems = items.filter((it) => unapprovedOrderIds.has(it.order_id))
+
   // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）
   const counts = { not_started: 0, interrupted: 0, packed: 0, shipped: 0 }
-  for (const it of items) {
+  for (const it of workItems) {
     const partial = it.shipped_qty != null && it.shipped_qty < it.quantity
     if (it.field_status === 'shipped') counts.shipped++
     else if (partial) counts.interrupted++
@@ -214,9 +228,9 @@ export default async function ShipmentsPage({
     else counts.not_started++
   }
 
-  // 品目ごとにグループ化
+  // 品目ごとにグループ化（承認済みのみ）
   const groups = new Map<string, typeof items>()
-  for (const it of items) {
+  for (const it of workItems) {
     const arr = groups.get(it.product_name) ?? []
     arr.push(it)
     groups.set(it.product_name, arr)
@@ -250,7 +264,7 @@ export default async function ShipmentsPage({
 
   // 「のこり」= まだ出荷していない件数（未着手＋中断＋梱包完了）。現場が今やることの数。
   const remaining = counts.not_started + counts.interrupted + counts.packed
-  const allDone = items.length > 0 && remaining === 0
+  const allDone = workItems.length > 0 && remaining === 0
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -264,7 +278,7 @@ export default async function ShipmentsPage({
       </div>
 
       {/* やさしい日本語の「のこり」表示。今やることの数を一目で。 */}
-      {items.length > 0 && (
+      {workItems.length > 0 && (
         <div
           className={cn(
             'flex items-center justify-between rounded-xl border px-4 py-3',
@@ -273,9 +287,20 @@ export default async function ShipmentsPage({
         >
           <span className="text-sm font-medium text-ink-soft">きょう やること</span>
           {allDone ? (
-            <span className="flex items-center gap-1.5 text-base font-bold text-harvest-700">
-              <CheckCircle2 className="h-5 w-5" aria-hidden />
-              ぜんぶ おわり
+            // 終わったら次（配送）へ送り出す。ここで行き止まりにすると、
+            // 配送リストの存在に気づかないまま出発してしまう。
+            <span className="flex flex-wrap items-center justify-end gap-2">
+              <span className="flex items-center gap-1.5 text-base font-bold text-harvest-700">
+                <CheckCircle2 className="h-5 w-5" aria-hidden />
+                ぜんぶ おわり
+              </span>
+              <Link
+                href={`/field/deliveries?date=${date}`}
+                className="inline-flex h-12 items-center gap-1.5 rounded-lg bg-earth-600 px-4 text-sm font-bold text-white hover:bg-earth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-earth-200"
+              >
+                <Truck className="h-4 w-4" aria-hidden />
+                つぎは 配送
+              </Link>
             </span>
           ) : (
             <span className="text-ink-soft">
@@ -299,7 +324,37 @@ export default async function ShipmentsPage({
         packsByPair={packsByPair}
       />
 
-      {items.length === 0 ? (
+      {/* みかくにん枠（承認待ち）。事務所の承認が終わるまで作業させないが、
+          存在自体は見せる（承認待ちを隠すと「今日はこれだけ」と誤認して足りなくなる）。
+          荷姿・納入先が未確定なので、ここからは梱包・印刷・積込に進ませない。 */}
+      {pendingItems.length > 0 && (
+        <Card className="space-y-2 border-warning/40 bg-warning-bg/20">
+          <h2 className="flex items-center gap-2 font-display text-base font-bold text-ink">
+            <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
+            みかくにん の ちゅうもん
+            <span className="text-sm font-normal text-ink-soft">{pendingItems.length}件</span>
+          </h2>
+          <p className="text-sm text-ink-soft">
+            じむしょ の しょうにん まちです。まだ 荷姿・納入先が きまっていないので、
+            <strong className="font-bold text-ink">つくらないで ください</strong>。
+          </p>
+          <ul className="divide-y divide-line">
+            {pendingItems.map((it) => (
+              <li key={it.id} className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 py-2">
+                <span className="text-sm font-medium text-ink">
+                  {customerName.get(orderToCustomer.get(it.order_id) ?? '') ?? '—'}
+                  <span className="ml-2 text-ink-soft">{it.product_name}</span>
+                </span>
+                <span className="num text-sm tabular-nums text-ink-soft">
+                  {it.quantity} {it.unit}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {workItems.length === 0 ? (
         <EmptyState
           title="この日の出荷対象はありません"
           description="上の「スマート追加」で追加するか、承認済み注文の出荷日がこの日になると表示されます。"

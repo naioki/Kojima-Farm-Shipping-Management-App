@@ -31,8 +31,8 @@ export default async function FieldLayout({ children }: { children: React.ReactN
 
   // 解放済み機能を「その他」ドロワーに並べる（admin は常に全許可）。
   const features = await getStaffFeatures()
+  // 配送リストは下部バーの主動線に出すため、ここ（その他）には並べない。
   const actions: FieldAction[] = [
-    { key: 'delivery', label: '配送リスト', href: '/field/deliveries', icon: 'delivery' },
     { key: 'matrix', label: '週間マトリックス', href: '/field/matrix', icon: 'matrix' },
   ]
   if (canStaffUse('ocr', role, features)) {

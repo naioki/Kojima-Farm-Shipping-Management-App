@@ -6,6 +6,7 @@ import { DateNav } from '@/components/field/DateNav'
 import { DeliveryCheckCard, type DeliveryCheckItem } from '@/components/field/DeliveryCheckCard'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, formatJpDate } from '@/lib/dates'
+import { FIELD_APPROVED_STATUSES } from '@/lib/orders/field-scope'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -35,12 +36,13 @@ export default async function DeliveriesPage({
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const supabase = createClient()
 
-  // その日の出荷対象注文（キャンセルは除外）
+  // その日の配送対象（承認済みのみ）。未承認＝まだ人が検証していない解析結果を
+  // 積込チェックに載せると、未検証のまま納品まで進んでしまう（lib/orders/field-scope.ts）。
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, customer_id, destination_id, status')
     .eq('delivery_date', date)
-    .neq('status', 'cancelled')
+    .in('status', FIELD_APPROVED_STATUSES)
   if (ordersErr) return <ErrorState message={ordersErr.message} />
 
   const orderIds = (orders ?? []).map((o) => o.id)
@@ -49,7 +51,7 @@ export default async function DeliveriesPage({
   const itemsRes = orderIds.length
     ? await supabase
         .from('order_items')
-        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id')
+        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id, field_status')
         .in('order_id', orderIds)
         .order('product_name')
     : null
@@ -136,6 +138,9 @@ export default async function DeliveriesPage({
       ),
       unit: it.unit,
       quantity: it.quantity,
+      // 出荷一覧側の進捗。まだ梱包できていない品目を積み込もうとしたら警告する
+      // （ダブルチェックは2つの記録を突き合わせて初めて意味を持つ）。
+      packed: it.field_status === 'packed' || it.field_status === 'shipped',
       noteText:
         [it.spec, it.container_type, it.has_card ? 'カード有' : null, it.line_note].filter(Boolean).join('・') || '—',
     })

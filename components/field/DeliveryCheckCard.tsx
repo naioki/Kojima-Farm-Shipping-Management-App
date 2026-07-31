@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Camera, Check, CheckCircle2, Truck, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,6 +8,13 @@ import { cn } from '@/lib/cn'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { fieldErrorMessage } from '@/lib/field/net-error'
+import {
+  progressKey,
+  parseProgress,
+  serializeProgress,
+  reconcileProgress,
+  staleKeys,
+} from '@/lib/field/check-progress'
 import type { DeliveryStatus } from '@/types/database'
 
 export interface DeliveryCheckItem {
@@ -18,6 +25,8 @@ export interface DeliveryCheckItem {
   noteText: string
   /** イベントのスナップショット用の生値 */
   quantity: number
+  /** 出荷一覧側で梱包完了（または出荷済）になっているか。突き合わせ警告に使う。 */
+  packed: boolean
 }
 
 /**
@@ -53,6 +62,28 @@ export function DeliveryCheckCard({
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const allChecked = items.length > 0 && items.every((it) => checked.has(it.id))
+  // 出荷一覧でまだ梱包完了になっていない品目。積込の前に気づかせる（止めはしない）。
+  const notPacked = items.filter((it) => !it.packed)
+
+  const storageKey = progressKey(deliveryDate, `${customerId}:${destinationId ?? ''}`)
+
+  // 確認の途中経過を端末から復元する（リロード・アプリ切替で消さない）。
+  // 積込OK 以降は業務記録側が正なので復元しない。ついでに前日までの残骸を掃除する。
+  useEffect(() => {
+    if (status !== 'planned') return
+    try {
+      const restored = parseProgress(window.localStorage.getItem(storageKey))
+      // 事務所が明細を消していた場合に「全部チェック済み」に化けないよう突き合わせる
+      setChecked(reconcileProgress(restored, items.map((it) => it.id)))
+      for (const k of staleKeys(Object.keys(window.localStorage), deliveryDate)) {
+        window.localStorage.removeItem(k)
+      }
+    } catch {
+      // localStorage が使えない（プライベートモード等）。チェックは揮発するが画面は動かす
+    }
+    // items は毎描画で新しい配列になるため、依存は id の並びで見る
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, status, items.map((it) => it.id).join(',')])
 
   function toggle(id: string) {
     if (status !== 'planned') return
@@ -60,8 +91,22 @@ export function DeliveryCheckCard({
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      try {
+        window.localStorage.setItem(storageKey, serializeProgress(next))
+      } catch {
+        // 保存できなくてもチェック自体は続行する
+      }
       return next
     })
+  }
+
+  /** 積込OK まで進んだら手元のメモは役目を終える（以降は deliveries が正）。 */
+  function clearProgress() {
+    try {
+      window.localStorage.removeItem(storageKey)
+    } catch {
+      // 消せなくても実害はない（次回 reconcile で落ちる）
+    }
   }
 
   async function send(action: 'loaded' | 'delivered' | 'revert') {
@@ -88,7 +133,10 @@ export function DeliveryCheckCard({
         toast.error(j?.error ?? '記録できませんでした')
         return
       }
-      if (action === 'loaded') toast.success('積込チェックを記録しました')
+      if (action === 'loaded') {
+        clearProgress()
+        toast.success('積込チェックを記録しました')
+      }
       if (action === 'delivered') toast.success('納品完了を記録しました')
       router.refresh()
     } catch (e) {
@@ -98,6 +146,22 @@ export function DeliveryCheckCard({
     } finally {
       setBusy(false)
     }
+  }
+
+  /**
+   * 積込OK。出荷一覧でまだ梱包完了になっていない品目があれば、その場で名前を挙げて確認する。
+   * 止めはしない（紙の運用では順序が前後することがあり、現場の判断を優先する）。
+   * ここで気づけないと、梱包していない荷を積んだまま出発してしまう。
+   */
+  function confirmLoaded() {
+    if (notPacked.length > 0) {
+      const names = notPacked.map((it) => `・${it.productName}`).join('\n')
+      const ok = window.confirm(
+        `つぎの ${notPacked.length}件は、出荷一覧で まだ「梱包完了」に なっていません。\n\n${names}\n\nこのまま 積込OK に しますか？`,
+      )
+      if (!ok) return
+    }
+    void send('loaded')
   }
 
   function revert() {
@@ -283,9 +347,18 @@ export function DeliveryCheckCard({
         {status === 'planned' && (
           <>
             <p className="text-xs text-ink-soft">
-              {allChecked ? 'ぜんぶ かくにん できました' : '1行ずつ タップして かくにん'}
+              {notPacked.length > 0 ? (
+                <span className="flex items-center gap-1 font-medium text-warning">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  梱包まだ {notPacked.length}件
+                </span>
+              ) : allChecked ? (
+                'ぜんぶ かくにん できました'
+              ) : (
+                '1行ずつ タップして かくにん'
+              )}
             </p>
-            <Button variant="primary" size="md" disabled={!allChecked} isLoading={busy} onClick={() => void send('loaded')}>
+            <Button variant="primary" size="md" disabled={!allChecked} isLoading={busy} onClick={confirmLoaded}>
               <Truck className="h-4 w-4" aria-hidden />
               積込 OK
             </Button>
