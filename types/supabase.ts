@@ -17,6 +17,7 @@ import type {
   DeliveryNote,
   DeliveryNoteItem,
   DeliveryDestination,
+  AiRule,
 } from './database'
 
 /**
@@ -88,7 +89,7 @@ export interface Database {
       orders: Table<
         Order,
         {
-          customer_id: string
+          customer_id?: string | null
           destination_id?: string | null
           source: Order['source']
           status?: Order['status']
@@ -107,10 +108,13 @@ export interface Database {
         Omit<
           {
             order_id: string
-            product_id: string
+            product_id?: string | null
             product_name: string
             quantity: number
+            quantity_raw?: string | null
             unit?: string
+            pack_config_id?: string | null
+            price_status?: OrderItem['price_status']
             unit_price: number
             tax_rate: OrderItem['tax_rate']
             version?: number
@@ -320,6 +324,20 @@ export interface Database {
           created_by?: string | null
         },
         Partial<CustomerParseHint>
+      >
+      ai_rules: Table<
+        AiRule,
+        {
+          client_name: string
+          rule_text: string
+          is_active?: boolean
+          priority?: number
+          category?: string
+          source?: string
+          created_at?: string
+          updated_at?: string
+        },
+        Partial<AiRule>
       >
     }
     Views: Record<string, never>

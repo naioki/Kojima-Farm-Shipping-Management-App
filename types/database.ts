@@ -30,6 +30,9 @@ export type ReceiptStatus =
   | 'approved'
   | 'duplicate'
   | 'unmatched'
+  | 'not_order'
+  | 'dismissed'
+  | 'processed'
 export type FractionPolicy = 'carry_over' | 'loose' | 'round_down' | 'confirm'
 export type EstimateStatus = 'not_entered' | 'planned' | 'estimated' | 'confirmed'
 export type DeliveryDateSource = 'parsed' | 'manual' | 'assumed_next_day'
@@ -84,6 +87,8 @@ export interface Product {
   name_kana: string | null
   aliases: string[]
   unit: string
+  base_unit?: string | null
+  category?: string | null
   default_tax_rate: TaxRate
   container_capacity: number | null
   default_unit_price: number | null
@@ -186,6 +191,7 @@ export interface OrderItem {
   product_id: UUID
   product_name: string
   quantity: number
+  quantity_raw?: string | null
   unit: string
   unit_price: number
   tax_rate: TaxRate

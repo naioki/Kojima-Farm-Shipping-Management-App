@@ -301,7 +301,7 @@ export async function POST(req: NextRequest) {
   const tempFileBase64 =
     bytes && bytes.length > 0 && bytes.length <= 4 * 1024 * 1024 ? bytes.toString('base64') : null
 
-  const initialPayload = {
+  const initialPayload: Record<string, unknown> = {
     filename: fileName,
     content_type: contentType,
     sender_fax: faxNumber,

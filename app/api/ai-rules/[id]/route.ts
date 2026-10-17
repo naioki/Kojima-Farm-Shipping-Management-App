@@ -68,20 +68,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   invalidateAiRulesCache()
 
-  await admin
-    .from('audit_log')
-    .insert({
-      entity_type: 'ai_rules',
-      entity_id: params.id,
-      action: 'UPDATE',
-      changed_fields: Object.keys(parsed.data),
-      old_values: before,
-      new_values: updated,
-      user_id: auth.userId,
-    })
-    .then(({ error }) => {
-      if (error) console.error('[PATCH /api/ai-rules/[id]] audit_log 記録失敗:', error.message)
-    })
+  const { error: auditUpdErr } = await admin.from('audit_log').insert({
+    entity_type: 'ai_rules',
+    entity_id: params.id,
+    action: 'UPDATE',
+    changed_fields: Object.keys(parsed.data),
+    old_values: before as unknown as Record<string, unknown>,
+    new_values: updated as unknown as Record<string, unknown>,
+    user_id: auth.userId,
+  })
+  if (auditUpdErr) console.error('[PATCH /api/ai-rules/[id]] audit_log 記録失敗:', auditUpdErr.message)
 
   return NextResponse.json({ rule: updated })
 }
@@ -109,20 +105,16 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
   invalidateAiRulesCache()
 
-  await admin
-    .from('audit_log')
-    .insert({
-      entity_type: 'ai_rules',
-      entity_id: params.id,
-      action: 'DELETE',
-      changed_fields: null,
-      old_values: before,
-      new_values: null,
-      user_id: auth.userId,
-    })
-    .then(({ error }) => {
-      if (error) console.error('[DELETE /api/ai-rules/[id]] audit_log 記録失敗:', error.message)
-    })
+  const { error: auditDelErr } = await admin.from('audit_log').insert({
+    entity_type: 'ai_rules',
+    entity_id: params.id,
+    action: 'DELETE',
+    changed_fields: null,
+    old_values: before as unknown as Record<string, unknown>,
+    new_values: null,
+    user_id: auth.userId,
+  })
+  if (auditDelErr) console.error('[DELETE /api/ai-rules/[id]] audit_log 記録失敗:', auditDelErr.message)
 
   return NextResponse.json({ ok: true })
 }

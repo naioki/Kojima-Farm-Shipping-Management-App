@@ -85,8 +85,8 @@ export default async function AdminOrdersPage({
         .order('full_name'),
     ])
     orders = ordersData
-    customers = custRes.data ?? []
-    products = prodRes.data ?? []
+    customers = (custRes.data ?? []) as { id: string; name: string }[]
+    products = (prodRes.data ?? []) as { id: string; name: string; category?: string | null }[]
     destinations = (destRes.data ?? []).map((d) => ({
       id: d.id as string,
       customer_id: d.customer_id as string,

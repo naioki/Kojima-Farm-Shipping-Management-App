@@ -115,20 +115,16 @@ export async function POST(req: NextRequest) {
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
   invalidateAiRulesCache()
 
-  await admin
-    .from('audit_log')
-    .insert({
-      entity_type: 'ai_rules',
-      entity_id: created.id,
-      action: 'INSERT',
-      changed_fields: ['client_name', 'rule_text', 'is_active', 'priority', 'category', 'source'],
-      old_values: null,
-      new_values: created,
-      user_id: auth.userId,
-    })
-    .then(({ error }) => {
-      if (error) console.error('[POST /api/ai-rules] audit_log 記録失敗:', error.message)
-    })
+  const { error: auditErr } = await admin.from('audit_log').insert({
+    entity_type: 'ai_rules',
+    entity_id: created.id,
+    action: 'INSERT',
+    changed_fields: ['client_name', 'rule_text', 'is_active', 'priority', 'category', 'source'],
+    old_values: null,
+    new_values: created as unknown as Record<string, unknown>,
+    user_id: auth.userId,
+  })
+  if (auditErr) console.error('[POST /api/ai-rules] audit_log 記録失敗:', auditErr.message)
 
   return NextResponse.json({ rule: created }, { status: 201 })
 }

@@ -40,7 +40,18 @@ if (-not $SkipChecks) {
 Write-Host '=== Cloud Build 実行 ===' -ForegroundColor Cyan
 gcloud builds submit --config cloudbuild.yaml `
   --substitutions="_NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL,_NEXT_PUBLIC_SUPABASE_ANON_KEY=$AnonKey" .
-if ($LASTEXITCODE -ne 0) { throw 'Cloud Build 失敗。本番は変更されていません。' }
+if ($LASTEXITCODE -ne 0) {
+  $failedId = gcloud builds list --limit=1 --format='value(id)' 2>$null
+  if ($failedId) {
+    Write-Host "=== Cloud Build 詳細ログ ($failedId) ===" -ForegroundColor Yellow
+    $lines = gcloud logging read "resource.type=build AND resource.labels.build_id=$failedId" --limit=80 --format="value(textPayload)" 2>$null
+    if ($lines) {
+      [array]::Reverse($lines)
+      $lines | ForEach-Object { Write-Host $_ }
+    }
+  }
+  throw 'Cloud Build 失敗。本番は変更されていません。'
+}
 
 Write-Host '=== トラフィック確認 ===' -ForegroundColor Cyan
 $latest  = gcloud run services describe $SERVICE --region=$REGION --format='value(status.latestReadyRevisionName)'
