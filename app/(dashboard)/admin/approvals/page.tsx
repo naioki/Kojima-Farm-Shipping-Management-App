@@ -2,23 +2,33 @@ import Link from 'next/link'
 import { Columns, Inbox, Sparkles } from 'lucide-react'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getPendingOrders } from '@/lib/orders/pending'
+import { getSetting } from '@/lib/settings'
+import { isAutoApproveOn } from '@/lib/ingestion/auto-approve'
 import { ErrorState } from '@/components/ui/States'
 import { SplitApprovalView } from '@/components/admin/SplitApprovalView'
+import { ApprovalPipelineToggle } from '@/components/admin/ApprovalPipelineToggle'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * スプリットビュー人間承認画面（/admin/approvals）。
- * 左側にGoogle Drive / 原本ストレージ保存のFAX原本PDF/画像プレビュー、右側に確信度色分け付きの編集テーブルを並べ、
- * 修正時の「💡 この修正を取引先ルールとして学習させる」ワンクリック保存機能を提供する。
+ * - 上部に管理者専用の「承認パイプライン ON/OFF（手動確認モード ⇔ 自動確定モード）」ワンクリック切替バーを配置
+ * - 左側に Google Drive 原本PDF/画像プレビュー、右側に確信度色分け付きの編集テーブルを並べる
+ * - 修正時の「💡 この修正を取引先ルールとして学習させる」ワンクリック保存機能を提供
  */
 export default async function AdminApprovalsPage() {
   const guard = await requireAdmin('注文の承認は管理者のみです。')
   if (guard) return guard
 
   let pendingOrders
+  let autoApproveRaw: string | null = null
+  let thresholdRaw: string | null = null
   try {
-    pendingOrders = await getPendingOrders()
+    ;[pendingOrders, autoApproveRaw, thresholdRaw] = await Promise.all([
+      getPendingOrders(),
+      getSetting('AUTO_APPROVE_ENABLED'),
+      getSetting('AUTO_APPROVE_THRESHOLD'),
+    ])
   } catch (e) {
     return (
       <ErrorState
@@ -52,7 +62,7 @@ export default async function AdminApprovalsPage() {
             className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft"
           >
             <Sparkles className="h-4 w-4 text-earth-700" aria-hidden />
-            AI学習ルール管理
+            AI学習ルール・モデル管理
           </Link>
           <Link
             href="/admin/inbox"
@@ -63,6 +73,12 @@ export default async function AdminApprovalsPage() {
           </Link>
         </div>
       </div>
+
+      {/* 管理者専用：承認パイプラインのON/OFF（手動確認 ⇔ 自動確定モード）ワンクリック切替 */}
+      <ApprovalPipelineToggle
+        initialAutoApprove={isAutoApproveOn(autoApproveRaw)}
+        initialThreshold={thresholdRaw?.trim() || '0.80'}
+      />
 
       <SplitApprovalView orders={pendingOrders} />
     </div>

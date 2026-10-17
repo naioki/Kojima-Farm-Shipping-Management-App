@@ -132,11 +132,6 @@ export function normalizeSpecDisplay(rawSpec?: string | null): string {
 
 /**
  * 注文キー構成要素の単一フィールド正規化（ARCHITECTURE.md §3.2 1〜5の規則）.
- * 1. NFKC正規化: 全角英数・記号・括弧を半角へ、半角カナを全角へ
- * 2. 波ダッシュ統一: ~・～・∼ はすべて 〜（U+301C）に統一
- * 3. 法人格除去: 農事組合法人・株式会社・有限会社・(株)・（株）・㈱・(有)・（有）・㈲ を除去
- * 4. 品目表記ゆれ統一: 青梗菜・チンゲンサイ・ちんげんさい・ちんげん菜 はすべて チンゲン菜 に統一
- * 5. 空白除去・小文字化: 半角/全角スペースをすべて除去し、英字を小文字にする
  */
 export function normalizeKeyComponent(value?: string | null): string {
   if (!value) return ''
@@ -151,8 +146,6 @@ export function normalizeKeyComponent(value?: string | null): string {
 
 /**
  * 第3.2章の仕様に基づき注文キー（`発注元|納品日|納品先|品目名|規格`）を生成する.
- * ※伝票Noと数量は絶対に含めない。
- * ※同一伝票内で全く同じ注文キーが複数行ある場合のみ、2行目以降に `#2`, `#3` を付与する。
  */
 export function generateOrderKey(params: {
   clientName?: string | null
@@ -177,8 +170,6 @@ export function generateOrderKey(params: {
 
 /**
  * 取引先・規格から1ケースあたりの入数（20 または 24）を判定する（ARCHITECTURE.md §4.1〜§4.4）.
- * - 株式会社農業総合研究所（NSK）または規格に「入数24」「24入」が含まれる場合: 必ず 24
- * - それ以外（和郷園・房総食料センター・株式会社勘兵衛 等）: 20
  */
 export function determineUnitCount(
   clientName?: string | null,
@@ -202,7 +193,6 @@ export function determineUnitCount(
 
 /**
  * H列『数量/ケース』の固定書式文字列を生成する（ARCHITECTURE.md §3.1）.
- * 固定書式: `総数{総P}点（{ケース}ケース＋端数{端数}点）`
  */
 export function formatQuantityCaseText(totalPacks: number, cases: number, remainderPacks: number): string {
   return `総数${totalPacks}点（${cases}ケース＋端数${remainderPacks}点）`
@@ -210,10 +200,6 @@ export function formatQuantityCaseText(totalPacks: number, cases: number, remain
 
 /**
  * 第4.5章のルールに従いコンテナ種別を判定する.
- * - 納品先に `パルシステム` を含む ＝ 青コン
- * - 納品先に `ちばコープ` を含む ＝ 茶コン
- * - 発注元が `農業総合研究所（NSK）` ＝ 農業総研専用折りたたみコンテナ
- * - それ以外 ＝ 通常コンテナ
  */
 export function determineContainerType(
   clientName?: string | null,
@@ -234,7 +220,6 @@ export function determineContainerType(
 
 /**
  * 第4.5章のルールに従い必要コンテナ箱数を計算する.
- * `箱数 = ケース + (端数P > 0 なら 1、0 なら 0)`
  */
 export function calculateContainerBoxes(cases: number, remainderPacks: number): number {
   if (cases < 0) return 0
@@ -263,7 +248,6 @@ export function validateAndComputeQuantities(params: {
   const normClient = (params.clientName ?? '').normalize('NFKC')
   let warningNote: string | null = null
 
-  // 4.3 株式会社勘兵衛（イオンタウン向け発注書）: 盤面の数字はケース数（C/S）
   if (
     (normClient.includes('勘兵衛') || params.isCaseInput) &&
     (params.isCaseInput || ((params.totalPacks == null || params.totalPacks === 0) && (params.cases ?? 0) > 0))
@@ -290,7 +274,6 @@ export function validateAndComputeQuantities(params: {
   const expectedCases = Math.floor(tVal / resolvedUnit)
   const expectedRem = tVal % resolvedUnit
 
-  // FAX上にケース・端数の記載があり、総パック数からの換算値と矛盾がある場合は検算警告を付与
   if (params.cases != null && params.remainderPacks != null) {
     const printedTotal = Math.trunc(params.cases) * resolvedUnit + Math.trunc(params.remainderPacks)
     if (printedTotal !== tVal && !(normClient.includes('勘兵衛') && Math.trunc(params.cases) === tVal)) {
@@ -346,7 +329,6 @@ export function assignUniqueOrderKeys<
 
 /**
  * 第4.5章のルールに従い、納品先ごとに端数を切り上げたコンテナ集計を返す.
- * ※端数の箱は納品先ごとに別々の1箱とし、納品先をまたいで合算しない。
  */
 export function buildContainerSummary(
   items: Pick<
@@ -392,6 +374,28 @@ export function buildContainerSummary(
 }
 
 /**
+ * Google Drive URL または `drive:<ID>` 文字列からファイルIDを抽出する.
+ */
+export function extractGoogleDriveFileId(rawUrl?: string | null): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return null
+
+  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)
+  if (fileMatch?.[1]) return fileMatch[1]
+
+  const idParamMatch = trimmed.match(/drive\.google\.com\/(?:open|uc)\?[^#]*id=([a-zA-Z0-9_-]+)/)
+  if (idParamMatch?.[1]) return idParamMatch[1]
+
+  if (trimmed.startsWith('drive:')) {
+    const id = trimmed.slice('drive:'.length).trim()
+    if (id) return id
+  }
+
+  return null
+}
+
+/**
  * Kojima-FAX (`drive_backup.py`) が発行した Google Drive URL (`https://drive.google.com/file/d/{id}/view...`)
  * を iframe 埋め込み可能な `/preview` URL に変換する（Cloudflare R2・Supabase Storage 不要）.
  */
@@ -400,22 +404,9 @@ export function toGoogleDrivePreviewUrl(rawUrl?: string | null): string | null {
   const trimmed = rawUrl.trim()
   if (!trimmed) return null
 
-  // Google Drive file URL: https://drive.google.com/file/d/<FILE_ID>/view...
-  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)
-  if (fileMatch?.[1]) {
-    return `https://drive.google.com/file/d/${fileMatch[1]}/preview`
-  }
-
-  // Google Drive open?id=<FILE_ID>
-  const idParamMatch = trimmed.match(/drive\.google\.com\/(?:open|uc)\?[^#]*id=([a-zA-Z0-9_-]+)/)
-  if (idParamMatch?.[1]) {
-    return `https://drive.google.com/file/d/${idParamMatch[1]}/preview`
-  }
-
-  // drive:<FILE_ID>
-  if (trimmed.startsWith('drive:')) {
-    const id = trimmed.slice('drive:'.length).trim()
-    if (id) return `https://drive.google.com/file/d/${id}/preview`
+  const fileId = extractGoogleDriveFileId(trimmed)
+  if (fileId) {
+    return `https://drive.google.com/file/d/${fileId}/preview`
   }
 
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
@@ -433,19 +424,9 @@ export function toGoogleDriveViewUrl(rawUrl?: string | null): string | null {
   const trimmed = rawUrl.trim()
   if (!trimmed) return null
 
-  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)
-  if (fileMatch?.[1]) {
-    return `https://drive.google.com/file/d/${fileMatch[1]}/view`
-  }
-
-  const idParamMatch = trimmed.match(/drive\.google\.com\/(?:open|uc)\?[^#]*id=([a-zA-Z0-9_-]+)/)
-  if (idParamMatch?.[1]) {
-    return `https://drive.google.com/file/d/${idParamMatch[1]}/view`
-  }
-
-  if (trimmed.startsWith('drive:')) {
-    const id = trimmed.slice('drive:'.length).trim()
-    if (id) return `https://drive.google.com/file/d/${id}/view`
+  const fileId = extractGoogleDriveFileId(trimmed)
+  if (fileId) {
+    return `https://drive.google.com/file/d/${fileId}/view`
   }
 
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {

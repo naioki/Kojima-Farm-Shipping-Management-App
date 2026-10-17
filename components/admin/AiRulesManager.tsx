@@ -20,7 +20,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal, ConfirmModal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/States'
-import { GEMINI_MODEL_OPTIONS } from '@/lib/gemini/models'
+import { GEMINI_HIGH_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS, normalizeModelId } from '@/lib/gemini/models'
 import type { AiRule } from '@/types/database'
 import { formatJpDateTime } from '@/lib/dates'
 
@@ -91,6 +91,7 @@ interface AiRulesManagerProps {
   initialRules: AiRule[]
   customers: { id: string; name: string }[]
   initialModel: string
+  initialHighModel?: string
 }
 
 /**
@@ -99,14 +100,20 @@ interface AiRulesManagerProps {
  * 2. AIモデル（GEMINI_MODEL）の自由入力（Combobox / カンマ区切りフォールバック対応）＆ワンクリック保存
  * 3. 🧪 ルール＆モデル動作テスト（ドライラン検証：DBを汚さずにその場で解析結果・箱数検算を確認）
  */
-export function AiRulesManager({ initialRules, customers, initialModel }: AiRulesManagerProps) {
+export function AiRulesManager({
+  initialRules,
+  customers,
+  initialModel,
+  initialHighModel = 'gemini-3.8-flash',
+}: AiRulesManagerProps) {
   const router = useRouter()
   const [rules, setRules] = useState<AiRule[]>(initialRules)
   const [selectedClient, setSelectedClient] = useState<string>('ALL')
   const [showActiveOnly, setShowActiveOnly] = useState<boolean>(false)
 
-  // AIモデル自由入力ステート
+  // 2段階AIモデル自由入力ステート（メインモデル＆重要箇所モデル）
   const [modelInput, setModelInput] = useState<string>(initialModel)
+  const [highModelInput, setHighModelInput] = useState<string>(initialHighModel)
   const [savingModel, setSavingModel] = useState<boolean>(false)
 
   // 新規作成・編集モーダル状態
@@ -152,20 +159,26 @@ export function AiRulesManager({ initialRules, customers, initialModel }: AiRule
   async function handleSaveModel() {
     setSavingModel(true)
     try {
-      const trimmed = modelInput.trim()
+      const normMain = normalizeModelId(modelInput)
+      const normHigh = normalizeModelId(highModelInput)
+      setModelInput(normMain)
+      setHighModelInput(normHigh)
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ entries: [{ key: 'GEMINI_MODEL', value: trimmed }] }),
+        body: JSON.stringify({
+          entries: [
+            { key: 'GEMINI_MODEL', value: normMain },
+            { key: 'GEMINI_MODEL_HIGH', value: normHigh },
+          ],
+        }),
       })
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(j.error ?? `保存失敗 (${res.status})`)
       }
       toast.success(
-        trimmed
-          ? `AIモデルを「${trimmed}」に設定しました（429/503/404時は自動フォールバック）`
-          : 'AIモデルを「自動（推奨フォールバック順）」に設定しました',
+        `AIモデルを保存しました（メイン: ${normMain || '自動'} / 重要箇所: ${normHigh || '自動'}）`,
       )
       router.refresh()
     } catch (e) {
@@ -371,67 +384,119 @@ export function AiRulesManager({ initialRules, customers, initialModel }: AiRule
         </div>
       </Card>
 
-      {/* AIモデル自由入力・ワンクリック切替バー（新モデル登場時にコード変更不要で切替可能） */}
-      <Card className="space-y-2.5 bg-bg-soft/60 p-3.5">
+      {/* 2段階AIモデル自由入力・ワンクリック切替バー（メインモデル＋重要箇所モデル） */}
+      <Card className="space-y-3 bg-bg-soft/60 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <label htmlFor="ai-model-free-input" className="flex items-center gap-1.5 text-xs font-bold text-ink">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-ink">
             <Cpu className="h-4 w-4 text-earth-700" aria-hidden />
-            使用AIモデル指定（自由入力・カンマ区切りでフォールバック順指定可）
-          </label>
-          <span className="text-[11px] text-ink-faint">
-            ※新モデル公開時もモデルIDを直接入力して即時切替できます（429/503/404時は自動フォールバック）
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input
-            id="ai-model-free-input"
-            list="gemini-model-suggestions"
-            type="text"
-            value={modelInput}
-            onChange={(e) => setModelInput(e.target.value)}
-            placeholder="空欄＝自動（例: gemini-2.5-flash, gemini-flash-latest）"
-            className={cn(inputCls, ' flex-1 font-mono text-xs')}
-          />
-          <datalist id="gemini-model-suggestions">
-            {GEMINI_MODEL_OPTIONS.filter((o) => o.value !== '').map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </datalist>
+            2段階AIモデル指定（自由入力・ハイフン無し手入力も自動整形・404/503時は自動フォールバック）
+          </div>
           <Button
-            variant="secondary"
-            size="md"
+            variant="primary"
+            size="sm"
             onClick={handleSaveModel}
             isLoading={savingModel}
             className="shrink-0"
           >
-            <Check className="h-4 w-4" aria-hidden />
+            <Check className="h-3.5 w-3.5" aria-hidden />
             モデル設定を保存
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-ink-faint">プリセット:</span>
-          {GEMINI_MODEL_OPTIONS.map((o) => {
-            const active = modelInput.trim() === o.value
-            return (
-              <button
-                key={o.value || '__auto__'}
-                type="button"
-                onClick={() => setModelInput(o.value)}
-                className={cn(
-                  'rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors',
-                  active
-                    ? 'border-earth-600 bg-earth-600 font-bold text-white'
-                    : 'border-line bg-bg-card text-ink-soft hover:border-earth-400 hover:bg-earth-50 hover:text-ink',
-                )}
-              >
-                {o.value === '' ? '自動（推奨）' : o.value}
-              </button>
-            )
-          })}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {/* ① メインモデル */}
+          <div className="space-y-1.5 rounded-lg border border-line bg-bg-card p-3">
+            <label htmlFor="ai-model-free-input" className="block text-xs font-bold text-ink">
+              ① メインモデル（通常FAX・高速読取）
+            </label>
+            <p className="text-[11px] text-ink-soft">
+              毎回のFAX・テキスト読取で使う高速・低コストモデル（例: <code className="font-mono">gemini-3.5-flash-lite</code>）
+            </p>
+            <input
+              id="ai-model-free-input"
+              list="gemini-model-suggestions"
+              type="text"
+              value={modelInput}
+              onChange={(e) => setModelInput(e.target.value)}
+              placeholder="例: gemini-3.5-flash-lite"
+              className={cn(inputCls, 'font-mono text-xs')}
+            />
+            <datalist id="gemini-model-suggestions">
+              {GEMINI_MODEL_OPTIONS.filter((o) => o.value !== '').map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </datalist>
+            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+              <span className="text-[10px] text-ink-faint">候補:</span>
+              {GEMINI_MODEL_OPTIONS.map((o) => {
+                const active = normalizeModelId(modelInput) === o.value
+                return (
+                  <button
+                    key={o.value || '__auto_main__'}
+                    type="button"
+                    onClick={() => setModelInput(o.value)}
+                    className={cn(
+                      'rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors',
+                      active
+                        ? 'border-earth-600 bg-earth-600 font-bold text-white'
+                        : 'border-line bg-bg-soft text-ink-soft hover:border-earth-400 hover:bg-earth-50 hover:text-ink',
+                    )}
+                  >
+                    {o.value === '' ? '自動' : o.value}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* ② 重要箇所モデル */}
+          <div className="space-y-1.5 rounded-lg border border-line bg-bg-card p-3">
+            <label htmlFor="ai-high-model-free-input" className="block text-xs font-bold text-ink">
+              ② 重要箇所モデル（要確認の再検証・手書き修正・ルール学習）
+            </label>
+            <p className="text-[11px] text-ink-soft">
+              低確信・検算不一致の自動再検証や対話修正など大切な場面だけ使うモデル（例: <code className="font-mono">gemini-3.8-flash</code>）
+            </p>
+            <input
+              id="ai-high-model-free-input"
+              list="gemini-high-model-suggestions"
+              type="text"
+              value={highModelInput}
+              onChange={(e) => setHighModelInput(e.target.value)}
+              placeholder="例: gemini-3.8-flash"
+              className={cn(inputCls, 'font-mono text-xs')}
+            />
+            <datalist id="gemini-high-model-suggestions">
+              {GEMINI_HIGH_MODEL_OPTIONS.filter((o) => o.value !== '').map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </datalist>
+            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+              <span className="text-[10px] text-ink-faint">候補:</span>
+              {GEMINI_HIGH_MODEL_OPTIONS.map((o) => {
+                const active = normalizeModelId(highModelInput) === o.value
+                return (
+                  <button
+                    key={o.value || '__auto_high__'}
+                    type="button"
+                    onClick={() => setHighModelInput(o.value)}
+                    className={cn(
+                      'rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors',
+                      active
+                        ? 'border-earth-600 bg-earth-600 font-bold text-white'
+                        : 'border-line bg-bg-soft text-ink-soft hover:border-earth-400 hover:bg-earth-50 hover:text-ink',
+                    )}
+                  >
+                    {o.value === '' ? '自動' : o.value}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </Card>
 

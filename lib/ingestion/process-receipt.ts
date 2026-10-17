@@ -381,8 +381,14 @@ export async function processReceipt(
     getSetting('AUTO_APPROVE_ENABLED'),
     getSetting('AUTO_APPROVE_THRESHOLD'),
   ])
-  const threshold = parseThreshold(thresholdRaw)
   const autoApproveToggle = isAutoApproveOn(autoApproveEnabledRaw)
+  // 自動承認ONでしきい値未設定の場合は 0.80（80%以上は自動確定、要確認のみ手動）を既定とする
+  const threshold =
+    thresholdRaw && thresholdRaw.trim() !== ''
+      ? parseThreshold(thresholdRaw)
+      : autoApproveToggle
+        ? 0.8
+        : parseThreshold(thresholdRaw)
 
   // 全顧客分の納入先マスタ・荷姿マスタ（0010_pricing_packaging.sql 準拠: base_per_selling）を一括取得
   const [allDestsRes, allPacksRes] = await Promise.all([

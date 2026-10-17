@@ -4,15 +4,17 @@
  * 実値の解決は lib/settings.ts（サーバ専用・DB→env フォールバック）が行う。
  *
  * 【2026-10 改修反映】
- * 1. `GEMINI_MODEL` を固定 `<select>` から自由入力（`kind: 'text'` + `options` サジェスト・カンマ区切り対応）へ変更。
- *    新モデル登場時にコード変更・再デプロイ不要で即座に切り替え可能。
- * 2. 確定方針「Discordの完全廃止」に伴い、不要なDiscord関連設定を除外し設定画面をスリム化。
- * 3. Linux FAX機（LIFEBOOK）からのダイレクト受信（`POST /api/receipts`）用トークン `FAX_INGEST_TOKEN` を追加。
+ * 1. Geminiモデルの2段階自由入力指定：
+ *    - `GEMINI_MODEL`（メイン：通常FAX読取・高速省コスト、既定 `gemini-3.5-flash-lite`）
+ *    - `GEMINI_MODEL_HIGH`（重要箇所：低確信時の自動再検証・手書き修正・対話修正・ルール学習、既定 `gemini-3.8-flash`）
+ * 2. 承認パイプラインのON/OFF切り替え（`AUTO_APPROVE_ENABLED` / `AUTO_APPROVE_THRESHOLD`）：
+ *    権限を持つ管理者が、運用安定時に「自動確定モード」へワンクリックで切り替え可能。
+ * 3. Linux FAX機（LIFEBOOK `Kojima-FAX`）からのダイレクト受信トークン `FAX_INGEST_TOKEN` を追加。
  */
 
 import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
 import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from '@/lib/gemini/prompts'
-import { GEMINI_MODEL_OPTIONS } from '@/lib/gemini/models'
+import { GEMINI_HIGH_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '@/lib/gemini/models'
 
 export type SettingSection = 'issuer' | 'rules' | 'field' | 'ai' | 'automation' | 'ingest' | 'notify' | 'chat' | 'ops'
 /** 'prompt' は専用エディタで描画（保存に確認フレーズ入力が必要）。 */
@@ -58,8 +60,8 @@ export const LAYER_LABELS: Record<SettingLayer, string> = {
 
 export const LAYER_DESCRIPTIONS: Record<SettingLayer, string> = {
   profile: '請求書・納品書に印字される自社の情報です。設置時に1回決めれば、あとはほぼ変更しません。',
-  operations: 'AIモデル指定・現場解放・自動承認など、運用しながら調整する項目です。挙動が変わる項目には⚠が付きます。',
-  infra: 'APIキー・FAX受信トークン・保管先など、構築時に一度だけ設定する接続情報です。',
+  operations: 'AIモデル（メイン／重要箇所）・承認パイプライン自動化のON/OFF・現場解放など、運用しながら調整する項目です。',
+  infra: 'APIキー・FAX受信トークンなど、構築時に一度だけ設定する接続情報です。',
   migration: '旧システムからの移行やAI解析ベースプロンプトなど、上級者向けの項目です（取引先別ルールは /admin/rules で管理します）。',
 }
 
@@ -69,8 +71,8 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
   issuer: '発行者（自社）情報 — 請求書・納品書に印字',
   rules: '規格（取引ルール）の変更管理 — 誰が変えられるか・通知',
   field: '現場（スタッフ）機能の解放 — 段階的にON',
-  ai: 'AI解析（Gemini モデル自由指定・数量単位）',
-  automation: '自動承認（識字率が高い受信の自動入力）',
+  ai: 'AI解析（メインモデル＆重要箇所モデルの自由入力指定）',
+  automation: '承認パイプラインのON/OFF（手動承認 ／ 自動確定モード切替）',
   ingest: '注文の取り込み（Kojima-FAX Ver 4.0 直結 / メール）',
   notify: '通知（LINE WORKS）',
   chat: 'チャット連携（LINE WORKS ボット）',
@@ -82,8 +84,8 @@ export const SECTION_DESCRIPTIONS: Partial<Record<SettingSection, string>> = {
   issuer: '請求書・納品書の上部に印字される自社情報です。',
   rules: '取引先ごとの規格（P/C・荷姿など）を誰が変更できるか、変更時に通知するかを決めます。',
   field: '現場スタッフに開放する機能を1つずつONにできます。既定はすべてOFF（管理者のみ）。',
-  ai: 'FAX・PDF・クイック注文で使うGeminiモデルを自由に入力できます。空欄なら推奨フォールバック順で自動切替します。',
-  automation: '読み取り精度が高い受信を、人の確認なしで自動入力する設定です。安全のため既定はOFF（スプリット承認を推奨）。',
+  ai: '通常読取は高速・低コストなメインモデル（gemini-3.5-flash-lite 等）で行い、低確信時の再検証や手書き修正・ルール学習など大切な箇所だけ高精度モデル（gemini-3.8-flash 等）を使う2段階設定です。',
+  automation: '運用が安定しているときはONにすることで、問題のない注文の人間承認ステップをスキップし自動で確定（収穫タスク生成）できます（/admin/approvals や /admin/rules 上部からもワンクリックで切替可能）。',
   ingest:
     '農園の Linux FAXサーバー（Kojima-FAX Ver 4.0）からのリアルタイム直結投入（POST /orders/ingest または /api/receipts）およびメール取込の設定です（原本のGoogle Drive保存はKojima-FAX側で完結するため、アプリ側でのR2・Drive認証設定は一切不要です）。',
   notify: '承認待ち発生などを LINE WORKS に知らせる設定です（Discord連携は廃止済み）。',
@@ -210,17 +212,28 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     toggleDefault: 'off',
     hint: 'ONにすると現場の「その他」から出荷表カード・出荷ラベルのPDF印刷が使えます。',
   },
-  // AI解析（モデル選択は自由入力＋候補チップ対応）
+  // AI解析（2段階モデル自由入力）
   {
     key: 'GEMINI_MODEL',
-    label: 'AIモデル（自由入力 / カンマ区切りでフォールバック順指定可）',
+    label: '① メインAIモデル（通常読取・高速軽量 — 自由入力）',
     section: 'ai',
     layer: 'operations',
     secret: false,
     kind: 'text',
     options: GEMINI_MODEL_OPTIONS,
-    placeholder: '空欄＝自動（例: gemini-2.5-flash, gemini-flash-latest）',
-    hint: '新モデル（例: gemini-3.5-flash 等）が出た際も、コード変更不要でここにモデルIDを直接入力して即時切り替えられます。カンマ区切りで複数書くと左から順に試行し、混雑・廃止時は自動で次のモデルへフォールバックします。',
+    placeholder: 'gemini-3.5-flash-lite（空欄時は自動で gemini-3.5-flash-lite → 2.5-flash-lite 順）',
+    hint: '日常のFAX・テキスト読取で毎回使うメインモデルです。「gemini-3.5-flash-lite」（または gemini3.5flashlite）など自由に手入力できます。API側で未提供・混雑の場合は自動で後続モデルへフォールバックします。',
+  },
+  {
+    key: 'GEMINI_MODEL_HIGH',
+    label: '② 重要箇所AIモデル（要確認の自動再検証・手書き修正・ルール学習 — 自由入力）',
+    section: 'ai',
+    layer: 'operations',
+    secret: false,
+    kind: 'text',
+    options: GEMINI_HIGH_MODEL_OPTIONS,
+    placeholder: 'gemini-3.8-flash（空欄時は自動で gemini-3.8-flash → 2.5-flash → 2.5-pro 順）',
+    hint: 'メインモデルの読取で確信度が低い場合・入数検算不一致時・手書き修正（再送差分）・AI対話修正＆ルール学習など「大切な場面だけ」自動的に呼び出される高精度モデルです。',
   },
   {
     key: 'QTY_INPUT_MODE',
@@ -246,28 +259,28 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     placeholder: '2.5',
     hint: '注文入力時、過去90日の最大値 × この倍率を超えると警告を表示します（デフォルト: 2.5）。',
   },
-  // 自動承認
+  // 承認パイプラインのON/OFF（自動承認）
   {
     key: 'AUTO_APPROVE_ENABLED',
-    label: '自動承認を有効にする',
+    label: '承認パイプラインを自動化する（問題のない注文は自動で承認・確定）',
     section: 'automation',
     layer: 'operations',
     secret: false,
     kind: 'toggle',
     toggleDefault: 'off',
     danger: true,
-    hint: 'OFF（推奨）の場合はすべてのFAX受信が status=pending_review で保存され、スプリット承認画面（/admin/approvals）で原本と見比べて承認できます。',
+    hint: 'ON（自動確定モード）にすると、取引先・納品日が特定でき要確認フラグのない注文は、人間の手動承認を待たずに自動で status=approved（確定）となり収穫タスクが生成されます。OFF（手動承認モード）の場合は全件スプリット承認画面（/admin/approvals）で確認します。',
   },
   {
     key: 'AUTO_APPROVE_THRESHOLD',
-    label: '自動承認の確信度しきい値（0〜1）',
+    label: '自動確定するAI確信度のしきい値（0〜1、既定: 0.80）',
     section: 'automation',
     layer: 'operations',
     secret: false,
     kind: 'text',
-    placeholder: '1.0',
+    placeholder: '0.80',
     danger: true,
-    hint: '1.0＝識字率100%のみ。0.95 等に下げると自動範囲が広がります（リスク増）',
+    hint: '0.80＝確信度80%以上の通常注文を自動確定し、文字潰れや「約80」等の要確認注文（80%未満）だけ人間の承認待ちに残します。',
     dependsOn: { key: 'AUTO_APPROVE_ENABLED', equals: 'on' },
   },
   // 通知ON/OFF（Discordは完全廃止のため LINE WORKS のみ）

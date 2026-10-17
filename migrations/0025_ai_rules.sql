@@ -283,3 +283,11 @@ WHERE NOT EXISTS (
   WHERE existing.client_name = v.client_name
     AND existing.rule_text = v.rule_text
 );
+
+-- ── 5. 2段階AIモデル（メイン: gemini-3.5-flash-lite / 重要箇所: gemini-3.8-flash）＆自動承認しきい値の初期設定（未設定時のみ投入）──
+INSERT INTO public.app_settings (key, value)
+VALUES
+  ('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
+  ('GEMINI_MODEL_HIGH', 'gemini-3.8-flash'),
+  ('AUTO_APPROVE_THRESHOLD', '0.80')
+ON CONFLICT (key) DO NOTHING;

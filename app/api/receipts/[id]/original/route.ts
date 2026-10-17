@@ -51,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const buf = Buffer.from(payload['file_base64'], 'base64')
     const contentType =
       (typeof payload['content_type'] === 'string' && payload['content_type']) || 'application/pdf'
-    return new NextResponse(buf, {
+    return new NextResponse(new Uint8Array(buf), {
       status: 200,
       headers: {
         'Content-Type': contentType,

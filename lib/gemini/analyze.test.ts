@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { verifyAndNormalizeItem, buildAiRulesSection } from './analyze'
-import { modelTryOrder } from './models'
+import { highModelTryOrder, modelTryOrder, normalizeModelId } from './models'
 import {
   generateOrderKey,
   determineContainerType,
@@ -138,11 +138,15 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     expect(formatQuantityCaseText(300, 15, 0)).toBe('総数300点（15ケース＋端数0点）')
   })
 
-  it('自由入力・カンマ区切りの GEMINI_MODEL 指定からフォールバック順序を正しく構築する', () => {
-    const order = modelTryOrder('gemini-2.5-pro, gemini-3-flash-preview')
-    expect(order[0]).toBe('gemini-2.5-pro')
-    expect(order[1]).toBe('gemini-3-flash-preview')
-    expect(order).toContain('gemini-2.5-flash')
+  it('自由入力（gemini3.5flashlite / gemini3.8flash 等のハイフン無し手入力含む）から2段階フォールバック順序を正しく構築する', () => {
+    expect(normalizeModelId('gemini3.5flashlite')).toBe('gemini-3.5-flash-lite')
+    expect(normalizeModelId('gemini3.8flash')).toBe('gemini-3.8-flash')
+    const mainOrder = modelTryOrder('gemini3.5flashlite')
+    expect(mainOrder[0]).toBe('gemini-3.5-flash-lite')
+    expect(mainOrder).toContain('gemini-2.5-flash-lite')
+    const highOrder = highModelTryOrder('gemini3.8flash')
+    expect(highOrder[0]).toBe('gemini-3.8-flash')
+    expect(highOrder).toContain('gemini-2.5-flash')
   })
 
   it('buildAiRulesSection が取引先ごとにルールを整形する', () => {

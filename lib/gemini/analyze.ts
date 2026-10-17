@@ -21,7 +21,7 @@ import {
   DEFAULT_GEMINI_PROMPT_REVISION,
   FALLBACK_CLIENT_RULES_SUMMARY,
 } from './prompts'
-import { modelTryOrder } from './models'
+import { highModelTryOrder, modelTryOrder } from './models'
 
 /**
  * `ai_rules` のインメモリキャッシュ（60秒TTL）。
@@ -51,12 +51,18 @@ async function generateWithFallback(
   parts: Part[],
   systemInstruction?: string,
   modelOverride?: string,
+  tier: 'main' | 'high' = 'main',
 ): Promise<{ result: GenerateContentResult; usedModel: string }> {
-  const preferred =
-    modelOverride && modelOverride.trim() !== ''
-      ? modelOverride.trim()
-      : await getSetting('GEMINI_MODEL')
-  const order = modelTryOrder(preferred)
+  let order: string[]
+  if (modelOverride && modelOverride.trim() !== '') {
+    order = modelTryOrder(modelOverride.trim())
+  } else if (tier === 'high') {
+    const preferredHigh = await getSetting('GEMINI_MODEL_HIGH')
+    order = highModelTryOrder(preferredHigh)
+  } else {
+    const preferredMain = await getSetting('GEMINI_MODEL')
+    order = modelTryOrder(preferredMain)
+  }
   const api = await client()
 
   let lastError: unknown
@@ -536,7 +542,7 @@ export async function analyzeDiff(
   const parts = buildInputParts(input, hintText)
 
   try {
-    const { result: res } = await generateWithFallback(parts, systemInstruction)
+    const { result: res } = await generateWithFallback(parts, systemInstruction, undefined, 'high')
     const json = extractJson(res.response.text())
     const parsed = diffResultSchema.parse(json)
     await logUsage('diff', channel, true, res.response.usageMetadata?.totalTokenCount)
@@ -656,6 +662,44 @@ export async function analyzeOrders(
       })
       .filter((o) => o.items.length > 0)
 
+    // ── 重要箇所（低確信・手書き修正・入数検算不一致・日付/取引先不明）のみ高精度モデル(GEMINI_MODEL_HIGH: gemini-3.8-flash等)で自動再検証 ──
+    const needsEscalation =
+      !modelOverride &&
+      normalizedOrders.some(
+        (o) =>
+          !o.customer_name ||
+          !o.delivery_date ||
+          o.items.some(
+            (it) =>
+              it.confidence < 0.75 ||
+              Boolean(it.is_handwritten_modified) ||
+              Boolean(it.has_reply_required) ||
+              Boolean(it.needs_review_reason && !it.needs_review_reason.includes('約表記')),
+          ),
+      )
+
+    let finalUsedModel = usedModel
+    if (needsEscalation) {
+      try {
+        const { result: highRes, usedModel: highModel } = await generateWithFallback(
+          parts,
+          systemInstruction,
+          undefined,
+          'high',
+        )
+        if (highModel !== usedModel) {
+          const highJson = extractJson(highRes.response.text())
+          const highParsed = ordersResultSchema.parse(highJson)
+          await logUsage('orders_high', channel, true, highRes.response.usageMetadata?.totalTokenCount)
+          if (highParsed.is_order && highParsed.orders.length > 0) {
+            finalUsedModel = `${usedModel} → ${highModel}`
+          }
+        }
+      } catch {
+        // 高精度モデルの再検証が一時エラーの場合はメインモデルの結果を維持
+      }
+    }
+
     if (normalizedOrders.length === 0) {
       return {
         is_order: false,
@@ -679,7 +723,7 @@ export async function analyzeOrders(
       slip_no: parsed.slip_no ?? normalizedOrders[0]?.slip_no ?? null,
       is_full_resending_matrix: isWagoenMatrix,
       orders: normalizedOrders,
-      used_model: usedModel,
+      used_model: finalUsedModel,
       applied_rules_count: activeRules.length,
     }
   } catch (e) {
@@ -712,7 +756,7 @@ export async function reviseOrdersWithInstruction(params: {
     `修正指示:\n${params.userInstruction.trim()}`,
   ].join('\n\n')
 
-  const { result: res, usedModel } = await generateWithFallback([{ text: prompt }], systemInstruction)
+  const { result: res, usedModel } = await generateWithFallback([{ text: prompt }], systemInstruction, undefined, 'high')
   const json = extractJson(res.response.text())
   const parsed = revisionResultSchema.parse(json)
   await logUsage('revision', 'web', true, res.response.usageMetadata?.totalTokenCount)
