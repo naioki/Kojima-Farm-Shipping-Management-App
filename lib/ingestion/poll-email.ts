@@ -1,0 +1,331 @@
+import 'server-only'
+import crypto from 'node:crypto'
+import tls from 'node:tls'
+import readline from 'node:readline'
+import { simpleParser, type ParsedMail, type Attachment } from 'mailparser'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { looksLikeOrder, parseFaxFilename } from '@/lib/config/ingestion'
+import { getSetting } from '@/lib/settings'
+import { buildSenderDateKey, decideReceiptDisposition } from '@/lib/receipts/dedupe'
+import { canRunGeminiNow } from '@/lib/gemini/quota'
+import { putReceiptOriginal } from '@/lib/r2'
+import { processReceipt } from '@/lib/ingestion/process-receipt'
+
+const MAX_PROCESS_PER_POLL = 10
+const FAX_MIME = /^(application\/pdf|image\/(jpeg|jpg|png|tiff))$/i
+
+export interface PollEmailResult {
+  processed: number
+  analyzed: number
+  analyzeResults: Array<{ receiptId: string; status: string }>
+  error?: string
+}
+
+// ---------------------------------------------------------------------------
+// 最小 POP3 クライアント（Node.js 組み込み tls + readline のみ使用）
+// ---------------------------------------------------------------------------
+
+interface Pop3Conn {
+  readLine: () => Promise<string>
+  write: (cmd: string) => void
+  destroy: () => void
+}
+
+function pop3Connect(host: string, port: number, timeoutMs: number): Promise<Pop3Conn> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { sock.destroy(); reject(new Error('POP3 接続タイムアウト')) }, timeoutMs)
+    const sock = tls.connect({ host, port, rejectUnauthorized: true })
+    sock.on('error', (e) => { clearTimeout(timer); reject(e) })
+    sock.on('secureConnect', () => {
+      // latin1 で1文字=1バイトに固定し、readline のUTF-8デコードで8bit本文が化けるのを防ぐ。
+      // 復元は pop3Retrieve が 'latin1' で Buffer 化して行う（charset解釈は mailparser に任せる）。
+      sock.setEncoding('latin1')
+      const lines: string[] = []
+      const waiters: Array<(s: string) => void> = []
+      const rl = readline.createInterface({ input: sock, crlfDelay: Infinity })
+      rl.on('line', (line) => {
+        if (waiters.length > 0) waiters.shift()!(line)
+        else lines.push(line)
+      })
+      const readLine = (): Promise<string> =>
+        lines.length > 0 ? Promise.resolve(lines.shift()!) : new Promise((r) => waiters.push(r))
+      // グリーティング（+OK POP3 ready ...）を消費してから resolve
+      readLine()
+        .then(() => { clearTimeout(timer); resolve({ readLine, write: (cmd) => sock.write(cmd + '\r\n'), destroy: () => sock.destroy() }) })
+        .catch(reject)
+    })
+  })
+}
+
+async function pop3Cmd(conn: Pop3Conn, cmd: string): Promise<string> {
+  conn.write(cmd)
+  const line = await conn.readLine()
+  if (!line.startsWith('+OK')) throw new Error(`POP3 エラー: ${line}`)
+  return line
+}
+
+async function pop3MultiLine(conn: Pop3Conn): Promise<string[]> {
+  const lines: string[] = []
+  while (true) {
+    const line = await conn.readLine()
+    if (line === '.') break
+    lines.push(line.startsWith('..') ? line.slice(1) : line)
+  }
+  return lines
+}
+
+async function pop3Retrieve(conn: Pop3Conn, num: number): Promise<Buffer> {
+  await pop3Cmd(conn, `RETR ${num}`)
+  const lines = await pop3MultiLine(conn)
+  // latin1 で読んだ文字列を1文字=1バイトで復元（setEncoding('latin1') と対）。
+  return Buffer.from(lines.join('\r\n'), 'latin1')
+}
+
+// ---------------------------------------------------------------------------
+// メイン取込ロジック
+// ---------------------------------------------------------------------------
+
+export async function pollEmailOnce(): Promise<PollEmailResult> {
+  // IMAP_HOST → POP3ホストを自動導出（imap.xxx → pop.xxx）
+  const [imapHost, user, pass] = await Promise.all([
+    getSetting('IMAP_HOST'),
+    getSetting('IMAP_USER'),
+    getSetting('IMAP_PASSWORD'),
+  ])
+  if (!imapHost || !user || !pass) {
+    return { processed: 0, analyzed: 0, analyzeResults: [], error: 'メール認証情報未設定（IMAP_HOST/USER/PASSWORD）' }
+  }
+  const popHost = imapHost.replace(/^imap\./, 'pop.')
+
+  const supabase = createAdminClient()
+
+  let conn: Pop3Conn | null = null
+  let processed = 0
+  const pendingReceiptIds: string[] = []
+  const toDelete: number[] = []
+
+  try {
+    conn = await pop3Connect(popHost, 995, 20000)
+    await pop3Cmd(conn, `USER ${user}`)
+    await pop3Cmd(conn, `PASS ${pass}`)
+
+    const stat = await pop3Cmd(conn, 'STAT')
+    const total = parseInt(stat.split(' ')[1] ?? '0', 10)
+
+    for (let num = 1; num <= total; num++) {
+      // 1通の取得・解析・保存で例外が出ても、他メッセージの処理と
+      // 既に正常処理した分の DELE を止めないよう、メッセージ単位で握る。
+      try {
+        const raw = await pop3Retrieve(conn, num)
+        const parsed = await simpleParser(raw)
+        const messageId = (parsed.messageId ?? `pop3-${num}-${Date.now()}`)
+        const date = parsed.date ?? new Date()
+        const faxAttachments = (parsed.attachments ?? []).filter((a) => FAX_MIME.test(a.contentType))
+
+        let allOk = true
+
+        if (faxAttachments.length > 0) {
+          for (let i = 0; i < faxAttachments.length; i++) {
+            const r = await ingestFaxAttachment(supabase, faxAttachments[i]!, parsed, messageId, i, date)
+            if (r.ok) processed++
+            else allOk = false
+            if (r.receiptId) pendingReceiptIds.push(r.receiptId)
+          }
+        } else {
+          const r = await ingestTextEmail(supabase, parsed, messageId, date)
+          if (r.ok) processed++
+          else allOk = false
+          if (r.receiptId) pendingReceiptIds.push(r.receiptId)
+        }
+
+        // 全パート正常時のみ削除マーク（POP3ではDELEがIMAPの\Flaggedに相当）
+        if (allOk) toDelete.push(num)
+      } catch {
+        // このメッセージは削除せず次ポーリングで再取得（重複は exact_hash / message_id で防止）
+      }
+    }
+
+    // DELE は QUIT 前にまとめて送る
+    for (const num of toDelete) {
+      try { await pop3Cmd(conn, `DELE ${num}`) } catch { /* 失敗しても続行 */ }
+    }
+    await pop3Cmd(conn, 'QUIT')
+  } catch (e) {
+    conn?.destroy()
+    const msg = e instanceof Error ? e.message : String(e)
+    return { processed, analyzed: 0, analyzeResults: [], error: msg }
+  }
+
+  // Gemini 解析
+  const { allowed } = await canRunGeminiNow('P2')
+  const analyzeResults: Array<{ receiptId: string; status: string }> = []
+
+  if (allowed) {
+    // ai_failed でリトライ期限が来たものを pending_ai に戻す（自動リトライ）
+    const { data: retryRows, error: retryRowsErr } = await supabase
+      .from('order_receipts')
+      .select('id')
+      .eq('status', 'ai_failed')
+      .lte('next_retry_at', new Date().toISOString())
+      .lt('retry_count', 3)
+      .limit(MAX_PROCESS_PER_POLL)
+    if (retryRowsErr) console.error('[poll-email] 再試行対象の取得に失敗:', retryRowsErr.message)
+
+    const retryIds = (retryRows ?? []).map((r) => r.id as string)
+    if (retryIds.length > 0) {
+      await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+    }
+
+    // pending_ai を DB から直接拾う。今回取り込んだ分（pendingReceiptIds）だけでなく、
+    // 過去に取り込まれたが未処理のまま残った「孤児」レコード（quota切れ・上限超過・
+    // 途中中断で滞留したもの）も確実に処理する。古い順（received_at 昇順）に最大 MAX_PROCESS_PER_POLL 件。
+    const { data: pendingRows, error: pendingRowsErr } = await supabase
+      .from('order_receipts')
+      .select('id')
+      .eq('status', 'pending_ai')
+      .order('received_at', { ascending: true })
+      .limit(MAX_PROCESS_PER_POLL)
+    if (pendingRowsErr) console.error('[poll-email] 未処理レシートの取得に失敗:', pendingRowsErr.message)
+
+    const ids = (pendingRows ?? []).map((r) => r.id as string)
+    for (const rid of ids) {
+      const res = await processReceipt(rid).catch(() => ({
+        receiptId: rid,
+        status: 'ai_failed' as const,
+        orderCount: 0,
+      }))
+      analyzeResults.push({ receiptId: rid, status: res.status })
+    }
+  }
+
+  return { processed, analyzed: analyzeResults.length, analyzeResults }
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+async function extractFaxNumber(parsed: ParsedMail, att: Attachment): Promise<string | null> {
+  const header = parsed.headers.get('x-fax-number')
+  if (typeof header === 'string' && header.trim()) return header.trim()
+  const subj = parsed.subject ?? ''
+  // ① 「FAX: 03-1234-5678」等、FAXラベル直後の番号を最優先（区切りのハイフン/空白は除去）。
+  const labeled = subj.match(/(?:fax|ｆａｘ|ＦＡＸ)[^0-9+]*([+\d][\d\s-]{7,})/i)
+  if (labeled) return labeled[1]!.replace(/[\s-]/g, '')
+  // ② ラベルが無ければ、0始まりの日本の電話番号らしい連続数字のみ拾う（日付8桁 20260708 等の誤爆を避ける）。
+  const phone = subj.match(/(0\d{8,10})(?!\d)/)
+  if (phone) return phone[1]!
+  if (att.filename) {
+    const fromName = await parseFaxFilename(att.filename)
+    if (fromName) return fromName.faxNumber
+  }
+  return null
+}
+
+type IngestOutcome = { ok: boolean; receiptId: string | null }
+
+async function ingestFaxAttachment(
+  supabase: AdminClient,
+  att: Attachment,
+  parsed: ParsedMail,
+  messageId: string,
+  index: number,
+  date: Date,
+): Promise<IngestOutcome> {
+  const bytes = att.content as Buffer
+  const exactHash = crypto.createHash('md5').update(bytes).digest('hex')
+
+  const { data: existingExact, error: existingExactErr } = await supabase
+    .from('order_receipts')
+    .select('id')
+    .eq('exact_hash', exactHash)
+    .maybeSingle()
+  // 事前チェック失敗はDB一意制約がバックストップ。無言にはしない。
+  if (existingExactErr) console.error('[poll-email] 完全重複の事前チェックに失敗:', existingExactErr.message)
+
+  const faxNumber = await extractFaxNumber(parsed, att)
+  const senderDateKey = buildSenderDateKey('fax', faxNumber, date)
+
+  const { data: existingRevision, error: existingRevisionErr } = senderDateKey
+    ? await supabase
+        .from('order_receipts')
+        .select('id')
+        .eq('sender_date_key', senderDateKey)
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null }
+  if (existingRevisionErr) console.error('[poll-email] 再送判定に失敗:', existingRevisionErr.message)
+
+  const disposition = decideReceiptDisposition({
+    exactHashMatch: Boolean(existingExact),
+    senderDateKeyMatch: Boolean(existingRevision),
+  })
+
+  const storageKey = `receipts/fax/${exactHash}-${att.filename ?? 'fax'}`
+  await putReceiptOriginal(storageKey, bytes, att.contentType || 'application/octet-stream')
+
+  const status = disposition === 'duplicate' ? 'duplicate' : 'pending_ai'
+
+  const { data: newReceipt, error } = await supabase
+    .from('order_receipts')
+    .insert({
+      channel: 'fax',
+      message_id: `${messageId}#${index}`,
+      received_at: date.toISOString(),
+      exact_hash: exactHash,
+      sender_date_key: senderDateKey,
+      r2_key: storageKey,
+      is_revision: disposition === 'revision',
+      status,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '23505') return { ok: true, receiptId: null }
+    return { ok: false, receiptId: null }
+  }
+
+  return { ok: true, receiptId: status === 'pending_ai' ? (newReceipt?.id ?? null) : null }
+}
+
+async function ingestTextEmail(
+  supabase: AdminClient,
+  parsed: ParsedMail,
+  messageId: string,
+  date: Date,
+): Promise<IngestOutcome> {
+  const { data: seen, error: seenErr } = await supabase
+    .from('order_receipts')
+    .select('id')
+    .eq('message_id', messageId)
+    .maybeSingle()
+  // 既処理チェックの失敗は message_id 一意制約がバックストップ。無言にはしない。
+  if (seenErr) console.error('[poll-email] 既処理チェック（message_id）に失敗:', seenErr.message)
+  if (seen) return { ok: true, receiptId: null }
+
+  // mailparser の parsed.html は HTML が無いとき false（nullish でない）。
+  // `parsed.html?.toString()` だと false.toString()="false" が本文に混入するため型で分岐する。
+  const text = parsed.text ?? (typeof parsed.html === 'string' ? parsed.html : '')
+  const from = parsed.from?.value?.[0]?.address ?? null
+  const isOrder = await looksLikeOrder(`${parsed.subject ?? ''}\n${text}`)
+  const senderDateKey = buildSenderDateKey('email', from, date)
+
+  const { data: newReceipt, error } = await supabase
+    .from('order_receipts')
+    .insert({
+      channel: 'email',
+      message_id: messageId,
+      sender_date_key: senderDateKey,
+      received_at: date.toISOString(),
+      raw_payload: { subject: parsed.subject, from, text },
+      status: isOrder ? 'pending_ai' : 'unmatched',
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '23505') return { ok: true, receiptId: null }
+    return { ok: false, receiptId: null }
+  }
+
+  return { ok: true, receiptId: isOrder ? (newReceipt?.id ?? null) : null }
+}

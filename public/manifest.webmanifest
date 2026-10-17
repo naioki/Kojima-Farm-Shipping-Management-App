@@ -1,0 +1,13 @@
+{
+  "name": "小島農園 受注・圃場管理",
+  "short_name": "小島農園",
+  "description": "受注・請求・収穫タスクの統合管理",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdfcfa",
+  "theme_color": "#b8935d",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

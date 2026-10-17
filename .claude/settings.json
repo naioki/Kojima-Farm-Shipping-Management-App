@@ -1,0 +1,65 @@
+{
+  "includeCoAuthoredBy": true,
+  "env": {
+    "INSIDE_CLAUDE_CODE": "1",
+    "BASH_DEFAULT_TIMEOUT_MS": "420000",
+    "BASH_MAX_TIMEOUT_MS": "420000"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/skill-eval.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "# main ブランチへの直接編集を防ぐ\n[ \"$(git branch --show-current)\" != \"main\" ] || { echo '{\"block\": true, \"message\": \"Cannot edit files on main branch. Create a feature branch first.\"}' >&2; exit 2; }",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "# package.json が変わったら依存を入れ直す\n# sh(dash) で実行されるため [[ ]] や =~ は使わない（使うと毎回 syntax error になる）\ncase \"$CLAUDE_TOOL_INPUT_FILE_PATH\" in\n  */package.json)\n    npm install >/dev/null 2>&1 || { echo 'npm install に失敗しました' >&2; exit 1; }\n    ;;\nesac\nexit 0",
+            "timeout": 180
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "# テストファイルが変わったら、そのファイルだけ流す\n# このリポジトリのテストは vitest（Jest ではない・CLAUDE.md 参照）。\n# --findRelatedTests / --passWithNoTests は Jest 専用フラグなので使わない。\ncase \"$CLAUDE_TOOL_INPUT_FILE_PATH\" in\n  *.test.ts|*.test.tsx)\n    npx vitest run \"$CLAUDE_TOOL_INPUT_FILE_PATH\" 2>&1 | tail -20 >&2\n    ;;\nesac\nexit 0",
+            "timeout": 180
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "# TypeScript 型チェック（非ブロッキング。エラー行だけ知らせる）\n# 整形フックは意図的に置かない: このリポジトリは prettier を導入しておらず\n# （.prettierrc も devDependency も無い）、prettier 既定の「セミコロン有り・\n# ダブルクォート」は既存コードの書式と真逆で、触ったファイルだけ全行差分になる。\n# 書式は eslint（npm run lint）に任せる。\ncase \"$CLAUDE_TOOL_INPUT_FILE_PATH\" in\n  *.ts|*.tsx)\n    output=$(npx tsc --noEmit 2>&1) || echo \"$output\" | grep 'error TS' | head -20 >&2\n    ;;\nesac\nexit 0",
+            "timeout": 180
+          }
+        ]
+      }
+    ]
+  }
+}
