@@ -152,6 +152,24 @@ export function ShipmentRow({
   const interrupted = isPartial && status !== 'shipped'
   const statusKey = rowStatusKey(status, isPartial ? shippedNum : null, orderedQty)
 
+  // ケース数・端数パックの計算（GAS版UI用）
+  const packsPerCase = masterPacksPerCase ?? null
+  let casesText = '—'
+  let looseText = '0'
+  if (packsPerCase && packsPerCase > 0) {
+    casesText = String(Math.floor(orderedQty / packsPerCase))
+    looseText = String(orderedQty % packsPerCase)
+  } else {
+    const match = quantityText.match(/(\d+)c(\d*)/)
+    if (match && match[1]) {
+      casesText = match[1]
+      looseText = match[2] || '0'
+    } else {
+      casesText = String(orderedQty)
+      looseText = '0'
+    }
+  }
+
   // アンマウント時に猶予タイマーを掃除（画面遷移してもサーバー状態は反映済み）
   useEffect(() => {
     return () => {
@@ -168,6 +186,36 @@ export function ShipmentRow({
       setUndoGrace(null)
       onStatusSettled?.(itemId, rowStatusKey(settled, isPartial ? shippedNum : null, orderedQty))
     }, UNDO_GRACE_MS)
+  }
+
+  async function advanceTo(target: FieldStatus) {
+    if (busy || status === target) return
+    const prev = status
+    setStatus(target)
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/order-items/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ field_status: target, version }),
+      })
+      if (res.status === 409) {
+        setStatus(prev)
+        setConflict(true)
+        toast.error('競合しました。画面を更新してください')
+        return
+      }
+      if (!res.ok) throw new Error(`更新失敗 (${res.status})`)
+      const json = (await res.json()) as { item: { version: number } }
+      setVersion(json.item.version)
+      setConflict(false)
+      startUndoGrace(prev, target)
+    } catch (e) {
+      setStatus(prev)
+      toast.error(fieldErrorMessage(e, '更新に失敗しました'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function advance() {
@@ -332,140 +380,213 @@ export function ShipmentRow({
   return (
     <div
       className={cn(
-        'rounded border border-l-4 transition-colors duration-300',
-        FIELD_STATUS_STYLE[statusKey].card,
-        conflict ? 'animate-pulse-alert border-alert' : 'border-line',
+        'rounded-2xl border bg-bg-card p-3.5 shadow-sm transition-all duration-200',
+        status === 'shipped'
+          ? 'border-sky-300 bg-sky-50/15'
+          : status === 'packed'
+          ? 'border-emerald-300 bg-emerald-50/15'
+          : 'border-line',
+        conflict ? 'animate-pulse-alert border-alert' : '',
       )}
     >
-      <div className="px-3 py-2">
-        {/* 1行目: 取引先＞納入先（折り返し可・省略しない）＋数量。狭い画面でも読める幅を優先する。 */}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className="flex w-full items-start gap-2 text-left focus-visible:outline-none"
-        >
-          <ChevronDown className={cn('mt-1 h-4 w-4 shrink-0 text-ink-faint transition-transform', open && 'rotate-180')} aria-hidden />
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-              <ColorDot color={customerColor} name={customerName} />
-              <span className="text-sm font-medium text-ink">{customerName}</span>
-              {destinationName && (
-                <span className="inline-flex items-center rounded bg-trust-50 px-1.5 py-0.5 text-xs font-medium text-trust-700">
-                  ＞{destinationName}
-                </span>
-              )}
-            </span>
-            <span className="flex flex-wrap items-center gap-1.5 mt-0.5">
-              <span className={cn('num text-base font-bold tabular-nums', status === 'shipped' ? 'text-ink-soft' : 'text-ink')}>{quantityText}</span>
-              {hasDetails && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-soft">
-                  {hasCard && <IdCard className="h-3 w-3" aria-hidden />}
-                  {[container, spec].filter(Boolean).join(' / ') || '荷姿あり'}
-                </span>
-              )}
-              {Boolean(fieldNote) && (
-                // 現場メモがある行はメモアイコンで明示（中断は下のステータス欄で色分け表示）
-                <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
-                  <StickyNote className="h-3 w-3" aria-hidden />
-                  メモ
-                </span>
-              )}
-            </span>
-          </span>
-        </button>
-
-        {/* 2行目: 操作ボタン。1行目と幅を奪い合わないよう分離し、タップ領域も広くとる。 */}
-        <div className="mt-2 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setConfirmOpen(true)}
-            disabled={busy || status === 'not_started'}
-            aria-label="1段戻す"
-            data-guide="reset"
-            className="flex h-12 w-12 items-center justify-center rounded border border-line text-ink-soft hover:bg-bg-soft disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
-          >
-            <ChevronLeft className="h-5 w-5" aria-hidden />
-          </button>
-          <span className="flex flex-1 flex-col items-center gap-0.5">
-            {interrupted ? (
-              <>
-                <PauseCircle className="h-5 w-5 text-warning" aria-hidden />
-                <span className="text-xs font-medium text-warning">中断</span>
-                <span className="num text-[10px] tabular-nums text-warning">{shippedNum}/{orderedQty}</span>
-              </>
-            ) : (
-              <>
-                <Icon className={cn('h-5 w-5', fieldStatusStyle(status).text)} aria-hidden />
-                <span className="text-xs text-ink-soft">{meta.label}</span>
-              </>
-            )}
-          </span>
-          <button
-            type="button"
-            onClick={advance}
-            disabled={busy || !canAdvance(status)}
-            aria-label="次のステータスへ進める"
-            data-guide="advance"
-            className="flex h-12 w-12 items-center justify-center rounded border border-line text-ink-soft hover:bg-bg-soft disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
-          >
-            <ChevronRight className="h-5 w-5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => setQuickOpen((v) => !v)}
-            aria-expanded={quickOpen}
-            aria-label="中断・できた数を記録"
-            title="中断・できた数を記録"
-            className={cn(
-              'flex h-12 w-12 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
-              isPartial
-                ? 'border-harvest-200 bg-harvest-50 text-earth-700'
-                : 'border-line text-ink-soft hover:bg-bg-soft',
-            )}
-          >
-            <PauseCircle className="h-5 w-5" aria-hidden />
-          </button>
+      {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
+      <div className="space-y-1 pb-3">
+        <div className="flex items-center gap-1.5 text-xs text-ink-soft">
+          <ColorDot color={customerColor} name={customerName} size="sm" />
+          <span>納品先 : </span>
+          <span className="font-bold text-ink">{destinationName || customerName}</span>
+          {destinationName && customerName !== destinationName && (
+            <span className="text-[11px] text-ink-muted">({customerName})</span>
+          )}
+        </div>
+        <div className="text-base font-extrabold text-ink leading-tight">
+          {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : (customerName)}
         </div>
       </div>
 
-      {/* ステータス変更直後の「元に戻す」猶予バー（誤タップ対策・Issue#5）。
-          猶予が過ぎると親がステータス順に並べ替える。サーバーには反映済みなので
-          この間に画面を離れても状態は失われない。 */}
+      {/* ② 数量グリッド（ケース数 / 端数パック） */}
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
+          <span className="block text-[11px] font-medium text-ink-soft">ケース数</span>
+          <span className="num mt-0.5 block text-xl font-black text-ink tabular-nums">
+            {casesText !== '—' ? `${casesText} ケース` : `${quantityText}`}
+          </span>
+        </div>
+        <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
+          <span className="block text-[11px] font-medium text-ink-soft">端数パック</span>
+          <span className="num mt-0.5 block text-xl font-black text-ink tabular-nums">
+            {looseText !== '—' ? `${looseText} P` : '0 P'}
+          </span>
+        </div>
+      </div>
+
+      {/* ③ 【最重要】総パック数カード（フォレストグリーンの巨大ハイライトブロック） */}
+      <div className="rounded-xl bg-[#1b5e20] p-3.5 text-white mb-2 shadow-sm">
+        <div className="text-[11px] font-bold text-white/90 tracking-wide">総パック数</div>
+        <div className="num mt-0.5 text-3xl font-black tracking-tight text-white tabular-nums">
+          {orderedQty} <span className="text-lg font-bold text-white/80">P</span>
+        </div>
+      </div>
+
+      {/* ④ コンテナ・箱数カード */}
+      <div className="rounded-xl border border-line bg-bg-card p-2.5 flex items-center justify-between mb-3 shadow-xs">
+        <span className="text-xs font-semibold text-ink-soft">コンテナ・箱数</span>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">
+            {container || '青コン'}
+          </span>
+          <span className="num text-base font-black text-ink tabular-nums">
+            {casesText !== '—' ? `${casesText} 箱` : `${orderedQty} 箱`}
+          </span>
+        </div>
+      </div>
+
+      {/* ⑤ アクションボタン（モバイル最適化・大きなタップターゲット） */}
+      <div className="space-y-2">
+        {/* 1段目: メインステータスボタン [ パック済 ] [ 出荷済 ] */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (status === 'not_started') {
+                advanceTo('packed')
+              } else if (status === 'packed') {
+                setConfirmOpen(true)
+              }
+            }}
+            className={cn(
+              'h-12 rounded-xl text-base font-bold shadow-xs transition-all active:scale-[0.98]',
+              status === 'packed'
+                ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 ring-offset-1'
+                : status === 'shipped'
+                ? 'border border-line bg-bg-soft/70 text-ink-muted'
+                : 'border-2 border-emerald-600/50 bg-white text-emerald-800 hover:bg-emerald-50',
+            )}
+          >
+            {status === 'packed' ? '✓ パック済' : 'パック済'}
+          </button>
+
+          <button
+            type="button"
+            disabled={busy || status === 'not_started'}
+            onClick={() => {
+              if (status === 'packed') {
+                advanceTo('shipped')
+              } else if (status === 'shipped') {
+                setConfirmOpen(true)
+              }
+            }}
+            className={cn(
+              'h-12 rounded-xl text-base font-bold shadow-xs transition-all active:scale-[0.98]',
+              status === 'shipped'
+                ? 'bg-sky-600 text-white ring-2 ring-sky-600 ring-offset-1'
+                : status === 'packed'
+                ? 'border-2 border-sky-600/60 bg-white text-sky-800 hover:bg-sky-50'
+                : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
+            )}
+          >
+            {status === 'shipped' ? '✓ 出荷済' : '出荷済'}
+          </button>
+        </div>
+
+        {/* 2段目: 補助ボタン [ 途中数 ] [ 追記 ] [ ✏️ 編集 ] [ 原本を開く ] */}
+        <div className="grid grid-cols-4 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setQuickOpen(!quickOpen)}
+            className={cn(
+              'h-10 rounded-xl border text-xs font-bold transition-all active:scale-[0.97]',
+              isPartial
+                ? 'border-harvest-300 bg-harvest-100 text-earth-800 font-extrabold'
+                : 'border-line bg-white text-ink-soft hover:bg-bg-soft',
+            )}
+          >
+            {isPartial ? `途中(${shippedNum})` : '途中数'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-[0.97]"
+          >
+            追記
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-[0.97]"
+          >
+            ✏️ 編集
+          </button>
+
+          {receipt?.originalUrl || receipt?.hasOriginal ? (
+            <a
+              href={receipt.originalUrl ?? `/api/receipts/${receipt.id}/original`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-xs font-bold text-sky-700 hover:bg-sky-100 active:scale-[0.97]"
+            >
+              原本を開く
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="h-10 rounded-xl border border-line bg-bg-soft/50 text-xs font-medium text-ink-faint"
+            >
+              原本なし
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ⑥ 開閉トグルリンク */}
+      <div className="pt-2 text-center">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-ink-soft hover:text-ink py-1"
+        >
+          <span>{open ? '詳細を閉じる' : '詳細を見る'}</span>
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+        </button>
+      </div>
+
+      {/* ステータス変更直後の「元に戻す」猶予バー */}
       {undoGrace && (
         <div
           data-guide="undo-bar"
-          className="flex items-center justify-between gap-2 border-t border-line bg-harvest-50/60 px-3 py-2 motion-reduce:transition-none"
+          className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-harvest-200 bg-harvest-50/80 px-3 py-2"
         >
-          <span className="flex items-center gap-1.5 text-xs font-medium text-harvest-700">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-harvest-700">
             <Check className="h-4 w-4" aria-hidden />
-            {meta.label}にしました
+            {meta.label}に更新しました
           </span>
-          {/* 誤タップからの復帰口。約5秒しか出ないうえ、手袋・急ぎの状況で押される。
-              ここだけ小さいと取り消せないまま猶予が切れるので 48px を厳守する（design.md）。 */}
           <button
             type="button"
             onClick={undoAdvance}
             disabled={busy}
-            className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-4 text-sm font-bold text-ink hover:bg-bg-soft disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line-strong bg-white px-3 text-xs font-bold text-ink hover:bg-bg-soft"
           >
-            <Undo2 className="h-4 w-4" aria-hidden />
+            <Undo2 className="h-3.5 w-3.5" aria-hidden />
             元に戻す
           </button>
         </div>
       )}
 
-      {/* 規格警告（禁止事項・必須事項）— 常時1行表示。アコーディオンを開かずに確認できる */}
+      {/* 規格警告（禁止事項・必須事項） */}
       {specWarnings && specWarnings.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-warning-bg/30 px-3 py-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-warning/40 bg-warning-bg/40 p-2">
           {specWarnings.map((w, i) =>
             w.type === 'forbidden' ? (
-              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-alert bg-alert/10">
+              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold text-alert bg-alert/10">
                 <AlertTriangle className="h-3 w-3" aria-hidden />
                 {w.text}
               </span>
             ) : (
-              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-harvest-700 bg-harvest-50">
+              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold text-harvest-700 bg-harvest-50">
                 <ShieldCheck className="h-3 w-3" aria-hidden />
                 {w.text}
               </span>
@@ -474,31 +595,21 @@ export function ShipmentRow({
         </div>
       )}
 
-      {/* 荷姿の自動確定不可（組合指定等）— specWarningsと同様、常時1行表示。見落とすと誤梱包に直結する */}
-      {needsManualConfirm && (
-        <div className="flex items-center gap-1.5 border-t border-line bg-warning-bg/30 px-3 py-1.5">
-          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-alert bg-alert/10">
-            <AlertTriangle className="h-3 w-3" aria-hidden />
-            荷姿は要確認（自動確定できない指定あり）
-          </span>
-        </div>
-      )}
-
+      {/* クイック途中数入力 */}
       {quickOpen && (
-        // 行から開かずに「できた数」だけを素早く記録（中断時）。荷姿/メモは下のアコーディオン。
-        <div className="flex items-center gap-2 border-t border-line bg-harvest-50/40 px-3 py-2">
-          <span className="shrink-0 text-xs font-medium text-ink-soft">できた数</span>
+        <div className="mt-2 flex items-center gap-2 rounded-xl border border-harvest-200 bg-harvest-50/60 p-2.5">
+          <span className="shrink-0 text-xs font-bold text-earth-800">できた数:</span>
           <input
             type="number"
             inputMode="numeric"
             min={0}
             autoFocus
-            className={cn(fieldInput, 'num h-10 w-24 tabular-nums')}
+            className={cn(fieldInput, 'num h-10 w-24 tabular-nums font-bold')}
             value={shippedQty}
             onChange={(e) => setShippedQty(e.target.value)}
             placeholder="例: 20"
           />
-          <span className="shrink-0 text-xs text-ink-faint">／ 受注 {orderedQty}</span>
+          <span className="shrink-0 text-xs text-ink-muted">／ 受注 {orderedQty}</span>
           <div className="ml-auto flex items-center gap-1.5">
             {shippedQty !== '' && (
               <button
@@ -516,23 +627,83 @@ export function ShipmentRow({
         </div>
       )}
 
+      {/* ⑦ 詳細アコーディオンカード群（薄枠カードリスト形式） */}
       {open && (
-        <div className="space-y-3 border-t border-line bg-bg-soft/40 px-3 py-3">
-          {/* 受注原本への直リンク（Issue#5・トレーサビリティ）。FAX/PDFは埋め込み表示、
-              メールは本文表示。手動追加・ポータル注文は原本が無いので出ない。 */}
-          {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
+        <div className="mt-2 space-y-2 border-t border-line/60 pt-3">
+          {/* 状態カード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">状態</span>
+            <span className="text-xs font-bold text-ink">
+              {status === 'shipped' ? '出荷済' : status === 'packed' ? 'パック済' : '有効（未着手）'}
+            </span>
+          </div>
 
-          {/* 荷姿マスタの作業指示（値駆動）。規格・カード/シール・テープ色・ラベル種別・品質注意・
-              固定追記・現場メモ・作業写真。値が無ければ何も出さない（PackInstructions が判定）。 */}
+          {/* 注文キーカード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">注文キー</span>
+            <span className="num break-all text-xs font-medium text-ink">
+              {`${customerName}|${destinationName ?? customerName}|${spec || masterLabelSpec || '規格未設定'}`}
+            </span>
+          </div>
+
+          {/* 数量（原文）カード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">数量（原文）</span>
+            <span className="num text-xs font-bold text-ink">
+              総数{orderedQty}点（{casesText !== '—' ? `${casesText}ケース＋端数${looseText}点` : quantityText}）
+            </span>
+          </div>
+
+          {/* コンテナ（原文）カード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">コンテナ（原文）</span>
+            <span className="text-xs font-bold text-ink">
+              {container ? `${container}: ${casesText !== '—' ? casesText : orderedQty}箱` : '—'}
+            </span>
+          </div>
+
+          {/* 備考カード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">備考</span>
+            <span className="text-xs text-ink">{lineNote || '—'}</span>
+          </div>
+
+          {/* 原本ファイルカード */}
+          {receipt?.originalUrl && (
+            <div className="rounded-xl border border-line bg-bg-card p-2.5">
+              <span className="block text-[10px] font-bold text-ink-muted">原本ファイル</span>
+              <a
+                href={receipt.originalUrl}
+                target="_blank"
+                rel="noopener"
+                className="text-xs font-bold text-trust-700 hover:underline inline-flex items-center gap-1"
+              >
+                原本を開く ↗
+              </a>
+            </div>
+          )}
+
+          {/* 追記メモカード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">追記メモ</span>
+            <span className="text-xs text-ink">{fieldNote || '—'}</span>
+          </div>
+
+          {/* 登録元カード */}
+          <div className="rounded-xl border border-line bg-bg-card p-2.5">
+            <span className="block text-[10px] font-bold text-ink-muted">登録元</span>
+            <span className="text-xs text-ink">{receipt ? '受信明細 (FAX/OCR)' : '受注明細'}</span>
+          </div>
+
+          {/* 荷姿マスタ作業指示 */}
           {packInstructions && (
             <PackInstructions values={packInstructions} photos={packPhotos ?? []} variant="field" />
           )}
 
-          {/* マスタ参考情報（読み取り専用）。編集は取引先詳細の規格編集で行う（規格ロックのガバナンスを
-              ここでは壊さない）。値が無ければ何も出さない（情報過多を避ける）。 */}
+          {/* マスタ参考情報 */}
           {(masterLabelSpec || masterTapeColor || masterPackingNotes || masterPacksPerCase) && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line bg-bg-card/60 px-3 py-2 text-xs text-ink-soft">
-              <span className="font-medium text-ink-faint">マスタ（参考）</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-bg-card/60 p-2.5 text-xs text-ink-soft">
+              <span className="font-bold text-ink-muted">マスタ（参考）</span>
               {masterPacksPerCase != null && <span>入り数 {masterPacksPerCase}</span>}
               {masterLabelSpec && <span>ラベル: {masterLabelSpec}</span>}
               {masterTapeColor && <span>テープ: {masterTapeColor}</span>}
@@ -540,85 +711,55 @@ export function ShipmentRow({
             </div>
           )}
 
-          {/* 規格を直す導線。admin=取引先詳細の規格編集へ直リンク（RULES_EDIT_LOCKのガバナンスは
-              そちら側で判定される）。staff=規格の報告へ（直接は変更させない）。 */}
-          {customerId && canEditRulesDirectly && (
-            <Link
-              href={`/admin/customers/${customerId}`}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
-            >
-              <Settings className="h-3.5 w-3.5" aria-hidden />
-              この取引先の規格を直す
-            </Link>
-          )}
-          {customerId && !canEditRulesDirectly && canReportSpec && (
-            <Link
-              href={`/field/report-spec?customerId=${customerId}${productId ? `&productId=${productId}` : ''}`}
-              className="inline-flex items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
-            >
-              <Camera className="h-3.5 w-3.5" aria-hidden />
-              規格を報告する
-            </Link>
-          )}
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-ink-soft">荷姿</span>
-              <input className={fieldInput} value={container} onChange={(e) => setContainer(e.target.value)} placeholder="ケース/箱/化粧箱" />
+          {/* 編集フォーム */}
+          <div className="rounded-xl border border-line bg-bg-soft/30 p-3 space-y-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-ink-soft">荷姿</span>
+                <input className={fieldInput} value={container} onChange={(e) => setContainer(e.target.value)} placeholder="青コン / 黄コン / 箱" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-ink-soft">規格</span>
+                <input className={fieldInput} value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="2〜3株(入数20) / L / 200g 等" />
+              </label>
+            </div>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={hasCard} onChange={(e) => setHasCard(e.target.checked)} className="h-5 w-5 accent-earth-600 rounded" />
+              <span className="text-xs font-medium text-ink">カード同梱</span>
             </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-ink-soft">規格</span>
-              <input className={fieldInput} value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="L/200g 等" />
+            <label className="space-y-1 block">
+              <span className="text-xs font-medium text-ink-soft">追記事項</span>
+              <textarea
+                className={cn(fieldInput, 'h-auto py-2')}
+                rows={2}
+                value={lineNote}
+                onChange={(e) => setLineNote(e.target.value)}
+                placeholder="この出荷だけの指示"
+              />
             </label>
-          </div>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={hasCard} onChange={(e) => setHasCard(e.target.checked)} className="h-5 w-5 accent-earth-600" />
-            <span className="text-sm text-ink">カード同梱</span>
-          </label>
-          <label className="space-y-1 block">
-            <span className="text-xs font-medium text-ink-soft">追記事項</span>
-            <textarea
-              className={cn(fieldInput, 'h-auto py-2')}
-              rows={2}
-              value={lineNote}
-              onChange={(e) => setLineNote(e.target.value)}
-              placeholder="この出荷だけの指示（例: 今日は化粧箱で）"
-            />
-          </label>
-
-          {/* 現場メモ（中断・トラブル時に残す。事務へ伝わる）。できた数は ⏸ ボタンから素早く入力。 */}
-          <div className="space-y-2 rounded border border-line bg-bg-card/60 p-3">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-ink-soft">
-              <StickyNote className="h-3.5 w-3.5" aria-hidden />
-              現場メモ（中断・気づき）
-            </p>
-            <textarea
-              className={cn(fieldInput, 'h-auto py-2')}
-              rows={2}
-              value={fieldNote}
-              onChange={(e) => setFieldNote(e.target.value)}
-              placeholder="何かあれば（例: 第3ハウス不調で20個で中断・続きは明日）"
-            />
-            <p className="text-xs text-ink-faint">
-              <PauseCircle className="mr-1 inline h-3 w-3" aria-hidden />
-              「できた数（中断時）」は右の ⏸ ボタンから開かずに入力できます。
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setDeleteOpen(true)}
-              className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-alert hover:bg-alert/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20"
-            >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden />
-              この明細を削除
-            </button>
-            <Button size="sm" onClick={saveDetails} isLoading={savingDetails}>
-              保存
-            </Button>
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-ink-soft">現場メモ（中断・気づき）</span>
+              <textarea
+                className={cn(fieldInput, 'h-auto py-2')}
+                rows={2}
+                value={fieldNote}
+                onChange={(e) => setFieldNote(e.target.value)}
+                placeholder="何かあれば（例: 20個で中断・続きは明日）"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(true)}
+                className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-alert hover:bg-alert/5"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                この明細を削除
+              </button>
+              <Button size="sm" onClick={saveDetails} isLoading={savingDetails}>
+                保存
+              </Button>
+            </div>
           </div>
         </div>
       )}
