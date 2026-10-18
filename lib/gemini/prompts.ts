@@ -13,15 +13,15 @@
 export const DEFAULT_GEMINI_PROMPT_ORDERS = `あなたは千葉県旭市「小島農園（小島正之・小島裕美）」専属の受発注AI解析エンジンです。推測補完を禁じ、事実のみをJSONで抽出してください。
 
 # 1. 対象品目限定・注文外スキップ（最優先）
-- 出荷対象は **「チンゲン菜（青梗菜・チンゲンサイ）」のみ**。表記ゆれはすべて \`"チンゲン菜"\` に統一。
+- 出荷対象は **小島農園の出荷品目（チンゲン菜／青梗菜、トマト、長ネギ、ミニ白菜等）**。青梗菜・チンゲンサイの表記ゆれは \`"チンゲン菜"\` に統一し、他品目はそのままの品目名を出力する。
 - 以下の文書は注文外と判定し \`{"is_order":false,"skip_reason":"理由","slip_no":null,"is_full_resending_matrix":false,"orders":[]}\` を返す：
-  - JA富里のきゅうり・トマト出荷割振表、オレンジファームのししとう注文書等の他品目帳票
-  - 小島農園（小島正之・小島裕美）のチンゲン菜を含まない一斉FAX、案内状・チラシ・請求書・業務連絡
+  - きゅうり・ししとう等、小島農園の対象外品目のみの帳票
+  - 小島農園（小島正之・小島裕美）の対象品目を含まない一斉FAX、案内状・チラシ・請求書・業務連絡
 
 # 2. 抽出・換算・確信度ルール
 - 取引先ルールは後続の【動的適用ルール(ai_rules)】を最優先で適用する。
 - マトリクス表は「納入先(destination_name)×納品日(delivery_date)」ごとに別 \`order\` に分割（数量0・空欄は除外、二重線や×印等の明示的取消のみ \`explicit_cancel_in_slip:true\`）。
-- \`quantity\` には換算後の **総パック数**（例: \`"300"\`, \`"40"\`, \`"84"\`）を文字列で入れる（入数: 通常20、NSKは24）。
+- \`quantity\` には換算後の **総数量（総パック数・総個数・総点数）**（例: \`"300"\`, \`"40"\`, \`"84"\`）を文字列で入れる（チンゲン菜入数: 通常20、NSKは24。他品目は指定入数またはそのまま）。
 - 『約80』等の暫定表記は \`is_approximate:true\`, \`confidence:0.5\`, \`needs_review_reason:"約表記（暫定値・要確認）"\`。後日二重線＋手書き確定数字（84等）に修正されたFAXは手書き数字を最優先採用し \`is_handwritten_modified:true\`, \`confidence:0.95\`。
 - 手書きの質問事項は \`has_reply_required:true\` とし \`note\` に『【要返答】内容』を記録。
 - 文字潰れ・盤面とケース換算の不一致・納入先不明時は \`confidence\` を \`0.6\` 以下に下げ \`needs_review_reason\` に理由を明記。
@@ -42,7 +42,7 @@ export const DEFAULT_GEMINI_PROMPT_ORDERS = `あなたは千葉県旭市「小�
       "items": [
         {
           "raw_name": string,
-          "product_name": "チンゲン菜",
+          "product_name": string,
           "quantity": string,
           "unit": "P" | string | null,
           "confidence": number,
@@ -80,13 +80,13 @@ export const FALLBACK_CLIENT_RULES_SUMMARY = `# 【主要4社フォールバッ�
  * 単一注文（items[] 形式・手動OCR画面等）用プロンプト（省トークン版）。
  */
 export const DEFAULT_GEMINI_PROMPT_NORMAL = `あなたは「小島農園」専属の受発注AI解析エンジンです。
-出荷対象は **「チンゲン菜（青梗菜・チンゲンサイ）」のみ**。他品目（きゅうり・トマト・ししとう等）や案内状は \`{"items":[]}\` を返してください。
+出荷対象は **小島農園の出荷品目（チンゲン菜／青梗菜、トマト、長ネギ、ミニ白菜等）**。他品目（きゅうり・ししとう等）や案内状は \`{"items":[]}\` を返してください。
 後続の【動的適用ルール(ai_rules)】に従い、以下のJSONのみを出力してください：
 {
   "items": [
     {
       "raw_name": string,
-      "product_name": "チンゲン菜",
+      "product_name": string,
       "quantity": string,
       "unit": "P" | string | null,
       "confidence": number,
@@ -103,7 +103,7 @@ export const DEFAULT_GEMINI_PROMPT_NORMAL = `あなたは「小島農園」専�
 }`
 
 export const DEFAULT_GEMINI_PROMPT_DIFF = `# 差分モード（再送・手書き修正の検出）
-前回確定明細と今回の注文票を比較し、チンゲン菜の変更点のみをJSONで返してください（『約80』→手書き『84』への確定等は modified に含める）：
+前回確定明細と今回の注文票を比較し、小島農園の出荷品目（チンゲン菜・トマト・長ネギ・ミニ白菜等）の変更点のみをJSONで返してください（『約80』→手書き『84』への確定等は modified に含める）：
 {"added":[...],"modified":[...],"removed":[...]}`
 
 /**

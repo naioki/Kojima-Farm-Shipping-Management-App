@@ -610,18 +610,19 @@ export async function analyzeOrders(
         const resolvedDest = std.destinationName ?? order.destination_name ?? null
 
         const items = order.items
-          // チンゲン菜以外の品目が紛れ込んだ場合も安全側でフィルタ（注文外品目除外）
+          // 小島農園の非対象品目（きゅうり・ししとう等）のみ除外。チンゲン菜、トマト、長ネギ、ミニ白菜等は通過させる
           .filter((it) => {
             const name = `${it.product_name ?? ''} ${it.raw_name}`.toLowerCase()
-            const isOtherCropOnly =
-              (name.includes('きゅうり') ||
-                name.includes('胡瓜') ||
-                name.includes('トマト') ||
-                name.includes('ししとう')) &&
+            const isExcludedCrop =
+              (name.includes('きゅうり') || name.includes('胡瓜') || name.includes('ししとう')) &&
               !name.includes('チンゲン') &&
               !name.includes('ちんげん') &&
-              !name.includes('青梗菜')
-            return !isOtherCropOnly
+              !name.includes('青梗菜') &&
+              !name.includes('トマト') &&
+              !name.includes('ネギ') &&
+              !name.includes('ねぎ') &&
+              !name.includes('白菜')
+            return !isExcludedCrop
           })
           .map((it) => {
             const normalized = verifyAndNormalizeItem(it, resolvedCustomer, {
@@ -703,7 +704,7 @@ export async function analyzeOrders(
     if (normalizedOrders.length === 0) {
       return {
         is_order: false,
-        skip_reason: 'チンゲン菜の有効な明細行が0件のためスキップ',
+        skip_reason: '出荷対象品目（チンゲン菜・トマト・長ネギ・ミニ白菜等）の有効な明細行が0件のためスキップ',
         slip_no: parsed.slip_no ?? null,
         is_full_resending_matrix: false,
         orders: [],
