@@ -134,6 +134,10 @@ export interface DeliveryDestination {
   full_name: string
   aliases: string[]
   sort_order: number
+  pack_sort_order?: number
+  shipping_route_name?: string | null
+  departure_time?: string | null
+  default_container_type?: string | null
   is_active: boolean
   created_at: ISODateTime
   updated_at: ISODateTime
@@ -213,6 +217,15 @@ export interface OrderItem {
   container_type: string | null
   has_card: boolean | null
   line_note: string | null
+  /** V5 パッキング資材指示・作業順・スナップショット（migrations/0026） */
+  bag_type?: string | null
+  seal_text?: string | null
+  has_seal?: boolean | null
+  daily_pack_sort_order?: number | null
+  snap_total_packs?: number | null
+  is_manual_modified?: boolean
+  is_new_addition?: boolean
+  order_key?: string | null
   /** 現場メモ（中断理由・気づき等。現場→事務の報告・migrations/0006） */
   field_note: string | null
   /** 梱包時注意事項 [{type:'forbidden'|'required', text:string}]（migrations/0008） */
@@ -366,7 +379,20 @@ export interface CustomerProductRule {
   default_quantity: number | null
   spec: string | null
   has_card: boolean
+  bag_type?: string | null
+  has_seal?: boolean
+  seal_text?: string | null
   created_at: ISODateTime
+}
+
+/** V5 冷蔵庫コンテナ在庫＆翌日自動引き継ぎ（migrations/0026） */
+export interface DailyContainerInventory {
+  id: UUID
+  target_date: ISODate
+  product_id: UUID
+  stock_containers: number
+  carryover_to_next_day: number | null
+  updated_at: ISODateTime
 }
 
 export interface HarvestEstimate {

@@ -70,6 +70,16 @@ export interface ShipmentRowProps {
   canEditRulesDirectly?: boolean
   /** staff/admin: 規格報告が使える（STAFF_CAN_REPORT_SPEC。adminは常時true） */
   canReportSpec?: boolean
+  /** V5 パッキング資材指示（袋・シール・日付） */
+  bagType?: string | null
+  sealText?: string | null
+  hasSeal?: boolean | null
+  deliveryDate?: string
+  isAdmin?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+  /** 出荷済ボタンを表示するかどうか（出荷専用画面でのみ true、パック画面では非表示にしてパック済ボタンを大きく配置） */
+  showShippingButton?: boolean
   /** 受注原本（FAX/PDF・メール本文）。無ければリンク非表示（手動追加など） */
   receipt?: ReceiptOriginalInfo | null
   /** ステータス確定（Undo猶予経過 or 戻す操作）時に呼ばれる。親がステータス順に並べ替える */
@@ -111,6 +121,14 @@ export function ShipmentRow({
   productId,
   canEditRulesDirectly,
   canReportSpec,
+  bagType,
+  sealText,
+  hasSeal,
+  deliveryDate,
+  isAdmin,
+  onMoveUp,
+  onMoveDown,
+  showShippingButton = false,
   receipt,
   onStatusSettled,
   onDeleted,
@@ -152,22 +170,37 @@ export function ShipmentRow({
   const interrupted = isPartial && status !== 'shipped'
   const statusKey = rowStatusKey(status, isPartial ? shippedNum : null, orderedQty)
 
-  // ケース数・端数パックの計算（GAS版UI用）
-  const packsPerCase = masterPacksPerCase ?? null
+  // ケース数・端数パックの計算（GAS版UI用）:
+  // 1. masterPacksPerCase があれば最優先
+  // 2. quantityText に "12c10" のような表記があればパース
+  // 3. なければ規格（spec/masterLabelSpec/customerName）から入数を自動判定（チンゲン菜標準20、NSK24等）
+  let packsPerCase = masterPacksPerCase ?? null
+  if (!packsPerCase || packsPerCase <= 0) {
+    const combinedSpec = `${customerName} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
+    const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+    if (match) {
+      const parsedNum = Number(match[1] || match[2])
+      if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+        packsPerCase = parsedNum
+      }
+    }
+    if (!packsPerCase || packsPerCase <= 0) {
+      if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
+        packsPerCase = 24
+      } else {
+        packsPerCase = 20 // チンゲン菜の標準入数
+      }
+    }
+  }
+
   let casesText = '—'
   let looseText = '0'
   if (packsPerCase && packsPerCase > 0) {
     casesText = String(Math.floor(orderedQty / packsPerCase))
     looseText = String(orderedQty % packsPerCase)
   } else {
-    const match = quantityText.match(/(\d+)c(\d*)/)
-    if (match && match[1]) {
-      casesText = match[1]
-      looseText = match[2] || '0'
-    } else {
-      casesText = String(orderedQty)
-      looseText = '0'
-    }
+    casesText = String(Math.floor(orderedQty / 20))
+    looseText = String(orderedQty % 20)
   }
 
   // アンマウント時に猶予タイマーを掃除（画面遷移してもサーバー状態は反映済み）
@@ -391,16 +424,82 @@ export function ShipmentRow({
     >
       {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
       <div className="space-y-1 pb-3">
-        <div className="flex items-center gap-1.5 text-xs text-ink-soft">
-          <ColorDot color={customerColor} name={customerName} size="sm" />
-          <span>納品先 : </span>
-          <span className="font-bold text-ink">{destinationName || customerName}</span>
-          {destinationName && customerName !== destinationName && (
-            <span className="text-[11px] text-ink-muted">({customerName})</span>
+        <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs text-ink-soft">
+          <div className="flex items-center gap-1.5">
+            <ColorDot color={customerColor} name={customerName} size="sm" />
+            <span>納品先 : </span>
+            <span className="font-bold text-ink">{destinationName || customerName}</span>
+            {destinationName && customerName !== destinationName && (
+              <span className="text-[11px] text-ink-muted">({customerName})</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {lineNote?.includes('★新規追加') && (
+              <span className="inline-flex items-center rounded-md bg-orange-500 px-2 py-0.5 text-[11px] font-black text-white shadow-xs">
+                新規 ★
+              </span>
+            )}
+            {(needsManualConfirm || lineNote?.includes('⚠') || lineNote?.includes('数量変更:')) && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-[11px] font-black text-amber-900">
+                ⚠️ 要確認
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-base font-extrabold text-ink leading-tight">
+            {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : (customerName)}
+          </div>
+          {isAdmin && (onMoveUp || onMoveDown) && (
+            <div className="flex items-center gap-1 shrink-0">
+              {onMoveUp && (
+                <button
+                  type="button"
+                  onClick={onMoveUp}
+                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                  title="上へ移動"
+                >
+                  ▲
+                </button>
+              )}
+              {onMoveDown && (
+                <button
+                  type="button"
+                  onClick={onMoveDown}
+                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                  title="下へ移動"
+                >
+                  ▼
+                </button>
+              )}
+            </div>
           )}
         </div>
-        <div className="text-base font-extrabold text-ink leading-tight">
-          {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : (customerName)}
+
+        {/* GAS版準拠：数量変更・要確認のオレンジ警告バー（常時露出） */}
+        {lineNote && (lineNote.includes('数量変更:') || lineNote.includes('⚠')) && (
+          <div className="mt-1.5 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-950">
+            🔄 {lineNote}
+          </div>
+        )}
+
+        {/* 資材タグバー（袋・シール・カード） */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          {bagType && (
+            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800 border border-amber-200">
+              🛍️ {bagType}
+            </span>
+          )}
+          {(hasSeal || sealText) && (
+            <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-800 border border-rose-200">
+              🏷️ {sealText || 'シール有'}
+            </span>
+          )}
+          {hasCard && (
+            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-800 border border-indigo-200">
+              🃏 カード有
+            </span>
+          )}
         </div>
       </div>
 
@@ -443,8 +542,8 @@ export function ShipmentRow({
 
       {/* ⑤ アクションボタン（モバイル最適化・大きなタップターゲット） */}
       <div className="space-y-2">
-        {/* 1段目: メインステータスボタン [ パック済 ] [ 出荷済 ] */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* 1段目: メインステータスボタン（パック画面では「パック済」のみを全幅で大きく表示） */}
+        <div className={cn('grid gap-2', showShippingButton ? 'grid-cols-2' : 'grid-cols-1')}>
           <button
             type="button"
             disabled={busy}
@@ -464,30 +563,32 @@ export function ShipmentRow({
                 : 'border-2 border-emerald-600/50 bg-white text-emerald-800 hover:bg-emerald-50',
             )}
           >
-            {status === 'packed' ? '✓ パック済' : 'パック済'}
+            {status === 'packed' ? '✓ パック済' : 'パック済にする'}
           </button>
 
-          <button
-            type="button"
-            disabled={busy || status === 'not_started'}
-            onClick={() => {
-              if (status === 'packed') {
-                advanceTo('shipped')
-              } else if (status === 'shipped') {
-                setConfirmOpen(true)
-              }
-            }}
-            className={cn(
-              'h-12 rounded-xl text-base font-bold shadow-xs transition-all active:scale-[0.98]',
-              status === 'shipped'
-                ? 'bg-sky-600 text-white ring-2 ring-sky-600 ring-offset-1'
-                : status === 'packed'
-                ? 'border-2 border-sky-600/60 bg-white text-sky-800 hover:bg-sky-50'
-                : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
-            )}
-          >
-            {status === 'shipped' ? '✓ 出荷済' : '出荷済'}
-          </button>
+          {showShippingButton && (
+            <button
+              type="button"
+              disabled={busy || status === 'not_started'}
+              onClick={() => {
+                if (status === 'packed') {
+                  advanceTo('shipped')
+                } else if (status === 'shipped') {
+                  setConfirmOpen(true)
+                }
+              }}
+              className={cn(
+                'h-12 rounded-xl text-base font-bold shadow-xs transition-all active:scale-[0.98]',
+                status === 'shipped'
+                  ? 'bg-sky-600 text-white ring-2 ring-sky-600 ring-offset-1'
+                  : status === 'packed'
+                  ? 'border-2 border-sky-600/60 bg-white text-sky-800 hover:bg-sky-50'
+                  : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
+              )}
+            >
+              {status === 'shipped' ? '✓ 出荷済' : '出荷済'}
+            </button>
+          )}
         </div>
 
         {/* 2段目: 補助ボタン [ 途中数 ] [ 追記 ] [ ✏️ 編集 ] [ 原本を開く ] */}
@@ -515,15 +616,30 @@ export function ShipmentRow({
 
           <button
             type="button"
-            onClick={() => setOpen(!open)}
+            onClick={() => {
+              if (
+                window.confirm(
+                  '⚠️【注意】注文数量や荷姿を変更すると、記録されたパック済・途中数がリセットされ、収穫・出荷の総数が変わります。変更を続けますか？',
+                )
+              ) {
+                setOpen(true)
+              }
+            }}
             className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-[0.97]"
           >
             ✏️ 編集
           </button>
 
-          {receipt?.originalUrl || receipt?.hasOriginal ? (
+          {receipt?.id ? (
             <a
-              href={receipt.originalUrl ?? `/api/receipts/${receipt.id}/original`}
+              href={`/field/viewer/${receipt.id}?date=${deliveryDate || ''}`}
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-xs font-bold text-sky-700 hover:bg-sky-100 active:scale-[0.97]"
+            >
+              原本を開く
+            </a>
+          ) : receipt?.originalUrl ? (
+            <a
+              href={receipt.originalUrl}
               target="_blank"
               rel="noopener"
               className="inline-flex h-10 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-xs font-bold text-sky-700 hover:bg-sky-100 active:scale-[0.97]"

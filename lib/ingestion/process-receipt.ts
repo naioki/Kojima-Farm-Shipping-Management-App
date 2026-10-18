@@ -8,6 +8,7 @@ import { decideReceiptApproval, isAutoApproveOn, parseThreshold } from '@/lib/in
 import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
 import { notify } from '@/lib/notify'
+import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import {
   calculateContainerBoxes,
@@ -381,8 +382,12 @@ export async function processReceipt(
     getSetting('AUTO_APPROVE_ENABLED'),
     getSetting('AUTO_APPROVE_THRESHOLD'),
   ])
-  const autoApproveToggle = isAutoApproveOn(autoApproveEnabledRaw)
-  // 自動承認ONでしきい値未設定の場合は 0.80（80%以上は自動確定、要確認のみ手動）を既定とする
+  // V5 ハイブリッド自動承認: 未設定の場合はデフォルトで ON にする（app_settings で 'off' 指定時のみ OFF）
+  const autoApproveToggle =
+    autoApproveEnabledRaw == null || autoApproveEnabledRaw.trim() === ''
+      ? true
+      : isAutoApproveOn(autoApproveEnabledRaw)
+  // 自動承認ONでしきい値未設定の場合は 0.80（80%以上は自動確定、要確認のみバッジ表示）を既定とする
   const threshold =
     thresholdRaw && thresholdRaw.trim() !== ''
       ? parseThreshold(thresholdRaw)
@@ -390,8 +395,8 @@ export async function processReceipt(
         ? 0.8
         : parseThreshold(thresholdRaw)
 
-  // 全顧客分の納入先マスタ・荷姿マスタ（0010_pricing_packaging.sql 準拠: base_per_selling）を一括取得
-  const [allDestsRes, allPacksRes] = await Promise.all([
+  // 全顧客分の納入先マスタ・荷姿マスタ・取引ルールマスタを一括取得（0026 未適用環境にも安全にフォールバック）
+  const [allDestsRes, allPacksRes, allRulesRes] = await Promise.all([
     admin
       .from('delivery_destinations')
       .select('id, customer_id, code, full_name, aliases')
@@ -400,9 +405,13 @@ export async function processReceipt(
       .from('pack_configs')
       .select('id, product_id, customer_id, label, base_per_selling, selling_unit_label')
       .eq('is_active', true),
+    admin
+      .from('customer_product_rules')
+      .select('*'),
   ])
   if (allDestsRes.error) console.error('[process-receipt] 納入先マスタの取得に失敗:', allDestsRes.error.message)
   if (allPacksRes.error) console.error('[process-receipt] 荷姿マスタの取得に失敗:', allPacksRes.error.message)
+  if (allRulesRes.error) console.error('[process-receipt] 取引ルールマスタの取得に失敗:', allRulesRes.error.message)
 
   const allDests = (allDestsRes.data ?? []) as {
     id: string
@@ -419,6 +428,19 @@ export async function processReceipt(
     base_per_selling: number
     selling_unit_label: string
   }[]
+  const allRules = (allRulesRes.data ?? []) as {
+    id: string
+    customer_id: string
+    product_id: string
+    packs_per_case?: number | null
+    container_type?: string | null
+    spec?: string | null
+    label_spec?: string | null
+    has_card?: boolean | null
+    bag_type?: string | null
+    has_seal?: boolean | null
+    seal_text?: string | null
+  }[]
 
   const createdOrderIds: string[] = []
   let anyPendingReview = false
@@ -426,7 +448,7 @@ export async function processReceipt(
   let firstResolvedCustomerId: string | null = customerId
   const changeAlerts: PipelineAlertItem[] = [...slipData.alerts]
 
-  // ── ARCHITECTURE.md §3.3 明細行の更新判定ルール（A.新規 / B.再送維持 / C.数量変更 / D.取消復活 / E.和郷園消滅2段階ガード）──
+  // ── ARCHITECTURE.md §3.3 & V5 明細行の更新判定ルール（A.新規 / B.再送維持 / C.数量変更 / D.取消復活 / E.和郷園消滅2段階ガード）──
   for (const po of parsedOrders) {
     const orderCustomerId =
       customerId ?? matchCustomerByName(po.customer_name, activeCustomers)
@@ -443,6 +465,7 @@ export async function processReceipt(
     type EnrichedItem = {
       parsed: ParsedItem
       matchedProduct: { id: string; name: string; unit: string } | null
+      matchedRuleId: string | null
       resolvedQty: number | null
       resolvedUnit: string
       resolvedPackConfigId: string | null
@@ -454,12 +477,23 @@ export async function processReceipt(
       containerType: string
       quantityCaseText: string
       lineNote: string | null
+      bagType: string | null
+      hasSeal: boolean | null
+      sealText: string | null
+      hasCard: boolean | null
     }
 
     const enriched: EnrichedItem[] = []
     for (const it of po.items) {
       const m = matchProductName(it.product_name ?? it.raw_name, candidates)
       const matchedProduct = m.productId ? (productById.get(m.productId) ?? null) : null
+      const matchedRule =
+        orderCustomerId && matchedProduct
+          ? allRules.find(
+              (r) => r.customer_id === orderCustomerId && r.product_id === matchedProduct.id,
+            ) ?? null
+          : null
+
       let resolvedQty: number | null = null
       const resolvedUnit = it.unit || matchedProduct?.unit || 'P'
       let resolvedPackConfigId: string | null = null
@@ -467,8 +501,8 @@ export async function processReceipt(
 
       const unitCount = determineUnitCount(
         po.customer_name ?? matchedCustomerName ?? '',
-        it.spec ?? '',
-        it.packs_per_case,
+        it.spec ?? matchedRule?.spec ?? '',
+        it.packs_per_case ?? (matchedRule?.packs_per_case ? Number(matchedRule.packs_per_case) : undefined),
       )
 
       if (matchedProduct) {
@@ -481,7 +515,7 @@ export async function processReceipt(
         const pool = customerSpecific.length > 0 ? customerSpecific : applicablePacks
 
         // 規格文字列または入数（20 / 24）が一致する pack_config を最優先で選択
-        const specNorm = (it.spec ?? '').normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+        const specNorm = (it.spec ?? matchedRule?.spec ?? '').normalize('NFKC').toLowerCase().replace(/\s+/g, '')
         const matchedPack =
           pool.find(
             (p) =>
@@ -518,7 +552,14 @@ export async function processReceipt(
 
       const hasReviewReason = Boolean(it.needs_review_reason && it.needs_review_reason.trim() !== '')
       const effectiveConfidence = hasReviewReason ? Math.min(it.confidence, 0.55) : it.confidence
-      const isFlagged = m.needsConfirmation || effectiveConfidence < 0.7 || hasReviewReason
+      const isFlagged =
+        m.needsConfirmation ||
+        effectiveConfidence < 0.7 ||
+        hasReviewReason ||
+        needsPackConfig ||
+        needsDestination ||
+        Boolean(it.is_approximate) ||
+        Boolean(it.is_handwritten_modified)
 
       const totalP = Math.max(0, Math.trunc(resolvedQty ?? (Number(it.quantity) || 0)))
       const cases = it.cases ?? Math.floor(totalP / unitCount)
@@ -527,7 +568,24 @@ export async function processReceipt(
         it.quantity_case_text || formatQuantityCaseText(totalP, cases, remainder)
       const containerType =
         it.container_type ||
+        matchedRule?.container_type ||
         determineContainerType(po.customer_name ?? matchedCustomerName ?? '', po.destination_name)
+
+      // V5 パッキング資材: FAX記載値 → 取引ルール既定値の順でフォールバック
+      const bagType = it.bag_type ?? matchedRule?.bag_type ?? null
+      const sealText = it.seal_text ?? matchedRule?.seal_text ?? null
+      const hasSeal =
+        it.has_seal != null
+          ? it.has_seal
+          : matchedRule?.has_seal != null
+            ? matchedRule.has_seal
+            : Boolean(sealText)
+      const hasCard =
+        it.has_card != null
+          ? it.has_card
+          : matchedRule?.has_card != null
+            ? matchedRule.has_card
+            : null
 
       const orderKey =
         it.order_key ||
@@ -536,17 +594,21 @@ export async function processReceipt(
           deliveryDate: po.delivery_date ?? '',
           destination: po.destination_name ?? '',
           itemName: it.product_name ?? 'チンゲン菜',
-          spec: it.spec ?? '',
+          spec: it.spec ?? matchedRule?.spec ?? '',
         })
 
       const lineNoteParts: string[] = []
       if (it.is_new_addition) lineNoteParts.push('★新規追加')
       if (it.note) lineNoteParts.push(it.note)
       if (it.needs_review_reason) lineNoteParts.push(`⚠${it.needs_review_reason}`)
+      if (needsDestination && po.destination_name) {
+        lineNoteParts.push(`⚠納入先要確認(${po.destination_name})`)
+      }
 
       enriched.push({
         parsed: it,
         matchedProduct,
+        matchedRuleId: matchedRule?.id ?? null,
         resolvedQty,
         resolvedUnit,
         resolvedPackConfigId,
@@ -558,10 +620,30 @@ export async function processReceipt(
         containerType,
         quantityCaseText,
         lineNote: lineNoteParts.length > 0 ? lineNoteParts.join(' / ') : null,
+        bagType,
+        hasSeal,
+        sealText,
+        hasCard,
       })
     }
 
-    // 既存注文（同一 customer_id + delivery_date + destination_id）との差分チェック（ARCHITECTURE.md §3.3 B/C/D）
+    // 既存注文（同一 customer_id + delivery_date + destination_id）との差分チェック（ARCHITECTURE.md §3.3 B/C/D & V5 二重ガード）
+    type ExistingOrderRow = { id: string; status: string; note: string | null }
+    type PrevItemRow = {
+      id: string
+      product_id?: string | null
+      product_name: string
+      quantity: number
+      field_status?: string
+      shipped_qty?: number | null
+      field_note?: string | null
+      is_manual_modified?: boolean
+      snap_total_packs?: number | null
+      daily_pack_sort_order?: number | null
+    }
+    let existingOrder: ExistingOrderRow | undefined
+    let prevItems: PrevItemRow[] = []
+
     if (orderCustomerId && po.delivery_date) {
       let existingQuery = admin
         .from('orders')
@@ -573,50 +655,73 @@ export async function processReceipt(
         existingQuery = existingQuery.eq('destination_id', destinationId)
       }
       const { data: existingOrders } = await existingQuery.limit(1)
-      const existingOrder = existingOrders?.[0]
+      existingOrder = (existingOrders?.[0] as ExistingOrderRow | undefined)
       if (existingOrder) {
-        const { data: prevItems } = await admin
+        const { data: pItems } = await admin
           .from('order_items')
-          .select('id, product_name, quantity')
+          .select('*')
           .eq('order_id', existingOrder.id)
+        prevItems = (pItems ?? []) as PrevItemRow[]
+
         for (const eItem of enriched) {
-          const prev = (prevItems ?? []).find(
+          const targetName = eItem.matchedProduct?.name ?? eItem.parsed.product_name ?? 'チンゲン菜'
+          const prev = prevItems.find(
             (p) =>
-              p.product_name ===
-                (eItem.matchedProduct?.name ?? eItem.parsed.product_name ?? 'チンゲン菜') ||
-              p.product_name === '青梗菜' ||
-              p.product_name === 'チンゲン菜',
+              (eItem.matchedProduct && p.product_id === eItem.matchedProduct.id) ||
+              p.product_name === targetName ||
+              (targetName === 'チンゲン菜' && (p.product_name === '青梗菜' || p.product_name === 'チンゲン菜')),
           )
           if (prev && eItem.resolvedQty != null && Number(prev.quantity) !== eItem.resolvedQty) {
-            const oldP = Number(prev.quantity)
-            const newP = eItem.resolvedQty
-            const memo = `${formatJstShortTimestamp()} ${oldP}→${newP}P`
-            eItem.quantityChangeMemo = memo
-            eItem.lineNote = [eItem.lineNote, `数量変更:${memo}`].filter(Boolean).join(' / ')
-            changeAlerts.push({
-              alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
-              created_at: formatJstShortTimestamp(),
-              alert_type: '数量変更',
-              message: `${po.customer_name ?? '取引先'} (${po.delivery_date} ${po.destination_name ?? ''}): ${oldP}P → ${newP}P`,
-              resolved: false,
-            })
+            if (prev.is_manual_modified) {
+              // GAS版 Q4: 手動修正済みの行はFAX再送で勝手に上書きせず保護
+              const memo = `${formatJstShortTimestamp()} 手動修正保護(FAX:${eItem.resolvedQty}P / 現:${prev.quantity}P)`
+              eItem.quantityChangeMemo = memo
+              eItem.isFlagged = true
+              eItem.lineNote = [eItem.lineNote, `⚠${memo}`].filter(Boolean).join(' / ')
+              changeAlerts.push({
+                alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
+                created_at: formatJstShortTimestamp(),
+                alert_type: '要確認',
+                message: `${po.customer_name ?? '取引先'} (${po.delivery_date} ${po.destination_name ?? ''}): 手動修正済みのためFAX再送(${eItem.resolvedQty}P)による上書きをブロックしました`,
+                resolved: false,
+              })
+            } else {
+              const oldP = Number(prev.quantity)
+              const newP = eItem.resolvedQty
+              const memo = `${formatJstShortTimestamp()} ${oldP}→${newP}P`
+              eItem.quantityChangeMemo = memo
+              eItem.isFlagged = true
+              eItem.lineNote = [eItem.lineNote, `数量変更:${memo}`].filter(Boolean).join(' / ')
+              changeAlerts.push({
+                alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
+                created_at: formatJstShortTimestamp(),
+                alert_type: '数量変更',
+                message: `${po.customer_name ?? '取引先'} (${po.delivery_date} ${po.destination_name ?? ''}): ${oldP}P → ${newP}P`,
+                resolved: false,
+              })
+            }
           }
         }
       }
     }
 
-    // 自動承認ゲート判定（lib/ingestion/auto-approve.ts の型に完全準拠）
+    // V5 A+B ハイブリッド自動承認判定:
+    // - A案（完全直結＋警告バッジ）: 取引先・納品日・品目・数量(>0)が揃っていれば、再送・数量変更・概数・要確認メモがあっても
+    //   自動で当日ボードへ直結（approved）し、カードに警告バッジ（is_flagged / 数量変更メモ）を表示する。
+    // - B案（一部保留通知）: 取引先不明・納品日不明・品目不明・数量0以下など「ボードに載せられない致命的不明」のみ pending_review に保留する。
+    const hasFatalAmbiguity =
+      !orderCustomerId ||
+      !po.delivery_date ||
+      enriched.length === 0 ||
+      enriched.some((e) => !e.matchedProduct || e.resolvedQty === null || e.resolvedQty <= 0)
+
     const approvalDecision = decideReceiptApproval({
-      enabled:
-        autoApproveToggle &&
-        !receipt.is_revision &&
-        !needsDestination &&
-        enriched.every((e) => !e.needsPackConfig && e.resolvedQty !== null && !e.quantityChangeMemo),
-      threshold,
+      enabled: autoApproveToggle && !hasFatalAmbiguity,
+      threshold: Math.min(threshold, 0.5),
       customerMatched: Boolean(orderCustomerId),
       deliveryDateKnown: Boolean(po.delivery_date),
       items: enriched.map((e) => ({
-        confidence: e.effectiveConfidence,
+        confidence: hasFatalAmbiguity ? e.effectiveConfidence : Math.max(e.effectiveConfidence, threshold),
         productMatched: Boolean(e.matchedProduct),
       })),
     })
@@ -645,70 +750,256 @@ export async function processReceipt(
       if (e.quantityCaseText) meta.push(`数量表記:${e.quantityCaseText}`)
       if (e.containerType) meta.push(`容器:${e.containerType}`)
       if (it.box_count != null) meta.push(`箱数:${it.box_count}箱`)
+      if (e.bagType) meta.push(`袋:${e.bagType}`)
+      if (e.sealText) meta.push(`シール:${e.sealText}`)
       if (e.lineNote) meta.push(e.lineNote)
       if (meta.length > 0) {
         noteParts.push(meta.join(' / '))
       }
     }
 
-    const { data: order, error: orderErr } = await admin
-      .from('orders')
-      .insert({
-        customer_id: orderCustomerId,
-        destination_id: destinationId,
-        delivery_date: po.delivery_date,
-        delivery_date_source: po.delivery_date ? 'parsed' : null,
-        source: receipt.channel,
-        status: orderStatus,
-        note: noteParts.length > 0 ? noteParts.join('\n') : null,
-      })
-      .select('id')
-      .single()
+    // 既存注文がある場合は重複INSERTせずインプレース更新（GAS版 注文キー冪等更新・二重ガード）
+    let targetOrderId: string
+    const insertedOrUpdatedItems: { id: string; product_id: string | null; quantity: number }[] = []
 
-    if (orderErr || !order) {
-      return await failReceipt(receiptId, `注文作成失敗: ${orderErr?.message ?? 'unknown'}`)
+    if (existingOrder) {
+      targetOrderId = existingOrder.id
+      await admin
+        .from('orders')
+        .update({
+          status: orderStatus,
+          note: noteParts.length > 0 ? noteParts.join('\n') : existingOrder.note,
+        })
+        .eq('id', targetOrderId)
+      createdOrderIds.push(targetOrderId)
+
+      for (const e of enriched) {
+        const targetName =
+          e.matchedProduct?.name ?? e.parsed.product_name ?? e.parsed.raw_name ?? 'チンゲン菜'
+        const prev = prevItems.find(
+          (p) =>
+            (e.matchedProduct && p.product_id === e.matchedProduct.id) ||
+            p.product_name === targetName ||
+            (targetName === 'チンゲン菜' && (p.product_name === '青梗菜' || p.product_name === 'チンゲン菜')),
+        )
+
+        if (prev) {
+          if (prev.is_manual_modified) {
+            // 手動修正保護された明細は数量・現場ステータスを維持し、line_note と is_flagged のみ追記
+            await admin
+              .from('order_items')
+              .update({
+                line_note: e.lineNote,
+                is_flagged: true,
+              })
+              .eq('id', prev.id)
+            insertedOrUpdatedItems.push({
+              id: prev.id,
+              product_id: e.matchedProduct?.id ?? null,
+              quantity: Number(prev.quantity),
+            })
+            continue
+          }
+
+          const newQty = e.resolvedQty ?? 1
+          const qtyChanged = Number(prev.quantity) !== newQty
+          const baseUpdatePayload: Record<string, unknown> = {
+            product_id: e.matchedProduct?.id ?? null,
+            product_name: targetName,
+            quantity: newQty,
+            quantity_raw: e.quantityCaseText || e.parsed.quantity,
+            unit: e.resolvedUnit,
+            pack_config_id: e.resolvedPackConfigId,
+            rule_id: e.matchedRuleId,
+            spec: e.parsed.spec ?? null,
+            container_type: e.containerType,
+            has_card: e.hasCard,
+            line_note: e.lineNote,
+            fraction_note:
+              e.parsed.remainder_packs && e.parsed.remainder_packs > 0
+                ? `端数${e.parsed.remainder_packs}P`
+                : null,
+            confidence: e.effectiveConfidence,
+            is_flagged: e.isFlagged,
+            // Case C (数量変更): 現場進捗をリセットして事故を防ぐ / Case B (同数再送): 現場進捗を完全保護
+            ...(qtyChanged
+              ? {
+                  field_status: 'not_started',
+                  shipped_qty: null,
+                }
+              : {}),
+          }
+          const v5UpdatePayload: Record<string, unknown> = {
+            ...baseUpdatePayload,
+            bag_type: e.bagType,
+            seal_text: e.sealText,
+            has_seal: e.hasSeal,
+            order_key: e.orderKey,
+            ...(qtyChanged ? { snap_total_packs: null } : {}),
+          }
+
+          let { error: upErr } = await admin
+            .from('order_items')
+            .update(v5UpdatePayload)
+            .eq('id', prev.id)
+          if (upErr) {
+            // 0026 未適用環境へのフォールバック
+            const retry = await admin.from('order_items').update(baseUpdatePayload).eq('id', prev.id)
+            upErr = retry.error
+          }
+          if (upErr) {
+            console.error('[process-receipt] 既存明細の更新に失敗:', upErr.message)
+          }
+          insertedOrUpdatedItems.push({
+            id: prev.id,
+            product_id: e.matchedProduct?.id ?? null,
+            quantity: newQty,
+          })
+        } else {
+          // 既存注文への新規品目行の追加
+          const baseInsertRow = {
+            order_id: targetOrderId,
+            product_id: e.matchedProduct?.id ?? null,
+            product_name: targetName,
+            quantity: e.resolvedQty ?? 1,
+            quantity_raw: e.quantityCaseText || e.parsed.quantity,
+            unit: e.resolvedUnit,
+            pack_config_id: e.resolvedPackConfigId,
+            rule_id: e.matchedRuleId,
+            spec: e.parsed.spec ?? null,
+            container_type: e.containerType,
+            has_card: e.hasCard,
+            line_note: e.lineNote,
+            fraction_note:
+              e.parsed.remainder_packs && e.parsed.remainder_packs > 0
+                ? `端数${e.parsed.remainder_packs}P`
+                : null,
+            unit_price: 0,
+            tax_rate: 8,
+            price_status: 'unpriced' as const,
+            confidence: e.effectiveConfidence,
+            is_flagged: e.isFlagged,
+          }
+          const v5InsertRow = {
+            ...baseInsertRow,
+            bag_type: e.bagType,
+            seal_text: e.sealText,
+            has_seal: e.hasSeal,
+            is_new_addition: Boolean(e.parsed.is_new_addition),
+            order_key: e.orderKey,
+          }
+          let { data: newIt, error: newItErr } = await admin
+            .from('order_items')
+            .insert(v5InsertRow)
+            .select('id, product_id, quantity')
+            .single()
+          if (newItErr) {
+            const retry = await admin
+              .from('order_items')
+              .insert(baseInsertRow)
+              .select('id, product_id, quantity')
+              .single()
+            newIt = retry.data
+            newItErr = retry.error
+          }
+          if (!newItErr && newIt) {
+            insertedOrUpdatedItems.push({
+              id: newIt.id as string,
+              product_id: (newIt.product_id as string | null) ?? null,
+              quantity: Number(newIt.quantity),
+            })
+          }
+        }
+      }
+    } else {
+      const { data: order, error: orderErr } = await admin
+        .from('orders')
+        .insert({
+          customer_id: orderCustomerId,
+          destination_id: destinationId,
+          delivery_date: po.delivery_date,
+          delivery_date_source: po.delivery_date ? 'parsed' : null,
+          source: receipt.channel,
+          status: orderStatus,
+          note: noteParts.length > 0 ? noteParts.join('\n') : null,
+        })
+        .select('id')
+        .single()
+
+      if (orderErr || !order) {
+        return await failReceipt(receiptId, `注文作成失敗: ${orderErr?.message ?? 'unknown'}`)
+      }
+      targetOrderId = order.id as string
+      createdOrderIds.push(targetOrderId)
+
+      // order_items INSERT（0026 新カラム付き → 失敗時は 0001〜0025 互換カラムで自動フォールバック）
+      const baseItemRows = enriched.map((e) => ({
+        order_id: targetOrderId,
+        product_id: e.matchedProduct?.id ?? null,
+        product_name:
+          e.matchedProduct?.name ?? e.parsed.product_name ?? e.parsed.raw_name ?? 'チンゲン菜',
+        quantity: e.resolvedQty ?? 1,
+        quantity_raw: e.quantityCaseText || e.parsed.quantity,
+        unit: e.resolvedUnit,
+        pack_config_id: e.resolvedPackConfigId,
+        rule_id: e.matchedRuleId,
+        spec: e.parsed.spec ?? null,
+        container_type: e.containerType,
+        has_card: e.hasCard,
+        line_note: e.lineNote,
+        fraction_note:
+          e.parsed.remainder_packs && e.parsed.remainder_packs > 0
+            ? `端数${e.parsed.remainder_packs}P`
+            : null,
+        unit_price: 0,
+        tax_rate: 8,
+        price_status: 'unpriced' as const,
+        confidence: e.effectiveConfidence,
+        is_flagged: e.isFlagged,
+      }))
+      const v5ItemRows = enriched.map((e, idx) => ({
+        ...baseItemRows[idx],
+        bag_type: e.bagType,
+        seal_text: e.sealText,
+        has_seal: e.hasSeal,
+        is_new_addition: Boolean(e.parsed.is_new_addition),
+        order_key: e.orderKey,
+      }))
+
+      let { data: insertedItems, error: itemsErr } = await admin
+        .from('order_items')
+        .insert(v5ItemRows)
+        .select('id, product_id, quantity')
+      if (itemsErr) {
+        const retry = await admin
+          .from('order_items')
+          .insert(baseItemRows)
+          .select('id, product_id, quantity')
+        insertedItems = retry.data
+        itemsErr = retry.error
+      }
+      if (itemsErr) {
+        await admin.from('orders').delete().eq('id', targetOrderId)
+        return await failReceipt(receiptId, `注文明細の保存失敗: ${itemsErr.message}`)
+      }
+      for (const it of insertedItems ?? []) {
+        insertedOrUpdatedItems.push({
+          id: it.id as string,
+          product_id: (it.product_id as string | null) ?? null,
+          quantity: Number(it.quantity),
+        })
+      }
     }
-    createdOrderIds.push(order.id as string)
 
-    // order_items INSERT（0001 / 0002 / 0005 / 0010 / 0012 の実カラムに完全準拠）
-    const itemRows = enriched.map((e) => ({
-      order_id: order.id,
-      product_id: e.matchedProduct?.id ?? null,
-      product_name:
-        e.matchedProduct?.name ?? e.parsed.product_name ?? e.parsed.raw_name ?? 'チンゲン菜',
-      quantity: e.resolvedQty ?? 1,
-      quantity_raw: e.quantityCaseText || e.parsed.quantity,
-      unit: e.resolvedUnit,
-      pack_config_id: e.resolvedPackConfigId,
-      spec: e.parsed.spec ?? null,
-      container_type: e.containerType,
-      line_note: e.lineNote,
-      fraction_note:
-        e.parsed.remainder_packs && e.parsed.remainder_packs > 0
-          ? `端数${e.parsed.remainder_packs}P`
-          : null,
-      unit_price: 0,
-      tax_rate: 8,
-      price_status: 'unpriced' as const,
-      confidence: e.effectiveConfidence,
-      is_flagged: e.isFlagged,
-    }))
-    const { data: insertedItems, error: itemsErr } = await admin
-      .from('order_items')
-      .insert(itemRows)
-      .select('id, product_id, quantity')
-    if (itemsErr) {
-      await admin.from('orders').delete().eq('id', order.id)
-      return await failReceipt(receiptId, `注文明細の保存失敗: ${itemsErr.message}`)
-    }
-
-    // 自動承認された場合は harvest_tasks（収穫タスク）も生成（0001_base_schema.sql & lib/orders/approve.ts 準拠）
-    if (orderStatus === 'approved' && po.delivery_date && insertedItems && insertedItems.length > 0) {
-      const taskRows = insertedItems
+    // 自動承認された場合は harvest_tasks（収穫タスク）も生成・同期（0001_base_schema.sql & lib/orders/approve.ts 準拠）
+    if (orderStatus === 'approved' && po.delivery_date && insertedOrUpdatedItems.length > 0) {
+      const itemIdsForTasks = insertedOrUpdatedItems.map((it) => it.id)
+      await admin.from('harvest_tasks').delete().in('order_item_id', itemIdsForTasks)
+      const taskRows = insertedOrUpdatedItems
         .filter((it) => Boolean(it.product_id))
         .map((it) => ({
           product_id: it.product_id as string,
-          order_item_id: it.id as string,
+          order_item_id: it.id,
           required_qty: Number(it.quantity),
           task_date: po.delivery_date!,
         }))
@@ -788,8 +1079,8 @@ export async function processReceipt(
     console.error('[process-receipt] order_receipts の完了更新に失敗:', finalUpdateErr.message)
   }
 
-  // 承認待ちがあれば通知（lib/notify/index.ts の NotifyMessage 型に準拠）
-  if (anyPendingReview) {
+  // B案: 承認待ち（判別不能・必須項目欠落）または 数量変更アラートがあればマルチチャネル通知
+  if (anyPendingReview || changeAlerts.length > 0) {
     const itemSummary = parsedOrders
       .flatMap((o) =>
         o.items.map(
@@ -799,13 +1090,33 @@ export async function processReceipt(
       )
       .slice(0, 6)
       .join('、')
-    await notify({
-      event: 'pending_review',
-      level: receipt.is_revision ? 'warning' : 'info',
-      title: receipt.is_revision ? '⚠ 再送注文（差分確認待ち）' : '📋 注文の確認待ち（チンゲン菜）',
-      body: `チャネル: ${receipt.channel} / 件数: ${createdOrderIds.length}件 / 最低確信度: ${Math.round(minOverallConfidence * 100)}%\n${itemSummary}`,
-      url: '/admin/approvals',
-    }).catch(() => {})
+    const alertMessages = changeAlerts.map((a) => `・[${a.alert_type}] ${a.message}`).join('\n')
+    const notifyTitle = anyPendingReview
+      ? '🚨 要確認FAX（未確定の注文があります）'
+      : '⚠ 再送FAXによる数量変更・要確認通知'
+    const notifyBody = [
+      `チャネル: ${receipt.channel} / 件数: ${createdOrderIds.length}件 / 確信度: ${Math.round(minOverallConfidence * 100)}%`,
+      itemSummary,
+      alertMessages,
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    await Promise.allSettled([
+      notify({
+        event: 'pending_review',
+        level: anyPendingReview || receipt.is_revision ? 'warning' : 'info',
+        title: notifyTitle,
+        body: notifyBody,
+        url: anyPendingReview ? '/admin/approvals' : '/field/shipments',
+      }),
+      sendMultiChannelAlert({
+        title: notifyTitle,
+        message: notifyBody,
+        urgent: anyPendingReview,
+        url: `/field/viewer/${receiptId}`,
+      }),
+    ])
   }
 
   return {

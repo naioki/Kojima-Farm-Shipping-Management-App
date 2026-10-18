@@ -283,8 +283,27 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     hint: '0.80＝確信度80%以上の通常注文を自動確定し、文字潰れや「約80」等の要確認注文（80%未満）だけ人間の承認待ちに残します。',
     dependsOn: { key: 'AUTO_APPROVE_ENABLED', equals: 'on' },
   },
-  // 通知ON/OFF（Discordは完全廃止のため LINE WORKS のみ）
-  { key: 'NOTIFY_LINE_WORKS', label: 'LINE WORKS通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
+  // 出荷遅れ・未出荷アラート
+  {
+    key: 'OVERDUE_ALERT_ENABLED',
+    label: '出発予定時刻の出荷遅れアラート通知',
+    section: 'notify',
+    layer: 'operations',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: 'ONにすると、納入先の出発予定時刻を過ぎても未出荷の注文がある場合に自動でアラート通知を送ります。',
+  },
+  // 通知チャネル別ON/OFF
+  { key: 'NOTIFY_DISCORD_ENABLED', label: 'Discord通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
+  { key: 'NOTIFY_DISCORD_WEBHOOK_URL', label: 'Discord Webhook URL', section: 'notify', layer: 'infra', secret: true, kind: 'text', placeholder: 'https://discord.com/api/webhooks/...', hint: 'Discord通知用Webhook' },
+  { key: 'NOTIFY_LINEWORKS_ENABLED', label: 'LINE WORKS通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
+  { key: 'NOTIFY_LINEWORKS_WEBHOOK_URL', label: 'LINE WORKS Incoming Webhook URL', section: 'notify', layer: 'infra', secret: true, kind: 'text', placeholder: 'https://...', hint: 'LINE WORKS通知用Webhook' },
+  { key: 'NOTIFY_LINE_ENABLED', label: 'LINE（公式アカウント/Messaging API）通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
+  { key: 'NOTIFY_LINE_TOKEN', label: 'LINE Channel Access Token', section: 'notify', layer: 'infra', secret: true, kind: 'text', placeholder: 'チャネルアクセストークン', hint: 'LINE Messaging APIトークン' },
+  { key: 'NOTIFY_LINE_TO', label: 'LINE 送信先ユーザーID / グループID', section: 'notify', layer: 'infra', secret: false, kind: 'text', placeholder: 'Uxxxxxxxx / Cxxxxxxxx', hint: '通知先のLINE User ID または Group ID' },
+  { key: 'NOTIFY_EMAIL_ENABLED', label: 'メール通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
+  { key: 'NOTIFY_EMAIL_TO', label: '通知送信先メールアドレス', section: 'notify', layer: 'operations', secret: false, kind: 'text', placeholder: 'farmer@example.com', hint: '通知を受信するメールアドレス' },
 
   // ============================================================
   // ③ 接続・インフラ — 構築者が一度きり接続する秘密情報

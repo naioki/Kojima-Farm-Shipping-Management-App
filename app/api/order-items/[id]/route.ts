@@ -57,7 +57,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.shipped_qty != null) updates.shipped_qty = input.shipped_qty
     if (input.field_status === 'shipped') updates.shipped_at = new Date().toISOString()
   } else {
-    if (input.quantity != null) updates.quantity = input.quantity
+    if (input.quantity != null) {
+      updates.quantity = input.quantity
+      // 数量変更時: GAS版二重ガードに従い、誤出荷防止のためステータスを未着手に自動リセット
+      if (input.quantity !== current.quantity) {
+        updates.field_status = 'not_started'
+        updates.shipped_qty = null
+      }
+    }
     if (input.unit_price != null) updates.unit_price = input.unit_price
     if (input.tax_rate != null) updates.tax_rate = input.tax_rate
     if (input.fraction_note !== undefined) updates.fraction_note = input.fraction_note
@@ -69,16 +76,31 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // 現場の記録（中断時の部分完了数・現場メモ）
     if (input.shipped_qty !== undefined) updates.shipped_qty = input.shipped_qty
     if (input.field_note !== undefined) updates.field_note = input.field_note
+    // 手動修正保護マーク（FAX再送時の誤上書き防止）
+    updates.is_manual_modified = true
   }
 
   // 楽観ロック：version 一致時のみ更新。version++ も同時に行う。
-  const { data: updated, error: updErr } = await supabase
+  let { data: updated, error: updErr } = await supabase
     .from('order_items')
     .update({ ...updates, version: current.version + 1 })
     .eq('id', params.id)
     .eq('version', input.version)
     .select()
     .maybeSingle()
+  if (updErr && 'is_manual_modified' in updates) {
+    const fallbackUpdates = { ...updates }
+    delete fallbackUpdates.is_manual_modified
+    const retry = await supabase
+      .from('order_items')
+      .update({ ...fallbackUpdates, version: current.version + 1 })
+      .eq('id', params.id)
+      .eq('version', input.version)
+      .select()
+      .maybeSingle()
+    updated = retry.data
+    updErr = retry.error
+  }
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   if (!updated) {
     // 0件 = version 不一致（競合）。UI に再読込させる。

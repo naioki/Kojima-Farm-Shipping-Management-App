@@ -21,11 +21,11 @@ describe('findActiveHref（最長一致・単一アクティブ）', () => {
     expect(findActiveHref('/admin/customers/abc/edit', adminHrefs)).toBe('/admin/customers')
   })
 
-  it('前方一致が重なる href では長い方が勝つ（pricing vs pricing-master）', () => {
-    expect(findActiveHref('/admin/pricing-master', adminHrefs)).toBe('/admin/pricing-master')
-    expect(findActiveHref('/admin/pricing', adminHrefs)).toBe('/admin/pricing')
-    // "-" 始まりはパス区切りでないので pricing の配下として誤マッチしないこと
-    expect(findActiveHref('/admin/pricing-master/xyz', adminHrefs)).toBe('/admin/pricing-master')
+  it('前方一致が重なる href では長い方が勝つ', () => {
+    // 例: /admin/orders vs /admin
+    expect(findActiveHref('/admin/orders', adminHrefs)).toBe('/admin/orders')
+    expect(findActiveHref('/admin', adminHrefs)).toBe('/admin')
+    expect(findActiveHref('/admin/orders/xyz', adminHrefs)).toBe('/admin/orders')
   })
 
   it('メニューに無いパスは null（誤ハイライトしない）', () => {

@@ -1,23 +1,23 @@
 import { CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
-import { Card } from '@/components/ui/Card'
-import { EmptyState, ErrorState } from '@/components/ui/States'
+import { ErrorState } from '@/components/ui/States'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr } from '@/lib/dates'
-import { ShipmentStatusSummary } from '@/components/field/ShipmentStatusSummary'
-import { ShipmentGroupRows } from '@/components/field/ShipmentGroupRows'
-import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
 import { SHIPMENTS_TOUR } from '@/lib/guide/tours'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
-import type { SpecWarning, PackPhotoKind } from '@/types/database'
+import { getSetting } from '@/lib/settings'
+import { ProductSelectorTabs, type ProductTabItem } from '@/components/field/ProductSelectorTabs'
+import { HarvestPulseSummary, type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
+import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
+import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
+import type { SpecWarning, PackPhotoKind, FieldStatus } from '@/types/database'
 import type { PackInstructionValues, PackInstructionPhoto } from '@/components/admin/PackInstructions'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 
-// 荷姿の作業指示付き行（select の戻り型）。値駆動表示に使う。
 type PackInstructionRow = {
   id: string
   base_per_selling: number
@@ -29,264 +29,429 @@ export const dynamic = 'force-dynamic'
 
 const PATH = '/field/shipments'
 
-/**
- * 出荷一覧（Laravel版 画面2）。現場が毎日使うメイン画面。
- *   - 上部にステータスサマリー（その日の進捗を色分け）
- *   - 品目ごとにグループ化
- *   - 金額は非表示（品目と数量に集中・Laravel版の意図）
- *   - 日付切替・スマート追加・◀▶ ステータス変更
- */
 export default async function ShipmentsPage({
   searchParams,
 }: {
-  searchParams: { date?: string }
+  searchParams: { date?: string; product?: string }
 }) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const supabase = createClient()
 
-  // 「規格を直す」導線の出し分け用（admin＝取引先詳細に直リンク、staff＝規格を報告）。
   const user = await getAuthedUser()
   const { data: profile, error: profileErr } = user
     ? await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
     : { data: null, error: null }
-  // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
   if (profileErr) console.error('[field/shipments] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const isAdmin = role === 'admin'
   const staffFeatures = await getStaffFeatures()
   const canReportSpec = canStaffUse('reportSpec', role, staffFeatures)
 
-  // ① その日の出荷日を持つ注文（型安全のため埋め込みを使わず段階取得）
-  const { data: orders, error: ordersErr } = await supabase
-    .from('orders')
-    .select('id, customer_id, destination_id')
-    .eq('delivery_date', date)
+  // 通知設定
+  const overdueAlertSetting = await getSetting('OVERDUE_ALERT_ENABLED')
+  const isOverdueAlertOn = overdueAlertSetting !== 'off'
+
+  // ① 全商品一覧の取得（品目タブ構築用）
+  const { data: allProducts, error: prodErr } = await supabase
+    .from('products')
+    .select('id, name, unit, category')
+    .eq('is_active', true)
+    .order('category', { nullsFirst: false })
+    .order('name')
+  if (prodErr) return <ErrorState message={`商品の読み込みに失敗しました: ${prodErr.message}`} />
+
+  // ② 当日の注文（キャンセル除外）＋ B案の未確定FAX件数の取得
+  const [{ data: orders, error: ordersErr }, { count: pendingReceiptCount }] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('id, customer_id, destination_id, status')
+      .eq('delivery_date', date)
+      .neq('status', 'cancelled'),
+    supabase
+      .from('order_receipts')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['pending_review', 'unmatched', 'ai_failed']),
+  ])
   if (ordersErr) return <ErrorState message={ordersErr.message} />
 
   const orderIds = (orders ?? []).map((o) => o.id)
   const orderToCustomer = new Map((orders ?? []).map((o) => [o.id, o.customer_id]))
   const orderToDestination = new Map((orders ?? []).map((o) => [o.id, o.destination_id]))
 
-  // ② 明細（出荷対象）— spec_warnings も取得して常時表示
-  // ★取得失敗を「この日の出荷対象はありません」に化けさせない。現場がその表示を信じて
-  //   何も出荷しないまま1日が終わる（＝出荷漏れ）ため、必ずエラーとして見せる。
-  const itemsRes = orderIds.length
-    ? await supabase
+  // ③ 当日の明細取得（0026未適用DB環境にも安全にフォールバック）
+  type RawOrderItemRow = {
+    id: string
+    order_id: string
+    product_id: string
+    product_name: string
+    quantity: number
+    unit: string
+    field_status: FieldStatus
+    version: number
+    spec: string | null
+    container_type: string | null
+    has_card: boolean | null
+    line_note: string | null
+    shipped_qty: number | null
+    field_note: string | null
+    spec_warnings: SpecWarning[] | null
+    pack_config_id: string | null
+    rule_id: string | null
+    is_flagged?: boolean | null
+    bag_type?: string | null
+    seal_text?: string | null
+    has_seal?: boolean | null
+    daily_pack_sort_order?: number | null
+    snap_total_packs?: number | null
+    is_manual_modified?: boolean | null
+    is_new_addition?: boolean | null
+  }
+  let allItems: RawOrderItemRow[] = []
+  if (orderIds.length) {
+    const v5ItemsRes = await supabase
+      .from('order_items')
+      .select(`
+        id, order_id, product_id, product_name, quantity, unit, field_status, version,
+        spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings,
+        pack_config_id, rule_id, is_flagged, bag_type, seal_text, has_seal, daily_pack_sort_order,
+        snap_total_packs, is_manual_modified, is_new_addition
+      `)
+      .in('order_id', orderIds)
+      .order('product_name')
+    if (v5ItemsRes.error) {
+      const fallbackRes = await supabase
         .from('order_items')
-        .select('id, order_id, product_id, product_name, quantity, unit, field_status, version, spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings, pack_config_id, rule_id')
+        .select(`
+          id, order_id, product_id, product_name, quantity, unit, field_status, version,
+          spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings,
+          pack_config_id, rule_id, is_flagged
+        `)
         .in('order_id', orderIds)
         .order('product_name')
-    : null
-  if (itemsRes?.error)
-    return <ErrorState message="出荷明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
-  const items = itemsRes?.data ?? []
+      if (fallbackRes.error) {
+        return <ErrorState message="出荷明細を読み込めませんでした。" detail={fallbackRes.error.message} />
+      }
+      allItems = (fallbackRes.data ?? []) as RawOrderItemRow[]
+    } else {
+      allItems = (v5ItemsRes.data ?? []) as RawOrderItemRow[]
+    }
+  }
 
-  // ③ 取引先名・識別色・商品の荷姿容量・納入先名（表示用。表示は常に「取引先＞納入先」）
+  // ④ 品目ごとの件数集計＆タブ一覧生成
+  const countByProduct = new Map<string, number>()
+  for (const it of allItems) {
+    countByProduct.set(it.product_id, (countByProduct.get(it.product_id) ?? 0) + 1)
+  }
+
+  // 注文がある品目を優先して並べ、残りの品目を後ろに配置
+  const productTabs: ProductTabItem[] = (allProducts ?? [])
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      count: countByProduct.get(p.id) ?? 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  // 選択された品目（クエリ指定がなければ注文数が最大の品目、それもなければ先頭品目）
+  const selectedProductId = searchParams.product && allProducts?.some((p) => p.id === searchParams.product)
+    ? searchParams.product
+    : productTabs[0]?.id || ''
+  const selectedProduct = allProducts?.find((p) => p.id === selectedProductId)
+
+  // ⑤ 選択された1品目の明細行に絞り込み（単一品目フォーカス）
+  const items = allItems.filter((i) => i.product_id === selectedProductId)
+
+  // ⑥ 納入先（出発便・時間・デフォルト作業順・コンテナ）取得（0026フォールバック付き）
+  const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const productIds = [...new Set(items.map((i) => i.product_id))]
-  const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
-  // ★これらが黙って失敗すると取引先名が「—」・数量の箱数換算が消えたまま画面が出てしまう。
-  //   現場は名前を見て積み分けるので、誤配送に直結する。必ずエラーとして見せる。
-  const [custRes, prodRes, destRes] = await Promise.all([
+
+  type DestRow = {
+    id: string
+    code: string | null
+    full_name: string
+    sort_order?: number
+    pack_sort_order?: number | null
+    shipping_route_name?: string | null
+    departure_time?: string | null
+    default_container_type?: string | null
+  }
+
+  const [custRes, prodCapRes, destRows] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[], error: null }),
+      : Promise.resolve({ data: [], error: null }),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
-      : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
-    destinationIds.length
-      ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
-      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[], error: null }),
+      : Promise.resolve({ data: [], error: null }),
+    (async (): Promise<DestRow[]> => {
+      if (!destinationIds.length) return []
+      const r1 = await supabase
+        .from('delivery_destinations')
+        .select('id, code, full_name, sort_order, pack_sort_order, shipping_route_name, departure_time, default_container_type')
+        .in('id', destinationIds)
+      if (!r1.error) return (r1.data ?? []) as DestRow[]
+      const r2 = await supabase
+        .from('delivery_destinations')
+        .select('id, code, full_name, sort_order')
+        .in('id', destinationIds)
+      return (r2.data ?? []) as DestRow[]
+    })(),
   ])
-  if (custRes.error)
-    return <ErrorState message="取引先名を読み込めませんでした。時間をおいて再度お試しください。" detail={custRes.error.message} />
-  if (prodRes.error)
-    return <ErrorState message="商品情報を読み込めませんでした。時間をおいて再度お試しください。" detail={prodRes.error.message} />
-  if (destRes.error)
-    return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destRes.error.message} />
-  const { data: custRows } = custRes
-  const { data: prodRows } = prodRes
-  const { data: destRows } = destRes
-  const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
-  const customerColor = new Map((custRows ?? []).map((c) => [c.id, c.display_color]))
-  const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
-  const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
 
-  // 荷姿（明細に紐づく pack_config）を取得して表示に使う。needs_manual_confirm は
-  // 「組合指定等、自動確定せず人手確認」の警告に使う（現場が気づかず出荷する事故を防ぐ）。
+  const customerName = new Map((custRes.data ?? []).map((c) => [c.id, c.name]))
+  const customerColor = new Map((custRes.data ?? []).map((c) => [c.id, c.display_color]))
+  const capacityById = new Map((prodCapRes.data ?? []).map((p) => [p.id, p.container_capacity]))
+  const destinationMap = new Map(destRows.map((d) => [d.id, d]))
+
+  // 荷姿マスタ取得
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
   const { data: packRows, error: packErr } = packIds.length
     ? await supabase
         .from('pack_configs')
-        .select('id, base_per_selling, selling_unit_label, needs_manual_confirm, spec_note, has_card, has_seal, tape_color, label_spec, price_tag_required, returnable_container, quality_note, standing_notes, field_memo')
+        .select(`
+          id, base_per_selling, selling_unit_label, needs_manual_confirm, spec_note, has_card,
+          has_seal, tape_color, label_spec, price_tag_required, returnable_container, quality_note,
+          standing_notes, field_memo
+        `)
         .in('id', packIds)
     : { data: [] as PackInstructionRow[], error: null }
-  // 作業指示が黙って欠落すると出荷ミス防止の意味がないため、取得失敗は顕在化させる
-  if (packErr) return <ErrorState message={`荷姿情報の読み込みに失敗しました: ${packErr.message}`} />
-  const packById = new Map(
-    (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
-  )
+  if (packErr) console.error('[field/shipments] pack_configs 取得失敗:', packErr.message)
+
+  const packById = new Map((packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]))
   const needsConfirmByPack = new Map((packRows ?? []).map((p) => [p.id, p.needs_manual_confirm]))
-  // 作業指示（値駆動）— 荷姿ごとの規格・カード/シール・テープ色・ラベル種別・品質注意・固定追記・現場メモ
-  const packInstructionsById = new Map(
-    (packRows ?? []).map((p) => [
-      p.id,
-      {
-        spec_note: p.spec_note,
-        has_card: p.has_card,
-        has_seal: p.has_seal,
-        tape_color: p.tape_color,
-        label_spec: p.label_spec,
-        price_tag_required: p.price_tag_required,
-        returnable_container: p.returnable_container,
-        quality_note: p.quality_note,
-        standing_notes: p.standing_notes,
-        field_memo: p.field_memo,
-      } as PackInstructionValues,
-    ]),
-  )
+  const packInstructionsById = new Map((packRows ?? []).map((p) => [p.id, p as PackInstructionValues]))
 
-  // 荷姿の作業写真（完成見本/注意点）。閲覧は /api/pack-photos/[id] の署名URL経由。
-  const { data: photoRows, error: photoErr } = packIds.length
-    ? await supabase
-        .from('pack_config_photos')
-        .select('id, pack_config_id, kind, sort_order')
-        .in('pack_config_id', packIds)
-        .order('sort_order')
-    : { data: [] as { id: string; pack_config_id: string; kind: PackPhotoKind; sort_order: number }[], error: null }
-  if (photoErr) return <ErrorState message={`荷姿写真の読み込みに失敗しました: ${photoErr.message}`} />
-  const photosByPack = new Map<string, PackInstructionPhoto[]>()
-  for (const ph of photoRows ?? []) {
-    const arr = photosByPack.get(ph.pack_config_id) ?? []
-    arr.push({ id: ph.id, kind: ph.kind })
-    photosByPack.set(ph.pack_config_id, arr)
-  }
-
-  // 受注原本（FAX/PDF・メール本文）への直リンク用（Issue#5・トレーサビリティ）。
-  // 注文に紐づく order_receipts を order_id で逆引き。手動追加・ポータルは原本なし＝リンク非表示。
-  const { data: receiptRows, error: receiptErr } = orderIds.length
+  // 受注原本取得
+  const { data: receiptRows } = orderIds.length
     ? await supabase
         .from('order_receipts')
         .select('id, order_id, channel, r2_key, raw_payload, is_revision')
         .in('order_id', orderIds)
-    : { data: [] as { id: string; order_id: string | null; channel: string; r2_key: string | null; raw_payload: unknown; is_revision: boolean | null }[], error: null }
-  if (receiptErr) return <ErrorState message={`受注原本の読み込みに失敗しました: ${receiptErr.message}`} />
-  const emailTextOf = (raw: unknown): string | null => {
-    if (!raw || typeof raw !== 'object') return null
-    const text = (raw as { text?: unknown }).text
-    return typeof text === 'string' && text.trim() ? text : null
-  }
+    : { data: [] }
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
   for (const rr of receiptRows ?? []) {
     if (!rr.order_id) continue
-    const info: ReceiptOriginalInfo = {
+    receiptByOrder.set(rr.order_id, {
       id: rr.id,
       channel: rr.channel,
-      hasOriginal: Boolean(rr.r2_key),
-      emailText: emailTextOf(rr.raw_payload),
+      hasOriginal: Boolean(rr.r2_key || rr.raw_payload),
+      emailText: null,
       isRevision: Boolean(rr.is_revision),
       parent: null,
+    })
+  }
+
+  // 梱包マスタ（rule_id 紐付けだけでなく customer_id × product_id のペアでも確実に解決）
+  const { data: ruleRows } = await supabase
+    .from('customer_product_rules')
+    .select('*')
+  const ruleById = new Map((ruleRows ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
+  const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r as Record<string, unknown>]))
+
+  // ⑦ 冷蔵庫コンテナ在庫の取得（当日＆前日持ち越し・テーブル未作成時もエラーにしない）
+  const prevDate = new Date(date)
+  prevDate.setDate(prevDate.getDate() - 1)
+  const prevDateStr = prevDate.toISOString().split('T')[0]
+
+  const [{ data: currentInv }, { data: prevInv }] = await Promise.all([
+    supabase
+      .from('daily_container_inventory')
+      .select('stock_containers, carryover_to_next_day')
+      .eq('target_date', date)
+      .eq('product_id', selectedProductId)
+      .maybeSingle(),
+    supabase
+      .from('daily_container_inventory')
+      .select('carryover_to_next_day')
+      .eq('target_date', prevDateStr)
+      .eq('product_id', selectedProductId)
+      .maybeSingle(),
+  ])
+
+  const prevCarryover = prevInv?.carryover_to_next_day ?? 0
+  const initialStock = currentInv?.stock_containers ?? prevCarryover
+
+  // ⑧ 選択中品目の集計（注文総箱数・総パック数・コンテナ内訳・規格内訳）
+  let totalPacks = 0
+  let totalBoxes = 0
+  const containerCounts = new Map<string, number>()
+  const specCounts = new Map<string, { packs: number; boxes: number }>()
+
+  const shipmentItems: ShipmentItemData[] = items.map((it) => {
+    const custId = orderToCustomer.get(it.order_id)
+    const destId = orderToDestination.get(it.order_id)
+    const dest = destId ? destinationMap.get(destId) : null
+    const cName = custId ? customerName.get(custId) ?? '—' : '—'
+    const dName = dest?.code?.trim() || dest?.full_name || cName
+    const color = custId ? customerColor.get(custId) ?? null : null
+
+    const pack = it.pack_config_id ? packById.get(it.pack_config_id) : null
+    const rule = (it.rule_id ? ruleById.get(it.rule_id) : null) ?? (custId ? ruleByPair.get(`${custId}:${it.product_id}`) : null)
+    const rulePacksPerCase = typeof rule?.packs_per_case === 'number' ? rule.packs_per_case : null
+    const ruleLabelSpec = typeof rule?.label_spec === 'string' ? rule.label_spec : null
+    const ruleTapeColor = typeof rule?.tape_color === 'string' ? rule.tape_color : null
+    const rulePackingNotes = typeof rule?.packing_notes === 'string' ? rule.packing_notes : null
+    const ruleBagType = typeof rule?.bag_type === 'string' ? rule.bag_type : null
+    const ruleSealText = typeof rule?.seal_text === 'string' ? rule.seal_text : null
+    const ruleHasSeal = typeof rule?.has_seal === 'boolean' ? rule.has_seal : null
+
+    // 入数判定: pack_configs -> customer_product_rules -> 規格文字抽出(determineUnitCount) -> チンゲン菜標準20
+    const explicitUnit = pack?.base || rulePacksPerCase || capacityById.get(it.product_id)
+    const perCase = explicitUnit && explicitUnit > 0
+      ? explicitUnit
+      : (cName.includes('農業総合研究所') || cName.includes('NSK') || (it.spec ?? '').includes('24') ? 24 : 20)
+
+    const qty = it.quantity
+    totalPacks += qty
+
+    // 箱数計算: ケース数 + (端数 > 0 ? 1 : 0)
+    const cases = Math.floor(qty / perCase)
+    const rem = qty % perCase
+    const boxCount = cases + (rem > 0 ? 1 : 0)
+    totalBoxes += boxCount
+
+    // コンテナ集計
+    const contType = it.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
+    containerCounts.set(contType, (containerCounts.get(contType) ?? 0) + boxCount)
+
+    // 規格集計
+    const specLabel = it.spec || ruleLabelSpec || '2〜3株 (標準)'
+    const curSpec = specCounts.get(specLabel) ?? { packs: 0, boxes: 0 }
+    curSpec.packs += qty
+    curSpec.boxes += boxCount
+    specCounts.set(specLabel, curSpec)
+
+    return {
+      itemId: it.id,
+      customerName: cName,
+      customerColor: color,
+      destinationName: dName,
+      quantityText: formatQty(qty, capacityById.get(it.product_id) ?? null, pack),
+      orderedQty: qty,
+      initialStatus: it.field_status,
+      initialVersion: it.version,
+      initialSpec: it.spec,
+      initialContainer: contType,
+      initialHasCard: it.has_card,
+      initialLineNote: it.line_note,
+      initialShippedQty: it.shipped_qty,
+      initialFieldNote: it.field_note,
+      specWarnings: it.spec_warnings,
+      masterLabelSpec: ruleLabelSpec,
+      masterTapeColor: ruleTapeColor,
+      masterPackingNotes: rulePackingNotes,
+      masterPacksPerCase: perCase,
+      needsManualConfirm: Boolean(it.is_flagged) || (it.pack_config_id ? Boolean(needsConfirmByPack.get(it.pack_config_id)) : false),
+      packInstructions: it.pack_config_id ? packInstructionsById.get(it.pack_config_id) : null,
+      customerId: custId,
+      productId: it.product_id,
+      canEditRulesDirectly: isAdmin,
+      canReportSpec,
+      bagType: it.bag_type ?? ruleBagType,
+      sealText: it.seal_text ?? ruleSealText,
+      hasSeal: it.has_seal ?? ruleHasSeal,
+      dailyPackSortOrder: it.daily_pack_sort_order,
+      defaultPackSortOrder: dest?.pack_sort_order ?? 100,
+      shippingRouteName: dest?.shipping_route_name,
+      departureTime: dest?.departure_time,
+      deliveryDate: date,
+      showShippingButton: false,
+      receipt: receiptByOrder.get(it.order_id) ?? null,
     }
-    // 原本もメール本文も無い受信は出しても意味がないので除外
-    if (info.hasOriginal || info.emailText) receiptByOrder.set(rr.order_id, info)
-  }
+  })
 
-  // マスタの梱包情報（ラベル/テープ色/固定の梱包指示/入り数）。order_items.rule_id で紐付け、
-  // 参考表示のみ（編集は取引先詳細の規格編集で行う。ここでの上書きはガバナンスを壊す）。
-  const ruleIds = [...new Set(items.map((i) => i.rule_id).filter(Boolean))] as string[]
-  const { data: ruleRows, error: ruleRowsErr } = ruleIds.length
-    ? await supabase
-        .from('customer_product_rules')
-        .select('id, label_spec, tape_color, packing_notes, packs_per_case')
-        .in('id', ruleIds)
-    : { data: [] as { id: string; label_spec: string | null; tape_color: string | null; packing_notes: string | null; packs_per_case: number | null }[], error: null }
-  // 梱包情報は参考表示（補助）。失敗しても本体（出荷リスト）は殺さない。
-  if (ruleRowsErr) console.error('[field/shipments] 梱包マスタの取得に失敗:', ruleRowsErr.message)
-  const ruleById = new Map((ruleRows ?? []).map((r) => [r.id, r]))
+  const containerBreakdown: ContainerBreakdownItem[] = Array.from(containerCounts.entries()).map(([type, boxes]) => ({
+    type,
+    boxes,
+  }))
 
-  // ステータス集計（中断＝できた数が受注未満で未出荷。梱包完了とは別バケツで数える）
-  const counts = { not_started: 0, interrupted: 0, packed: 0, shipped: 0 }
-  for (const it of items) {
-    const partial = it.shipped_qty != null && it.shipped_qty < it.quantity
-    if (it.field_status === 'shipped') counts.shipped++
-    else if (partial) counts.interrupted++
-    else if (it.field_status === 'packed') counts.packed++
-    else counts.not_started++
-  }
+  const specBreakdown: SpecBreakdownItem[] = Array.from(specCounts.entries()).map(([spec, data]) => ({
+    spec,
+    packs: data.packs,
+    boxes: data.boxes,
+  }))
 
-  // 品目ごとにグループ化
-  const groups = new Map<string, typeof items>()
-  for (const it of items) {
-    const arr = groups.get(it.product_name) ?? []
-    arr.push(it)
-    groups.set(it.product_name, arr)
-  }
-
-  // 追加フォーム用マスタ（納入先も取得。複数納入先を持つ取引先はスマート追加で届け先を選ばせる）
+  // 追加フォーム用
   const [
-    { data: allCustomers, error: custErr },
-    { data: allProducts, error: prodErr2 },
-    { data: rules, error: rulesErr },
-    { data: allDestinations, error: destListErr },
+    { data: allCustomers },
+    { data: rules },
+    { data: allDestinations },
   ] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
-    supabase.from('products').select('id, name, unit, category').eq('is_active', true).order('category', { nullsFirst: false }).order('name'),
     supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case'),
-    supabase
-      .from('delivery_destinations')
-      .select('id, customer_id, code, full_name')
-      .eq('is_active', true)
-      .order('sort_order'),
+    supabase.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).order('sort_order'),
   ])
-  // マスタ取得失敗はサイレントにしない（追加フォームの選択肢が黙って欠けると出荷先ミスに直結）
-  if (custErr) return <ErrorState message={`取引先の読み込みに失敗しました: ${custErr.message}`} />
-  if (prodErr2) return <ErrorState message={`商品の読み込みに失敗しました: ${prodErr2.message}`} />
-  if (destListErr) return <ErrorState message={`納入先の読み込みに失敗しました: ${destListErr.message}`} />
-  // 入り数（P/C）はスマート追加の換算補助。失敗しても本体（出荷リスト）は殺さないが、
-  // 黙って「入り数なし」に化けると追加時の箱数がずれるのでログには必ず残す。
-  if (rulesErr) console.error('[field/shipments] 取引ルール（入り数）の取得に失敗:', rulesErr.message)
   const packsByPair: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
 
-  // 「のこり」= まだ出荷していない件数（未着手＋中断＋梱包完了）。現場が今やることの数。
-  const remaining = counts.not_started + counts.interrupted + counts.packed
-  const allDone = items.length > 0 && remaining === 0
+  const unconfirmedCount = pendingReceiptCount ?? 0
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
+      {/* ナビゲーションバー */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="font-display text-2xl font-bold text-ink">出荷一覧</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-xl font-black text-ink">当日出荷・収穫ボード</h1>
           <FieldViewSwitch active="day" date={date} />
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
         <DateNav date={date} basePath={PATH} />
       </div>
 
-      {/* やさしい日本語の「のこり」表示。今やることの数を一目で。 */}
-      {items.length > 0 && (
-        <div
-          className={cn(
-            'flex items-center justify-between rounded-xl border px-4 py-3',
-            allDone ? 'border-harvest-200 bg-harvest-50' : 'border-earth-200 bg-earth-50',
-          )}
+      {/* B案：判別不能・要確認の未確定FAXがある場合の最上部赤バナー */}
+      {unconfirmedCount > 0 && (
+        <a
+          href={isAdmin ? '/admin/inbox' : '/admin/approvals'}
+          className="flex items-center justify-between gap-2 rounded-2xl border-2 border-red-500 bg-red-50 px-4 py-3 text-red-900 shadow-sm transition hover:bg-red-100"
         >
-          <span className="text-sm font-medium text-ink-soft">きょう やること</span>
-          {allDone ? (
-            <span className="flex items-center gap-1.5 text-base font-bold text-harvest-700">
-              <CheckCircle2 className="h-5 w-5" aria-hidden />
-              ぜんぶ おわり
-            </span>
-          ) : (
-            <span className="text-ink-soft">
-              のこり <span className="num text-2xl font-bold tabular-nums text-earth-700">{remaining}</span> 件
-            </span>
-          )}
+          <div className="flex items-center gap-2 text-sm font-black">
+            <span>🚨 未確定・要確認のFAXが {unconfirmedCount} 件あります</span>
+          </div>
+          <span className="shrink-0 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white shadow-xs">
+            タップして確認 →
+          </span>
+        </a>
+      )}
+
+      {/* ① 最上部：品目セレクタ（タブ） */}
+      <ProductSelectorTabs
+        products={productTabs}
+        selectedProductId={selectedProductId}
+        date={date}
+      />
+
+      {/* ② 収穫自動逆算サマリー（コンテナ在庫差引＋折りたたみ内訳） */}
+      {selectedProduct && (
+        <HarvestPulseSummary
+          productName={selectedProduct.name}
+          productId={selectedProductId}
+          date={date}
+          totalPacks={totalPacks}
+          totalBoxes={totalBoxes}
+          initialStock={initialStock}
+          prevCarryover={prevCarryover}
+          containerBreakdown={containerBreakdown}
+          specBreakdown={specBreakdown}
+        />
+      )}
+
+      {/* ③ パック画面 / 出荷画面（切替表示） */}
+      {shipmentItems.length > 0 ? (
+        <PackingAndShippingViews
+          items={shipmentItems}
+          date={date}
+          isAdmin={isAdmin}
+          overdueAlertEnabled={isOverdueAlertOn}
+        />
+      ) : (
+        <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted">
+          <p className="font-bold text-sm">この日の【{selectedProduct?.name || '選択品目'}】の出荷データはありません。</p>
+          <p className="text-xs text-ink-faint mt-1">他の品目タブを選ぶか、下から手動追加できます。</p>
         </div>
       )}
 
-      <ShipmentStatusSummary counts={counts} />
-
+      {/* ④ スマート追加フォーム */}
       <ShipmentAddForm
         deliveryDate={date}
         customers={(allCustomers ?? []).map((c) => ({ id: c.id, name: c.name }))}
@@ -298,64 +463,6 @@ export default async function ShipmentsPage({
         }))}
         packsByPair={packsByPair}
       />
-
-      {items.length === 0 ? (
-        <EmptyState
-          title="この日の出荷対象はありません"
-          description="上の「スマート追加」で追加するか、承認済み注文の出荷日がこの日になると表示されます。"
-        />
-      ) : (
-        <div className="space-y-4">
-          {[...groups.entries()].map(([productName, rows]) => (
-            <Card key={productName} className="space-y-2">
-              <h2 className="font-display text-base font-bold text-ink">
-                {productName}
-                <span className="ml-2 text-sm font-normal text-ink-soft">{rows.length}件</span>
-              </h2>
-              <ShipmentGroupRows
-                rows={rows.map((it) => {
-                  const custId = orderToCustomer.get(it.order_id) ?? ''
-                  const destId = orderToDestination.get(it.order_id)
-                  const rule = it.rule_id ? ruleById.get(it.rule_id) : null
-                  return {
-                    itemId: it.id,
-                    customerName: customerName.get(custId) ?? '—',
-                    customerColor: customerColor.get(custId) ?? null,
-                    destinationName: destId ? destinationName.get(destId) ?? null : null,
-                    quantityText: formatQty(
-                      it.quantity,
-                      capacityById.get(it.product_id) ?? null,
-                      it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
-                    ),
-                    orderedQty: it.quantity,
-                    initialStatus: it.field_status,
-                    initialVersion: it.version,
-                    initialSpec: it.spec,
-                    initialContainer: it.container_type,
-                    initialHasCard: it.has_card,
-                    initialLineNote: it.line_note,
-                    initialShippedQty: it.shipped_qty,
-                    initialFieldNote: it.field_note,
-                    specWarnings: (it.spec_warnings as SpecWarning[] | null),
-                    masterLabelSpec: rule?.label_spec ?? null,
-                    masterTapeColor: rule?.tape_color ?? null,
-                    masterPackingNotes: rule?.packing_notes ?? null,
-                    masterPacksPerCase: rule?.packs_per_case ?? null,
-                    needsManualConfirm: it.pack_config_id ? (needsConfirmByPack.get(it.pack_config_id) ?? false) : false,
-                    packInstructions: it.pack_config_id ? (packInstructionsById.get(it.pack_config_id) ?? null) : null,
-                    packPhotos: it.pack_config_id ? (photosByPack.get(it.pack_config_id) ?? []) : [],
-                    customerId: custId || null,
-                    productId: it.product_id,
-                    canEditRulesDirectly: isAdmin,
-                    canReportSpec,
-                    receipt: receiptByOrder.get(it.order_id) ?? null,
-                  }
-                })}
-              />
-            </Card>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

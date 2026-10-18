@@ -42,43 +42,28 @@ export interface NavGroup {
 export const ADMIN_GROUPS: NavGroup[] = [
   { label: null, items: [{ href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard }] },
   {
-    label: '受注・AI解析',
+    label: '受注 (FAX)',
     items: [
       { href: '/admin/inbox', label: '受注ボックス', icon: Inbox },
-      { href: '/admin/approvals', label: 'スプリット承認', icon: Columns },
       { href: '/admin/orders', label: '受注一覧', icon: ClipboardList },
-      { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles },
     ],
   },
   {
-    label: '出荷・現場',
+    label: '現場 (袋詰め・出荷)',
     items: [
-      { href: '/field/shipments', label: '出荷一覧', icon: PackageCheck },
+      { href: '/field/shipments', label: '当日出荷・袋詰め', icon: PackageCheck },
       { href: '/field/deliveries', label: '配送リスト', icon: Truck },
       { href: '/field/print', label: '帳票印刷', icon: Printer },
-      { href: '/admin/deliveries-report', label: '配送実績', icon: BarChart3 },
-      { href: '/admin/lots', label: 'ロット（トレサ）', icon: Tags },
-      { href: '/admin/delivery-notes', label: '納品書', icon: ClipboardList },
-      { href: '/admin/spec-reports', label: '規格報告', icon: Camera },
     ],
   },
   {
-    label: '請求',
+    label: '請求・管理',
     items: [
-      { href: '/admin/pricing', label: '価格の確定（月次）', icon: Coins },
-      { href: '/admin/invoices', label: '請求', icon: FileText },
+      { href: '/admin/invoices', label: '請求・月次確定', icon: FileText },
+      { href: '/admin/customers', label: '取引先・品目マスタ', icon: Users },
+      { href: '/admin/settings', label: '設定・AIルール', icon: Settings },
     ],
   },
-  {
-    label: 'マスタ',
-    items: [
-      { href: '/admin/master-import', label: '写真でマスタ登録', icon: Images },
-      { href: '/admin/customers', label: '取引先', icon: Users },
-      { href: '/admin/products', label: '商品', icon: Carrot },
-      { href: '/admin/pricing-master', label: '単価・荷姿マスタ', icon: Tag },
-    ],
-  },
-  { label: null, items: [{ href: '/admin/settings', label: '設定', icon: Settings }] },
 ]
 
 /** 現場（スタッフ）サーフェスは少数のタスク特化。グルーピング不要なので単一グループ。 */

@@ -117,6 +117,10 @@ export const parsedItemSchema = z.object({
   has_reply_required: z.boolean().nullish(),
   explicit_cancel_in_slip: z.boolean().nullish(),
   is_new_addition: z.boolean().nullish(),
+  bag_type: z.string().nullish(),
+  has_seal: z.boolean().nullish(),
+  seal_text: z.string().nullish(),
+  has_card: z.boolean().nullish(),
   note: z.string().nullish(),
   needs_review_reason: z.string().nullish(),
 })
@@ -448,6 +452,45 @@ export function verifyAndNormalizeItem(
       spec: resolvedSpec ?? '',
     })
 
+  // パッキング資材（袋種別・シール・生産者カード）の決定論的抽出（FAX記載＋取引先固有ルール）
+  const combinedText = [resolvedSpec, item.raw_name, note, item.bag_type, item.seal_text]
+    .filter(Boolean)
+    .join(' ')
+    .normalize('NFKC')
+
+  let bagType: string | null = item.bag_type?.trim() || null
+  if (!bagType) {
+    if (/FG|印字/i.test(combinedText) || isKanbei) {
+      bagType = /FG/i.test(combinedText) || isKanbei ? '印字袋(FG)' : '印字袋'
+    } else if (/無地/.test(combinedText)) {
+      bagType = '無地袋'
+    } else if (/スタンド/.test(combinedText)) {
+      bagType = 'スタンドパック'
+    } else if (/ボードン/.test(combinedText)) {
+      bagType = 'ボードン袋'
+    }
+  }
+
+  let hasSeal: boolean | null = item.has_seal ?? null
+  let sealText: string | null = item.seal_text?.trim() || null
+  if (/シール\s*(?:あり|有|付)|バーコード|JANシール|値札/.test(combinedText)) {
+    hasSeal = true
+    if (!sealText) {
+      const nskSealMatch = combinedText.match(/シールあり[（(][^）)]+[）)]/)
+      sealText = nskSealMatch ? nskSealMatch[0] : 'シールあり'
+    }
+  } else if (/シール\s*(?:なし|無|不要)/.test(combinedText)) {
+    hasSeal = false
+    sealText = 'シールなし'
+  }
+
+  let hasCard: boolean | null = item.has_card ?? null
+  if (/生産者カード|カード\s*(?:入れる|あり|有|入|同梱)/.test(combinedText)) {
+    hasCard = true
+  } else if (/カード\s*(?:なし|無|不要)/.test(combinedText)) {
+    hasCard = false
+  }
+
   return {
     ...item,
     product_name: normalizedProductName,
@@ -463,6 +506,10 @@ export function verifyAndNormalizeItem(
     quantity_case_text: quantityCaseText,
     order_key: orderKey,
     is_new_addition: isNewAddition,
+    bag_type: bagType,
+    has_seal: hasSeal,
+    seal_text: sealText,
+    has_card: hasCard,
     note,
     needs_review_reason: needsReviewReason,
   }

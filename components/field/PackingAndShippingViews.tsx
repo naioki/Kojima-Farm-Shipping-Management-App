@@ -1,0 +1,258 @@
+'use client'
+
+import { useState } from 'react'
+import { Truck, Package, Clock, Bell, BellOff, CheckCircle2 } from 'lucide-react'
+import { cn } from '@/lib/cn'
+import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
+import toast from 'react-hot-toast'
+import type { RowStatusKey } from '@/lib/field/shipment-sort'
+
+export interface ShipmentItemData extends ShipmentRowProps {
+  itemId: string
+  dailyPackSortOrder?: number | null
+  defaultPackSortOrder?: number
+  shippingRouteName?: string | null
+  departureTime?: string | null
+  orderedQty: number
+  quantityText: string
+  destinationName: string
+  customerName: string
+  statusText?: string
+  isChanged?: boolean
+  changeText?: string
+}
+
+interface PackingAndShippingViewsProps {
+  items: ShipmentItemData[]
+  date: string
+  isAdmin: boolean
+  overdueAlertEnabled: boolean
+}
+
+export function PackingAndShippingViews({
+  items: initialItems,
+  date,
+  isAdmin,
+  overdueAlertEnabled: initialAlertEnabled,
+}: PackingAndShippingViewsProps) {
+  const [activeTab, setActiveTab] = useState<'pack' | 'ship'>('pack')
+  const [items, setItems] = useState<ShipmentItemData[]>(initialItems)
+  const [alertEnabled, setAlertEnabled] = useState<boolean>(initialAlertEnabled)
+  const [busyReorder, setBusyReorder] = useState<boolean>(false)
+
+  // パック画面用ソート: 管理者指定順 (dailyPackSortOrder) -> 納品先デフォルト順 (defaultPackSortOrder)
+  const sortedPackItems = [...items].sort((a, b) => {
+    const orderA = a.dailyPackSortOrder ?? a.defaultPackSortOrder ?? 100
+    const orderB = b.dailyPackSortOrder ?? b.defaultPackSortOrder ?? 100
+    return orderA - orderB
+  })
+
+  // 管理者による上下移動
+  const handleMove = async (index: number, direction: 'up' | 'down') => {
+    if (!isAdmin || busyReorder) return
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= sortedPackItems.length) return
+
+    const newSorted = [...sortedPackItems]
+    const temp = newSorted[index]!
+    newSorted[index] = newSorted[targetIndex]!
+    newSorted[targetIndex] = temp
+
+    // 新しい sortOrder を割り振る
+    const updates = newSorted.map((it, idx) => ({
+      id: it.itemId,
+      sortOrder: (idx + 1) * 10,
+    }))
+
+    // 楽観的更新
+    const updatedMap = new Map(updates.map((u) => [u.id, u.sortOrder]))
+    setItems((prev) =>
+      prev.map((it) => ({
+        ...it,
+        dailyPackSortOrder: updatedMap.get(it.itemId) ?? it.dailyPackSortOrder,
+      })),
+    )
+
+    setBusyReorder(true)
+    try {
+      const res = await fetch('/api/order-items/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: updates }),
+      })
+      if (!res.ok) throw new Error('並び順の保存に失敗しました')
+      toast.success('パック作業順を更新しました')
+    } catch (e) {
+      toast.error('並び替えに失敗しました')
+      setItems(initialItems)
+    } finally {
+      setBusyReorder(false)
+    }
+  }
+
+  // 出荷画面用グループ化: 出発便・時間別
+  const routeGroups = new Map<string, ShipmentItemData[]>()
+  for (const it of items) {
+    const key = it.shippingRouteName || it.departureTime
+      ? `${it.departureTime || '時間未設定'} ${it.shippingRouteName || ''}`.trim()
+      : '通常便 (定期)'
+    const arr = routeGroups.get(key) ?? []
+    arr.push(it)
+    routeGroups.set(key, arr)
+  }
+
+  // 出荷遅れ通知トグル
+  const toggleAlert = async () => {
+    const next = !alertEnabled
+    setAlertEnabled(next)
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'OVERDUE_ALERT_ENABLED',
+          value: next ? 'on' : 'off',
+        }),
+      })
+      toast.success(`出荷遅れ通知を ${next ? 'ON' : 'OFF'} にしました`)
+    } catch (e) {
+      toast.error('設定の保存に失敗しました')
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* 画面モード切替タブ */}
+      <div className="grid grid-cols-2 rounded-xl bg-slate-200/80 p-1 text-sm font-bold shadow-inner">
+        <button
+          type="button"
+          onClick={() => setActiveTab('pack')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-lg py-2.5 transition-all active:scale-98',
+            activeTab === 'pack'
+              ? 'bg-white text-emerald-800 shadow-sm font-black'
+              : 'text-slate-600 hover:text-slate-900',
+          )}
+        >
+          <Package className="h-4 w-4 text-emerald-600" />
+          <span>🛍️ 袋詰め（パック）画面</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('ship')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-lg py-2.5 transition-all active:scale-98',
+            activeTab === 'ship'
+              ? 'bg-white text-sky-800 shadow-sm font-black'
+              : 'text-slate-600 hover:text-slate-900',
+          )}
+        >
+          <Truck className="h-4 w-4 text-sky-600" />
+          <span>🚚 出荷（便・積込）画面</span>
+        </button>
+      </div>
+
+      {/* ────────────────────────────────────── */}
+      {/* ① 袋詰め（パック）画面 */}
+      {/* ────────────────────────────────────── */}
+      {activeTab === 'pack' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold text-ink-soft">
+              📋 作業順（{isAdmin ? '▲▼で並び替え可能' : '上から順番にパック'}）
+            </span>
+            <span className="text-xs font-bold text-ink-muted">全 {sortedPackItems.length} 件</span>
+          </div>
+
+          <div className="space-y-3">
+            {sortedPackItems.map((item, idx) => (
+              <ShipmentRow
+                key={item.itemId}
+                {...item}
+                deliveryDate={date}
+                isAdmin={isAdmin}
+                onMoveUp={idx > 0 ? () => handleMove(idx, 'up') : undefined}
+                onMoveDown={idx < sortedPackItems.length - 1 ? () => handleMove(idx, 'down') : undefined}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ────────────────────────────────────── */}
+      {/* ② 出荷（便・積込）画面 */}
+      {/* ────────────────────────────────────── */}
+      {activeTab === 'ship' && (
+        <div className="space-y-4">
+          {/* 出荷ヘッダー＆通知トグル */}
+          <div className="flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-sky-700" />
+              <span className="text-xs font-bold text-sky-900">出発便・時間順グループ</span>
+            </div>
+            <button
+              type="button"
+              onClick={toggleAlert}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all',
+                alertEnabled
+                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                  : 'bg-slate-100 text-slate-600 border border-slate-300',
+              )}
+            >
+              {alertEnabled ? <Bell className="h-3.5 w-3.5 text-rose-600" /> : <BellOff className="h-3.5 w-3.5" />}
+              <span>遅れ通知 {alertEnabled ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
+
+          {/* 便別グループカード一覧 */}
+          {Array.from(routeGroups.entries()).map(([routeName, groupItems]) => {
+            const unshippedCount = groupItems.filter((i) => i.initialStatus !== 'shipped').length
+            const isGroupDone = unshippedCount === 0
+
+            return (
+              <div
+                key={routeName}
+                className={cn(
+                  'rounded-2xl border p-3.5 shadow-sm space-y-3',
+                  isGroupDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-sky-300 bg-white',
+                )}
+              >
+                <div className="flex items-center justify-between border-b border-line/60 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-xs font-black text-sky-900">
+                      🕒 {routeName}
+                    </span>
+                    <span className="text-xs font-bold text-ink-soft">({groupItems.length}件)</span>
+                  </div>
+                  {isGroupDone ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" /> 積込完了
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-rose-600">
+                      未積込: {unshippedCount} 件
+                    </span>
+                  )}
+                </div>
+
+                  <div className="space-y-2">
+                    {groupItems.map((item) => (
+                      <ShipmentRow
+                        key={item.itemId}
+                        {...item}
+                        deliveryDate={date}
+                        isAdmin={isAdmin}
+                        showShippingButton={true}
+                      />
+                    ))}
+                  </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
