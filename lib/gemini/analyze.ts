@@ -344,6 +344,7 @@ export function verifyAndNormalizeItem(
     std.customerName ?? customerName,
     std.spec ?? item.raw_name,
     item.packs_per_case,
+    item.product_name ?? item.raw_name,
   )
 
   let quantityStr = item.quantity.trim()

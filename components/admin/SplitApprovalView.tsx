@@ -14,6 +14,8 @@ import {
   RotateCw,
   Sparkles,
   Trash2,
+  Zap,
+  CheckCheck,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -152,6 +154,52 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   const [learningClient, setLearningClient] = useState('')
   const [learningRuleText, setLearningRuleText] = useState('')
   const [savingRule, setSavingRule] = useState(false)
+
+  // 一括承認ステート
+  const [selectedIdsForBulk, setSelectedIdsForBulk] = useState<Set<string>>(new Set())
+  const [bulkConfirmModalOpen, setBulkConfirmModalOpen] = useState(false)
+  const [bulkTargetOrders, setBulkTargetOrders] = useState<PendingOrder[]>([])
+  const [bulkApproving, setBulkApproving] = useState(false)
+
+  // 高確信度注文（警告理由が0件・日付・納入先確定済み）
+  const confidentOrders = useMemo(
+    () => orders.filter((o) => pendingReasons(o).length === 0),
+    [orders],
+  )
+
+  function openBulkApproveModal(targets: PendingOrder[]) {
+    if (targets.length === 0) return
+    setBulkTargetOrders(targets)
+    setBulkConfirmModalOpen(true)
+  }
+
+  async function executeBulkApprove() {
+    if (bulkTargetOrders.length === 0) return
+    setBulkApproving(true)
+    try {
+      const res = await fetch('/api/orders/bulk-approve', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ orderIds: bulkTargetOrders.map((o) => o.id) }),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean
+        successCount?: number
+        failedCount?: number
+        error?: string
+      }
+      if (!res.ok) throw new Error(json.error ?? `一括承認失敗 (${res.status})`)
+
+      toast.success(`${json.successCount ?? bulkTargetOrders.length}件の注文を一括承認しました！`)
+      setSelectedIdsForBulk(new Set())
+      setBulkConfirmModalOpen(false)
+      router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '一括承認に失敗しました')
+    } finally {
+      setBulkApproving(false)
+    }
+  }
 
   if (orders.length === 0 || !selectedOrder) {
     return (
@@ -423,45 +471,127 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
 
   return (
     <div className="space-y-4">
+      {/* 一括操作バー */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-gradient-to-r from-bg-card to-bg-soft p-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-ink">一括操作:</span>
+          {confidentOrders.length > 0 && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => openBulkApproveModal(confidentOrders)}
+              className="gap-1.5 bg-forest-600 text-white hover:bg-forest-700"
+            >
+              <Zap className="h-3.5 w-3.5 text-warning-bg" aria-hidden />
+              <span>安心・高確信な注文を一括承認</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.2 font-mono text-[11px] font-bold">
+                {confidentOrders.length}件
+              </span>
+            </Button>
+          )}
+
+          {selectedIdsForBulk.size > 0 && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                const targets = orders.filter((o) => selectedIdsForBulk.has(o.id))
+                openBulkApproveModal(targets)
+              }}
+              className="gap-1.5"
+            >
+              <CheckCheck className="h-3.5 w-3.5" aria-hidden />
+              <span>選択した注文を一括承認 ({selectedIdsForBulk.size}件)</span>
+            </Button>
+          )}
+
+          <Button
+            type="button"
+            variant="tertiary"
+            size="sm"
+            onClick={() => {
+              if (selectedIdsForBulk.size === orders.length) {
+                setSelectedIdsForBulk(new Set())
+              } else {
+                setSelectedIdsForBulk(new Set(orders.map((o) => o.id)))
+              }
+            }}
+            className="text-xs text-ink-muted hover:text-ink"
+          >
+            {selectedIdsForBulk.size === orders.length ? '全選択解除' : '全選択'}
+          </Button>
+        </div>
+
+        <div className="text-xs text-ink-muted">
+          <span>全 {orders.length} 件中 </span>
+          <span className="font-bold text-forest-700">{confidentOrders.length} 件が高確信</span>
+          {orders.length - confidentOrders.length > 0 && (
+            <span className="ml-1 text-alert">
+              （要確認 {orders.length - confidentOrders.length} 件）
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* 承認待ち注文セレクターバー（複数件あるときにワンクリック切替） */}
       <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
         {orders.map((o, idx) => {
           const isSelected = o.id === selectedOrder.id
           const hasWarning = pendingReasons(o).length > 0
+          const isChecked = selectedIdsForBulk.has(o.id)
           return (
-            <button
+            <div
               key={o.id}
-              type="button"
-              onClick={() => {
-                setSelectedOrderId(o.id)
-                setShowParentOriginal(false)
-                setRotation(0)
-              }}
               className={cn(
-                'flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-medium transition-all',
+                'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-xs font-medium transition-all',
                 isSelected
                   ? 'border-earth-600 bg-earth-600 text-white shadow-sm'
                   : 'border-line-strong bg-bg-card text-ink hover:bg-bg-soft',
               )}
             >
-              <span className="num rounded bg-black/10 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">
-                #{idx + 1}
-              </span>
-              <ColorDot color={o.customerColor} name={o.customerName} />
-              <span className="max-w-[180px] truncate">
-                {o.customerName}
-                {o.destinationName ? ` ＞ ${o.destinationName}` : ''}
-              </span>
-              <span className={cn('num font-mono', isSelected ? 'text-white/80' : 'text-ink-faint')}>
-                {o.deliveryDate ? formatJpDateShort(o.deliveryDate) : '納品日未定'}
-              </span>
-              {hasWarning && (
-                <AlertTriangle
-                  className={cn('h-3.5 w-3.5 shrink-0', isSelected ? 'text-warning-bg' : 'text-warning')}
-                  aria-hidden
-                />
-              )}
-            </button>
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={(e) => {
+                  e.stopPropagation()
+                  const next = new Set(selectedIdsForBulk)
+                  if (e.target.checked) next.add(o.id)
+                  else next.delete(o.id)
+                  setSelectedIdsForBulk(next)
+                }}
+                className="h-3.5 w-3.5 cursor-pointer rounded border-line text-earth-600 focus:ring-earth-500"
+                aria-label={`注文 #${idx + 1} を一括承認対象に選択`}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedOrderId(o.id)
+                  setShowParentOriginal(false)
+                  setRotation(0)
+                }}
+                className="flex items-center gap-2 text-left"
+              >
+                <span className="num rounded bg-black/10 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">
+                  #{idx + 1}
+                </span>
+                <ColorDot color={o.customerColor} name={o.customerName} />
+                <span className="max-w-[160px] truncate">
+                  {o.customerName}
+                  {o.destinationName ? ` ＞ ${o.destinationName}` : ''}
+                </span>
+                <span className={cn('num font-mono', isSelected ? 'text-white/80' : 'text-ink-faint')}>
+                  {o.deliveryDate ? formatJpDateShort(o.deliveryDate) : '納品日未定'}
+                </span>
+                {hasWarning && (
+                  <AlertTriangle
+                    className={cn('h-3.5 w-3.5 shrink-0', isSelected ? 'text-warning-bg' : 'text-warning')}
+                    aria-hidden
+                  />
+                )}
+              </button>
+            </div>
           )
         })}
       </div>
@@ -940,6 +1070,71 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               onChange={(e) => setLearningRuleText(e.target.value)}
               className="w-full rounded border border-line-strong bg-bg-card p-3 text-sm text-ink focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100"
             />
+          </div>
+        </div>
+      </Modal>
+
+      {/* 一括承認確認モーダル */}
+      <Modal
+        open={bulkConfirmModalOpen}
+        onClose={() => !bulkApproving && setBulkConfirmModalOpen(false)}
+        title="⚡ 注文の一括承認"
+        className="max-w-lg"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setBulkConfirmModalOpen(false)}
+              disabled={bulkApproving}
+            >
+              キャンセル
+            </Button>
+            <Button
+              variant="primary"
+              onClick={executeBulkApprove}
+              isLoading={bulkApproving}
+              className="gap-1.5 bg-forest-600 hover:bg-forest-700"
+            >
+              <Zap className="h-4 w-4 text-warning-bg" aria-hidden />
+              {bulkTargetOrders.length}件を一括承認する
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-ink-soft">
+            以下の <strong className="text-ink font-bold">{bulkTargetOrders.length} 件</strong> の注文を一括承認して出荷マトリクス（収穫タスク）へ反映します。
+          </p>
+          <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-line bg-bg-soft p-2.5 text-xs">
+            {bulkTargetOrders.map((o) => {
+              const warns = pendingReasons(o)
+              return (
+                <div
+                  key={o.id}
+                  className="flex items-center justify-between gap-2 border-b border-line/40 pb-1.5 last:border-none"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <ColorDot color={o.customerColor} name={o.customerName} size="sm" />
+                    <span className="font-bold text-ink">{o.customerName}</span>
+                    {o.destinationName && (
+                      <span className="text-ink-soft">＞ {o.destinationName}</span>
+                    )}
+                    <span className="font-mono text-ink-faint">
+                      ({o.deliveryDate ? formatJpDateShort(o.deliveryDate) : '納品日未定'})
+                    </span>
+                  </div>
+                  {warns.length > 0 ? (
+                    <span className="rounded bg-alert-bg px-1.5 py-0.5 text-[10px] font-bold text-alert">
+                      {warns.join(', ')}
+                    </span>
+                  ) : (
+                    <span className="rounded bg-forest-100 px-1.5 py-0.5 text-[10px] font-bold text-forest-700">
+                      高確信
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       </Modal>

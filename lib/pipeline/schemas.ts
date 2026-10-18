@@ -169,14 +169,25 @@ export function generateOrderKey(params: {
 }
 
 /**
- * 取引先・規格から1ケースあたりの入数（20 または 24）を判定する（ARCHITECTURE.md §4.1〜§4.4）.
+ * 取引先・品目・規格から1ケースあたりの入数を判定する（チンゲン菜: 通常20/NSK24、他品目: 明示指定または品目標準）.
  */
 export function determineUnitCount(
   clientName?: string | null,
   spec?: string | null,
   explicitUnitCount?: number | null,
+  itemName?: string | null,
 ): number {
+  if (explicitUnitCount && explicitUnitCount > 0) {
+    return explicitUnitCount
+  }
   const combined = `${clientName ?? ''} ${spec ?? ''}`.normalize('NFKC').toUpperCase()
+  // spec等に「入数24」「24入」「入数6」「30束入」等の記載があれば最優先で抽出
+  const match = combined.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|玉|束|本|パック|P)/)
+  if (match) {
+    const n = Number(match[1] || match[2])
+    if (Number.isFinite(n) && n > 0 && n <= 200) return n
+  }
+
   if (
     combined.includes('農業総合研究所') ||
     combined.includes('NSK') ||
@@ -185,9 +196,19 @@ export function determineUnitCount(
   ) {
     return 24
   }
-  if (explicitUnitCount === 20 || explicitUnitCount === 24) {
-    return explicitUnitCount
+
+  const normItem = (itemName ?? '').normalize('NFKC')
+  if (normItem.includes('トマト')) {
+    return 1 // トマトは通常1箱（ケース＝総数）
   }
+  if (normItem.includes('ネギ') || normItem.includes('ねぎ')) {
+    return 30 // 長ネギ標準30束
+  }
+  if (normItem.includes('白菜')) {
+    return 6 // ミニ白菜標準6玉
+  }
+
+  // チンゲン菜標準
   return 20
 }
 
@@ -227,10 +248,11 @@ export function calculateContainerBoxes(cases: number, remainderPacks: number): 
 }
 
 /**
- * 入数（20/24）および取引先ルールに基づき数量を検算・正規化する（ARCHITECTURE.md §4.1〜4.4）.
+ * 入数（20/24または品目別入数）および取引先ルールに基づき数量を検算・正規化する（ARCHITECTURE.md §4.1〜4.4）.
  */
 export function validateAndComputeQuantities(params: {
   clientName?: string | null
+  itemName?: string | null
   spec?: string | null
   totalPacks?: number | null
   cases?: number | null
@@ -244,7 +266,7 @@ export function validateAndComputeQuantities(params: {
   unitCount: number
   warningNote: string | null
 } {
-  const resolvedUnit = determineUnitCount(params.clientName, params.spec, params.unitCount)
+  const resolvedUnit = determineUnitCount(params.clientName, params.spec, params.unitCount, params.itemName)
   const normClient = (params.clientName ?? '').normalize('NFKC')
   let warningNote: string | null = null
 
