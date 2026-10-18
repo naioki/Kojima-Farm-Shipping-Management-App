@@ -26,8 +26,8 @@ import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/States'
 import { ApproveOrderButton } from '@/components/admin/ApproveOrderButton'
 import { ChannelBadge } from '@/components/admin/InboxBadges'
-import type { PendingOrder, PendingOrderItem } from '@/lib/orders/pending'
-import { pendingReasons } from '@/lib/orders/pending'
+import type { PendingOrder, PendingOrderItem } from '@/lib/orders/pending-types'
+import { pendingReasons } from '@/lib/orders/pending-types'
 import { formatJpDateShort } from '@/lib/dates'
 import {
   determineContainerType,
