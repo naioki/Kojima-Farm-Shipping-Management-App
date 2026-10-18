@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, Trash2, Lightbulb, Columns } from 'lucide-react'
+import { AlertTriangle, Trash2, Lightbulb, Columns, ChevronDown, ChevronUp } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
@@ -53,6 +53,8 @@ export interface EditableOrderCardProps {
   /** 承認ボタンのラベル（現場はやさしい日本語＋大きめ） */
   approveLabel?: string
   size?: 'sm' | 'md' | 'lg'
+  /** 初期状態で詳細編集フォームを展開するか（デフォルト: 要確認があれば展開、なければサマリー表示） */
+  defaultOpen?: boolean
 }
 
 interface Row extends EditableOrderItem {
@@ -79,6 +81,7 @@ export function EditableOrderCard({
   receipt = null,
   approveLabel = '承認する',
   size = 'sm',
+  defaultOpen,
 }: EditableOrderCardProps) {
   const router = useRouter()
   const [rows, setRows] = useState<Row[]>(() =>
@@ -88,6 +91,7 @@ export function EditableOrderCard({
   const [savingRule, setSavingRule] = useState(false)
 
   const caution = reasons.length > 0
+  const [isOpen, setIsOpen] = useState(() => defaultOpen ?? caution)
 
   const patch = (id: string, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...p } : r)))
 
@@ -200,154 +204,52 @@ export function EditableOrderCard({
 
   return (
     <Card className={caution ? 'space-y-3 border-warning/50' : 'space-y-3'}>
-      <div className="space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-start gap-2">
-            <ColorDot color={customerColor} name={customerName} size="md" className="mt-1" />
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-ink">{customerName}</p>
-              <p className="text-xs text-ink-soft">のうひん {deliveryDate ? formatJpDateShort(deliveryDate) : 'みてい'}</p>
-            </div>
-          </div>
-          <Link
-            href="/admin/approvals"
-            className="inline-flex items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50"
-          >
-            <Columns className="h-3.5 w-3.5" aria-hidden />
-            スプリットビューで比較
-          </Link>
-        </div>
-        {caution && (
-          <div className="flex flex-wrap gap-1">
-            {reasons.map((r) => (
-              <span key={r} className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
-                {r}
+      {/* サマリーバー（常時表示） */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <ColorDot color={customerColor} name={customerName} size="md" />
+          <span className="font-semibold text-ink">{customerName}</span>
+          <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+            deliveryDate ? 'bg-trust-50 text-trust-700' : 'bg-warning-bg text-warning'
+          }`}>
+            {deliveryDate ? `納品: ${formatJpDateShort(deliveryDate)}` : '納品日未定'}
+          </span>
+          {/* 品目サマリー（バッジ表示） */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {rows.map((r) => (
+              <span
+                key={r.id}
+                className="inline-flex items-center gap-1 rounded border border-line bg-bg-soft/60 px-2 py-0.5 text-xs text-ink"
+              >
+                <span>{r.productName}</span>
+                <span className="font-bold tabular-nums text-trust-800">{r.quantity}</span>
+                <span className="text-[10px] text-ink-muted">{r.unit}</span>
               </span>
             ))}
           </div>
-        )}
-        {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
-      </div>
-
-      {suggestedRule && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-earth-300 bg-earth-50 px-3 py-2 text-xs text-ink">
-          <span className="flex items-center gap-1.5 font-medium text-earth-800">
-            <Lightbulb className="h-4 w-4 shrink-0 text-earth-600" aria-hidden />
-            💡 この修正を取引先ルールとして学習させる
-          </span>
-          <div className="flex items-center gap-1.5">
-            <Button variant="primary" size="sm" onClick={saveLearnedRule} isLoading={savingRule}>
-              ワンクリック保存
-            </Button>
-            <button
-              type="button"
-              onClick={() => setSuggestedRule(null)}
-              className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft"
-            >
-              閉じる
-            </button>
-          </div>
         </div>
-      )}
 
-      {caution && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-warning-bg px-3 py-2 text-sm font-medium text-warning">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          まちがいが あるかも しれません。数字を よく かくにん・しゅうせい してから しょうにん してください。
-        </p>
-      )}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/approvals"
+            className="hidden items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50 sm:inline-flex"
+          >
+            <Columns className="h-3.5 w-3.5" aria-hidden />
+            スプリット比較
+          </Link>
 
-      <ul className="divide-y divide-line rounded border border-line">
-        {rows.map((row) => {
-          const low = row.confidence == null || row.confidence < 0.7
-          const needsPack = (row.packConfigOptions?.length ?? 0) > 0 && !row.packConfigId
-          return (
-            <li key={row.id} className="space-y-1.5 px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 text-base text-ink">{row.productName}</span>
-                {low && (
-                  <span className="num shrink-0 text-xs font-medium text-alert">
-                    {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '?'}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={row.draft}
-                  disabled={row.saving}
-                  onChange={(e) => patch(row.id, { draft: e.target.value })}
-                  onBlur={() => saveQty(row)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                  aria-label={`${row.productName} の数量`}
-                  className={`num h-11 w-20 rounded border bg-bg-card px-2 text-right text-base tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
-                    low ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
-                  }`}
-                />
-                <span className="w-8 shrink-0 text-sm text-ink-soft">{row.unit}</span>
-                {row.confirmDelete ? (
-                  <span className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => deleteRow(row)}
-                      className="rounded bg-alert px-2 py-1.5 text-xs font-bold text-white"
-                    >
-                      けす
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => patch(row.id, { confirmDelete: false })}
-                      className="rounded px-2 py-1.5 text-xs text-ink-soft hover:bg-bg-soft"
-                    >
-                      やめる
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => patch(row.id, { confirmDelete: true })}
-                    disabled={row.saving}
-                    aria-label={`${row.productName} を削除`}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-faint hover:bg-alert/5 hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20 disabled:opacity-40"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                  </button>
-                )}
-              </div>
-              {(row.packConfigOptions?.length ?? 0) > 0 && (
-                <label className="flex items-center gap-2">
-                  <span className={`shrink-0 text-xs font-medium ${needsPack ? 'text-alert' : 'text-ink-soft'}`}>
-                    荷姿{needsPack ? '（みてい）' : ''}
-                  </span>
-                  <select
-                    value={row.packConfigId ?? ''}
-                    disabled={row.saving}
-                    onChange={(e) => savePackConfig(row, e.target.value)}
-                    aria-label={`${row.productName} の荷姿`}
-                    className={`h-9 flex-1 rounded border bg-bg-card px-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
-                      needsPack ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
-                    }`}
-                  >
-                    <option value="">選択してください</option>
-                    {row.packConfigOptions!.map((pc) => (
-                      <option key={pc.id} value={pc.id}>
-                        {pc.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </li>
-          )
-        })}
-      </ul>
+          {/* 開閉トグルボタン */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="inline-flex items-center gap-1 rounded border border-line bg-bg-card px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft hover:text-ink"
+            aria-expanded={isOpen}
+          >
+            <span>{isOpen ? '閉じる' : `詳細・編集 (${rows.length}品目)`}</span>
+            {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
 
-      {rows.length === 0 ? (
-        <p className="text-sm text-ink-soft">明細がありません。受注一覧から この注文を削除できます。</p>
-      ) : (
-        <div className="flex items-center justify-end gap-2">
+          {/* 即時承認ボタン（閉じた状態でも承認可能） */}
           <ApproveOrderButton
             orderId={orderId}
             needsDeliveryDate={needsDeliveryDate}
@@ -356,6 +258,143 @@ export function EditableOrderCard({
             label={approveLabel}
             size={size}
           />
+        </div>
+      </div>
+
+      {/* 要確認バッジ（サマリー下に表示） */}
+      {caution && (
+        <div className="flex flex-wrap gap-1 pt-1">
+          {reasons.map((r) => (
+            <span key={r} className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
+              ⚠️ {r}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* 詳細展開エリア（アコーディオン） */}
+      {isOpen && (
+        <div className="space-y-3 border-t border-line/60 pt-3">
+          {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
+
+          {suggestedRule && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-earth-300 bg-earth-50 px-3 py-2 text-xs text-ink">
+              <span className="flex items-center gap-1.5 font-medium text-earth-800">
+                <Lightbulb className="h-4 w-4 shrink-0 text-earth-600" aria-hidden />
+                💡 この修正を取引先ルールとして学習させる
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button variant="primary" size="sm" onClick={saveLearnedRule} isLoading={savingRule}>
+                  ワンクリック保存
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setSuggestedRule(null)}
+                  className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          )}
+
+          {caution && (
+            <p className="flex items-start gap-1.5 rounded-lg bg-warning-bg px-3 py-2 text-sm font-medium text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              まちがいが あるかも しれません。数字を よく かくにん・しゅうせい してから しょうにん してください。
+            </p>
+          )}
+
+          <ul className="divide-y divide-line rounded border border-line">
+            {rows.map((row) => {
+              const low = row.confidence == null || row.confidence < 0.7
+              const needsPack = (row.packConfigOptions?.length ?? 0) > 0 && !row.packConfigId
+              return (
+                <li key={row.id} className="space-y-1.5 px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 text-base text-ink">{row.productName}</span>
+                    {low && (
+                      <span className="num shrink-0 text-xs font-medium text-alert">
+                        {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '?'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={row.draft}
+                      disabled={row.saving}
+                      onChange={(e) => patch(row.id, { draft: e.target.value })}
+                      onBlur={() => saveQty(row)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                      aria-label={`${row.productName} の数量`}
+                      className={`num h-11 w-20 rounded border bg-bg-card px-2 text-right text-base tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
+                        low ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
+                      }`}
+                    />
+                    <span className="w-8 shrink-0 text-sm text-ink-soft">{row.unit}</span>
+                    {row.confirmDelete ? (
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => deleteRow(row)}
+                          className="rounded bg-alert px-2 py-1.5 text-xs font-bold text-white"
+                        >
+                          けす
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => patch(row.id, { confirmDelete: false })}
+                          className="rounded px-2 py-1.5 text-xs text-ink-soft hover:bg-bg-soft"
+                        >
+                          やめる
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => patch(row.id, { confirmDelete: true })}
+                        disabled={row.saving}
+                        aria-label={`${row.productName} を削除`}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-faint hover:bg-alert/5 hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20 disabled:opacity-40"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                  {(row.packConfigOptions?.length ?? 0) > 0 && (
+                    <label className="flex items-center gap-2">
+                      <span className={`shrink-0 text-xs font-medium ${needsPack ? 'text-alert' : 'text-ink-soft'}`}>
+                        荷姿{needsPack ? '（みてい）' : ''}
+                      </span>
+                      <select
+                        value={row.packConfigId ?? ''}
+                        disabled={row.saving}
+                        onChange={(e) => savePackConfig(row, e.target.value)}
+                        aria-label={`${row.productName} の荷姿`}
+                        className={`h-9 flex-1 rounded border bg-bg-card px-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
+                          needsPack ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
+                        }`}
+                      >
+                        <option value="">選択してください</option>
+                        {row.packConfigOptions!.map((pc) => (
+                          <option key={pc.id} value={pc.id}>
+                            {pc.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+
+          {rows.length === 0 && (
+            <p className="text-sm text-ink-soft">明細がありません。受注一覧から この注文を削除できます。</p>
+          )}
         </div>
       )}
     </Card>

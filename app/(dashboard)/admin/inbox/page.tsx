@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ScanLine, ChevronRight } from 'lucide-react'
+import { ScanLine, ChevronRight, Columns } from 'lucide-react'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
@@ -76,6 +76,32 @@ export default async function InboxPage({
       </div>
 
       <InboxFilterChips active={filter} counts={counts} />
+
+      {/* スプリット承認（左右分割で原本比較＆一括承認）への導線バナー */}
+      {counts.pending > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-trust-200 bg-trust-50/80 p-3.5 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-trust-600 text-white shadow-sm">
+              <Columns className="h-5 w-5" aria-hidden />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-trust-900">
+                原本付きスプリット承認・一括承認が利用できます ({counts.pending}件の承認待ち)
+              </p>
+              <p className="text-xs text-trust-700">
+                画面右側にFAX原本画像を表示しながら、高確信の注文をワンクリックで一括承認できます。
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/admin/approvals"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-trust-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-trust-700"
+          >
+            <span>スプリット承認を開く</span>
+            <ChevronRight className="h-4 w-4" aria-hidden />
+          </Link>
+        </div>
+      )}
 
       {/* 手動でファイルを読み取る（読み取りフォーム本体は /admin/ocr に一本化。ここは導線のみ） */}
       <Link

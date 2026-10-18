@@ -10,6 +10,11 @@ import type { InboxReceipt } from '@/lib/orders/inbox'
 
 /** 受信レコード（order_receipts）のカード。読み取り・再解析・却下・原本表示の導線を持つ。 */
 export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
+  // senderDateKey (例: 0312345678_20261018) から電話番号を抽出
+  const senderPhone = r.senderDateKey && !r.senderDateKey.startsWith('unknown')
+    ? r.senderDateKey.split('_')[0]
+    : null
+
   return (
     <Card className="space-y-2.5">
       <div className="flex items-start justify-between gap-4">
@@ -20,6 +25,11 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
             {r.isRevision && (
               <span className="rounded bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">再送（差分）</span>
             )}
+            {senderPhone && (
+              <span className="rounded bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+                送信元: {senderPhone}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-sm">
             {r.customerName ? (
@@ -28,13 +38,19 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
                 {r.customerName}
               </span>
             ) : (
-              <span className="text-ink-faint">取引先 未紐付け</span>
+              <span className="text-xs font-medium text-alert">⚠️ 取引先が未紐付けです（マスタ照合が必要）</span>
             )}
-            <span className="num text-ink-soft">{r.senderDateKey ?? '—'}</span>
           </div>
           <ConfidenceBar value={r.ocrConfidence} />
           {r.status === 'ai_failed' && r.errorMessage && (
-            <p className="rounded bg-alert-bg/60 px-2 py-1 text-xs text-alert">{r.errorMessage}</p>
+            <p className="rounded bg-alert-bg/60 px-2.5 py-1.5 text-xs font-medium text-alert">
+              失敗理由: {r.errorMessage}
+            </p>
+          )}
+          {r.status === 'pending_ai' && (
+            <p className="text-xs text-ink-muted">
+              AIが文字を読み取り中または待機中です。「今すぐ読み取る」で即座に解析できます。
+            </p>
           )}
         </div>
         <time className="num shrink-0 text-xs text-ink-faint">{formatJpDateTime(r.receivedAt)}</time>
