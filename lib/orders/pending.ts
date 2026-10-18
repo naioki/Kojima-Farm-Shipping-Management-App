@@ -9,14 +9,23 @@ import { toGoogleDrivePreviewUrl, toGoogleDriveViewUrl } from '@/lib/pipeline/sc
  * 各注文に「スタッフが承認できるか（高確信・取引先一致・納品日確定）」および
  * Kojima-FAX が Google Drive に保存した原本URL（previewUrl / originalUrl）を付与する。
  */
-export type {
+import type {
   PackConfigOption,
   PendingOrderItem,
   DestinationOption,
   ReceiptOriginalInfo,
   PendingOrder,
 } from './pending-types'
-export { pendingReasons } from './pending-types'
+import { pendingReasons } from './pending-types'
+
+export type {
+  PackConfigOption,
+  PendingOrderItem,
+  DestinationOption,
+  ReceiptOriginalInfo,
+  PendingOrder,
+}
+export { pendingReasons }
 
 function extractDriveUrls(r2Key: string | null, raw: unknown): { previewUrl: string | null; originalUrl: string | null } {
   const payload = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -130,7 +139,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   }
 
   return orders
-    .map((o) => {
+    .map((o): PendingOrder | null => {
       const rawItems = itemsByOrder.get(o.id) ?? []
       if (rawItems.length === 0) return null
       const orderItems: PendingOrderItem[] = rawItems.map((it) => ({

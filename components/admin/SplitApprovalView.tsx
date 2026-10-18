@@ -294,6 +294,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
    * 自然言語によるAI対話修正＆恒久ルール自動抽出（ARCHITECTURE.md §1.3 & §5.3 継承）
    */
   async function handleAiRevision() {
+    if (!selectedOrder) return
     if (!aiInstruction.trim()) {
       toast.error('修正指示を入力してください（例: 200Pに直して / 今後は〇〇を△△にする）')
       return
@@ -364,6 +365,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   }
 
   function openLearnModal(customClient?: string, customRule?: string) {
+    if (!selectedOrder) return
     const fallbackClient = selectedOrder.customerName.includes('未紐付け')
       ? '共通'
       : selectedOrder.customerName
