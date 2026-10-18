@@ -59,13 +59,14 @@ export async function POST(req: NextRequest) {
   // 1) Kojima-FAX が送る X-Pipeline-Token / Authorization: Bearer / x-fax-token / x-api-key
   // 2) またはログイン中の社内ユーザー（admin/staff）セッション
   // 3) トークン未設定環境では Kojima-FAX からのLAN/クラウド直結POSTを受け付ける
+  // ※ CRON_SECRET は cron ジョブ用のため、FAX_INGEST_TOKEN の未設定判定には巻き込まない
   const configuredToken =
     (await getSetting('FAX_INGEST_TOKEN')) ||
     process.env.FAX_INGEST_TOKEN ||
     process.env.ORDER_PIPELINE_API_KEY ||
-    process.env.PIPELINE_API_KEY ||
-    (await getSetting('CRON_SECRET')) ||
-    process.env.CRON_SECRET
+    process.env.PIPELINE_API_KEY
+
+  const cronSecret = (await getSetting('CRON_SECRET')) || process.env.CRON_SECRET
 
   const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
   const headerToken =
@@ -75,7 +76,12 @@ export async function POST(req: NextRequest) {
     req.headers.get('x-api-key')?.trim() ||
     req.headers.get('x-cron-secret')?.trim()
 
-  if (configuredToken && headerToken !== configuredToken) {
+  const isTokenValid =
+    !configuredToken ||
+    headerToken === configuredToken ||
+    (cronSecret && headerToken === cronSecret)
+
+  if (!isTokenValid) {
     const user = await getAuthedUser()
     if (!user) {
       return NextResponse.json(
