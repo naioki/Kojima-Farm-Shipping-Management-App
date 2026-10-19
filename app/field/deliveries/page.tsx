@@ -43,7 +43,7 @@ export default async function DeliveriesPage({
   // その日の出荷対象注文（キャンセルは除外）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('id, customer_id, destination_id, status')
+    .select('id, customer_id, destination_id, status, note')
     .eq('delivery_date', date)
     .neq('status', 'cancelled')
   if (ordersErr) return <ErrorState message={ordersErr.message} />
@@ -67,28 +67,36 @@ export default async function DeliveriesPage({
   const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
-  // ★配送先名・数量換算・チェック状態が黙って欠けると、誤った積み分け／二重納品に直結する。
-  //   （特に deliveries の取得失敗は「全部まだ未チェック」に見えるため、納品済みを再配送しかねない）
+
+  type DestRow = {
+    id: string
+    code: string | null
+    full_name: string
+    shipping_route_name?: string | null
+    departure_time?: string | null
+    pack_sort_order?: number | null
+  }
+
+  // ★納入先マスタ取得（0026 未適用環境への安全なフォールバック付き）
   const [custRes, destRes, prodRes, packRes, deliveryRes] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
-    destinationIds.length
-      ? supabase
-          .from('delivery_destinations')
-          .select('id, code, full_name, shipping_route_name, departure_time, pack_sort_order')
-          .in('id', destinationIds)
-      : Promise.resolve({
-          data: [] as {
-            id: string
-            code: string | null
-            full_name: string
-            shipping_route_name: string | null
-            departure_time: string | null
-            pack_sort_order: number | null
-          }[],
-          error: null,
-        }),
+    (async (): Promise<{ data: DestRow[] | null; error: { message: string } | null }> => {
+      if (!destinationIds.length) return { data: [], error: null }
+      const r1 = await supabase
+        .from('delivery_destinations')
+        .select('id, code, full_name, shipping_route_name, departure_time, pack_sort_order')
+        .in('id', destinationIds)
+      if (!r1.error) return { data: (r1.data ?? []) as DestRow[], error: null }
+      // 0026 未適用DBへのフォールバック
+      const r2 = await supabase
+        .from('delivery_destinations')
+        .select('id, code, full_name')
+        .in('id', destinationIds)
+      if (r2.error) return { data: null, error: r2.error }
+      return { data: (r2.data ?? []) as DestRow[], error: null }
+    })(),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
@@ -125,6 +133,21 @@ export default async function DeliveriesPage({
     ]),
   )
 
+  // AIやメモから納入先名を補完するヘルパー
+  function extractDestName(note?: string | null, lineNote?: string | null): string | null {
+    if (note) {
+      const m1 = note.match(/(?:納入先|お届け先|配送先)(?:\(OCR\))?[:：\s]+([^\n,、・\]】]+)/)
+      if (m1?.[1]) return m1[1].trim()
+      const m2 = note.match(/【(?:納入先|お届け先|配送先)[:：\s]*([^】]+)】/)
+      if (m2?.[1]) return m2[1].trim()
+    }
+    if (lineNote) {
+      const m3 = lineNote.match(/納入先要確認\(([^)]+)\)/)
+      if (m3?.[1]) return m3[1].trim()
+    }
+    return null
+  }
+
   // 配送単位（取引先×納入先）にグルーピング。deliveries テーブルと同じキー設計（migrations/0015）。
   const orderById = new Map((orders ?? []).map((o) => [o.id, o]))
   const groups = new Map<string, DeliveryGroup>()
@@ -135,12 +158,14 @@ export default async function DeliveriesPage({
     let g = groups.get(key)
     if (!g) {
       const dest = order.destination_id ? destById.get(order.destination_id) : null
+      const resolvedDestName =
+        dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note)
       g = {
         key,
         customerId: order.customer_id,
         destinationId: order.destination_id ?? null,
         customerName: customerName.get(order.customer_id) ?? '—',
-        destinationName: dest ? dest.code || dest.full_name : null,
+        destinationName: resolvedDestName,
         shippingRouteName: dest?.shipping_route_name ?? null,
         departureTime: dest?.departure_time ?? null,
         packSortOrder: dest?.pack_sort_order ?? 100,
@@ -163,7 +188,7 @@ export default async function DeliveriesPage({
     })
   }
 
-  // 便（ルート・出発時刻）ごとのグループ化
+  // 便（ルート・出発時刻）ごとのグループ化（納入先名からの自動推測付き）
   interface RouteGroup {
     key: string
     title: string
@@ -174,21 +199,43 @@ export default async function DeliveriesPage({
     isDone: boolean
   }
 
+  function resolveRouteInfo(g: DeliveryGroup): { title: string; departureTime: string | null } {
+    if (g.shippingRouteName || g.departureTime) {
+      const timePrefix = g.departureTime ? `${g.departureTime}発` : ''
+      const routeSuffix = g.shippingRouteName ? ` ${g.shippingRouteName}` : ''
+      return {
+        title: `${timePrefix}${routeSuffix}`.trim(),
+        departureTime: g.departureTime,
+      }
+    }
+    const d = g.destinationName ?? ''
+    const c = g.customerName ?? ''
+    if (d.includes('岩槻') || c.includes('パルシステム')) {
+      return { title: '11:30発 岩槻便', departureTime: '11:30' }
+    }
+    if (d.includes('戸田') || d.includes('ちばコープ')) {
+      return { title: '14:00発 戸田便', departureTime: '14:00' }
+    }
+    if (d.includes('松戸') || d.includes('柏')) {
+      return { title: '14:00発 松戸・柏便', departureTime: '14:00' }
+    }
+    if (c.includes('直売') || d.includes('直売')) {
+      return { title: '直売所便', departureTime: null }
+    }
+    return { title: '一般配送・時間未指定', departureTime: null }
+  }
+
   const routeMap = new Map<string, RouteGroup>()
   for (const g of groups.values()) {
-    const timePrefix = g.departureTime ? `${g.departureTime}発` : ''
-    const routeSuffix = g.shippingRouteName ? ` ${g.shippingRouteName}` : ''
-    const routeTitle = (timePrefix || routeSuffix)
-      ? `${timePrefix}${routeSuffix}`.trim()
-      : '時間未指定・その他'
-    const routeKey = routeTitle
+    const routeInfo = resolveRouteInfo(g)
+    const routeKey = routeInfo.title
 
     let rg = routeMap.get(routeKey)
     if (!rg) {
       rg = {
         key: routeKey,
-        title: routeTitle,
-        departureTime: g.departureTime,
+        title: routeInfo.title,
+        departureTime: routeInfo.departureTime,
         groups: [],
         totalLines: 0,
         deliveredCount: 0,
@@ -218,8 +265,10 @@ export default async function DeliveriesPage({
   }
 
   const sortedRoutes = Array.from(routeMap.values()).sort((a, b) => {
-    if (a.key === '時間未指定・その他') return 1
-    if (b.key === '時間未指定・その他') return -1
+    const isUnscheduledA = a.key.includes('時間未指定')
+    const isUnscheduledB = b.key.includes('時間未指定')
+    if (isUnscheduledA && !isUnscheduledB) return 1
+    if (!isUnscheduledA && isUnscheduledB) return -1
     if (a.departureTime && b.departureTime) {
       return a.departureTime.localeCompare(b.departureTime)
     }

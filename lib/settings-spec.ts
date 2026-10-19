@@ -82,10 +82,10 @@ export const SECTION_LABELS: Record<SettingSection, string> = {
 /** 各セクションの先頭に出す1行説明（任意）。何のための設定かを平易に伝える。 */
 export const SECTION_DESCRIPTIONS: Partial<Record<SettingSection, string>> = {
   issuer: '請求書・納品書の上部に印字される自社情報です。',
-  rules: '取引先ごとの規格（P/C・荷姿など）を誰が変更できるか、変更時に通知するかを決めます。',
+  rules: '取引先ごとの規格（P/C・荷姿など）を誰が変更できるか、変更時に通知するかを決めます。納入先（岩槻・戸田など）はAIがFAXから自動判別するため、手動マスタ登録を意識せず運用できます。',
   field: '現場スタッフに開放する機能を1つずつONにできます。既定はすべてOFF（管理者のみ）。',
-  ai: '通常読取は高速・低コストなメインモデル（gemini-3.5-flash-lite 等）で行い、低確信時の再検証や手書き修正・ルール学習など大切な箇所だけ高精度モデル（gemini-3.8-flash 等）を使う2段階設定です。',
-  automation: '運用が安定しているときはONにすることで、問題のない注文の人間承認ステップをスキップし自動で確定（収穫タスク生成）できます（/admin/approvals や /admin/rules 上部からもワンクリックで切替可能）。',
+  ai: '通常読取は高速・低コストなメインモデル（gemini-3.5-flash-lite 等）で行い、低確信時の再検証や手書き修正・ルール学習など大切な箇所だけ高精度モデル（gemini-3.8-flash 等）を使う2段階設定です。FAX内の納入先（岩槻・戸田等）もAIが自動判別します。',
+  automation: '運用が安定しているときはONにすることで、AIが確信を持った注文の人間承認ステップをスキップし自動で確定（収穫タスク生成）できます（納入先や荷姿もAIが自動判別して自動承認を通過します）。',
   ingest:
     '農園の Linux FAXサーバー（Kojima-FAX Ver 4.0）からのリアルタイム直結投入（POST /orders/ingest または /api/receipts）およびメール取込の設定です（原本のGoogle Drive保存はKojima-FAX側で完結するため、アプリ側でのR2・Drive認証設定は一切不要です）。',
   notify: '承認待ち発生などを LINE WORKS に知らせる設定です（Discord連携は廃止済み）。',

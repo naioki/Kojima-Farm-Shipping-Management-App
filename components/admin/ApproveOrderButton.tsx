@@ -46,15 +46,11 @@ export function ApproveOrderButton({
       toast.error('納品日を入れてください')
       return
     }
-    if (needsDestination && !destinationId) {
-      toast.error('納入先を選んでください')
-      return
-    }
     setBusy(true)
     try {
       const body: Record<string, string> = {}
       if (needsDeliveryDate) body.delivery_date = date
-      if (needsDestination) body.destination_id = destinationId
+      if (destinationId) body.destination_id = destinationId
       const res = await fetch(`/api/orders/${orderId}/approve`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -92,7 +88,7 @@ export function ApproveOrderButton({
           aria-label="納入先"
           className={cn(inputCls, size === 'lg' && 'h-12')}
         >
-          <option value="">納入先を選択</option>
+          <option value="">納入先（AI自動判別 / 指定なし）</option>
           {destinationOptions.map((d) => (
             <option key={d.id} value={d.id}>
               {d.label}

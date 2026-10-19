@@ -50,9 +50,13 @@ export function HarvestPulseSummary({
 
   // 今日畑で採るべき箱数 = max(0, 注文合計箱数 - 在庫箱数)
   const harvestNeededBoxes = Math.max(0, totalBoxes - stock)
-  // 概算パック数
-  const avgPacksPerBox = totalBoxes > 0 ? Math.round(totalPacks / totalBoxes) : 20
-  const harvestNeededPacks = harvestNeededBoxes * avgPacksPerBox
+  // 必要パック数（在庫0なら注文総数そのもの。在庫がある場合は箱数比率で正確に逆算）
+  const harvestNeededPacks =
+    stock === 0
+      ? totalPacks
+      : totalBoxes > 0
+        ? Math.max(0, Math.round(totalPacks * (harvestNeededBoxes / totalBoxes)))
+        : 0
 
   const saveStock = async (newStock: number) => {
     const validStock = Math.max(0, Number(newStock) || 0)
@@ -128,7 +132,7 @@ export function HarvestPulseSummary({
             </span>
             <span className="text-2xl font-black text-white/90">箱</span>
             <span className="ml-2 text-sm font-bold text-emerald-200/90">
-              (約 {harvestNeededPacks.toLocaleString()} P)
+              ({stock > 0 ? '約 ' : ''}{harvestNeededPacks.toLocaleString()} P)
             </span>
           </div>
         </div>

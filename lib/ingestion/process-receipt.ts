@@ -459,7 +459,30 @@ export async function processReceipt(
     const custDests = orderCustomerId
       ? allDests.filter((d) => d.customer_id === orderCustomerId)
       : []
-    const destinationId = matchDestinationId(po.destination_name, custDests)
+    let destinationId = matchDestinationId(po.destination_name, custDests)
+    if (!destinationId && po.destination_name && orderCustomerId) {
+      // 納品先もAIが追加判別してくれるため、未登録の納入先は自動でマスタ追加して即時バインド
+      try {
+        const destCode = po.destination_name.length > 10 ? po.destination_name.slice(0, 10) : po.destination_name
+        const { data: newDest } = await admin
+          .from('delivery_destinations')
+          .insert({
+            customer_id: orderCustomerId,
+            code: destCode,
+            full_name: po.destination_name,
+            sort_order: (custDests.length + 1) * 10,
+          })
+          .select('id, code, full_name, aliases')
+          .single()
+        if (newDest) {
+          destinationId = newDest.id
+          custDests.push({ ...newDest, customer_id: orderCustomerId, aliases: [] })
+          allDests.push({ ...newDest, customer_id: orderCustomerId, aliases: [] })
+        }
+      } catch (err) {
+        console.warn('[process-receipt] 自動納入先登録スキップ:', err)
+      }
+    }
     const needsDestination = custDests.length > 0 && destinationId === null
 
     type EnrichedItem = {

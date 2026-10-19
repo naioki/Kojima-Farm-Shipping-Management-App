@@ -172,8 +172,24 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
           }, 1)
         : null
       const needsDeliveryDate = !o.delivery_date
+
+      // AI抽出やノートから納入先名を取得
+      function extractDestFromNote(noteText?: string | null): string | null {
+        if (!noteText) return null
+        const m1 = noteText.match(/(?:納入先|お届け先|配送先)(?:\(OCR\))?[:：\s]+([^\n,、・\]】]+)/)
+        if (m1?.[1]) return m1[1].trim()
+        const m2 = noteText.match(/【(?:納入先|お届け先|配送先)[:：\s]*([^】]+)】/)
+        if (m2?.[1]) return m2[1].trim()
+        return null
+      }
+
+      const noteDest = extractDestFromNote((o as { note?: string | null }).note)
       const destinationOptions = o.customer_id ? destByCustomer.get(o.customer_id) ?? [] : []
-      const needsDestination = !o.destination_id && destinationOptions.length > 0
+      const resolvedDestName =
+        (o.destination_id ? destLabelById.get(o.destination_id) : null) ?? noteDest ?? null
+      const isDestinationKnown = Boolean(o.destination_id || noteDest || destinationOptions.length === 0)
+      const needsDestination = !isDestinationKnown
+
       const needsPackConfig = orderItems.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)
       const allConfident = orderItems.length > 0 && minConfidence != null && minConfidence >= threshold
       const staffApprovable =
@@ -216,7 +232,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
         customerId: o.customer_id,
         customerName: o.customer_id ? (custName.get(o.customer_id) ?? '（不明な取引先）') : '取引先 未紐付け',
         customerColor: o.customer_id ? (custColor.get(o.customer_id) ?? null) : null,
-        destinationName: o.destination_id ? (destLabelById.get(o.destination_id) ?? null) : null,
+        destinationName: resolvedDestName,
         notes: (o as { note?: string | null }).note ?? null,
         items: orderItems,
         minConfidence,

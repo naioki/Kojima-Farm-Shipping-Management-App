@@ -49,7 +49,7 @@ export async function approveOrder(
   // 対象注文＋明細を取得
   const { data: order, error: orderErr } = await admin
     .from('orders')
-    .select('id, customer_id, status, delivery_date, destination_id')
+    .select('id, customer_id, status, delivery_date, destination_id, note')
     .eq('id', orderId)
     .maybeSingle()
   if (orderErr) return { ok: false, status: 500, error: orderErr.message }
@@ -70,16 +70,32 @@ export async function approveOrder(
     return { ok: false, status: 400, error: '納品日を確定してください' }
   }
 
-  // 納入先ゲート: 取引先に納入先が登録されているのに未確定なら承認させない
-  const destinationId = order.destination_id ?? input.destinationId ?? null
+  // 納入先解決: AI判別または指定値を優先。未指定の場合は取引先の納入先やメモから自動名寄せ解決
+  let destinationId = order.destination_id ?? input.destinationId ?? null
   if (!destinationId && order.customer_id) {
-    const { count: destCount } = await admin
+    const { data: customerDests } = await admin
       .from('delivery_destinations')
-      .select('id', { count: 'exact', head: true })
+      .select('id, code, full_name, aliases')
       .eq('customer_id', order.customer_id)
       .eq('is_active', true)
-    if ((destCount ?? 0) > 0) {
-      return { ok: false, status: 400, error: '納入先を選択してください' }
+
+    if (customerDests && customerDests.length > 0) {
+      if (customerDests.length === 1 && customerDests[0]) {
+        destinationId = customerDests[0].id
+      } else {
+        const noteText = `${order.note ?? ''} ${(items ?? []).map((it) => it.product_name).join(' ')}`
+          .normalize('NFKC')
+          .toLowerCase()
+        const matched = customerDests.find((d) => {
+          const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
+            .filter(Boolean)
+            .map((s) => s.normalize('NFKC').toLowerCase())
+          return cands.some((c) => c && noteText.includes(c))
+        })
+        if (matched) {
+          destinationId = matched.id
+        }
+      }
     }
   }
 
@@ -134,8 +150,8 @@ export async function approveOrder(
     updates.delivery_date = input.deliveryDate
     updates.delivery_date_source = 'manual'
   }
-  if (!order.destination_id && input.destinationId) {
-    updates.destination_id = input.destinationId
+  if (!order.destination_id && destinationId) {
+    updates.destination_id = destinationId
   }
   const { error: updErr } = await admin.from('orders').update(updates).eq('id', order.id)
   if (updErr) return { ok: false, status: 500, error: updErr.message }
