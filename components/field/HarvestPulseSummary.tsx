@@ -41,7 +41,9 @@ export function HarvestPulseSummary({
   specBreakdown,
 }: HarvestPulseSummaryProps) {
   const [stock, setStock] = useState<number>(initialStock)
+  const [tempStock, setTempStock] = useState<number>(initialStock)
   const [carryover, setCarryover] = useState<number>(0)
+  const [tempCarryover, setTempCarryover] = useState<number>(0)
   const [isEditingStock, setIsEditingStock] = useState<boolean>(false)
   const [isEditingCarryover, setIsEditingCarryover] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
@@ -53,6 +55,7 @@ export function HarvestPulseSummary({
   const harvestNeededPacks = harvestNeededBoxes * avgPacksPerBox
 
   const saveStock = async (newStock: number) => {
+    const validStock = Math.max(0, Number(newStock) || 0)
     setBusy(true)
     try {
       const res = await fetch('/api/inventory/container', {
@@ -61,11 +64,12 @@ export function HarvestPulseSummary({
         body: JSON.stringify({
           date,
           productId,
-          stockContainers: newStock,
+          stockContainers: validStock,
         }),
       })
       if (!res.ok) throw new Error('在庫の保存に失敗しました')
-      setStock(newStock)
+      setStock(validStock)
+      setTempStock(validStock)
       setIsEditingStock(false)
       toast.success('冷蔵庫在庫を更新しました')
     } catch (e) {
@@ -76,6 +80,7 @@ export function HarvestPulseSummary({
   }
 
   const saveCarryover = async (newCarryover: number) => {
+    const validCarryover = Math.max(0, Number(newCarryover) || 0)
     setBusy(true)
     try {
       const res = await fetch('/api/inventory/container', {
@@ -84,11 +89,12 @@ export function HarvestPulseSummary({
         body: JSON.stringify({
           date,
           productId,
-          carryoverToNextDay: newCarryover,
+          carryoverToNextDay: validCarryover,
         }),
       })
       if (!res.ok) throw new Error('翌朝持ち越しの保存に失敗しました')
-      setCarryover(newCarryover)
+      setCarryover(validCarryover)
+      setTempCarryover(validCarryover)
       setIsEditingCarryover(false)
       toast.success('翌朝への持ち越しを登録しました（明日の在庫に自動反映されます）')
     } catch (e) {
@@ -144,7 +150,10 @@ export function HarvestPulseSummary({
               <span className="text-[11px] font-bold text-white/80">🧊 冷蔵庫在庫</span>
               <button
                 type="button"
-                onClick={() => setIsEditingStock(!isEditingStock)}
+                onClick={() => {
+                  setTempStock(stock)
+                  setIsEditingStock(!isEditingStock)
+                }}
                 className="text-[10px] text-emerald-300 underline font-semibold"
               >
                 {isEditingStock ? '閉じる' : '修正'}
@@ -152,25 +161,57 @@ export function HarvestPulseSummary({
             </div>
 
             {isEditingStock ? (
-              <div className="mt-1 flex items-center justify-center gap-1">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  defaultValue={stock}
-                  id="stock-input"
-                  className="w-16 rounded bg-white px-2 py-1 text-center font-bold text-ink text-sm outline-none"
-                />
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    const el = document.getElementById('stock-input') as HTMLInputElement
-                    if (el) saveStock(Number(el.value) || 0)
-                  }}
-                  className="rounded bg-emerald-500 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-600"
-                >
-                  保存
-                </button>
+              <div className="mt-2 space-y-2">
+                {/* 手袋でも押しやすいクイック増減ステッパー */}
+                <div className="grid grid-cols-4 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setTempStock((p) => Math.max(0, p - 5))}
+                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
+                  >
+                    -5
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempStock((p) => Math.max(0, p - 1))}
+                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempStock((p) => p + 1)}
+                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempStock((p) => p + 5)}
+                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
+                  >
+                    +5
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-center gap-1.5">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={tempStock}
+                    onChange={(e) => setTempStock(Math.max(0, Number(e.target.value) || 0))}
+                    className="h-9 w-20 rounded bg-white px-2 py-1 text-center font-bold text-ink text-base outline-none shadow-inner"
+                  />
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => saveStock(tempStock)}
+                    className="h-9 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50 active:scale-95 shadow-xs"
+                  >
+                    {busy ? '保存中...' : '確定'}
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -239,37 +280,73 @@ export function HarvestPulseSummary({
           )}
 
           {/* 夕方の持ち越し入力 */}
-          <div className="pt-2 border-t border-line/60 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-ink-soft">夕方の翌朝持ち越し登録:</span>
-            {isEditingCarryover ? (
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  defaultValue={carryover}
-                  id="carryover-input"
-                  className="w-16 rounded border border-line bg-white px-2 py-1 text-center font-bold text-sm"
-                />
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    const el = document.getElementById('carryover-input') as HTMLInputElement
-                    if (el) saveCarryover(Number(el.value) || 0)
-                  }}
-                  className="rounded bg-[#155c39] px-2 py-1 text-xs font-bold text-white"
-                >
-                  確定
-                </button>
-              </div>
-            ) : (
+          <div className="pt-2 border-t border-line/60">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-bold text-ink-soft">夕方の翌朝持ち越し登録:</span>
               <button
                 type="button"
-                onClick={() => setIsEditingCarryover(true)}
+                onClick={() => {
+                  setTempCarryover(carryover)
+                  setIsEditingCarryover(!isEditingCarryover)
+                }}
                 className="text-xs font-bold text-emerald-700 underline"
               >
-                {carryover > 0 ? `${carryover}箱を翌朝に引継設定中 (変更)` : '＋ 今日の余り箱数を登録'}
+                {isEditingCarryover ? '閉じる' : carryover > 0 ? `${carryover}箱を引継設定中 (変更)` : '＋ 今日の余り箱数を登録'}
               </button>
+            </div>
+
+            {isEditingCarryover && (
+              <div className="rounded-xl bg-white p-2.5 border border-line shadow-xs space-y-2 mt-1">
+                <div className="grid grid-cols-4 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setTempCarryover((p) => Math.max(0, p - 5))}
+                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
+                  >
+                    -5
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempCarryover((p) => Math.max(0, p - 1))}
+                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempCarryover((p) => p + 1)}
+                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempCarryover((p) => p + 5)}
+                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
+                  >
+                    +5
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-end gap-1.5">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={tempCarryover}
+                    onChange={(e) => setTempCarryover(Math.max(0, Number(e.target.value) || 0))}
+                    className="h-9 w-20 rounded border border-line bg-white px-2 py-1 text-center font-bold text-base shadow-inner outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => saveCarryover(tempCarryover)}
+                    className="h-9 rounded-lg bg-[#155c39] px-3 text-xs font-bold text-white hover:bg-[#10482c] disabled:opacity-50 active:scale-95 shadow-xs"
+                  >
+                    {busy ? '保存中...' : '確定'}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

@@ -226,8 +226,10 @@ export function PackingAndShippingViews({
               <div
                 key={routeName}
                 className={cn(
-                  'rounded-2xl border p-3.5 shadow-sm space-y-3',
-                  isGroupDone ? 'border-emerald-200 bg-emerald-50/20' : 'border-sky-300 bg-white',
+                  'rounded-2xl border p-3.5 shadow-sm space-y-3 transition-all',
+                  isGroupDone
+                    ? 'border-emerald-200 bg-emerald-50/20 opacity-80'
+                    : 'border-sky-300 bg-white border-l-4 border-l-sky-500 shadow-md',
                 )}
               >
                 <div className="flex items-center justify-between border-b border-line/60 pb-2">
@@ -235,15 +237,20 @@ export function PackingAndShippingViews({
                     <span className="rounded-lg bg-sky-100 px-2 py-0.5 text-xs font-black text-sky-900">
                       🕒 {routeName}
                     </span>
+                    {!isGroupDone && (
+                      <span className="inline-flex items-center rounded-md bg-sky-500 px-1.5 py-0.5 text-[10px] font-black text-white">
+                        🚚 積込中
+                      </span>
+                    )}
                     <span className="text-xs font-bold text-ink-soft">({groupItems.length}件)</span>
                   </div>
                   {isGroupDone ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-                      <CheckCircle2 className="h-4 w-4" /> 積込完了
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-black text-emerald-800">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" /> 積込完了
                     </span>
                   ) : (
-                    <span className="text-xs font-bold text-rose-600">
-                      未積込: {unshippedCount} 件
+                    <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 border border-rose-200 px-2 py-0.5 text-xs font-black text-rose-700">
+                      未積込 {unshippedCount} 件
                     </span>
                   )}
                 </div>
