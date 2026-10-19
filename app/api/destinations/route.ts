@@ -14,6 +14,8 @@ const createSchema = z.object({
   full_name: z.string().trim().min(1),
   /** OCR表記ゆれ吸収用。 */
   aliases: z.array(z.string().trim().min(1)).default([]),
+  departure_time: z.string().trim().nullish(),
+  shipping_route_name: z.string().trim().nullish(),
 })
 
 /** 納入先の新規作成（取引先の配下）。admin のみ（RLS）。 */
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
   const norm = normalizeOrgName(parsed.data.full_name)
   const { data: siblings, error: listErr } = await supabase
     .from('delivery_destinations')
-    .select('id, code, full_name, aliases, is_active')
+    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
     .eq('customer_id', parsed.data.customer_id)
   if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
   const existing = (siblings ?? []).find((d) => normalizeOrgName(d.full_name) === norm)
@@ -49,8 +51,10 @@ export async function POST(req: Request) {
       code: parsed.data.code ?? null,
       full_name: parsed.data.full_name,
       aliases: parsed.data.aliases,
+      departure_time: parsed.data.departure_time ?? null,
+      shipping_route_name: parsed.data.shipping_route_name ?? null,
     })
-    .select('id, code, full_name, aliases, is_active')
+    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

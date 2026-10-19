@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { DeliveryStatus } from '@/types/database'
 
@@ -36,6 +37,8 @@ export function DeliveryCheckCard({
   destinationId,
   deliveryId,
   hasPhoto,
+  departureTime,
+  shippingRouteName,
 }: {
   status: DeliveryStatus
   customerName: string
@@ -47,6 +50,8 @@ export function DeliveryCheckCard({
   /** deliveries 行が既にあるときの id（写真閲覧リンク用） */
   deliveryId: string | null
   hasPhoto: boolean
+  departureTime?: string | null
+  shippingRouteName?: string | null
 }) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -92,8 +97,6 @@ export function DeliveryCheckCard({
       if (action === 'delivered') toast.success('納品完了を記録しました')
       router.refresh()
     } catch (e) {
-      // 配送中は電波が切れやすい。catch が無いと「押しても何も起きない」だけになり、
-      // 記録できていないことに気づかないまま次の配送先へ行ってしまう。
       toast.error(fieldErrorMessage(e, '記録できませんでした'))
     } finally {
       setBusy(false)
@@ -101,12 +104,10 @@ export function DeliveryCheckCard({
   }
 
   function revert() {
-    // 完了の取り消しは意図的なワンクッション（誤タップで記録が消えない）
     if (window.confirm('1つ前の状態にもどしますか？')) void send('revert')
   }
 
   function reportIssue() {
-    // 配送後の問題（数量違い・傷み・遅delay等）をその場で記録 → 配送実績に集計
     const note = window.prompt('どんな問題がありましたか？（例：キュウリ1ケース不足の連絡あり）')
     if (note?.trim()) {
       void (async () => {
@@ -127,7 +128,6 @@ export function DeliveryCheckCard({
           else toast.error('記録できませんでした')
           router.refresh()
         } catch (e) {
-          // 圏外だと問題の記録が消える。書いた内容が無駄になったことは必ず知らせる
           toast.error(fieldErrorMessage(e, '問題を記録できませんでした'))
         } finally {
           setBusy(false)
@@ -149,7 +149,6 @@ export function DeliveryCheckCard({
       else toast.error('写真を保存できませんでした')
       router.refresh()
     } catch (e) {
-      // 写真は容量が大きく、弱い電波では途中で切れやすい。失敗を黙らせない
       toast.error(fieldErrorMessage(e, '写真を保存できませんでした'))
     } finally {
       setBusy(false)
@@ -157,89 +156,139 @@ export function DeliveryCheckCard({
   }
 
   return (
-    <Card className="space-y-3 print:break-inside-avoid print:rounded-none print:border print:border-black print:shadow-none">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-base font-bold text-ink">
-          {customerName}
-          {destinationName && <span className="text-ink-soft">　＞ {destinationName}</span>}
-          <span className="ml-2 text-sm font-normal text-ink-soft">{items.length}件</span>
-        </h2>
-        {/* 状態バッジ（画面のみ） */}
-        <span
-          className={cn(
-            'rounded-full px-3 py-1 text-xs font-bold print:hidden',
-            status === 'delivered' && 'bg-harvest-100 text-harvest-700',
-            status === 'loaded' && 'bg-trust-100 text-trust-700',
-            status === 'planned' && 'bg-bg-soft text-ink-soft',
-          )}
-        >
-          {status === 'delivered' ? '✓ 納品ずみ' : status === 'loaded' ? '🚚 積込OK' : '未チェック'}
-        </span>
+    <Card className="space-y-3.5 print:break-inside-avoid print:rounded-none print:border print:border-black print:shadow-none">
+      {/* カードヘッダー: 取引先・納入先、時間、ステータス */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/60 pb-3">
+        <div className="space-y-0.5">
+          <div className="text-xs font-semibold text-ink-muted">{customerName}</div>
+          <div className="flex items-center gap-2">
+            <h2 className="font-display text-lg font-black text-ink">
+              {destinationName ? `【${destinationName}】` : customerName}
+            </h2>
+            <span className="rounded-md bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft">
+              {items.length}件
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          {/* 出荷時間クイック編集ボタン */}
+          <QuickDepartureTimeEditor
+            deliveryDate={deliveryDate}
+            customerId={customerId}
+            destinationId={destinationId}
+            customerName={customerName}
+            destinationName={destinationName}
+            currentDepartureTime={departureTime ?? null}
+            currentShippingRouteName={shippingRouteName ?? null}
+            variant="chip"
+          />
+
+          {/* 状態バッジ */}
+          <span
+            className={cn(
+              'rounded-full px-3 py-1 text-xs font-extrabold shadow-xs',
+              status === 'delivered' && 'bg-emerald-100 text-emerald-800 border border-emerald-300',
+              status === 'loaded' && 'bg-sky-100 text-sky-800 border border-sky-300',
+              status === 'planned' && 'bg-bg-soft text-ink-soft border border-line',
+            )}
+          >
+            {status === 'delivered' ? '✓ 納品ずみ' : status === 'loaded' ? '🚚 積込OK' : '未チェック'}
+          </span>
+        </div>
       </div>
 
-      <table className="w-full text-sm">
+      {/* ① 画面表示用：高視認性カードチェックリスト（モバイル最適化） */}
+      <div className="space-y-2.5 print:hidden">
+        {items.map((it) => {
+          const isChecked = status !== 'planned' || checked.has(it.id)
+          return (
+            <div
+              key={it.id}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest('button')) return
+                toggle(it.id)
+              }}
+              className={cn(
+                'rounded-xl border p-3 transition-all',
+                status === 'planned' && 'cursor-pointer active:scale-[0.99]',
+                isChecked
+                  ? 'border-emerald-300 bg-emerald-50/50 shadow-xs'
+                  : 'border-line bg-bg-card hover:border-line-strong',
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  {/* 品目名 */}
+                  <div className="text-base font-black text-ink leading-snug">
+                    {it.productName}
+                  </div>
+
+                  {/* 数量・荷姿の特大ハイライト表示 */}
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-display text-2xl font-black text-emerald-950 tabular-nums">
+                      {it.quantity} <span className="text-sm font-bold text-emerald-800">{it.unit}</span>
+                    </span>
+                    <span className="inline-flex items-center rounded-lg bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 text-xs font-black text-emerald-900 shadow-2xs">
+                      {it.quantityText.includes('/') ? it.quantityText.split('/')[1]?.trim() : it.quantityText}
+                    </span>
+                  </div>
+
+                  {/* 荷姿・メモ */}
+                  {it.noteText && (
+                    <div className="text-xs font-medium text-ink-soft bg-bg-soft/70 px-2 py-0.5 rounded-md inline-block">
+                      📝 {it.noteText}
+                    </div>
+                  )}
+                </div>
+
+                {/* かくにん（チェックボタン） */}
+                <button
+                  type="button"
+                  onClick={() => toggle(it.id)}
+                  disabled={status !== 'planned'}
+                  aria-pressed={isChecked}
+                  aria-label={`${it.productName} をかくにん`}
+                  className={cn(
+                    'shrink-0 h-12 w-12 rounded-full border-2 flex items-center justify-center transition active:scale-95 shadow-xs',
+                    isChecked
+                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                      : 'border-line-strong bg-white text-transparent hover:border-emerald-400',
+                    status !== 'planned' && 'cursor-default',
+                  )}
+                >
+                  <Check className="h-6 w-6 stroke-[3]" aria-hidden />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ② 紙の伝票印刷用テーブル（印刷時のみ表示） */}
+      <table className="hidden print:table w-full text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs text-ink-soft print:border-black">
             <th className="py-1 pr-2 font-medium">品目</th>
             <th className="py-1 pr-2 font-medium">数量</th>
             <th className="py-1 pr-2 font-medium">荷姿・メモ</th>
-            <th className="hidden w-14 py-1 text-center font-medium print:table-cell">積込</th>
-            <th className="hidden w-14 py-1 text-center font-medium print:table-cell">納品</th>
-            <th className="w-16 py-1 text-center font-medium print:hidden">かくにん</th>
+            <th className="w-14 py-1 text-center font-medium">積込</th>
+            <th className="w-14 py-1 text-center font-medium">納品</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((it) => {
-            const isChecked = status !== 'planned' || checked.has(it.id)
-            return (
-              <tr
-                key={it.id}
-                // 行のどこをタップしても確認できる（手袋・急ぎでも押しやすい）。
-                // ただしセル内のボタン由来のクリックは二重トグルになるので無視する。
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('button')) return
-                  toggle(it.id)
-                }}
-                className={cn(
-                  'border-b border-line last:border-0 print:border-black',
-                  status === 'planned' && 'cursor-pointer active:bg-bg-soft',
-                  status === 'planned' && checked.has(it.id) && 'bg-harvest-50',
-                )}
-              >
-                <td className="py-2.5 pr-2 font-medium text-ink">{it.productName}</td>
-                <td className="num py-2.5 pr-2 tabular-nums text-ink">
-                  {it.quantityText}
-                  <span className="ml-1 text-xs text-ink-soft">{it.unit}</span>
-                </td>
-                <td className="py-2.5 pr-2 text-xs text-ink-soft">{it.noteText}</td>
-                {/* 紙用の□欄（印刷のみ） */}
-                <td className="hidden py-2.5 text-center text-lg leading-none text-ink-soft print:table-cell">□</td>
-                <td className="hidden py-2.5 text-center text-lg leading-none text-ink-soft print:table-cell">□</td>
-                {/* 画面用のタップ確認（48pxターゲット）。
-                    実ボタンにして、キーボード（Tab＋Enter/Space）と読み上げでも
-                    チェックできるようにする。aria-pressed で「確認済みか」が伝わる。 */}
-                <td className="py-1 text-center print:hidden">
-                  <button
-                    type="button"
-                    onClick={() => toggle(it.id)}
-                    disabled={status !== 'planned'}
-                    aria-pressed={isChecked}
-                    aria-label={`${it.productName} ${it.quantityText}${it.unit} を かくにん`}
-                    className={cn(
-                      'inline-flex h-12 w-12 items-center justify-center rounded-full border-2',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100',
-                      isChecked
-                        ? 'border-harvest-500 bg-harvest-500 text-white'
-                        : 'border-line-strong bg-bg-card text-transparent',
-                      status !== 'planned' && 'cursor-default',
-                    )}
-                  >
-                    <Check className="h-6 w-6" aria-hidden />
-                  </button>
-                </td>
-              </tr>
-            )
-          })}
+          {items.map((it) => (
+            <tr key={it.id} className="border-b border-line last:border-0 print:border-black">
+              <td className="py-2.5 pr-2 font-medium text-ink">{it.productName}</td>
+              <td className="num py-2.5 pr-2 tabular-nums text-ink">
+                {it.quantityText}
+                <span className="ml-1 text-xs text-ink-soft">{it.unit}</span>
+              </td>
+              <td className="py-2.5 pr-2 text-xs text-ink-soft">{it.noteText}</td>
+              <td className="py-2.5 text-center text-lg leading-none text-ink-soft">□</td>
+              <td className="py-2.5 text-center text-lg leading-none text-ink-soft">□</td>
+            </tr>
+          ))}
         </tbody>
       </table>
 

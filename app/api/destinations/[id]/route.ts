@@ -10,9 +10,13 @@ const updateSchema = z.object({
   full_name: z.string().trim().min(1).optional(),
   aliases: z.array(z.string().trim().min(1)).optional(),
   is_active: z.boolean().optional(),
+  departure_time: z.string().trim().nullish(),
+  shipping_route_name: z.string().trim().nullish(),
+  pack_sort_order: z.number().int().optional(),
+  default_container_type: z.string().trim().nullish(),
 })
 
-/** 納入先の更新（略称・正式名・aliases・有効/無効）。admin のみ（RLS）。 */
+/** 納入先の更新（略称・正式名・aliases・便名・出荷時間・有効/無効）。admin のみ（RLS）。 */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
@@ -27,13 +31,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (parsed.data.full_name !== undefined) patch.full_name = parsed.data.full_name
   if (parsed.data.aliases !== undefined) patch.aliases = parsed.data.aliases
   if (parsed.data.is_active !== undefined) patch.is_active = parsed.data.is_active
+  if (parsed.data.departure_time !== undefined) patch.departure_time = parsed.data.departure_time ?? null
+  if (parsed.data.shipping_route_name !== undefined) patch.shipping_route_name = parsed.data.shipping_route_name ?? null
+  if (parsed.data.pack_sort_order !== undefined) patch.pack_sort_order = parsed.data.pack_sort_order
+  if (parsed.data.default_container_type !== undefined) patch.default_container_type = parsed.data.default_container_type ?? null
 
   const supabase = createClient()
   const { data, error } = await supabase
     .from('delivery_destinations')
     .update(patch)
     .eq('id', params.id)
-    .select('id, code, full_name, aliases, is_active')
+    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name, pack_sort_order, default_container_type')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

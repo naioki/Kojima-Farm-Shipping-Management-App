@@ -13,6 +13,8 @@ export interface Destination {
   full_name: string
   aliases: string[]
   is_active: boolean
+  departure_time?: string | null
+  shipping_route_name?: string | null
 }
 
 interface Props {
@@ -26,7 +28,7 @@ const fieldCls =
 
 /**
  * 納入先の登録・編集（取引先の配下）。
- * 表示は常に「取引先 ＞ 納入先(略称)」。略称＝普段の表示、正式名＝伝票、aliases＝OCR名寄せ。
+ * 表示は常に「取引先 ＞ 納入先(略称)」。出荷時間（departure_time）・便名（shipping_route_name）も管理。
  */
 export function DestinationManager({ customerId, customerName, initial }: Props) {
   const router = useRouter()
@@ -37,6 +39,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
   const [code, setCode] = useState('')
   const [fullName, setFullName] = useState('')
   const [aliases, setAliases] = useState('')
+  const [departureTime, setDepartureTime] = useState('')
+  const [shippingRouteName, setShippingRouteName] = useState('')
   const [adding, setAdding] = useState(false)
 
   async function addDestination() {
@@ -51,12 +55,14 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           code: code.trim() || null,
           full_name: fullName.trim(),
           aliases: aliases.split(/[,、\s]+/).map((s) => s.trim()).filter(Boolean),
+          departure_time: departureTime.trim() || null,
+          shipping_route_name: shippingRouteName.trim() || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { destination?: Destination; error?: string }
       if (!res.ok || !json.destination) throw new Error(json.error ?? `登録失敗 (${res.status})`)
       setRows((p) => [...p, json.destination!])
-      setCode(''); setFullName(''); setAliases('')
+      setCode(''); setFullName(''); setAliases(''); setDepartureTime(''); setShippingRouteName('')
       toast.success('納入先を登録しました')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '登録に失敗しました')
@@ -81,6 +87,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           full_name: row.full_name.trim(),
           aliases: row.aliases,
           is_active: row.is_active,
+          departure_time: row.departure_time?.trim() || null,
+          shipping_route_name: row.shipping_route_name?.trim() || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
@@ -125,20 +133,47 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                 !r.is_active && 'opacity-60',
               )}
             >
-              <div className="mb-2 flex items-center gap-1 text-xs font-medium text-ink-soft">
-                <MapPin className="h-3.5 w-3.5 text-earth-500" aria-hidden />
-                {customerName} <span className="text-ink-faint">＞</span>{' '}
-                <span className="text-ink">{r.code?.trim() || r.full_name}</span>
+              <div className="mb-2 flex items-center justify-between gap-1 text-xs font-medium text-ink-soft">
+                <div className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 text-earth-500" aria-hidden />
+                  {customerName} <span className="text-ink-faint">＞</span>{' '}
+                  <span className="font-bold text-ink">{r.code?.trim() || r.full_name}</span>
+                </div>
+                {r.departure_time && (
+                  <span className="rounded bg-earth-100 px-2 py-0.5 text-[11px] font-bold text-earth-800">
+                    ⏰ {r.departure_time}発 {r.shipping_route_name ? `(${r.shipping_route_name})` : ''}
+                  </span>
+                )}
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <label className="block">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+                <label className="block sm:col-span-1">
                   <span className="mb-0.5 block text-[11px] text-ink-faint">略称（表示用）</span>
                   <input value={r.code ?? ''} onChange={(e) => patchRow(r.id, 'code', e.target.value)} className={fieldCls} placeholder="例: マルタ" />
                 </label>
-                <label className="block">
+                <label className="block sm:col-span-2">
                   <span className="mb-0.5 block text-[11px] text-ink-faint">正式名（伝票）</span>
                   <input value={r.full_name} onChange={(e) => patchRow(r.id, 'full_name', e.target.value)} className={fieldCls} />
                 </label>
+                <label className="block sm:col-span-1">
+                  <span className="mb-0.5 block text-[11px] text-ink-faint">出荷時間（出発時刻）</span>
+                  <input
+                    type="time"
+                    value={r.departure_time ?? ''}
+                    onChange={(e) => patchRow(r.id, 'departure_time', e.target.value)}
+                    className={fieldCls}
+                  />
+                </label>
+                <label className="block sm:col-span-1">
+                  <span className="mb-0.5 block text-[11px] text-ink-faint">便名・ルート名</span>
+                  <input
+                    value={r.shipping_route_name ?? ''}
+                    onChange={(e) => patchRow(r.id, 'shipping_route_name', e.target.value)}
+                    className={fieldCls}
+                    placeholder="例: 岩槻便, 1便"
+                  />
+                </label>
+              </div>
+              <div className="mt-2">
                 <label className="block">
                   <span className="mb-0.5 block text-[11px] text-ink-faint">表記ゆれ（カンマ区切り）</span>
                   <input
@@ -179,9 +214,24 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
       ) : (
         <div className="space-y-2 rounded-lg border border-earth-200 bg-earth-50 p-3">
           <p className="text-xs font-semibold text-earth-700">{customerName} ＞ 新しい納入先</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
             <input value={code} onChange={(e) => setCode(e.target.value)} className={fieldCls} placeholder="略称（例: マルタ）" />
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} className={fieldCls} placeholder="正式名（必須）" />
+            <input
+              type="time"
+              value={departureTime}
+              onChange={(e) => setDepartureTime(e.target.value)}
+              className={fieldCls}
+              title="出荷時間"
+            />
+            <input
+              value={shippingRouteName}
+              onChange={(e) => setShippingRouteName(e.target.value)}
+              className={fieldCls}
+              placeholder="便名（例: 岩槻便）"
+            />
+          </div>
+          <div>
             <input value={aliases} onChange={(e) => setAliases(e.target.value)} className={fieldCls} placeholder="表記ゆれ（カンマ区切り・任意）" />
           </div>
           <div className="flex justify-end gap-1.5">

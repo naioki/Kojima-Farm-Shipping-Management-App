@@ -5,28 +5,31 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 
+import { cn } from '@/lib/cn'
+
 /**
  * 出荷一覧・マトリックスの日付コントロール（features.md §8）。
- * 前後・今日は <Link>（クエリのみの router.push は Next 14 でサーバー再描画されない場合があるため）。
- * カレンダー入力だけは push + refresh で確実に再取得する。
+ * モバイル（360px〜）でも「今日」ボタンがはみ出さないレスポンシブ設計。
  */
 export function DateNav({ date, basePath }: { date: string; basePath: string }) {
   const router = useRouter()
   const hrefFor = (d: string) => `${basePath}?date=${d}`
+  const isToday = date === jstTodayStr()
 
   const btn =
-    'flex h-10 w-10 items-center justify-center rounded border border-line text-ink-soft hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100'
+    'flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100 active:scale-95 transition'
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
       <Link href={hrefFor(shiftDateStr(date, -1))} aria-label="前の日" className={btn}>
-        <ChevronLeft className="h-5 w-5" aria-hidden />
+        <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
       </Link>
 
-      {/* ブラウザ標準の date 入力はOSロケール依存（DD/MM/YYYY等に見える）ため、
-          日本標準の「月/日(曜)」を隣に明示して直感的に読めるようにする（Issue#5-F）。 */}
-      <label className="flex items-center gap-2">
-        <span className="num text-sm font-bold tabular-nums text-ink">{formatJpDateShort(date)}</span>
+      {/* 日本標準の「月/日(曜)」とカレンダー入力をすっきり横並び */}
+      <label className="flex items-center gap-1 sm:gap-1.5 rounded-lg border border-line-strong bg-bg-card px-2 py-1 sm:px-2.5 sm:py-1.5 shadow-xs">
+        <span className="num text-xs sm:text-sm font-black tabular-nums text-ink whitespace-nowrap">
+          {formatJpDateShort(date)}
+        </span>
         <input
           type="date"
           value={date}
@@ -36,17 +39,22 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
             router.refresh()
           }}
           aria-label="表示日"
-          className="num h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100"
+          className="num h-5 sm:h-6 w-20 sm:w-28 rounded border-0 bg-transparent p-0 text-[11px] sm:text-xs text-ink-muted focus:outline-none cursor-pointer"
         />
       </label>
 
       <Link href={hrefFor(shiftDateStr(date, 1))} aria-label="次の日" className={btn}>
-        <ChevronRight className="h-5 w-5" aria-hidden />
+        <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
       </Link>
 
       <Link
         href={hrefFor(jstTodayStr())}
-        className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+        className={cn(
+          'flex h-9 sm:h-10 shrink-0 items-center justify-center rounded-lg border px-2.5 sm:px-3 text-xs sm:text-sm font-bold transition active:scale-95',
+          isToday
+            ? 'border-forest-400 bg-forest-50 text-forest-800 shadow-xs'
+            : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
+        )}
       >
         今日
       </Link>

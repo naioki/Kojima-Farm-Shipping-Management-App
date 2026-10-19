@@ -3,7 +3,6 @@ import { ScanLine, ChevronRight, Columns } from 'lucide-react'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
-import { IngestButton } from '@/components/admin/IngestButton'
 import { InboxFilterChips } from '@/components/admin/InboxFilterChips'
 import { InboxReceiptCard } from '@/components/admin/InboxReceiptCard'
 import { ChannelBadge, OrderStatusBadge } from '@/components/admin/InboxBadges'
@@ -66,14 +65,11 @@ export default async function InboxPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-ink">受注ボックス</h1>
-          <p className="mt-1 text-sm text-ink-soft">
-            届いた受信の取り込みから承認までを1画面で。「読み取る」で注文化、「承認する」で収穫タスクを作成します。
-          </p>
-        </div>
-        <IngestButton />
+      <div>
+        <h1 className="font-display text-2xl font-bold text-ink">受注ボックス</h1>
+        <p className="mt-1 text-sm text-ink-soft">
+          届いた受信の取り込みから承認までを1画面で。「読み取る」で注文化、「承認する」で収穫タスクを作成します。
+        </p>
       </div>
 
       <InboxFilterChips active={filter} counts={counts} />

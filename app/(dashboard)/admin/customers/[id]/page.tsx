@@ -55,7 +55,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       .limit(200),
     supabase
       .from('delivery_destinations')
-      .select('id, code, full_name, aliases, is_active')
+      .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
       .eq('customer_id', params.id)
       .order('sort_order')
       .order('full_name'),

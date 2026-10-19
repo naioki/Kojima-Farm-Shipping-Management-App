@@ -304,12 +304,12 @@ export default async function DeliveriesPage({
         </Link>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <h1 className="flex items-center gap-2 font-display text-2xl font-bold text-ink">
-          <Truck className="h-6 w-6 text-earth-600" aria-hidden />
-          便別積込・配送リスト
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
+        <h1 className="flex items-center gap-2 font-display text-xl sm:text-2xl font-bold text-ink">
+          <Truck className="h-6 w-6 text-earth-600 shrink-0" aria-hidden />
+          <span>便別積込・配送リスト</span>
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <DateNav date={date} basePath={PATH} />
           {sorted.length > 0 && <PrintButton label="印刷" />}
         </div>
@@ -389,6 +389,8 @@ export default async function DeliveriesPage({
                       status={deliveryByKey.get(g.key)?.status ?? 'planned'}
                       customerName={g.customerName}
                       destinationName={g.destinationName}
+                      departureTime={g.departureTime}
+                      shippingRouteName={g.shippingRouteName}
                       items={g.items}
                       deliveryDate={date}
                       customerId={g.customerId}
