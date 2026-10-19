@@ -47,12 +47,23 @@ export function PackingAndShippingViews({
     return orderA - orderB
   })
 
+  // ステータス更新時のリアルタイム連動（親Stateの initialStatus を更新して積込完了バッジ・未積込件数を即反映）
+  const handleStatusSettled = (itemId: string, statusKey: RowStatusKey) => {
+    // RowStatusKey ('shipped' | 'packed' | 'partially_packed' | 'not_started') を FieldStatus にマッピング
+    const fieldStatus: 'not_started' | 'packed' | 'shipped' =
+      statusKey === 'shipped' ? 'shipped' : statusKey === 'not_started' ? 'not_started' : 'packed'
+    setItems((prev) =>
+      prev.map((it) => (it.itemId === itemId ? { ...it, initialStatus: fieldStatus } : it)),
+    )
+  }
+
   // 管理者による上下移動
   const handleMove = async (index: number, direction: 'up' | 'down') => {
     if (!isAdmin || busyReorder) return
     const targetIndex = direction === 'up' ? index - 1 : index + 1
     if (targetIndex < 0 || targetIndex >= sortedPackItems.length) return
 
+    const previousItems = [...items]
     const newSorted = [...sortedPackItems]
     const temp = newSorted[index]!
     newSorted[index] = newSorted[targetIndex]!
@@ -84,7 +95,7 @@ export function PackingAndShippingViews({
       toast.success('パック作業順を更新しました')
     } catch (e) {
       toast.error('並び替えに失敗しました')
-      setItems(initialItems)
+      setItems(previousItems)
     } finally {
       setBusyReorder(false)
     }
@@ -185,6 +196,7 @@ export function PackingAndShippingViews({
                 isAdmin={isAdmin}
                 onMoveUp={idx > 0 ? () => handleMove(idx, 'up') : undefined}
                 onMoveDown={idx < sortedPackItems.length - 1 ? () => handleMove(idx, 'down') : undefined}
+                onStatusSettled={handleStatusSettled}
               />
             ))}
           </div>
@@ -263,6 +275,7 @@ export function PackingAndShippingViews({
                         deliveryDate={date}
                         isAdmin={isAdmin}
                         showShippingButton={true}
+                        onStatusSettled={handleStatusSettled}
                       />
                     ))}
                   </div>

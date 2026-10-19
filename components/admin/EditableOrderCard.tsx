@@ -320,6 +320,11 @@ export function EditableOrderCard({
                     )}
                   </div>
                   <div className="flex items-center justify-end gap-2">
+                    {row.saving && (
+                      <span className="text-[11px] font-bold text-trust-600 animate-pulse">
+                        保存中...
+                      </span>
+                    )}
                     <input
                       type="number"
                       inputMode="numeric"
@@ -339,15 +344,17 @@ export function EditableOrderCard({
                       <span className="flex shrink-0 items-center gap-1">
                         <button
                           type="button"
+                          disabled={row.saving}
                           onClick={() => deleteRow(row)}
-                          className="rounded bg-alert px-2 py-1.5 text-xs font-bold text-white"
+                          className="rounded bg-alert px-2 py-1.5 text-xs font-bold text-white disabled:opacity-50"
                         >
                           けす
                         </button>
                         <button
                           type="button"
+                          disabled={row.saving}
                           onClick={() => patch(row.id, { confirmDelete: false })}
-                          className="rounded px-2 py-1.5 text-xs text-ink-soft hover:bg-bg-soft"
+                          className="rounded px-2 py-1.5 text-xs text-ink-soft hover:bg-bg-soft disabled:opacity-50"
                         >
                           やめる
                         </button>

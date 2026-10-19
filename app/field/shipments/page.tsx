@@ -3,7 +3,7 @@ import { cn } from '@/lib/cn'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { ErrorState } from '@/components/ui/States'
 import { formatQty } from '@/lib/calculations/format-qty'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
@@ -402,7 +402,7 @@ export default async function ShipmentsPage({
       {/* B案：判別不能・要確認の未確定FAXがある場合の最上部赤バナー */}
       {unconfirmedCount > 0 && (
         <a
-          href={isAdmin ? '/admin/inbox' : '/admin/approvals'}
+          href={isAdmin ? '/admin/inbox' : '/field/approvals'}
           className="flex items-center justify-between gap-2 rounded-2xl border-2 border-red-500 bg-red-50 px-4 py-3 text-red-900 shadow-sm transition hover:bg-red-100"
         >
           <div className="flex items-center gap-2 text-sm font-black">
@@ -424,6 +424,7 @@ export default async function ShipmentsPage({
       {/* ② 収穫自動逆算サマリー（コンテナ在庫差引＋折りたたみ内訳） */}
       {selectedProduct && (
         <HarvestPulseSummary
+          key={`pulse-${date}-${selectedProductId}`}
           productName={selectedProduct.name}
           productId={selectedProductId}
           date={date}
@@ -439,15 +440,32 @@ export default async function ShipmentsPage({
       {/* ③ パック画面 / 出荷画面（切替表示） */}
       {shipmentItems.length > 0 ? (
         <PackingAndShippingViews
+          key={`views-${date}-${selectedProductId}`}
           items={shipmentItems}
           date={date}
           isAdmin={isAdmin}
           overdueAlertEnabled={isOverdueAlertOn}
         />
       ) : (
-        <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted">
-          <p className="font-bold text-sm">この日の【{selectedProduct?.name || '選択品目'}】の出荷データはありません。</p>
-          <p className="text-xs text-ink-faint mt-1">他の品目タブを選ぶか、下から手動追加できます。</p>
+        <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted space-y-3">
+          <p className="font-bold text-sm text-ink">この日の【{selectedProduct?.name || '選択品目'}】の出荷データはありません。</p>
+          <p className="text-xs text-ink-faint">他の品目タブを選ぶか、翌日の出荷予定を確認できます。</p>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <a
+              href={`/field/shipments?date=${shiftDateStr(date, 1)}&product=${selectedProductId}`}
+              className="inline-flex items-center gap-1 rounded-xl bg-forest-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-forest-700 shadow-xs"
+            >
+              翌日の予定を見る →
+            </a>
+            {isAdmin && (
+              <a
+                href="/admin/inbox"
+                className="inline-flex items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink hover:bg-slate-200"
+              >
+                受注ボックスを確認
+              </a>
+            )}
+          </div>
         </div>
       )}
 
