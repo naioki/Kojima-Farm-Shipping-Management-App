@@ -8,6 +8,7 @@ import { InboxFilterChips } from '@/components/admin/InboxFilterChips'
 import { InboxReceiptCard } from '@/components/admin/InboxReceiptCard'
 import { ChannelBadge, OrderStatusBadge } from '@/components/admin/InboxBadges'
 import { EditableOrderCard } from '@/components/admin/EditableOrderCard'
+import { ApprovedOrderCard } from '@/components/admin/ApprovedOrderCard'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getInboxData, normalizeFilter } from '@/lib/orders/inbox'
 import { pendingReasons } from '@/lib/orders/pending'
@@ -157,31 +158,7 @@ export default async function InboxPage({
           {/* 今日承認済み（読み取り専用の実績） */}
           {showApproved &&
             approvedOrders.map((o) => (
-              <Card key={`approved-${o.id}`} className="flex items-center justify-between gap-4">
-                <div className="min-w-0 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ChannelBadge channel={o.source} />
-                    <OrderStatusBadge kind="approved" />
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="flex items-center gap-1.5 font-medium text-ink">
-                      <ColorDot color={o.customerColor} name={o.customerName} />
-                      {o.customerName}
-                    </span>
-                    <span className="text-ink-soft">
-                      のうひん {o.deliveryDate ? formatJpDateShort(o.deliveryDate) : 'みてい'}
-                    </span>
-                    <span className="num text-ink-faint tabular-nums">{o.itemCount}品目</span>
-                  </div>
-                </div>
-                <Link
-                  href={`/admin/orders/${o.id}`}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50"
-                >
-                  受注を見る
-                  <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
-              </Card>
+              <ApprovedOrderCard key={`approved-${o.id}`} order={o} />
             ))}
         </div>
       )}

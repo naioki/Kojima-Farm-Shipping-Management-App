@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
@@ -398,6 +399,27 @@ export default async function ShipmentsPage({
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
         <DateNav date={date} basePath={PATH} />
+      </div>
+
+      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 全品目便別積込・配送） */}
+      <div className="flex items-center justify-between rounded-xl bg-bg-soft p-1 border border-line text-xs font-bold">
+        <div className="flex items-center gap-1">
+          <span className="flex items-center gap-1.5 rounded-lg bg-forest-700 px-3 py-1.5 text-white shadow-xs">
+            🥬 収穫・袋詰めボード
+          </span>
+          <Link
+            href={`/field/deliveries?date=${date}`}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink hover:bg-white/60 transition"
+          >
+            🚚 便別積込・配送リスト
+          </Link>
+        </div>
+        <Link
+          href={`/field/deliveries?date=${date}`}
+          className="text-[11px] text-ink-muted hover:text-forest-700 pr-2 transition"
+        >
+          全品目の便別積込へ →
+        </Link>
       </div>
 
       {/* B案：判別不能・要確認の未確定FAXがある場合の最上部赤バナー */}

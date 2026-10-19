@@ -21,6 +21,23 @@ export const INBOX_FILTERS: InboxFilter[] = ['all', 'parsing', 'review', 'pendin
 /** 受信リストに載せる状態（承認待ちは注文カード側に出すので除外）。 */
 const RECEIPT_STATUSES = ['pending_ai', 'ai_failed', 'unmatched'] as const
 
+export interface InboxReceiptItem {
+  name: string
+  spec?: string | null
+  quantity: number
+  unit: string
+  cases?: number | null
+  containerType?: string | null
+  destinationName?: string | null
+  deliveryDate?: string | null
+  isNewAddition?: boolean
+}
+
+export interface InboxReceiptAlert {
+  message: string
+  type: string
+}
+
 export interface InboxReceipt {
   id: string
   channel: string
@@ -35,6 +52,19 @@ export interface InboxReceipt {
   customerName: string | null
   customerColor: string | null
   errorMessage: string | null
+  deliveryDate?: string | null
+  destinationName?: string | null
+  slipNo?: string | null
+  items: InboxReceiptItem[]
+  alerts: InboxReceiptAlert[]
+}
+
+export interface ApprovedOrderItem {
+  id: string
+  productName: string
+  quantity: number
+  unit: string
+  spec?: string | null
 }
 
 /** 今日承認済みの注文（読み取り専用の実績表示）。 */
@@ -45,6 +75,7 @@ export interface ApprovedOrderSummary {
   customerName: string
   customerColor: string | null
   itemCount: number
+  items: ApprovedOrderItem[]
   approvedAt: string
 }
 
@@ -106,17 +137,25 @@ export async function getInboxData(): Promise<InboxData> {
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
 
-  // 今日承認済みの明細件数
+  // 今日承認済みの明細
   const approvedIds = approvedRows.map((o) => o.id)
-  const itemCountByOrder = new Map<string, number>()
+  const itemsByOrder = new Map<string, ApprovedOrderItem[]>()
   if (approvedIds.length) {
     const { data: itemRows, error: itemErr } = await supabase
       .from('order_items')
-      .select('order_id')
+      .select('id, order_id, product_name, quantity, unit, spec')
       .in('order_id', approvedIds)
-    if (itemErr) console.error('[inbox] 承認済み注文の品目件数取得に失敗:', itemErr.message)
+    if (itemErr) console.error('[inbox] 承認済み注文の明細取得に失敗:', itemErr.message)
     for (const it of itemRows ?? []) {
-      itemCountByOrder.set(it.order_id, (itemCountByOrder.get(it.order_id) ?? 0) + 1)
+      const list = itemsByOrder.get(it.order_id) ?? []
+      list.push({
+        id: it.id,
+        productName: it.product_name,
+        quantity: Number(it.quantity),
+        unit: it.unit,
+        spec: it.spec,
+      })
+      itemsByOrder.set(it.order_id, list)
     }
   }
 
@@ -125,6 +164,38 @@ export async function getInboxData(): Promise<InboxData> {
       string,
       unknown
     >
+    const slipData = payload['slip_data'] as Record<string, unknown> | undefined
+    const slipItems = (Array.isArray(slipData?.items) ? slipData.items : []) as Record<string, unknown>[]
+    const ordersList = (Array.isArray(payload['orders']) ? payload['orders'] : []) as Record<string, unknown>[]
+    const alertsList = (Array.isArray(slipData?.alerts) ? slipData.alerts : []) as Record<string, unknown>[]
+
+    const items: InboxReceiptItem[] = slipItems.map((it) => ({
+      name: String(it['item_name'] || it['product_name'] || '青梗菜'),
+      spec: typeof it['spec'] === 'string' ? it['spec'] : null,
+      quantity: Number(it['total_packs'] ?? it['quantity'] ?? 0),
+      unit: String(it['unit'] || 'P'),
+      cases: typeof it['cases'] === 'number' ? it['cases'] : null,
+      containerType: typeof it['container_type'] === 'string' ? it['container_type'] : null,
+      destinationName: typeof it['destination'] === 'string' ? it['destination'] : null,
+      deliveryDate: typeof it['delivery_date'] === 'string' ? it['delivery_date'] : null,
+      isNewAddition: Boolean(it['new_addition_mark'] || it['is_new_addition']),
+    }))
+
+    const alerts: InboxReceiptAlert[] = alertsList.map((a) => ({
+      message: String(a['message'] || ''),
+      type: String(a['alert_type'] || '要確認'),
+    }))
+
+    const deliveryDate =
+      (typeof slipItems[0]?.['delivery_date'] === 'string' ? slipItems[0]['delivery_date'] : null) ??
+      (typeof ordersList[0]?.['delivery_date'] === 'string' ? (ordersList[0]['delivery_date'] as string) : null)
+    const destinationName =
+      (typeof slipItems[0]?.['destination'] === 'string' ? slipItems[0]['destination'] : null) ??
+      (typeof ordersList[0]?.['destination_name'] === 'string' ? (ordersList[0]['destination_name'] as string) : null)
+    const slipNo =
+      (typeof slipData?.['slip_no'] === 'string' ? slipData['slip_no'] : null) ??
+      (typeof ordersList[0]?.['slip_no'] === 'string' ? (ordersList[0]['slip_no'] as string) : null)
+
     const hasOriginalSource = Boolean(
       r.r2_key ||
         (typeof payload['source_file_url'] === 'string' && payload['source_file_url']) ||
@@ -144,18 +215,27 @@ export async function getInboxData(): Promise<InboxData> {
       customerName: r.customer_id ? (custName.get(r.customer_id) ?? null) : null,
       customerColor: r.customer_id ? (custColor.get(r.customer_id) ?? null) : null,
       errorMessage: r.error_message,
+      deliveryDate,
+      destinationName,
+      slipNo,
+      items,
+      alerts,
     }
   })
 
-  const approvedOrders: ApprovedOrderSummary[] = approvedRows.map((o) => ({
-    id: o.id,
-    source: o.source,
-    deliveryDate: o.delivery_date,
-    customerName: o.customer_id ? (custName.get(o.customer_id) ?? '（不明な取引先）') : '取引先 未紐付け',
-    customerColor: o.customer_id ? (custColor.get(o.customer_id) ?? null) : null,
-    itemCount: itemCountByOrder.get(o.id) ?? 0,
-    approvedAt: o.updated_at,
-  }))
+  const approvedOrders: ApprovedOrderSummary[] = approvedRows.map((o) => {
+    const orderItems = itemsByOrder.get(o.id) ?? []
+    return {
+      id: o.id,
+      source: o.source,
+      deliveryDate: o.delivery_date,
+      customerName: o.customer_id ? (custName.get(o.customer_id) ?? '（不明な取引先）') : '取引先 未紐付け',
+      customerColor: o.customer_id ? (custColor.get(o.customer_id) ?? null) : null,
+      itemCount: orderItems.length,
+      items: orderItems,
+      approvedAt: o.updated_at,
+    }
+  })
 
   const parsing = receipts.filter((r) => r.status === 'pending_ai').length
   const review = receipts.filter((r) => r.status === 'ai_failed' || r.status === 'unmatched').length

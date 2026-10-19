@@ -18,6 +18,8 @@ import {
   CheckCheck,
   ZoomIn,
   ZoomOut,
+  LayoutList,
+  Columns2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
@@ -115,6 +117,7 @@ function calcBoxBreakdown(totalPacks: number, customerName: string, destinationN
  */
 export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   const router = useRouter()
+  const [viewMode, setViewMode] = useState<'split' | 'single'>('split')
   const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id ?? '')
 
   const selectedOrder = useMemo(
@@ -524,14 +527,42 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           </Button>
         </div>
 
-        <div className="text-xs text-ink-muted">
-          <span>全 {orders.length} 件中 </span>
-          <span className="font-bold text-forest-700">{confidentOrders.length} 件が高確信</span>
-          {orders.length - confidentOrders.length > 0 && (
-            <span className="ml-1 text-alert">
-              （要確認 {orders.length - confidentOrders.length} 件）
-            </span>
-          )}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* 表示モード切替トグル（スプリット ⇔ 1カラム） */}
+          <div className="inline-flex rounded-lg border border-line bg-bg-soft p-0.5 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setViewMode('split')}
+              className={cn(
+                'flex items-center gap-1 rounded-md px-2.5 py-1 transition',
+                viewMode === 'split' ? 'bg-white text-ink shadow-xs' : 'text-ink-soft hover:text-ink',
+              )}
+            >
+              <Columns2 className="h-3.5 w-3.5" />
+              <span>原本スプリット</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('single')}
+              className={cn(
+                'flex items-center gap-1 rounded-md px-2.5 py-1 transition',
+                viewMode === 'single' ? 'bg-white text-ink shadow-xs' : 'text-ink-soft hover:text-ink',
+              )}
+            >
+              <LayoutList className="h-3.5 w-3.5" />
+              <span>1カラム詳細</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-ink-muted">
+            <span>全 {orders.length} 件中 </span>
+            <span className="font-bold text-forest-700">{confidentOrders.length} 件が高確信</span>
+            {orders.length - confidentOrders.length > 0 && (
+              <span className="ml-1 text-alert">
+                （要確認 {orders.length - confidentOrders.length} 件）
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -596,10 +627,11 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
         })}
       </div>
 
-      {/* 左右スプリットビュー本体（PC: 12カラム 6:6 分割、タブレット/モバイル: 縦並び） */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* 左ペイン：Kojima-FAX が Google Drive に保存した FAX 原本 PDF プレビュー */}
-        <Card className="flex flex-col overflow-hidden p-0 lg:col-span-6">
+      {/* 左右スプリットビュー本体（スプリットモード: 12カラム 6:6 分割 / 1カラムモード: 中央配置） */}
+      <div className={cn('grid grid-cols-1 gap-4', viewMode === 'split' ? 'lg:grid-cols-12' : 'max-w-4xl mx-auto')}>
+        {/* 左ペイン：Kojima-FAX 原本プレビュー */}
+        {viewMode === 'split' ? (
+          <Card className="flex flex-col overflow-hidden p-0 lg:col-span-6">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-bg-soft px-4 py-2.5">
             <div className="flex items-center gap-2">
               {selectedOrder.receipt?.hasOriginal ? (
@@ -696,10 +728,11 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               </div>
             )}
           </div>
-        </Card>
+          </Card>
+        ) : null}
 
         {/* 右ペイン：AI抽出明細の編集・検算・承認・対話修正・ワンクリックルール学習 */}
-        <Card className="flex flex-col justify-between space-y-4 p-4 lg:col-span-6">
+        <Card className={cn('flex flex-col justify-between space-y-4 p-4', viewMode === 'split' ? 'lg:col-span-6' : 'w-full shadow-sm')}>
           <div className="space-y-4">
             {/* 注文ヘッダー（「取引先 ＞ 納入先」原則を厳守） */}
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-3">

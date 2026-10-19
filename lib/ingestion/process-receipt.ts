@@ -653,6 +653,8 @@ export async function processReceipt(
         .neq('status', 'cancelled')
       if (destinationId) {
         existingQuery = existingQuery.eq('destination_id', destinationId)
+      } else {
+        existingQuery = existingQuery.is('destination_id', null)
       }
       const { data: existingOrders } = await existingQuery.limit(1)
       existingOrder = (existingOrders?.[0] as ExistingOrderRow | undefined)
