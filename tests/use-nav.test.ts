@@ -14,6 +14,7 @@ describe('findActiveHref（最長一致・単一アクティブ）', () => {
     expect(findActiveHref('/admin/inbox', adminHrefs)).toBe('/admin/inbox')
     // 受注ボックスの配下（承認待ちフィルタ等）でも受注ボックスがアクティブになる。
     expect(findActiveHref('/admin/inbox/anything', adminHrefs)).toBe('/admin/inbox')
+    expect(findActiveHref('/admin/rules', adminHrefs)).toBe('/admin/rules')
   })
 
   it('詳細ページ（サブパス）でも親メニューに一致する', () => {

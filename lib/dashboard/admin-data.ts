@@ -7,16 +7,16 @@ import { formatJpDateShort } from '@/lib/dates'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
 import type { OrderStatusKey, RecentOrderRow, TrendPoint } from '@/components/dashboard/types'
-import { ClipboardList, CheckCircle2, Camera, LayoutGrid, FileText, Settings } from 'lucide-react'
+import { ClipboardList, CheckCircle2, PackageCheck, Sparkles, FileText, Settings } from 'lucide-react'
 
 /** 経営ダッシュボードのよく使う操作（固定）。 */
 const QUICK_ACTIONS: AdminDashboardData['actions'] = [
+  { href: '/admin/inbox?filter=pending', label: '受注ボックス', icon: CheckCircle2, tone: 'harvest' },
+  { href: '/field/shipments', label: '当日出荷', icon: PackageCheck, tone: 'forest' },
   { href: '/admin/orders', label: '受注一覧', icon: ClipboardList, tone: 'trust' },
-  { href: '/admin/inbox?filter=pending', label: '受注承認', icon: CheckCircle2, tone: 'harvest' },
-  { href: '/admin/master-import', label: 'マスタ取込 (OCR)', icon: Camera, tone: 'earth' },
-  { href: '/field/matrix', label: '週間マトリックス', icon: LayoutGrid, tone: 'forest' },
+  { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles, tone: 'earth' },
   { href: '/admin/invoices', label: '請求書作成', icon: FileText, tone: 'earth' },
-  { href: '/admin/settings', label: '設定', icon: Settings, tone: 'trust' },
+  { href: '/admin/settings', label: 'システム設定', icon: Settings, tone: 'trust' },
 ]
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']

@@ -295,8 +295,6 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     hint: 'ONにすると、納入先の出発予定時刻を過ぎても未出荷の注文がある場合に自動でアラート通知を送ります。',
   },
   // 通知チャネル別ON/OFF
-  { key: 'NOTIFY_DISCORD_ENABLED', label: 'Discord通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
-  { key: 'NOTIFY_DISCORD_WEBHOOK_URL', label: 'Discord Webhook URL', section: 'notify', layer: 'infra', secret: true, kind: 'text', placeholder: 'https://discord.com/api/webhooks/...', hint: 'Discord通知用Webhook' },
   { key: 'NOTIFY_LINEWORKS_ENABLED', label: 'LINE WORKS通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
   { key: 'NOTIFY_LINEWORKS_WEBHOOK_URL', label: 'LINE WORKS Incoming Webhook URL', section: 'notify', layer: 'infra', secret: true, kind: 'text', placeholder: 'https://...', hint: 'LINE WORKS通知用Webhook' },
   { key: 'NOTIFY_LINE_ENABLED', label: 'LINE（公式アカウント/Messaging API）通知', section: 'notify', layer: 'operations', secret: false, kind: 'toggle', toggleDefault: 'off', hint: 'on / off' },
@@ -382,10 +380,6 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     defaultPrompt: DEFAULT_GEMINI_PROMPT_DIFF,
     hint: '「同じFAXに追記して再送」された場合の差分抽出指示。通常モードプロンプトに追記されます。',
   },
-  { key: 'V4_SUPABASE_URL', label: '影実行: v4 Supabase URL', section: 'ops', layer: 'migration', secret: false, kind: 'text', placeholder: 'https://xxxx.supabase.co', hint: '統合2Cの並行運用期間のみ使用。空欄で影実行OFF' },
-  { key: 'V4_SUPABASE_SERVICE_KEY', label: '影実行: v4 service_roleキー', section: 'ops', layer: 'migration', secret: true, kind: 'text', hint: 'v4本番の確定注文を読み取り比較する（読み取りのみに使用）' },
-  { key: 'SHADOW_DIFF_CUSTOMER', label: '影実行: 対象取引先名', section: 'ops', layer: 'migration', secret: false, kind: 'text', placeholder: 'ヨーク', hint: '空欄なら「ヨーク」。v4がカバーする取引先だけを比較する' },
-  { key: 'INTEGRATION_CUTOVER_DATE', label: '統合切替日（記録用）', section: 'ops', layer: 'migration', secret: false, kind: 'text', placeholder: '2026-07-20', hint: 'v4からの現場切替日。この日以降は本アプリのデータが正' },
 ]
 
 export const SETTINGS_BY_KEY: Record<string, SettingSpec> = Object.fromEntries(

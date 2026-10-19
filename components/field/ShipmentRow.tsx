@@ -519,9 +519,16 @@ export function ShipmentRow({
         </div>
         <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
           <span className="block text-[11px] font-medium text-ink-soft">端数パック</span>
-          <span className="num mt-0.5 block text-xl font-black text-ink tabular-nums">
-            {looseText !== '—' ? `${looseText} P` : '0 P'}
-          </span>
+          <div className="num mt-0.5 flex items-center justify-center gap-1.5 tabular-nums">
+            <span className="text-xl font-black text-ink">
+              {looseText !== '—' ? `${looseText} P` : '0 P'}
+            </span>
+            {Number(looseText) > 0 && (
+              <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-300">
+                1コンテナ
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -541,7 +548,20 @@ export function ShipmentRow({
             {container || '青コン'}
           </span>
           <span className="num text-base font-black text-ink tabular-nums">
-            {casesText !== '—' ? `${casesText} 箱` : `${orderedQty} 箱`}
+            {casesText !== '—' ? (
+              Number(looseText) > 0 ? (
+                <span>
+                  {casesText}箱 ＋ 端数1コンテナ{' '}
+                  <span className="text-xs font-bold text-ink-soft">
+                    (計 {Number(casesText) + 1} 箱)
+                  </span>
+                </span>
+              ) : (
+                `${casesText} 箱`
+              )
+            ) : (
+              `${orderedQty} 箱`
+            )}
           </span>
         </div>
       </div>
@@ -772,7 +792,13 @@ export function ShipmentRow({
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
             <span className="block text-[10px] font-bold text-ink-muted">数量（原文）</span>
             <span className="num text-xs font-bold text-ink">
-              総数{orderedQty}点（{casesText !== '—' ? `${casesText}ケース＋端数${looseText}点` : quantityText}）
+              総数{orderedQty}点（
+              {casesText !== '—'
+                ? Number(looseText) > 0
+                  ? `${casesText}ケース＋端数1コンテナ(${looseText}点) 計${Number(casesText) + 1}箱`
+                  : `${casesText}ケース`
+                : quantityText}
+              ）
             </span>
           </div>
 
@@ -780,7 +806,15 @@ export function ShipmentRow({
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
             <span className="block text-[10px] font-bold text-ink-muted">コンテナ（原文）</span>
             <span className="text-xs font-bold text-ink">
-              {container ? `${container}: ${casesText !== '—' ? casesText : orderedQty}箱` : '—'}
+              {container
+                ? `${container}: ${
+                    casesText !== '—'
+                      ? Number(looseText) > 0
+                        ? `${casesText}箱＋端数1コンテナ (計${Number(casesText) + 1}箱)`
+                        : `${casesText}箱`
+                      : `${orderedQty}箱`
+                  }`
+                : '—'}
             </span>
           </div>
 

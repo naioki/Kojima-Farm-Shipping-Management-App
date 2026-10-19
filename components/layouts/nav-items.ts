@@ -46,6 +46,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/inbox', label: '受注ボックス', icon: Inbox },
       { href: '/admin/orders', label: '受注一覧', icon: ClipboardList },
+      { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles },
     ],
   },
   {
@@ -61,7 +62,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/invoices', label: '請求・月次確定', icon: FileText },
       { href: '/admin/customers', label: '取引先・品目マスタ', icon: Users },
-      { href: '/admin/settings', label: '設定・AIルール', icon: Settings },
+      { href: '/admin/settings', label: 'システム設定', icon: Settings },
     ],
   },
 ]

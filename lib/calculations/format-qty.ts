@@ -16,14 +16,26 @@ export function formatQty(
   if (pack && pack.base > 0) {
     const b = decomposeByContainer(total, pack.base)
     if (b && b.containers >= 1) {
-      const rem = b.remainder.isZero() ? '' : `+${b.remainder.toString()}`
-      return `${total.toString()} / ${b.containers}${pack.unit}${rem}`
+      if (b.remainder.isZero()) {
+        return `${total.toString()} / ${b.containers}${pack.unit}`
+      }
+      return `${total.toString()} / ${b.containers}${pack.unit}＋端数1コンテナ(${b.remainder.toString()}P) 計${b.containers + 1}箱`
+    }
+    if (b && b.containers === 0 && !b.remainder.isZero()) {
+      return `${total.toString()} / 端数1コンテナ(${b.remainder.toString()}P)`
     }
     return total.toString()
   }
-  // 旧 container_capacity フォールバック（0ケースなら総数のみ）
+  // 旧 container_capacity フォールバック
   const b = decomposeByContainer(total, capacity)
-  if (!b || b.containers < 1) return total.toString()
-  const rem = b.remainder.isZero() ? '' : `+${b.remainder.toString()}`
-  return `${total.toString()} / ${b.containers}c${rem}`
+  if (!b || b.containers < 1) {
+    if (b && !b.remainder.isZero()) {
+      return `${total.toString()} / 端数1コンテナ(${b.remainder.toString()}P)`
+    }
+    return total.toString()
+  }
+  if (b.remainder.isZero()) {
+    return `${total.toString()} / ${b.containers}c`
+  }
+  return `${total.toString()} / ${b.containers}c＋端数1コンテナ(${b.remainder.toString()}P) 計${b.containers + 1}箱`
 }
