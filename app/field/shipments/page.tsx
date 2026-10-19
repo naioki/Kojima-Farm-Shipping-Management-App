@@ -143,8 +143,9 @@ export default async function ShipmentsPage({
     countByProduct.set(it.product_id, (countByProduct.get(it.product_id) ?? 0) + 1)
   }
 
-  // 注文がある品目を優先して並べ、残りの品目を後ろに配置
+  // 注文がある品目を優先して並べ、残りの品目を後ろに配置（資材等は0件なら非表示）
   const productTabs: ProductTabItem[] = (allProducts ?? [])
+    .filter((p) => !(p.category === '資材' && (countByProduct.get(p.id) ?? 0) === 0))
     .map((p) => ({
       id: p.id,
       name: p.name,
