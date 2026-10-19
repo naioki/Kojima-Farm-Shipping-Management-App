@@ -429,15 +429,20 @@ export function ShipmentRow({
       )}
     >
       {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
-      <div className="space-y-1 pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs text-ink-soft">
-          <div className="flex items-center gap-1.5">
-            <ColorDot color={customerColor} name={customerName} size="sm" />
-            <span>納品先 : </span>
-            <span className="font-bold text-ink">{destinationName || customerName}</span>
-            {destinationName && customerName !== destinationName && (
-              <span className="text-[11px] text-ink-muted">({customerName})</span>
-            )}
+      <div className="space-y-1.5 pb-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ColorDot color={customerColor} name={customerName} size="md" />
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="font-black text-ink text-lg sm:text-xl tracking-tight">
+                {destinationName || customerName}
+              </span>
+              {destinationName && customerName !== destinationName && (
+                <span className="rounded bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft border border-line">
+                  {customerName}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {lineNote?.includes('★新規追加') && (

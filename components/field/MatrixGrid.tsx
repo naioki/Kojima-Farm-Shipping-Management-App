@@ -105,13 +105,13 @@ export function MatrixGrid({
     return Object.values(customerTotals).some((tot) => tot > 0)
   }, [customerTotals])
 
-  // 表示対象の取引先リスト
+  // 表示対象の取引先リスト（出荷がある取引先のみ表示）
   const visibleCustomers = useMemo(() => {
-    if (!onlyWithOrders || !hasAnyOrders) {
+    if (!onlyWithOrders) {
       return customers
     }
     return customers.filter((c) => (customerTotals[c.id] ?? 0) > 0 || addedCustomerIds.has(c.id))
-  }, [customers, onlyWithOrders, hasAnyOrders, customerTotals, addedCustomerIds])
+  }, [customers, onlyWithOrders, customerTotals, addedCustomerIds])
 
   // 未表示の取引先（行追加の選択肢用）
   const availableCustomers = useMemo(() => {

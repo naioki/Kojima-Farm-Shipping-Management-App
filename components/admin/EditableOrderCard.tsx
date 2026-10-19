@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { Button } from '@/components/ui/Button'
 import { ApproveOrderButton } from '@/components/admin/ApproveOrderButton'
+import { RejectOrderButton } from '@/components/admin/RejectOrderButton'
 import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { formatJpDateShort } from '@/lib/dates'
@@ -29,6 +30,9 @@ export interface EditableOrderItem {
   packConfigId?: string | null
   /** 選べる荷姿（0件＝マスタ未登録なので選択UIを出さない） */
   packConfigOptions?: PackConfigOption[]
+  spec?: string | null
+  containerType?: string | null
+  lineNote?: string | null
 }
 
 export interface DestinationOption {
@@ -41,6 +45,8 @@ export interface EditableOrderCardProps {
   customerName: string
   customerColor?: string | null
   deliveryDate: string | null
+  destinationName?: string | null
+  notes?: string | null
   needsDeliveryDate: boolean
   /** 納入先が未確定（取引先に納入先があるのに未選択）。承認時に選択させる。 */
   needsDestination?: boolean
@@ -73,6 +79,8 @@ export function EditableOrderCard({
   customerName,
   customerColor,
   deliveryDate,
+  destinationName,
+  notes,
   needsDeliveryDate,
   needsDestination = false,
   destinationOptions = [],
@@ -208,20 +216,36 @@ export function EditableOrderCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <ColorDot color={customerColor} name={customerName} size="md" />
-          <span className="font-semibold text-ink">{customerName}</span>
-          <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-            deliveryDate ? 'bg-trust-50 text-trust-700' : 'bg-warning-bg text-warning'
-          }`}>
-            {deliveryDate ? `納品: ${formatJpDateShort(deliveryDate)}` : '納品日未定'}
+          <span className="font-semibold text-ink text-base">{customerName}</span>
+
+          {destinationName ? (
+            <span className="rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
+              🏢 届先: {destinationName}
+            </span>
+          ) : needsDestination ? (
+            <span className="rounded-lg bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-300">
+              ⚠️ 納入先未定
+            </span>
+          ) : null}
+
+          <span
+            className={`rounded-lg px-2.5 py-0.5 text-xs font-bold border ${
+              deliveryDate
+                ? 'bg-trust-50 text-trust-800 border-trust-200'
+                : 'bg-warning-bg text-warning border-warning/40'
+            }`}
+          >
+            {deliveryDate ? `📅 納品: ${formatJpDateShort(deliveryDate)}` : '納品日未定'}
           </span>
+
           {/* 品目サマリー（バッジ表示） */}
           <div className="flex flex-wrap items-center gap-1.5">
             {rows.map((r) => (
               <span
                 key={r.id}
-                className="inline-flex items-center gap-1 rounded border border-line bg-bg-soft/60 px-2 py-0.5 text-xs text-ink"
+                className="inline-flex items-center gap-1 rounded-md border border-line bg-bg-soft/80 px-2 py-0.5 text-xs text-ink"
               >
-                <span>{r.productName}</span>
+                <span className="font-medium">{r.productName}</span>
                 <span className="font-bold tabular-nums text-trust-800">{r.quantity}</span>
                 <span className="text-[10px] text-ink-muted">{r.unit}</span>
               </span>
@@ -229,10 +253,13 @@ export function EditableOrderCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 原本FAXプレビュー */}
+          {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
+
           <Link
             href="/admin/approvals"
-            className="hidden items-center gap-1 rounded border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50 sm:inline-flex"
+            className="hidden items-center gap-1 rounded-lg border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50 sm:inline-flex"
           >
             <Columns className="h-3.5 w-3.5" aria-hidden />
             スプリット比較
@@ -242,12 +269,20 @@ export function EditableOrderCard({
           <button
             type="button"
             onClick={() => setIsOpen(!isOpen)}
-            className="inline-flex items-center gap-1 rounded border border-line bg-bg-card px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft hover:text-ink"
+            className="inline-flex items-center gap-1 rounded-lg border border-line bg-bg-card px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft hover:text-ink"
             aria-expanded={isOpen}
           >
             <span>{isOpen ? '閉じる' : `詳細・編集 (${rows.length}品目)`}</span>
             {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
+
+          {/* 承認しない（却下）ボタン */}
+          <RejectOrderButton
+            orderId={orderId}
+            customerName={customerName}
+            deliveryDate={deliveryDate}
+            size={size}
+          />
 
           {/* 即時承認ボタン（閉じた状態でも承認可能。編集中は連打・競合防止でロック） */}
           <div className={rows.some((r) => r.saving) ? 'pointer-events-none opacity-50' : ''}>
@@ -262,6 +297,14 @@ export function EditableOrderCard({
           </div>
         </div>
       </div>
+
+      {/* 注文備考・FAXメモ表示 */}
+      {notes && (
+        <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-950">
+          <span className="font-bold">📝 注文備考・OCR情報: </span>
+          <span>{notes}</span>
+        </div>
+      )}
 
       {/* 要確認バッジ（サマリー下に表示） */}
       {caution && (
@@ -303,21 +346,29 @@ export function EditableOrderCard({
           {caution && (
             <p className="flex items-start gap-1.5 rounded-lg bg-warning-bg px-3 py-2 text-sm font-medium text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              まちがいが あるかも しれません。数字を よく かくにん・しゅうせい してから しょうにん してください。
+              確認が必要な項目があります。数量や荷姿をご確認・修正の上、承認してください。
             </p>
           )}
 
-          <ul className="divide-y divide-line rounded border border-line">
+          <ul className="divide-y divide-line rounded-lg border border-line overflow-hidden">
             {rows.map((row) => {
               const low = row.confidence == null || row.confidence < 0.7
               const needsPack = (row.packConfigOptions?.length ?? 0) > 0 && !row.packConfigId
+              const itemDetails = [row.spec, row.containerType, row.lineNote].filter(Boolean).join(' ・ ')
               return (
-                <li key={row.id} className="space-y-1.5 px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 text-base text-ink">{row.productName}</span>
+                <li key={row.id} className="space-y-2 px-3.5 py-3 hover:bg-bg-soft/30 transition-colors">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-base text-ink">{row.productName}</span>
+                      {itemDetails && (
+                        <span className="rounded-md bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft border border-line">
+                          {itemDetails}
+                        </span>
+                      )}
+                    </div>
                     {low && (
-                      <span className="num shrink-0 text-xs font-medium text-alert">
-                        {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '?'}
+                      <span className="num shrink-0 rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
+                        {row.confidence != null ? `精度 ${Math.round(row.confidence * 100)}%` : '要確認'}
                       </span>
                     )}
                   </div>
@@ -337,28 +388,28 @@ export function EditableOrderCard({
                       onBlur={() => saveQty(row)}
                       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                       aria-label={`${row.productName} の数量`}
-                      className={`num h-11 w-20 rounded border bg-bg-card px-2 text-right text-base tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
+                      className={`num h-11 w-24 rounded-lg border bg-bg-card px-2.5 text-right text-base font-bold tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
                         low ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
                       }`}
                     />
-                    <span className="w-8 shrink-0 text-sm text-ink-soft">{row.unit}</span>
+                    <span className="w-8 shrink-0 text-sm font-semibold text-ink-soft">{row.unit}</span>
                     {row.confirmDelete ? (
                       <span className="flex shrink-0 items-center gap-1">
                         <button
                           type="button"
                           disabled={row.saving}
                           onClick={() => deleteRow(row)}
-                          className="rounded bg-alert px-2 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                          className="rounded-lg bg-alert px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50"
                         >
-                          けす
+                          削除
                         </button>
                         <button
                           type="button"
                           disabled={row.saving}
                           onClick={() => patch(row.id, { confirmDelete: false })}
-                          className="rounded px-2 py-1.5 text-xs text-ink-soft hover:bg-bg-soft disabled:opacity-50"
+                          className="rounded-lg border border-line px-2.5 py-1.5 text-xs text-ink-soft hover:bg-bg-soft disabled:opacity-50"
                         >
-                          やめる
+                          キャンセル
                         </button>
                       </span>
                     ) : (
@@ -375,15 +426,15 @@ export function EditableOrderCard({
                   </div>
                   {(row.packConfigOptions?.length ?? 0) > 0 && (
                     <label className="flex items-center gap-2">
-                      <span className={`shrink-0 text-xs font-medium ${needsPack ? 'text-alert' : 'text-ink-soft'}`}>
-                        荷姿{needsPack ? '（みてい）' : ''}
+                      <span className={`shrink-0 text-xs font-bold ${needsPack ? 'text-alert' : 'text-ink-soft'}`}>
+                        荷姿{needsPack ? '（未設定）' : ''}
                       </span>
                       <select
                         value={row.packConfigId ?? ''}
                         disabled={row.saving}
                         onChange={(e) => savePackConfig(row, e.target.value)}
                         aria-label={`${row.productName} の荷姿`}
-                        className={`h-9 flex-1 rounded border bg-bg-card px-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
+                        className={`h-9 flex-1 rounded-lg border bg-bg-card px-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
                           needsPack ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
                         }`}
                       >

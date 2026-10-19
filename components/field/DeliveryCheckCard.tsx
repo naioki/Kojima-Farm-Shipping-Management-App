@@ -344,11 +344,11 @@ export function DeliveryCheckCard({
           <>
             <button type="button" onClick={revert} className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink">
               <Undo2 className="h-3.5 w-3.5" aria-hidden />
-              もどす
+              元に戻す
             </button>
             <Button variant="primary" size="md" isLoading={busy} onClick={() => void send('delivered')}>
               <CheckCircle2 className="h-4 w-4" aria-hidden />
-              納品 完了
+              納品完了
             </Button>
           </>
         )}
@@ -357,7 +357,7 @@ export function DeliveryCheckCard({
             <div className="flex items-center gap-3">
               <button type="button" onClick={revert} className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink">
                 <Undo2 className="h-3.5 w-3.5" aria-hidden />
-                もどす
+                元に戻す
               </button>
               <button
                 type="button"
@@ -370,7 +370,7 @@ export function DeliveryCheckCard({
             </div>
             <p className="flex items-center gap-1.5 text-sm font-bold text-harvest-700">
               <CheckCircle2 className="h-5 w-5" aria-hidden />
-              この配送は おわりました
+              この配送は完了しました
             </p>
           </>
         )}

@@ -134,6 +134,8 @@ export default async function InboxPage({
                   customerName={o.customerName}
                   customerColor={o.customerColor}
                   deliveryDate={o.deliveryDate}
+                  destinationName={o.destinationName}
+                  notes={o.notes}
                   needsDeliveryDate={o.needsDeliveryDate}
                   needsDestination={o.needsDestination}
                   destinationOptions={o.destinationOptions}
@@ -142,6 +144,7 @@ export default async function InboxPage({
                   receipt={o.receipt}
                   approveLabel="承認する"
                   size="md"
+                  defaultOpen={true}
                 />
               </div>
             ))}

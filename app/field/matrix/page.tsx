@@ -22,7 +22,7 @@ function weekDates(start: string): string[] {
 export default async function MatrixPage({
   searchParams,
 }: {
-  searchParams: { week?: string; product?: string }
+  searchParams: { week?: string; product?: string; all_products?: string }
 }) {
   const week = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.week ?? '') ? searchParams.week! : jstTodayStr()
   const dates = weekDates(week)
@@ -45,29 +45,47 @@ export default async function MatrixPage({
     )
   }
 
-  const selected = products.find((p) => p.id === searchParams.product) ?? products[0]!
-
-  // 当該週の注文（出荷日 in dates）→ 明細（選択品目）を取得して (取引先|日付)→総数 に展開
+  // 当該週の注文（出荷日 in dates、キャンセル除外）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, customer_id, delivery_date')
     .in('delivery_date', dates)
+    .neq('status', 'cancelled')
   // 注文はマトリックスの本体。取得失敗を「空マトリックス」に化けさせない。
   if (ordersErr)
     return <ErrorState message="注文を読み込めませんでした。時間をおいて再度お試しください。" detail={ordersErr.message} />
   const orderIds = (orders ?? []).map((o) => o.id)
   const orderMeta = new Map((orders ?? []).map((o) => [o.id, o]))
 
-  const itemsRes = orderIds.length
+  // 当該週の全品目明細を取得（出荷がある品目を自動判定）
+  const allItemsRes = orderIds.length
     ? await supabase
         .from('order_items')
-        .select('order_id, quantity')
-        .eq('product_id', selected.id)
+        .select('order_id, product_id, quantity')
         .in('order_id', orderIds)
-    : { data: [] as { order_id: string; quantity: number }[], error: null }
-  if (itemsRes.error)
-    return <ErrorState message="注文明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
-  const items = itemsRes.data ?? []
+    : { data: [] as { order_id: string; product_id: string; quantity: number }[], error: null }
+  if (allItemsRes.error)
+    return <ErrorState message="注文明細を読み込めませんでした。時間をおいて再度お試しください。" detail={allItemsRes.error.message} />
+  const allWeekItems = allItemsRes.data ?? []
+
+  // 出荷実績（数量>0）がある品目ID一覧
+  const productIdsWithShipments = new Set(
+    allWeekItems.filter((it) => Number(it.quantity) > 0).map((it) => it.product_id),
+  )
+
+  const showAllProducts = searchParams.all_products === '1'
+  const filteredProducts =
+    showAllProducts || productIdsWithShipments.size === 0
+      ? products
+      : products.filter((p) => productIdsWithShipments.has(p.id))
+
+  // 選択品目: 指定があればそれ、なければ出荷のある最初の品目
+  const selected =
+    products.find((p) => p.id === searchParams.product) ??
+    filteredProducts[0] ??
+    products[0]!
+
+  const items = allWeekItems.filter((it) => it.product_id === selected.id)
 
   const initial: Record<string, number> = {}
   for (const it of items) {
@@ -94,19 +112,19 @@ export default async function MatrixPage({
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
+            href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}${showAllProducts ? '&all_products=1' : ''}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             ← 前週
           </Link>
           <Link
-            href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
+            href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}${showAllProducts ? '&all_products=1' : ''}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             今週
           </Link>
           <Link
-            href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
+            href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}${showAllProducts ? '&all_products=1' : ''}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             翌週 →
@@ -114,26 +132,41 @@ export default async function MatrixPage({
         </div>
       </div>
 
-      {/* 品目タブ（横スクロール回避・features.md §7） */}
-      <div className="flex flex-wrap gap-1.5">
-        {products.map((p) => {
-          const active = p.id === selected.id
-          return (
-            <Link
-              key={p.id}
-              href={`${PATH}?week=${week}&product=${p.id}`}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors',
-                active
-                  ? 'border-earth-400 bg-earth-100 text-earth-800'
-                  : 'border-line text-ink-soft hover:bg-bg-soft',
-              )}
-            >
-              {p.name}
-            </Link>
-          )
-        })}
+      {/* 品目タブ（出荷があるもののみ表示、切り替え可能） */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {filteredProducts.map((p) => {
+            const active = p.id === selected.id
+            const hasShipment = productIdsWithShipments.has(p.id)
+            return (
+              <Link
+                key={p.id}
+                href={`${PATH}?week=${week}&product=${p.id}${showAllProducts ? '&all_products=1' : ''}`}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-sm font-bold transition-colors flex items-center gap-1.5',
+                  active
+                    ? 'border-earth-400 bg-earth-100 text-earth-900 shadow-xs'
+                    : 'border-line text-ink-soft hover:bg-bg-soft',
+                )}
+              >
+                <span>{p.name}</span>
+                {hasShipment && (
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                )}
+              </Link>
+            )
+          })}
+        </div>
+
+        {productIdsWithShipments.size > 0 && (
+          <Link
+            href={`${PATH}?week=${week}&product=${selected.id}${showAllProducts ? '' : '&all_products=1'}`}
+            className="text-xs font-semibold text-ink-muted hover:text-earth-800 underline transition"
+          >
+            {showAllProducts ? '出荷のある品目のみ表示' : `全品目を表示 (${products.length}品目)`}
+          </Link>
+        )}
       </div>
 
       {!customers?.length ? (

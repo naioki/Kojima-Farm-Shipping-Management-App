@@ -322,11 +322,11 @@ export default async function DeliveriesPage({
         />
       ) : (
         <>
-          {/* のこり表示（全品目便別のやさしい日本語） */}
+          {/* 進捗表示（全品目便別） */}
           <div className="flex items-center justify-between rounded-xl border border-earth-200 bg-earth-50 px-4 py-3 print:hidden">
-            <span className="text-sm font-medium text-ink-soft">きょうの 配送（全品目横断）</span>
-            <span className="text-ink-soft">
-              おわり <span className="num text-2xl font-bold tabular-nums text-earth-700">{doneCount}</span>
+            <span className="text-sm font-bold text-ink-soft">本日の配送進捗（全品目横断）</span>
+            <span className="text-ink-soft font-medium">
+              完了 <span className="num text-2xl font-bold tabular-nums text-earth-700">{doneCount}</span>
               <span className="mx-1">/</span>
               {sorted.length} 配送先
               <span className="ml-2 text-xs text-ink-muted">（全 {sortedRoutes.length} 便）</span>
