@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getPendingOrders, type PendingOrder } from '@/lib/orders/pending'
 import { jstTodayStr } from '@/lib/dates'
 
@@ -98,6 +99,35 @@ export async function getInboxData(): Promise<InboxData> {
   const supabase = createClient()
   // JST の当日0時（timestamptz 比較用）。updated_at が承認で更新される想定。
   const jstMidnight = `${jstTodayStr()}T00:00:00+09:00`
+
+  // 承認済み・キャンセル済み注文に紐づく受信ステータスの自動同期（未確定バナーの残骸解消）
+  try {
+    const admin = createAdminClient()
+    const { data: nonPendingOrders } = await admin
+      .from('orders')
+      .select('id, status')
+      .neq('status', 'pending_review')
+    if (nonPendingOrders?.length) {
+      const approvedIds = nonPendingOrders.filter((o) => o.status !== 'cancelled').map((o) => o.id)
+      const cancelledIds = nonPendingOrders.filter((o) => o.status === 'cancelled').map((o) => o.id)
+      if (approvedIds.length) {
+        await admin
+          .from('order_receipts')
+          .update({ status: 'approved' })
+          .in('order_id', approvedIds)
+          .eq('status', 'pending_review')
+      }
+      if (cancelledIds.length) {
+        await admin
+          .from('order_receipts')
+          .update({ status: 'dismissed' })
+          .in('order_id', cancelledIds)
+          .eq('status', 'pending_review')
+      }
+    }
+  } catch (e) {
+    console.error('[inbox] auto sync receipts failed', e)
+  }
 
   const [receiptsRes, pendingOrders, approvedRes] = await Promise.all([
     supabase

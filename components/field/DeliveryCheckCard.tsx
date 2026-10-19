@@ -224,31 +224,46 @@ export function DeliveryCheckCard({
                     {it.productName}
                   </div>
 
-                  {/* 数量・荷姿の特大ハイライト表示 */}
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-display text-2xl font-black text-emerald-950 tabular-nums">
-                      {it.quantity} <span className="text-sm font-bold text-emerald-800">{it.unit}</span>
-                    </span>
-                    <span className="inline-flex items-center rounded-lg bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 text-xs font-black text-emerald-900 shadow-2xs">
-                      {it.quantityText.includes('/') ? it.quantityText.split('/')[1]?.trim() : it.quantityText}
-                    </span>
+                  {/* 箱数（コンテナ数）と入数のみを主表示 */}
+                  <div className="flex flex-wrap items-baseline gap-2 pt-0.5">
+                    {/* コンテナ数（箱数） */}
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 shadow-2xs">
+                      <span className="text-xs font-bold text-emerald-800">箱数:</span>
+                      <span className="text-base sm:text-lg font-black text-emerald-950 tabular-nums">
+                        {it.quantityText.includes('/') ? it.quantityText.split('/')[1]?.trim() : it.quantityText}
+                      </span>
+                    </div>
+
+                    {/* 入数（総数量） */}
+                    <div className="inline-flex items-center gap-1 rounded-lg bg-bg-soft border border-line px-2.5 py-1 text-ink">
+                      <span className="text-xs font-medium text-ink-muted">入数:</span>
+                      <span className="text-base font-bold tabular-nums text-trust-900">
+                        {it.quantity} <span className="text-xs font-bold text-ink-soft">{it.unit}</span>
+                      </span>
+                    </div>
                   </div>
 
-                  {/* 荷姿・メモ */}
-                  {it.noteText && (
-                    <div className="text-xs font-medium text-ink-soft bg-bg-soft/70 px-2 py-0.5 rounded-md inline-block">
-                      📝 {it.noteText}
-                    </div>
+                  {/* その他情報は詳細欄に収納 */}
+                  {it.noteText && it.noteText !== '—' && (
+                    <details className="group pt-0.5 text-xs text-ink-soft">
+                      <summary className="cursor-pointer select-none font-semibold text-ink-muted hover:text-ink list-none inline-flex items-center gap-1">
+                        <span>詳細・メモを確認</span>
+                        <span className="text-[10px] group-open:rotate-180 transition-transform">▼</span>
+                      </summary>
+                      <div className="mt-1 rounded-md bg-bg-soft/90 border border-line px-2.5 py-1.5 text-xs text-ink space-y-0.5">
+                        <p className="font-medium">規格・指示: {it.noteText}</p>
+                      </div>
+                    </details>
                   )}
                 </div>
 
-                {/* かくにん（チェックボタン） */}
+                {/* 確認チェックボタン */}
                 <button
                   type="button"
                   onClick={() => toggle(it.id)}
                   disabled={status !== 'planned'}
                   aria-pressed={isChecked}
-                  aria-label={`${it.productName} をかくにん`}
+                  aria-label={`${it.productName} を確認`}
                   className={cn(
                     'shrink-0 h-12 w-12 rounded-full border-2 flex items-center justify-center transition active:scale-95 shadow-xs',
                     isChecked

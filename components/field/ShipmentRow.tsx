@@ -461,7 +461,7 @@ export function ShipmentRow({
           <div className="text-base font-extrabold text-ink leading-tight">
             {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : (customerName)}
           </div>
-          {isAdmin && (onMoveUp || onMoveDown) && (
+          {(onMoveUp || onMoveDown) && (
             <div className="flex items-center gap-1 shrink-0">
               {onMoveUp && (
                 <button

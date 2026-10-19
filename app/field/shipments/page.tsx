@@ -62,16 +62,29 @@ export default async function ShipmentsPage({
   if (prodErr) return <ErrorState message={`商品の読み込みに失敗しました: ${prodErr.message}`} />
 
   // ② 当日の注文（キャンセル除外）＋ B案の未確定FAX件数の取得
-  const [{ data: orders, error: ordersErr }, { count: pendingReceiptCount }] = await Promise.all([
+  const [
+    { data: orders, error: ordersErr },
+    pendingReceiptCount,
+  ] = await Promise.all([
     supabase
       .from('orders')
       .select('id, customer_id, destination_id, status')
       .eq('delivery_date', date)
       .neq('status', 'cancelled'),
-    supabase
-      .from('order_receipts')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['pending_review', 'unmatched', 'ai_failed']),
+    (async (): Promise<number> => {
+      // 1. 解析失敗または取引先未照合の受信（要確認のFAX）
+      const rRes = await supabase
+        .from('order_receipts')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['unmatched', 'ai_failed'])
+      // 2. 当日出荷で承認待ち（pending_review）の注文
+      const pRes = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('delivery_date', date)
+        .eq('status', 'pending_review')
+      return (rRes.count ?? 0) + (pRes.count ?? 0)
+    })(),
   ])
   if (ordersErr) return <ErrorState message={ordersErr.message} />
 

@@ -57,9 +57,9 @@ export function PackingAndShippingViews({
     )
   }
 
-  // 管理者による上下移動
+  // 上下移動（パック作業順）
   const handleMove = async (index: number, direction: 'up' | 'down') => {
-    if (!isAdmin || busyReorder) return
+    if (busyReorder) return
     const targetIndex = direction === 'up' ? index - 1 : index + 1
     if (targetIndex < 0 || targetIndex >= sortedPackItems.length) return
 

@@ -172,6 +172,13 @@ export async function approveOrder(
     return { ok: false, status: 500, error: `収穫タスクの生成に失敗: ${taskErr.message}` }
   }
 
+  // 紐づく受信ログのステータスも approved に更新
+  try {
+    await admin.from('order_receipts').update({ status: 'approved' }).eq('order_id', order.id)
+  } catch (e) {
+    console.error('[approve] order_receipts status update failed', e)
+  }
+
   // 監査記録（best-effort で全体は止めない）
   try {
     await writeAudit(admin, {

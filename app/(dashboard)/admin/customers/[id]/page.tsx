@@ -53,12 +53,22 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       .eq('entity_type', 'customer_product_rules')
       .order('created_at', { ascending: false })
       .limit(200),
-    supabase
-      .from('delivery_destinations')
-      .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
-      .eq('customer_id', params.id)
-      .order('sort_order')
-      .order('full_name'),
+    (async () => {
+      const r1 = await supabase
+        .from('delivery_destinations')
+        .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
+        .eq('customer_id', params.id)
+        .order('sort_order')
+        .order('full_name')
+      if (!r1.error) return r1
+      // 0026 未適用環境への安全なフォールバック
+      return await supabase
+        .from('delivery_destinations')
+        .select('id, code, full_name, aliases, is_active')
+        .eq('customer_id', params.id)
+        .order('sort_order')
+        .order('full_name')
+    })(),
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
   ])
