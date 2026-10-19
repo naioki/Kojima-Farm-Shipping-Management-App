@@ -249,15 +249,17 @@ export function EditableOrderCard({
             {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
 
-          {/* 即時承認ボタン（閉じた状態でも承認可能） */}
-          <ApproveOrderButton
-            orderId={orderId}
-            needsDeliveryDate={needsDeliveryDate}
-            needsDestination={needsDestination}
-            destinationOptions={destinationOptions}
-            label={approveLabel}
-            size={size}
-          />
+          {/* 即時承認ボタン（閉じた状態でも承認可能。編集中は連打・競合防止でロック） */}
+          <div className={rows.some((r) => r.saving) ? 'pointer-events-none opacity-50' : ''}>
+            <ApproveOrderButton
+              orderId={orderId}
+              needsDeliveryDate={needsDeliveryDate}
+              needsDestination={needsDestination}
+              destinationOptions={destinationOptions}
+              label={approveLabel}
+              size={size}
+            />
+          </div>
         </div>
       </div>
 

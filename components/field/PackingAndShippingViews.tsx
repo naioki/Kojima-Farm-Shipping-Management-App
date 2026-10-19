@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import toast from 'react-hot-toast'
 import type { RowStatusKey } from '@/lib/field/shipment-sort'
+import type { FieldStatus } from '@/types/database'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -47,13 +48,12 @@ export function PackingAndShippingViews({
     return orderA - orderB
   })
 
-  // ステータス更新時のリアルタイム連動（親Stateの initialStatus を更新して積込完了バッジ・未積込件数を即反映）
-  const handleStatusSettled = (itemId: string, statusKey: RowStatusKey) => {
-    // RowStatusKey ('shipped' | 'packed' | 'partially_packed' | 'not_started') を FieldStatus にマッピング
-    const fieldStatus: 'not_started' | 'packed' | 'shipped' =
-      statusKey === 'shipped' ? 'shipped' : statusKey === 'not_started' ? 'not_started' : 'packed'
+  // ステータス即時連動（タップした瞬間に親Stateの initialStatus と initialVersion を即座に更新）
+  const handleStatusChange = (itemId: string, newStatus: FieldStatus, newVersion: number) => {
     setItems((prev) =>
-      prev.map((it) => (it.itemId === itemId ? { ...it, initialStatus: fieldStatus } : it)),
+      prev.map((it) =>
+        it.itemId === itemId ? { ...it, initialStatus: newStatus, initialVersion: newVersion } : it,
+      ),
     )
   }
 
@@ -63,7 +63,8 @@ export function PackingAndShippingViews({
     const targetIndex = direction === 'up' ? index - 1 : index + 1
     if (targetIndex < 0 || targetIndex >= sortedPackItems.length) return
 
-    const previousItems = [...items]
+    // 他行のステータス変更を上書きしないよう、IDとソート順のみのスナップショットを保持
+    const prevSortMap = new Map(items.map((it) => [it.itemId, it.dailyPackSortOrder]))
     const newSorted = [...sortedPackItems]
     const temp = newSorted[index]!
     newSorted[index] = newSorted[targetIndex]!
@@ -95,7 +96,13 @@ export function PackingAndShippingViews({
       toast.success('パック作業順を更新しました')
     } catch (e) {
       toast.error('並び替えに失敗しました')
-      setItems(previousItems)
+      // dailyPackSortOrder のみを安全にロールバック
+      setItems((prev) =>
+        prev.map((it) => ({
+          ...it,
+          dailyPackSortOrder: prevSortMap.get(it.itemId) ?? it.dailyPackSortOrder,
+        })),
+      )
     } finally {
       setBusyReorder(false)
     }
@@ -196,7 +203,7 @@ export function PackingAndShippingViews({
                 isAdmin={isAdmin}
                 onMoveUp={idx > 0 ? () => handleMove(idx, 'up') : undefined}
                 onMoveDown={idx < sortedPackItems.length - 1 ? () => handleMove(idx, 'down') : undefined}
-                onStatusSettled={handleStatusSettled}
+                onStatusChange={handleStatusChange}
               />
             ))}
           </div>
@@ -275,7 +282,7 @@ export function PackingAndShippingViews({
                         deliveryDate={date}
                         isAdmin={isAdmin}
                         showShippingButton={true}
-                        onStatusSettled={handleStatusSettled}
+                        onStatusChange={handleStatusChange}
                       />
                     ))}
                   </div>

@@ -82,6 +82,8 @@ export interface ShipmentRowProps {
   showShippingButton?: boolean
   /** 受注原本（FAX/PDF・メール本文）。無ければリンク非表示（手動追加など） */
   receipt?: ReceiptOriginalInfo | null
+  /** ステータス変更直後（即時）に呼ばれる。親Stateの status と version を同期する */
+  onStatusChange?: (itemId: string, newStatus: FieldStatus, newVersion: number) => void
   /** ステータス確定（Undo猶予経過 or 戻す操作）時に呼ばれる。親がステータス順に並べ替える */
   onStatusSettled?: (itemId: string, status: RowStatusKey) => void
   /** 削除された瞬間に呼ばれる（親が並びから除く） */
@@ -130,6 +132,7 @@ export function ShipmentRow({
   onMoveDown,
   showShippingButton = false,
   receipt,
+  onStatusChange,
   onStatusSettled,
   onDeleted,
 }: ShipmentRowProps) {
@@ -242,6 +245,7 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setConflict(false)
+      onStatusChange?.(itemId, target, json.item.version)
       startUndoGrace(prev, target)
     } catch (e) {
       setStatus(prev)
@@ -273,6 +277,7 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setConflict(false)
+      onStatusChange?.(itemId, target, json.item.version)
       // すぐには並べ替えず、猶予中は「元に戻す」を出す（誤タップ対策・Issue#5）
       startUndoGrace(prev, target)
     } catch (e) {
@@ -312,6 +317,7 @@ export function ShipmentRow({
       setStatus(json.item.field_status)
       setVersion(json.item.version)
       setConflict(false)
+      onStatusChange?.(itemId, json.item.field_status, json.item.version)
       // 戻した結果は即座に確定として親へ通知（並び順を最新化）
       onStatusSettled?.(
         itemId,
