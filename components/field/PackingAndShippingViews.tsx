@@ -90,16 +90,27 @@ export function PackingAndShippingViews({
     }
   }
 
-  // 出荷画面用グループ化: 出発便・時間別
+  // 出荷画面用グループ化: 出発便・時間別（時間の早い順に自動ソート）
   const routeGroups = new Map<string, ShipmentItemData[]>()
   for (const it of items) {
+    const timePrefix = it.departureTime || '時間未設定'
+    const routeSuffix = it.shippingRouteName ? ` ${it.shippingRouteName}` : ''
     const key = it.shippingRouteName || it.departureTime
-      ? `${it.departureTime || '時間未設定'} ${it.shippingRouteName || ''}`.trim()
+      ? `${timePrefix}${routeSuffix}`.trim()
       : '通常便 (定期)'
     const arr = routeGroups.get(key) ?? []
     arr.push(it)
     routeGroups.set(key, arr)
   }
+
+  // 時間順にソート（例: "08:00" -> "11:00" -> "14:00" -> "通常便" -> "時間未設定"）
+  const sortedRouteEntries = Array.from(routeGroups.entries()).sort(([keyA], [keyB]) => {
+    const isUnsetA = keyA.includes('時間未設定') || keyA.includes('通常便')
+    const isUnsetB = keyB.includes('時間未設定') || keyB.includes('通常便')
+    if (isUnsetA && !isUnsetB) return 1
+    if (!isUnsetA && isUnsetB) return -1
+    return keyA.localeCompare(keyB, 'ja', { numeric: true })
+  })
 
   // 出荷遅れ通知トグル
   const toggleAlert = async () => {
@@ -206,8 +217,8 @@ export function PackingAndShippingViews({
             </button>
           </div>
 
-          {/* 便別グループカード一覧 */}
-          {Array.from(routeGroups.entries()).map(([routeName, groupItems]) => {
+          {/* 便別グループカード一覧（早い便から順に表示） */}
+          {sortedRouteEntries.map(([routeName, groupItems]) => {
             const unshippedCount = groupItems.filter((i) => i.initialStatus !== 'shipped').length
             const isGroupDone = unshippedCount === 0
 

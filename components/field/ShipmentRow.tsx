@@ -611,7 +611,7 @@ export function ShipmentRow({
             onClick={() => setOpen(!open)}
             className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-[0.97]"
           >
-            追記
+            💬 メモ
           </button>
 
           <button
@@ -625,9 +625,9 @@ export function ShipmentRow({
                 setOpen(true)
               }
             }}
-            className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-[0.97]"
+            className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-amber-900 bg-amber-50/50 hover:bg-amber-100/50 active:scale-[0.97]"
           >
-            ✏️ 編集
+            ✏️ 規格変更
           </button>
 
           {receipt?.id ? (
