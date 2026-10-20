@@ -228,7 +228,8 @@ export default async function ShipmentsPage({
     receiptByOrder.set(rr.order_id, {
       id: rr.id,
       channel: rr.channel,
-      hasOriginal: Boolean(rr.r2_key || rr.raw_payload),
+      hasOriginal: true,
+      originalUrl: `/field/viewer/${rr.id}?date=${date}`,
       emailText: null,
       isRevision: Boolean(rr.is_revision),
       parent: null,
@@ -374,6 +375,35 @@ export default async function ShipmentsPage({
   const packsByPair: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
 
+  // 翌日の注文合計箱数・パック数を取得（余剰在庫の引き当て・翌日の収穫見通し用）
+  const nextDateStr = shiftDateStr(date, 1)
+  let nextDayTotalBoxes = 0
+  let nextDayTotalPacks = 0
+
+  if (selectedProductId) {
+    const { data: nextOrders } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('delivery_date', nextDateStr)
+      .neq('status', 'cancelled')
+
+    const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
+    if (nextOrderIds.length > 0) {
+      const { data: nextItems } = await supabase
+        .from('order_items')
+        .select('quantity, pack_config_id')
+        .eq('product_id', selectedProductId)
+        .in('order_id', nextOrderIds)
+
+      const defCapacity = capacityById.get(selectedProductId) ?? 20
+      for (const ni of nextItems ?? []) {
+        const perCase = (ni.pack_config_id ? packById.get(ni.pack_config_id)?.base : null) || defCapacity || 20
+        nextDayTotalPacks += ni.quantity
+        nextDayTotalBoxes += Math.ceil(ni.quantity / perCase)
+      }
+    }
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
       {/* ナビゲーションバー */}
@@ -421,6 +451,8 @@ export default async function ShipmentsPage({
           hasManualStock={hasManualStock}
           containerBreakdown={containerBreakdown}
           specBreakdown={specBreakdown}
+          nextDayTotalBoxes={nextDayTotalBoxes}
+          nextDayTotalPacks={nextDayTotalPacks}
         />
       )}
 

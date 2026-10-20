@@ -909,17 +909,19 @@ export function ShipmentRow({
             <span className="text-sm text-ink">{lineNote || '—'}</span>
           </div>
 
-          {/* 原本ファイルカード */}
-          {receipt?.originalUrl && (
-            <div className="rounded-xl border border-line bg-bg-card p-2.5">
-              <span className="block text-xs font-bold text-ink-soft">原本ファイル</span>
+          {/* 原本ファイルカード（FAX元データへの直接ジャンプ） */}
+          {(receipt?.originalUrl || receipt?.id) && (
+            <div className="rounded-xl border border-trust-200 bg-trust-50/60 p-3 flex items-center justify-between gap-3 shadow-2xs">
+              <div>
+                <span className="block text-xs font-black text-trust-900">📄 受注原本（FAX / OCR）</span>
+                <span className="text-xs text-ink-soft">受信した元FAX画像やPDFを全画面で確認</span>
+              </div>
               <a
-                href={receipt.originalUrl}
-                target="_blank"
-                rel="noopener"
-                className="text-sm font-bold text-trust-700 hover:underline inline-flex items-center gap-1"
+                href={receipt.originalUrl || `/field/viewer/${receipt.id}?date=${deliveryDate ?? ''}`}
+                className="h-9 px-3.5 rounded-lg bg-trust-700 text-white text-xs font-black shadow-xs hover:bg-trust-800 active:scale-95 transition flex items-center gap-1.5 shrink-0"
               >
-                原本を開く ↗
+                <span>原本を見る</span>
+                <span className="text-[11px]">↗</span>
               </a>
             </div>
           )}

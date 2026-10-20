@@ -19,6 +19,7 @@ import { ColorDot } from '@/components/ui/ColorDot'
 import { Button } from '@/components/ui/Button'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { getContainerColorStyle } from '@/lib/field/container-style'
+import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
 
 export interface DestinationDetail {
   destinationId: string | null
@@ -61,6 +62,7 @@ export interface CustomerDeliveryCardProps {
   }>
   shippingRouteName?: string | null
   departureTime?: string | null
+  earliestDepartureTime?: string | null
 }
 
 /**
@@ -85,6 +87,7 @@ export function CustomerDeliveryCard({
   routeSummaries = [],
   shippingRouteName,
   departureTime,
+  earliestDepartureTime,
 }: CustomerDeliveryCardProps) {
   const router = useRouter()
   const [isCompleted, setIsCompleted] = useState<boolean>(initialIsCompleted)
@@ -110,16 +113,16 @@ export function CustomerDeliveryCard({
   // 納品先ID一覧
   const destinationIds = destinations.map((d) => d.destinationId)
 
-  // サブ内訳テキストの生成（例: "満杯 22ケース ＋ 端数 2箱 (11P)"）
+  // サブ内訳テキストの生成（文字拡大 ＆ （満杯 22ケース ＋ 端数 2箱 (11P)）と全体をカッコで囲む）
   const subBreakdownText = (() => {
     if (totalCases > 0 && totalFractionBoxes > 0) {
-      return `満杯 ${totalCases}ケース ＋ 端数 ${totalFractionBoxes}箱 (${totalFractionPacks}P)`
+      return `（満杯 ${totalCases}ケース ＋ 端数 ${totalFractionBoxes}箱 (${totalFractionPacks}P)）`
     }
     if (totalCases > 0) {
-      return `満杯 ${totalCases}ケース`
+      return `（満杯 ${totalCases}ケース）`
     }
     if (totalFractionBoxes > 0) {
-      return `端数 ${totalFractionBoxes}箱 (${totalFractionPacks}P)`
+      return `（端数 ${totalFractionBoxes}箱 (${totalFractionPacks}P)）`
     }
     return null
   })()
@@ -244,27 +247,18 @@ export function CustomerDeliveryCard({
               )}
             </div>
 
-            {/* 所属便・ルートバッジ一覧 */}
+            {/* 時間指定・所属便設定（タップで即座に変更可能） */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ink-soft">
-              {routeSummaries.length > 0 ? (
-                routeSummaries.map((r, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-[11px] font-bold"
-                  >
-                    <Clock className="h-3 w-3 text-sky-600 shrink-0" />
-                    <span>{r.title}</span>
-                  </span>
-                ))
-              ) : (departureTime || shippingRouteName) ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-[11px] font-bold">
-                  <Clock className="h-3 w-3 text-sky-600 shrink-0" />
-                  <span>
-                    {departureTime ? `${departureTime}発` : ''}
-                    {shippingRouteName ? ` ${shippingRouteName}` : ''}
-                  </span>
-                </span>
-              ) : null}
+              <QuickDepartureTimeEditor
+                deliveryDate={deliveryDate}
+                customerId={customerId ?? ''}
+                destinationId={destinations[0]?.destinationId ?? null}
+                customerName={customerName}
+                destinationName={destinations[0]?.destinationName ?? null}
+                currentDepartureTime={earliestDepartureTime ?? (destinations[0]?.departureTime || null)}
+                currentShippingRouteName={destinations[0]?.shippingRouteName || (routeSummaries[0]?.title ?? null)}
+                variant="chip"
+              />
 
               {destinations.length > 1 && (
                 <span className="text-[11px] text-ink-muted font-bold">
@@ -286,7 +280,7 @@ export function CustomerDeliveryCard({
               {grandTotalContainers} <span className="text-base sm:text-lg font-black text-ink-soft">箱</span>
             </div>
             {subBreakdownText && (
-              <div className="text-xs sm:text-[14px] font-bold text-ink-soft">
+              <div className="text-sm sm:text-base font-extrabold text-ink-soft my-0.5">
                 {subBreakdownText}
               </div>
             )}
@@ -440,20 +434,24 @@ export function CustomerDeliveryCard({
                     isDestLoaded ? 'border-emerald-200 bg-emerald-50/40 opacity-70' : 'border-line bg-white',
                   )}
                 >
-                  {/* 上段（納品先名 ＋ 出発便バッジ）: 16〜17px 太字 */}
+                  {/* 上段（納品先名 ＋ 時間指定変更チップ）: 16〜17px 太字 */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 pb-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <span className="text-[16px] sm:text-[17px] font-black text-ink">
                         📍 {dest.destinationName}
                       </span>
-                      {(dest.departureTime || dest.shippingRouteName) && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-xs font-bold shrink-0">
-                          <Clock className="h-3.5 w-3.5 text-sky-600" />
-                          {dest.departureTime ? `${dest.departureTime}発 ` : ''}
-                          {dest.shippingRouteName || ''}
-                        </span>
-                      )}
                     </div>
+
+                    <QuickDepartureTimeEditor
+                      deliveryDate={deliveryDate}
+                      customerId={customerId ?? ''}
+                      destinationId={dest.destinationId}
+                      customerName={customerName}
+                      destinationName={dest.destinationName}
+                      currentDepartureTime={dest.departureTime ?? null}
+                      currentShippingRouteName={dest.shippingRouteName ?? null}
+                      variant="chip"
+                    />
                   </div>
 
                   {/* 下段（コンテナ色バッジ ＋ 必要数量・荷姿 ＆ 個別積込ボタン） */}

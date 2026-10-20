@@ -3,7 +3,6 @@ import { Truck, Clock, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { createClient } from '@/lib/supabase/server'
 import { EmptyState, ErrorState } from '@/components/ui/States'
-import { PrintButton } from '@/components/admin/PrintButton'
 import { DateNav } from '@/components/field/DateNav'
 import {
   CustomerDeliveryCard,
@@ -216,8 +215,8 @@ export default async function DeliveriesPage({
       cEntry.notesSet.add(deliveryNote.trim())
     }
 
-    // 納品先マップへの追加
-    const destKey = order.destination_id ?? 'direct'
+    // 納品先マップへの追加（同一納品先が便やメモ違いで分裂しないよう、納品先IDまたは正規化名で1本化）
+    const destKey = order.destination_id || `name:${destName}`
     let dEntry = cEntry.destinationsMap.get(destKey)
     if (!dEntry) {
       const delStatus = deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.status ?? 'planned'
@@ -236,8 +235,16 @@ export default async function DeliveriesPage({
         status: delStatus,
       }
       cEntry.destinationsMap.set(destKey, dEntry)
-    } else if (!dEntry.containerType && it.container_type) {
-      dEntry.containerType = it.container_type
+    } else {
+      if (!dEntry.containerType && it.container_type) {
+        dEntry.containerType = it.container_type
+      }
+      if (!dEntry.departureTime && (dest?.departure_time || routeInfo.departureTime)) {
+        dEntry.departureTime = dest?.departure_time || routeInfo.departureTime
+      }
+      if (!dEntry.shippingRouteName && (dest?.shipping_route_name || routeInfo.title)) {
+        dEntry.shippingRouteName = dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null)
+      }
     }
 
     // ケース数・端数換算
@@ -369,7 +376,6 @@ export default async function DeliveriesPage({
         </h1>
         <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <DateNav date={date} basePath={PATH} />
-          {globalTotalCustomers > 0 && <PrintButton label="印刷" />}
         </div>
       </div>
 
@@ -399,14 +405,6 @@ export default async function DeliveriesPage({
                 </span>
               )}
             </span>
-          </div>
-
-          {/* 印刷帳票ヘッダー（印刷時のみ） */}
-          <div className="hidden print:block">
-            <h1 className="text-xl font-bold">取引先別 積込・配送一覧表　{formatJpDate(date)}</h1>
-            <p className="mt-1 text-sm">
-              取引先 {globalTotalCustomers} 件 ／ 明細 {items.length} 行　　確認者：＿＿＿＿＿＿＿＿
-            </p>
           </div>
 
           {/* 取引先ワンボックス集約カード一覧（和郷園等の同一取引先が1つのカードに集約） */}

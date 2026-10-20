@@ -30,6 +30,8 @@ interface HarvestPulseSummaryProps {
   hasManualStock?: boolean
   containerBreakdown: ContainerBreakdownItem[]
   specBreakdown: SpecBreakdownItem[]
+  nextDayTotalBoxes?: number
+  nextDayTotalPacks?: number
 }
 
 export function HarvestPulseSummary({
@@ -44,6 +46,8 @@ export function HarvestPulseSummary({
   hasManualStock = false,
   containerBreakdown,
   specBreakdown,
+  nextDayTotalBoxes = 0,
+  nextDayTotalPacks = 0,
 }: HarvestPulseSummaryProps) {
   const router = useRouter()
   // 手動入力値がない場合は「前日繰越 + 本日途中仕上がり」で自動計算（手入力不要）
@@ -71,6 +75,10 @@ export function HarvestPulseSummary({
 
   // 今日畑で採るべき箱数 = max(0, 注文合計箱数 - 在庫箱数)
   const harvestNeededBoxes = Math.max(0, totalBoxes - stock)
+  // 余分分（手元余剰箱数） = max(0, 在庫箱数 - 注文合計箱数)
+  const surplusBoxes = Math.max(0, stock - totalBoxes)
+  const surplusPacks = stock > totalBoxes ? Math.round(totalPacks * (surplusBoxes / (totalBoxes || 1))) : 0
+
   // 必要パック数（在庫0なら注文総数そのもの。在庫がある場合は箱数比率で正確に逆算）
   const harvestNeededPacks =
     stock === 0
@@ -165,6 +173,18 @@ export function HarvestPulseSummary({
               ({stock > 0 ? '約 ' : ''}{harvestNeededPacks.toLocaleString()} P)
             </span>
           </div>
+
+          {/* 余分分（手元余剰）の特大ハイライト表示 */}
+          {surplusBoxes > 0 && (
+            <div className="mt-2.5 inline-flex items-center gap-2 rounded-xl bg-emerald-400 text-emerald-950 px-4 py-1.5 shadow-md">
+              <span className="text-sm sm:text-base font-black">
+                ✨ 手元余剰 ＋{surplusBoxes.toLocaleString()} 箱
+              </span>
+              <span className="text-xs font-bold text-emerald-900 border-l border-emerald-600/30 pl-2">
+                本日収穫不要・翌日充当
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 注文合計 − 在庫 ＝ 収穫箱数の対比グリッド */}
@@ -294,6 +314,26 @@ export function HarvestPulseSummary({
             )}
           </div>
         </div>
+
+        {/* 翌日注文の先回り連動見通し */}
+        {nextDayTotalBoxes > 0 && (
+          <div className="mt-3 rounded-xl bg-black/20 p-2.5 text-xs sm:text-sm border border-white/10 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-100">
+              <span>📅 翌日の注文予定:</span>
+              <span className="text-white font-black text-sm sm:text-base">{nextDayTotalBoxes} 箱</span>
+              <span className="text-white/70">({nextDayTotalPacks} P)</span>
+            </div>
+            <div className="text-white/90 font-bold text-xs sm:text-sm">
+              {surplusBoxes > 0 ? (
+                <span>
+                  今日の余剰 <span className="text-emerald-300 font-black">{surplusBoxes}箱</span> 充当後 → 明日の実質収穫見込み: <span className="text-white font-black underline">{Math.max(0, nextDayTotalBoxes - surplusBoxes)} 箱</span>
+                </span>
+              ) : (
+                <span>明日の収穫予定: {nextDayTotalBoxes} 箱</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 折りたたみ内訳アコーディオン（普段は閉じて画面スッキリ） */}

@@ -153,6 +153,18 @@ export function QuickDepartureTimeEditor({
               </div>
               {/* クイック時間選択チップ */}
               <div className="flex flex-wrap gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setTime('')}
+                  className={cn(
+                    'rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
+                    !time
+                      ? 'bg-earth-700 text-white shadow-xs'
+                      : 'bg-bg-soft text-ink hover:bg-line',
+                  )}
+                >
+                  時間未指定
+                </button>
                 {COMMON_TIMES.map((t) => (
                   <button
                     key={t}
@@ -165,7 +177,7 @@ export function QuickDepartureTimeEditor({
                         : 'bg-bg-soft text-ink hover:bg-line',
                     )}
                   >
-                    {t}
+                    {t}発
                   </button>
                 ))}
               </div>
