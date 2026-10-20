@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, ArrowRight, UserPlus, PackagePlus, Check, Sparkles, Camera, Loader2, AlertCircle, Calendar } from 'lucide-react'
+import { Plus, ArrowRight, UserPlus, PackagePlus, Check, Sparkles, Camera, Image as ImageIcon, Loader2, AlertCircle, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -79,6 +79,7 @@ export function ShipmentAddForm({
 
   // 画像・カメラ読み取り & AI聞き返し用 state
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false)
   const [missingDatePrompt, setMissingDatePrompt] = useState(false)
@@ -324,6 +325,7 @@ export function ShipmentAddForm({
   // 📷 写真アップロード & AI解析ハンドラ
   async function handlePhotoFile(file: File) {
     if (fileInputRef.current) fileInputRef.current.value = ''
+    if (galleryInputRef.current) galleryInputRef.current.value = ''
     setAnalyzingPhoto(true)
     setMissingDatePrompt(false)
     setRawAiCustomerName(null)
@@ -393,6 +395,7 @@ export function ShipmentAddForm({
     } finally {
       setAnalyzingPhoto(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      if (galleryInputRef.current) galleryInputRef.current.value = ''
     }
   }
 
@@ -443,31 +446,20 @@ export function ShipmentAddForm({
 
   return (
     <>
-      {/* 画面内：通常位置の新規出荷追加トリガー */}
+      {/* フローティング追加ボタン（右下の丸いアイコンのプラス） */}
       <div
-        className="rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 p-4 transition-all hover:border-emerald-400 hover:bg-emerald-50"
-        data-guide="smart-add"
+        className="fixed right-5 z-40 print:hidden"
+        style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
       >
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-          <div className="space-y-0.5">
-            <h2 className="font-display text-base font-bold text-forest-950 flex items-center justify-center sm:justify-start gap-1.5">
-              <Sparkles className="h-4 w-4 text-forest-600" aria-hidden />
-              <span>当日出荷の追加</span>
-            </h2>
-            <p className="text-xs text-forest-700">
-              写真撮影（手書きメモ・FAX）または手動選択で、出荷明細を即座に追加できます。
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            size="lg"
-            className="w-full sm:w-auto shrink-0 bg-forest-600 hover:bg-forest-700 text-white font-black px-6 py-3 rounded-xl shadow-md text-sm flex items-center justify-center gap-2 active:scale-95 transition"
-          >
-            <Plus className="h-5 w-5" aria-hidden />
-            ＋ 新規出荷を追加
-          </Button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-2xl hover:bg-forest-700 active:scale-90 transition-transform focus:outline-none focus:ring-4 focus:ring-forest-300/50"
+          aria-label="当日出荷を追加"
+          title="当日出荷を追加"
+        >
+          <Plus className="h-7 w-7 stroke-[2.5]" aria-hidden />
+        </button>
       </div>
 
       {/* 新規追加モーダルダイアログ */}
@@ -525,6 +517,7 @@ export function ShipmentAddForm({
 
           {mode === 'photo' && (
             <div className="space-y-3">
+              {/* カメラ起動用 input（スマホのカメラが直接開く） */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -538,17 +531,50 @@ export function ShipmentAddForm({
                 id="shipment-camera-input"
               />
 
+              {/* アルバム・画像選択用 input（スマホのフォトライブラリやPCの画像選択が開く） */}
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handlePhotoFile(file)
+                }}
+                className="hidden"
+                id="shipment-gallery-input"
+              />
+
               {!photoPreview ? (
-                <label
-                  htmlFor="shipment-camera-input"
-                  className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-300 bg-emerald-50/50 rounded-2xl cursor-pointer hover:bg-emerald-50 transition-all text-center"
-                >
-                  <Camera className="h-10 w-10 text-emerald-600 mb-2" />
-                  <span className="text-sm font-bold text-ink">スマホで写真を撮る / 画像を選ぶ</span>
-                  <span className="text-xs text-ink-soft mt-1">
-                    手書きメモ、急なFAX、注文伝票を撮影するとAIが自動入力します
-                  </span>
-                </label>
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* ① カメラ撮影ボタン */}
+                    <label
+                      htmlFor="shipment-camera-input"
+                      className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-forest-300 bg-forest-50/60 hover:bg-forest-50 rounded-2xl cursor-pointer transition-all text-center active:scale-98 shadow-xs group"
+                    >
+                      <div className="h-12 w-12 rounded-full bg-forest-100 group-hover:bg-forest-200 flex items-center justify-center mb-2 transition-colors">
+                        <Camera className="h-6 w-6 text-forest-700" />
+                      </div>
+                      <span className="text-sm font-black text-ink">📷 カメラで撮影する</span>
+                      <span className="text-[11px] text-ink-muted mt-0.5">現場でメモ・伝票を撮影</span>
+                    </label>
+
+                    {/* ② アルバム・画像選択ボタン */}
+                    <label
+                      htmlFor="shipment-gallery-input"
+                      className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-sky-300 bg-sky-50/60 hover:bg-sky-50 rounded-2xl cursor-pointer transition-all text-center active:scale-98 shadow-xs group"
+                    >
+                      <div className="h-12 w-12 rounded-full bg-sky-100 group-hover:bg-sky-200 flex items-center justify-center mb-2 transition-colors">
+                        <ImageIcon className="h-6 w-6 text-sky-700" />
+                      </div>
+                      <span className="text-sm font-black text-ink">🖼️ 画像・アルバムから選ぶ</span>
+                      <span className="text-[11px] text-ink-muted mt-0.5">保存済みの写真やスクショ</span>
+                    </label>
+                  </div>
+                  <p className="text-center text-xs text-ink-muted">
+                    手書きメモ、急なFAX、注文伝票を読み取るとAIが自動入力します
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-3">
                   <div className="relative rounded-xl border border-line overflow-hidden bg-black/5 p-2 flex items-center justify-between">
@@ -564,6 +590,8 @@ export function ShipmentAddForm({
                       onClick={() => {
                         setPhotoPreview(null)
                         setMissingDatePrompt(false)
+                        if (fileInputRef.current) fileInputRef.current.value = ''
+                        if (galleryInputRef.current) galleryInputRef.current.value = ''
                       }}
                       className="text-xs text-alert hover:underline font-bold px-2 py-1"
                     >

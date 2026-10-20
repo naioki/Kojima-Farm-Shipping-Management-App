@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Truck,
@@ -24,6 +24,8 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 export interface DestinationDetail {
   destinationId: string | null
   destinationName: string
+  shippingRouteName?: string | null
+  departureTime?: string | null
   cases: number
   loose: number
   totalQty: number
@@ -45,10 +47,15 @@ export interface CustomerDeliveryCardProps {
   deliveryDate: string
   totalCases: number
   totalLoose: number
+  grandTotalContainers: number
   totalQty: number
   notes: string[] // 注文や配送の特記事項
   isCompleted: boolean // 属する納品先がすべて積込OK
   destinations: DestinationDetail[]
+  routeSummaries?: Array<{
+    title: string
+    departureTime: string | null
+  }>
   shippingRouteName?: string | null
   departureTime?: string | null
 }
@@ -58,7 +65,7 @@ export interface CustomerDeliveryCardProps {
  * - 取引先単位で総コンテナ数＋端数を最重要位置に特大表示。
  * - 事前アクション喚起型メモ（空コンテナ持参など）を注意ハイライト枠で表示。
  * - 指で押しやすい大きな「積込OK」トグルボタンで一括チェック。完了時は斜線を引いたようにトーンダウン。
- * - 納品先ごとの個別内訳はアコーディオン内に格納（デフォルト非表示）。
+ * - 納品先・便ごとの個別内訳はアコーディオン内に格納（デフォルト非表示）。
  */
 export function CustomerDeliveryCard({
   customerId,
@@ -67,10 +74,12 @@ export function CustomerDeliveryCard({
   deliveryDate,
   totalCases,
   totalLoose,
+  grandTotalContainers,
   totalQty,
   notes: initialNotes,
   isCompleted: initialIsCompleted,
   destinations,
+  routeSummaries = [],
   shippingRouteName,
   departureTime,
 }: CustomerDeliveryCardProps) {
@@ -79,11 +88,21 @@ export function CustomerDeliveryCard({
   const [open, setOpen] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
 
+  // 親からの Props 更新を同期
+  useEffect(() => {
+    setIsCompleted(initialIsCompleted)
+  }, [initialIsCompleted])
+
   // メモ編集用の State
   const [notes, setNotes] = useState<string[]>(initialNotes)
   const [editingNote, setEditingNote] = useState<boolean>(false)
   const [noteInput, setNoteInput] = useState<string>(notes.join(' / '))
   const [savingNote, setSavingNote] = useState<boolean>(false)
+
+  useEffect(() => {
+    setNotes(initialNotes)
+    setNoteInput(initialNotes.join(' / '))
+  }, [initialNotes])
 
   // 納品先ID一覧
   const destinationIds = destinations.map((d) => d.destinationId)
@@ -112,7 +131,7 @@ export function CustomerDeliveryCard({
     return <span>{totalQty} 点</span>
   })()
 
-  // 大枠ワンタップ積込OKトグル
+  // 取引先単位の一括ワンタップ積込OKトグル
   async function toggleLoaded() {
     if (busy) return
     const nextAction = isCompleted ? 'revert' : 'loaded'
@@ -133,6 +152,34 @@ export function CustomerDeliveryCard({
       }
       setIsCompleted(!isCompleted)
       toast.success(isCompleted ? '未積込に戻しました' : '🚚 積込チェックを完了しました')
+      router.refresh()
+    } catch (e) {
+      toast.error(fieldErrorMessage(e, '更新に失敗しました'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // アコーディオン内の個別納品先積込トグル
+  async function toggleDestination(destId: string | null, currentStatus: string) {
+    if (busy) return
+    const nextAction = currentStatus === 'loaded' || currentStatus === 'delivered' ? 'revert' : 'loaded'
+    setBusy(true)
+    try {
+      const res = await fetch('/api/deliveries/confirm-customer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          delivery_date: deliveryDate,
+          customer_id: customerId,
+          destination_ids: [destId],
+          action: nextAction,
+        }),
+      })
+      if (!res.ok) {
+        throw new Error('納品先ステータスの更新に失敗しました')
+      }
+      toast.success(nextAction === 'loaded' ? '納品先の積込をOKにしました' : '未積込に戻しました')
       router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))
@@ -173,9 +220,9 @@ export function CustomerDeliveryCard({
   return (
     <div
       className={cn(
-        'rounded-2xl border transition-all duration-200 overflow-hidden shadow-xs',
+        'rounded-2xl border transition-all duration-200 overflow-hidden',
         isCompleted
-          ? 'border-slate-300 bg-slate-50/80 opacity-70 grayscale-[30%]'
+          ? 'border-slate-300 bg-slate-50/80 opacity-75 shadow-2xs'
           : 'border-slate-300 bg-white shadow-md border-l-4 border-l-emerald-600',
       )}
     >
@@ -183,8 +230,8 @@ export function CustomerDeliveryCard({
         {/* ① 上段: 取引先名 & 最重要【総コンテナ数＋端数】特大表示 */}
         <div className="flex items-start justify-between gap-3">
           {/* 取引先情報 */}
-          <div className="space-y-1 min-w-0">
-            <div className="flex items-center gap-2">
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <ColorDot color={customerColor} name={customerName} size="md" />
               <h2
                 className={cn(
@@ -194,20 +241,47 @@ export function CustomerDeliveryCard({
               >
                 {customerName}
               </h2>
-            </div>
-            {/* 便・時間情報 */}
-            {(departureTime || shippingRouteName) && (
-              <div className="flex items-center gap-1.5 text-xs font-bold text-ink-soft">
-                <Clock className="h-3.5 w-3.5 text-sky-600 shrink-0" />
-                <span>
-                  {departureTime ? `${departureTime}発` : ''}
-                  {shippingRouteName ? ` ${shippingRouteName}` : ''}
+
+              {/* 完了時の済印風スタンプ */}
+              {isCompleted && (
+                <span className="inline-flex items-center gap-1 rounded-md border-2 border-emerald-600 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800 shadow-2xs rotate-[-3deg] select-none">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>済</span>
                 </span>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* 所属便・ルートバッジ一覧 */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ink-soft">
+              {routeSummaries.length > 0 ? (
+                routeSummaries.map((r, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-[11px] font-bold"
+                  >
+                    <Clock className="h-3 w-3 text-sky-600 shrink-0" />
+                    <span>{r.title}</span>
+                  </span>
+                ))
+              ) : (departureTime || shippingRouteName) ? (
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-[11px] font-bold">
+                  <Clock className="h-3 w-3 text-sky-600 shrink-0" />
+                  <span>
+                    {departureTime ? `${departureTime}発` : ''}
+                    {shippingRouteName ? ` ${shippingRouteName}` : ''}
+                  </span>
+                </span>
+              ) : null}
+
+              {destinations.length > 1 && (
+                <span className="text-[11px] text-ink-muted font-bold">
+                  (全{destinations.length}納品先)
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* 最重要位置: 特大フォントの総量表示 */}
+          {/* 最重要位置: 特大フォントの総コンテナ数・端数表示 */}
           <div className="text-right shrink-0">
             <div className="text-xs font-bold text-ink-muted">総コンテナ数</div>
             <div
@@ -219,7 +293,7 @@ export function CustomerDeliveryCard({
               {quantityHeroText}
             </div>
             <div className="text-xs font-semibold text-ink-muted">
-              (計 {totalQty.toLocaleString()} 点)
+              (総 {grandTotalContainers} 箱 ／ 計 {totalQty.toLocaleString()} 点)
             </div>
           </div>
         </div>
@@ -333,58 +407,100 @@ export function CustomerDeliveryCard({
         </div>
       </div>
 
-      {/* ④ アコーディオン展開時（各納品先ごとの個別数量・品目一覧） */}
+      {/* ④ アコーディオン展開時（各納品先・便ごとの個別数量・品目一覧） */}
       {open && (
         <div className="bg-bg-soft/50 border-t border-line/60 p-3 space-y-2.5 animate-fadeIn">
           <div className="text-xs font-bold text-ink-muted uppercase tracking-wider">
-            ▼ 納品先別 内訳一覧
+            ▼ 納品先・便別 内訳一覧（全 {destinations.length} 件）
           </div>
 
           <div className="space-y-2">
-            {destinations.map((dest, idx) => (
-              <div
-                key={dest.destinationId ?? idx}
-                className="rounded-xl border border-line bg-white p-2.5 space-y-1.5 shadow-2xs"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-black text-ink">
-                    📍 {dest.destinationName}
-                  </span>
-                  <span className="num text-sm font-bold text-ink-soft tabular-nums">
-                    {dest.cases > 0
-                      ? dest.loose > 0
-                        ? `${dest.cases}ケース + 端数${dest.loose}`
-                        : `${dest.cases}ケース`
-                      : `${dest.totalQty}点`}
-                    <span className="ml-1 text-xs text-ink-muted">({dest.totalQty}点)</span>
-                  </span>
-                </div>
-
-                {/* 明細品目リスト */}
-                <div className="space-y-1 border-t border-line/40 pt-1.5">
-                  {dest.items.map((it) => (
-                    <div
-                      key={it.id}
-                      className="flex items-center justify-between text-xs text-ink-soft py-0.5"
-                    >
-                      <span className="font-bold text-ink truncate pr-2">
-                        {it.productName}
+            {destinations.map((dest, idx) => {
+              const isDestLoaded = dest.status === 'loaded' || dest.status === 'delivered'
+              return (
+                <div
+                  key={dest.destinationId ?? idx}
+                  className={cn(
+                    'rounded-xl border p-3 space-y-2 transition-all',
+                    isDestLoaded ? 'border-emerald-200 bg-emerald-50/40' : 'border-line bg-white shadow-2xs',
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {/* 納品先名 & 便情報 */}
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="text-sm font-black text-ink">
+                        📍 {dest.destinationName}
                       </span>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {it.noteText !== '—' && (
-                          <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
-                            {it.noteText}
-                          </span>
-                        )}
-                        <span className="num font-bold text-ink tabular-nums">
-                          {it.quantityText}
+                      {(dest.departureTime || dest.shippingRouteName) && (
+                        <span className="inline-flex items-center gap-1 rounded bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-xs font-bold shrink-0">
+                          <Clock className="h-3 w-3 text-sky-600" />
+                          {dest.departureTime ? `${dest.departureTime}発 ` : ''}
+                          {dest.shippingRouteName || ''}
                         </span>
-                      </div>
+                      )}
                     </div>
-                  ))}
+
+                    {/* 納品先別ケース数・端数 ＆ 個別チェックボタン */}
+                    <div className="flex items-center gap-2">
+                      <span className="num text-xs sm:text-sm font-bold text-ink tabular-nums">
+                        {dest.cases > 0
+                          ? dest.loose > 0
+                            ? `${dest.cases}ケース ＋ 端数${dest.loose}`
+                            : `${dest.cases}ケース`
+                          : `端数${dest.loose}`}
+                        <span className="ml-1 text-xs text-ink-muted">({dest.totalQty}点)</span>
+                      </span>
+
+                      {/* 個別トグルボタン */}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => toggleDestination(dest.destinationId, dest.status)}
+                        className={cn(
+                          'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all active:scale-95',
+                          isDestLoaded
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            : 'border border-line bg-white text-ink-soft hover:border-emerald-500 hover:text-emerald-700',
+                        )}
+                      >
+                        {isDestLoaded ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
+                            <span>積込済</span>
+                          </>
+                        ) : (
+                          <span>個別積込</span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 明細品目リスト */}
+                  <div className="space-y-1 border-t border-line/40 pt-1.5">
+                    {dest.items.map((it) => (
+                      <div
+                        key={it.id}
+                        className="flex items-center justify-between text-xs text-ink-soft py-0.5"
+                      >
+                        <span className="font-bold text-ink truncate pr-2">
+                          {it.productName}
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {it.noteText !== '—' && (
+                            <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
+                              {it.noteText}
+                            </span>
+                          )}
+                          <span className="num font-bold text-ink tabular-nums">
+                            {it.quantityText}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
