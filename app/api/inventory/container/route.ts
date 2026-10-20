@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 /**
- * 冷蔵庫コンテナ在庫＆翌日持ち越し保存 API
+ * コンテナ在庫＆翌日持ち越し保存 API
  * GET: 指定日・品目の在庫と前日からの持ち越しを取得
  * POST: 在庫コンテナ数 (stock_containers) や翌日持ち越し (carryover_to_next_day) を更新
  */
@@ -19,10 +20,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'date and productId required' }, { status: 400 })
   }
 
-  const supabase = createClient()
+  const admin = createAdminClient()
 
   // 当日分
-  const { data: current } = await supabase
+  const { data: current } = await admin
     .from('daily_container_inventory')
     .select('*')
     .eq('target_date', date)
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
   prevDate.setDate(prevDate.getDate() - 1)
   const prevDateStr = prevDate.toISOString().split('T')[0]
 
-  const { data: prev } = await supabase
+  const { data: prev } = await admin
     .from('daily_container_inventory')
     .select('carryover_to_next_day')
     .eq('target_date', prevDateStr)
@@ -55,31 +56,30 @@ export async function POST(req: NextRequest) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const body = await req.json()
+  const body = await req.json().catch(() => ({}))
   const { date, productId, stockContainers, carryoverToNextDay } = body
   if (!date || !productId) {
     return NextResponse.json({ error: 'date and productId required' }, { status: 400 })
   }
 
-  const supabase = createClient()
+  const admin = createAdminClient()
 
   const payload: Record<string, unknown> = {
     target_date: date,
     product_id: productId,
     updated_at: new Date().toISOString(),
   }
-  if (stockContainers !== undefined) payload.stock_containers = Number(stockContainers) || 0
-  if (carryoverToNextDay !== undefined) payload.carryover_to_next_day = Number(carryoverToNextDay) || 0
+  if (stockContainers !== undefined) payload.stock_containers = Math.max(0, Number(stockContainers) || 0)
+  if (carryoverToNextDay !== undefined) payload.carryover_to_next_day = Math.max(0, Number(carryoverToNextDay) || 0)
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from('daily_container_inventory')
     .upsert(payload, { onConflict: 'target_date,product_id' })
     .select()
-    .single()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, data })
+  return NextResponse.json({ ok: true, data: data?.[0] })
 }

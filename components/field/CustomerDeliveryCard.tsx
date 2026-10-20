@@ -293,7 +293,7 @@ export function CustomerDeliveryCard({
               {quantityHeroText}
             </div>
             <div className="text-xs font-semibold text-ink-muted">
-              (総 {grandTotalContainers} 箱 ／ 計 {totalQty.toLocaleString()} 点)
+              (計 {totalQty.toLocaleString()} 点)
             </div>
           </div>
         </div>

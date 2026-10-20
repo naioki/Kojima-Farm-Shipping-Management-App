@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChevronDown, PackageCheck, Tractor, Box, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
@@ -44,15 +45,17 @@ export function HarvestPulseSummary({
   containerBreakdown,
   specBreakdown,
 }: HarvestPulseSummaryProps) {
+  const router = useRouter()
   // 手動入力値がない場合は「前日繰越 + 本日途中仕上がり」で自動計算（手入力不要）
   const autoStock = prevCarryover + interimPackedBoxes
   const defaultStock = hasManualStock ? initialStock : autoStock
 
   const [stock, setStock] = useState<number>(defaultStock)
-  const [tempStock, setTempStock] = useState<number>(defaultStock)
+  const [tempStockStr, setTempStockStr] = useState<string>(String(defaultStock))
   const [isManualOverride, setIsManualOverride] = useState<boolean>(hasManualStock)
   const [carryover, setCarryover] = useState<number>(0)
   const [tempCarryover, setTempCarryover] = useState<number>(0)
+  const [tempCarryoverStr, setTempCarryoverStr] = useState<string>('0')
   const [isEditingStock, setIsEditingStock] = useState<boolean>(false)
   const [isEditingCarryover, setIsEditingCarryover] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
@@ -60,7 +63,7 @@ export function HarvestPulseSummary({
   // 品目タブ切り替え・日付変更時に最新の集計値と状態を確実に同期
   useEffect(() => {
     setStock(defaultStock)
-    setTempStock(defaultStock)
+    setTempStockStr(String(defaultStock))
     setIsManualOverride(hasManualStock)
     setIsEditingStock(false)
     setIsEditingCarryover(false)
@@ -89,12 +92,16 @@ export function HarvestPulseSummary({
           stockContainers: validStock,
         }),
       })
-      if (!res.ok) throw new Error('在庫の保存に失敗しました')
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error ?? '在庫の保存に失敗しました')
+      }
       setStock(validStock)
-      setTempStock(validStock)
+      setTempStockStr(String(validStock))
       setIsManualOverride(true)
       setIsEditingStock(false)
       toast.success('在庫を更新しました')
+      router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '更新に失敗しました')
     } finally {
@@ -115,11 +122,15 @@ export function HarvestPulseSummary({
           carryoverToNextDay: validCarryover,
         }),
       })
-      if (!res.ok) throw new Error('翌朝持ち越しの保存に失敗しました')
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error ?? '翌朝持ち越しの保存に失敗しました')
+      }
       setCarryover(validCarryover)
-      setTempCarryover(validCarryover)
+      setTempCarryoverStr(String(validCarryover))
       setIsEditingCarryover(false)
       toast.success('翌朝への持ち越しを登録しました（明日の在庫に自動反映されます）')
+      router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '更新に失敗しました')
     } finally {
@@ -173,14 +184,14 @@ export function HarvestPulseSummary({
           {/* ② 在庫（タップして変更可能） */}
           <div className="rounded-xl bg-white/10 p-2.5 text-center relative">
             <div className="flex items-center justify-center gap-1">
-              <span className="text-xs sm:text-sm font-black text-white/95">🧊 在庫</span>
+              <span className="text-xs sm:text-sm font-black text-white/95">在庫</span>
               <button
                 type="button"
                 onClick={() => {
-                  setTempStock(stock)
+                  setTempStockStr(String(stock))
                   setIsEditingStock(!isEditingStock)
                 }}
-                className="text-xs text-emerald-200 underline font-bold"
+                className="text-xs text-emerald-200 underline font-bold px-1"
               >
                 {isEditingStock ? '閉じる' : '修正'}
               </button>
@@ -192,28 +203,44 @@ export function HarvestPulseSummary({
                 <div className="grid grid-cols-4 gap-1">
                   <button
                     type="button"
-                    onClick={() => setTempStock((p) => Math.max(0, p - 5))}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
+                      const next = Math.max(0, cur - 5)
+                      setTempStockStr(String(next))
+                    }}
                     className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
                   >
                     -5
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTempStock((p) => Math.max(0, p - 1))}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
+                      const next = Math.max(0, cur - 1)
+                      setTempStockStr(String(next))
+                    }}
                     className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
                   >
                     -1
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTempStock((p) => p + 1)}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
+                      const next = cur + 1
+                      setTempStockStr(String(next))
+                    }}
                     className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
                   >
                     +1
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTempStock((p) => p + 5)}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
+                      const next = cur + 5
+                      setTempStockStr(String(next))
+                    }}
                     className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
                   >
                     +5
@@ -225,14 +252,14 @@ export function HarvestPulseSummary({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    value={tempStock}
-                    onChange={(e) => setTempStock(Math.max(0, Number(e.target.value) || 0))}
+                    value={tempStockStr}
+                    onChange={(e) => setTempStockStr(e.target.value)}
                     className="h-9 w-20 rounded bg-white px-2 py-1 text-center font-bold text-ink text-base outline-none shadow-inner"
                   />
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => saveStock(tempStock)}
+                    onClick={() => saveStock(Math.max(0, parseInt(tempStockStr, 10) || 0))}
                     className="h-9 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50 active:scale-95 shadow-xs"
                   >
                     {busy ? '保存中...' : '確定'}
@@ -329,6 +356,7 @@ export function HarvestPulseSummary({
                 type="button"
                 onClick={() => {
                   setTempCarryover(carryover)
+                  setTempCarryoverStr(String(carryover))
                   setIsEditingCarryover(!isEditingCarryover)
                 }}
                 className="text-xs font-bold text-emerald-700 underline"
@@ -342,28 +370,48 @@ export function HarvestPulseSummary({
                 <div className="grid grid-cols-4 gap-1">
                   <button
                     type="button"
-                    onClick={() => setTempCarryover((p) => Math.max(0, p - 5))}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
+                      const next = Math.max(0, cur - 5)
+                      setTempCarryover(next)
+                      setTempCarryoverStr(String(next))
+                    }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
                   >
                     -5
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTempCarryover((p) => Math.max(0, p - 1))}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
+                      const next = Math.max(0, cur - 1)
+                      setTempCarryover(next)
+                      setTempCarryoverStr(String(next))
+                    }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
                   >
                     -1
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTempCarryover((p) => p + 1)}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
+                      const next = cur + 1
+                      setTempCarryover(next)
+                      setTempCarryoverStr(String(next))
+                    }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
                   >
                     +1
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTempCarryover((p) => p + 5)}
+                    onClick={() => {
+                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
+                      const next = cur + 5
+                      setTempCarryover(next)
+                      setTempCarryoverStr(String(next))
+                    }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
                   >
                     +5
@@ -375,14 +423,17 @@ export function HarvestPulseSummary({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    value={tempCarryover}
-                    onChange={(e) => setTempCarryover(Math.max(0, Number(e.target.value) || 0))}
+                    value={tempCarryoverStr}
+                    onChange={(e) => {
+                      setTempCarryoverStr(e.target.value)
+                      setTempCarryover(Math.max(0, parseInt(e.target.value, 10) || 0))
+                    }}
                     className="h-9 w-20 rounded border border-line bg-white px-2 py-1 text-center font-bold text-base shadow-inner outline-none"
                   />
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => saveCarryover(tempCarryover)}
+                    onClick={() => saveCarryover(Math.max(0, parseInt(tempCarryoverStr, 10) || 0))}
                     className="h-9 rounded-lg bg-[#155c39] px-3 text-xs font-bold text-white hover:bg-[#10482c] disabled:opacity-50 active:scale-95 shadow-xs"
                   >
                     {busy ? '保存中...' : '確定'}

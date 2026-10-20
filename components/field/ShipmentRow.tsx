@@ -491,15 +491,19 @@ export function ShipmentRow({
       {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
       <div className="space-y-1.5 pb-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <ColorDot color={customerColor} name={customerName} size="md" />
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-black text-ink text-lg sm:text-xl tracking-tight">
-                {destinationName || customerName}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              {/* 取引先名（最優先・特大フォント） */}
+              <span className="font-black text-ink text-xl sm:text-2xl tracking-tight">
+                {customerName}
               </span>
+
+              {/* 納品先名（取引先の後に続く・大きく見やすいフォント） */}
               {destinationName && customerName !== destinationName && (
-                <span className="rounded bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft border border-line">
-                  {customerName}
+                <span className="font-extrabold text-forest-800 text-lg sm:text-xl tracking-tight flex items-center gap-1">
+                  <span className="text-ink-muted text-base font-normal">▶</span>
+                  {destinationName}
                 </span>
               )}
             </div>
@@ -556,8 +560,18 @@ export function ShipmentRow({
           </div>
         )}
 
-        {/* 資材タグバー（袋・シール・カード） */}
+        {/* 資材タグバー（実際に指定・存在する項目のみ表示・「カード不要」などの不要な否定記述は一切非表示） */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          {container && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-900 border border-sky-200">
+              📦 {container}
+            </span>
+          )}
+          {hasCard && (
+            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
+              🃏 カード有
+            </span>
+          )}
           {bagType && (
             <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
               🛍️ {bagType}
@@ -568,9 +582,14 @@ export function ShipmentRow({
               🏷️ {sealText || 'シール有'}
             </span>
           )}
-          {hasCard && (
-            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
-              🃏 カード有
+          {masterTapeColor && (
+            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+              テープ: {masterTapeColor}
+            </span>
+          )}
+          {masterPackingNotes && (
+            <span className="inline-flex items-center rounded-md bg-purple-50 px-2.5 py-0.5 text-xs font-bold text-purple-800 border border-purple-200">
+              📝 {masterPackingNotes}
             </span>
           )}
         </div>
@@ -600,53 +619,10 @@ export function ShipmentRow({
       </div>
 
       {/* ③ 【最重要】総パック数カード（フォレストグリーンの巨大ハイライトブロック） */}
-      <div className="rounded-xl bg-[#1b5e20] p-3.5 text-white mb-2 shadow-sm">
+      <div className="rounded-xl bg-[#1b5e20] p-3.5 text-white mb-3 shadow-sm">
         <div className="text-sm font-black text-white/95 tracking-wide">総パック数</div>
         <div className="num mt-0.5 text-3xl font-black tracking-tight text-white tabular-nums">
           {orderedQty} <span className="text-lg font-bold text-white/80">P</span>
-        </div>
-      </div>
-
-      {/* ④ 梱包・荷姿仕様エリア（コンテナ種別・カード有無・荷姿指定バッジ） */}
-      <div className="rounded-xl border border-line bg-bg-soft/50 p-2.5 mb-3 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* ① コンテナ種別バッジ */}
-          <span className="inline-flex items-center gap-1 rounded-lg bg-sky-100 border border-sky-300 px-2.5 py-1 text-xs font-black text-sky-950 shadow-2xs">
-            📦 {container || '青コン'}
-          </span>
-
-          {/* ② カード・現品票の有無バッジ（最重要） */}
-          {hasCard ? (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-100 border border-indigo-400 px-2.5 py-1 text-xs font-black text-indigo-950 shadow-2xs">
-              🃏 カード: 貼付要
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 border border-slate-300 px-2 py-1 text-xs font-bold text-slate-600">
-              カード不要
-            </span>
-          )}
-
-          {/* ③ その他の荷姿・作業指示（存在する場合） */}
-          {bagType && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-300 px-2 py-1 text-xs font-bold text-amber-900">
-              🛍️ {bagType}
-            </span>
-          )}
-          {(hasSeal || sealText) && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-rose-50 border border-rose-300 px-2 py-1 text-xs font-bold text-rose-900">
-              🏷️ {sealText || 'シール有'}
-            </span>
-          )}
-          {masterTapeColor && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-300 px-2 py-1 text-xs font-bold text-emerald-900">
-              テープ: {masterTapeColor}
-            </span>
-          )}
-          {masterPackingNotes && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 border border-purple-300 px-2 py-1 text-xs font-bold text-purple-900">
-              📝 {masterPackingNotes}
-            </span>
-          )}
         </div>
       </div>
 
