@@ -307,10 +307,10 @@ export function ShipmentAddForm({
         </div>
       </div>
 
-      {/* モバイル用フローティング追加ボタン（下部固定ナビバーと重ならないよう十分な高さを確保・背景と境界を明確化） */}
+      {/* モバイル用フローティング追加ボタン（親指で押しやすい自然な右下に配置） */}
       <div
-        className="fixed right-4 z-40 sm:hidden"
-        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+        className="fixed right-5 z-40 sm:hidden"
+        style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
       >
         <button
           type="button"

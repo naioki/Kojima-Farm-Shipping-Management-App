@@ -98,7 +98,7 @@ export function ConnectionStatus() {
         'transition-opacity duration-300 motion-reduce:transition-none',
         visible ? 'opacity-100' : 'opacity-0',
       )}
-      style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
+      style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
     >
       {visible && (
         <p

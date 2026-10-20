@@ -16,19 +16,19 @@ function weekDates(start: string): string[] {
 
 /**
  * 週間マトリックス入力（Laravel版 画面3 / features.md §7-8）。
- * 行=取引先 × 列=日付(7日)。品目タブで1品目ずつ表示し横スクロールを抑える。
- * セル入力＋スマートパース＋空欄削除＋CSV出力は MatrixGrid（クライアント）が担う。
+ * 行=取引先 × 列=日付(7日)。
+ * 出荷実績・予定がある品目のみタブ表示し、余計な品目を省いて素早く把握・入力可能。
  */
 export default async function MatrixPage({
   searchParams,
 }: {
-  searchParams: { week?: string; product?: string; all_products?: string }
+  searchParams: { week?: string; product?: string }
 }) {
   const week = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.week ?? '') ? searchParams.week! : jstTodayStr()
   const dates = weekDates(week)
   const supabase = createClient()
 
-  // 品目タブ・取引先（行）
+  // 品目・取引先（行）
   const [{ data: products, error: prodErr }, { data: customers, error: custErr }] = await Promise.all([
     supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
@@ -61,31 +61,45 @@ export default async function MatrixPage({
   const allItemsRes = orderIds.length
     ? await supabase
         .from('order_items')
-        .select('order_id, product_id, quantity')
+        .select('order_id, product_id, product_name, quantity')
         .in('order_id', orderIds)
-    : { data: [] as { order_id: string; product_id: string; quantity: number }[], error: null }
+    : { data: [] as { order_id: string; product_id: string | null; product_name: string | null; quantity: number }[], error: null }
   if (allItemsRes.error)
     return <ErrorState message="注文明細を読み込めませんでした。時間をおいて再度お試しください。" detail={allItemsRes.error.message} />
   const allWeekItems = allItemsRes.data ?? []
 
+  const nameToProduct = new Map((products ?? []).map((p) => [p.name, p]))
+
   // 出荷実績（数量>0）がある品目ID一覧
-  const productIdsWithShipments = new Set(
-    allWeekItems.filter((it) => Number(it.quantity) > 0).map((it) => it.product_id),
+  const productIdsWithShipments = new Set<string>()
+  for (const it of allWeekItems) {
+    if (Number(it.quantity) > 0) {
+      if (it.product_id) {
+        productIdsWithShipments.add(it.product_id)
+      } else if (it.product_name) {
+        const p = nameToProduct.get(it.product_name)
+        if (p) productIdsWithShipments.add(p.id)
+      }
+    }
+  }
+
+  // 出荷がある品目のみを表示（URLで直接指定された品目があればそれも含める）
+  const filteredProducts = products.filter(
+    (p) => productIdsWithShipments.has(p.id) || p.id === searchParams.product,
   )
 
-  const showAllProducts = searchParams.all_products === '1'
-  const filteredProducts =
-    showAllProducts || productIdsWithShipments.size === 0
-      ? products
-      : products.filter((p) => productIdsWithShipments.has(p.id))
+  // まだタブに表示されていない品目（「＋ 他の品目を追加」用）
+  const otherProducts = products.filter((p) => !filteredProducts.some((fp) => fp.id === p.id))
 
-  // 選択品目: 指定があればそれ、なければ出荷のある最初の品目
+  // 選択品目: 指定があればそれ、なければ出荷のある最初の品目、それもなければ全品目の先頭
   const selected =
-    products.find((p) => p.id === searchParams.product) ??
+    (searchParams.product ? products.find((p) => p.id === searchParams.product) : null) ??
     filteredProducts[0] ??
     products[0]!
 
-  const items = allWeekItems.filter((it) => it.product_id === selected.id)
+  const items = allWeekItems.filter(
+    (it) => it.product_id === selected.id || (!it.product_id && it.product_name === selected.name),
+  )
 
   const initial: Record<string, number> = {}
   for (const it of items) {
@@ -112,19 +126,19 @@ export default async function MatrixPage({
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}${showAllProducts ? '&all_products=1' : ''}`}
+            href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             ← 前週
           </Link>
           <Link
-            href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}${showAllProducts ? '&all_products=1' : ''}`}
+            href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             今週
           </Link>
           <Link
-            href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}${showAllProducts ? '&all_products=1' : ''}`}
+            href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
             className="h-10 rounded border border-line px-3 text-sm font-medium leading-10 text-ink-soft hover:bg-bg-soft"
           >
             翌週 →
@@ -132,42 +146,84 @@ export default async function MatrixPage({
         </div>
       </div>
 
-      {/* 品目タブ（出荷があるもののみ表示、切り替え可能） */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {filteredProducts.map((p) => {
-            const active = p.id === selected.id
-            const hasShipment = productIdsWithShipments.has(p.id)
-            return (
-              <Link
-                key={p.id}
-                href={`${PATH}?week=${week}&product=${p.id}${showAllProducts ? '&all_products=1' : ''}`}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'rounded-full border px-3 py-1.5 text-sm font-bold transition-colors flex items-center gap-1.5',
-                  active
-                    ? 'border-earth-400 bg-earth-100 text-earth-900 shadow-xs'
-                    : 'border-line text-ink-soft hover:bg-bg-soft',
-                )}
-              >
-                <span>{p.name}</span>
-                {hasShipment && (
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                )}
-              </Link>
-            )
-          })}
-        </div>
+      {/* 品目タブ（出荷がある品目のみ表示） */}
+      {filteredProducts.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {filteredProducts.map((p) => {
+              const active = p.id === selected.id
+              const hasShipment = productIdsWithShipments.has(p.id)
+              return (
+                <Link
+                  key={p.id}
+                  href={`${PATH}?week=${week}&product=${p.id}`}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-sm font-bold transition-colors flex items-center gap-1.5',
+                    active
+                      ? 'border-earth-400 bg-earth-100 text-earth-900 shadow-xs'
+                      : 'border-line text-ink-soft hover:bg-bg-soft',
+                  )}
+                >
+                  <span>{p.name}</span>
+                  {hasShipment && (
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  )}
+                </Link>
+              )
+            })}
+          </div>
 
-        {productIdsWithShipments.size > 0 && (
-          <Link
-            href={`${PATH}?week=${week}&product=${selected.id}${showAllProducts ? '' : '&all_products=1'}`}
-            className="text-xs font-semibold text-ink-muted hover:text-earth-800 underline transition"
-          >
-            {showAllProducts ? '出荷のある品目のみ表示' : `全品目を表示 (${products.length}品目)`}
-          </Link>
-        )}
-      </div>
+          {otherProducts.length > 0 && (
+            <form method="get" action={PATH} className="flex items-center gap-1">
+              <input type="hidden" name="week" value={week} />
+              <select
+                name="product"
+                onChange={(e) => {
+                  if (e.target.value) e.target.form?.submit()
+                }}
+                defaultValue=""
+                className="h-8 rounded-lg border border-dashed border-earth-300 bg-earth-50/60 px-2.5 text-xs font-semibold text-earth-800 hover:bg-earth-100 focus:outline-none focus:ring-1 focus:ring-earth-400"
+              >
+                <option value="" disabled>
+                  ＋ 他の品目を追加...
+                </option>
+                {otherProducts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </form>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-bg-soft p-3">
+          <span className="text-xs font-medium text-ink-muted">
+            この週（{dates[0]} 〜 {dates[6]}）に出荷実績・予定のある品目はありません。
+          </span>
+          <form method="get" action={PATH} className="flex items-center gap-1">
+            <input type="hidden" name="week" value={week} />
+            <select
+              name="product"
+              onChange={(e) => {
+                if (e.target.value) e.target.form?.submit()
+              }}
+              defaultValue=""
+              className="h-8 rounded-lg border border-line bg-white px-2.5 text-xs font-semibold text-ink hover:bg-bg-card focus:outline-none"
+            >
+              <option value="" disabled>
+                品目を選択して予定を入力...
+              </option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </form>
+        </div>
+      )}
 
       {!customers?.length ? (
         <EmptyState title="取引先が登録されていません" description="取引先設定で登録すると行が表示されます。" />
