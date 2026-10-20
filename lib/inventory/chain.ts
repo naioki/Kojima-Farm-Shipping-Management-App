@@ -61,6 +61,10 @@ export async function calculateChainInventory(
   const dailyBoxesMap = new Map<string, number>()
 
   if (orderIds.length > 0) {
+    type PastOrderItem = { order_id: string; quantity: number; product_id: string; pack_config_id: string | null; spec: string | null }
+    type RuleItem = { customer_id: string; product_id: string; packs_per_case: number | null }
+    type PackConfigItem = { id: string; base_per_selling: number }
+
     const pastItemsPromise = supabase
       .from('order_items')
       .select('order_id, quantity, product_id, pack_config_id, spec')
@@ -73,14 +77,13 @@ export async function calculateChainInventory(
       .eq('id', productId)
       .maybeSingle()
 
-    // 顧客別ルール・荷姿マスタを安全に取得（モック・未定義環境でも安全にフォールバック）
+    // 顧客別ルール・荷姿マスタを安全に取得
     const rulesPromise = Promise.resolve(
-      supabase.from('customer_product_rules')?.select?.('customer_id, product_id, packs_per_case')
-    ).then((res: any) => (res && typeof res.then === 'function' ? res : res?.eq ? res.eq('product_id', productId) : res))
-     .catch(() => ({ data: [] }))
+      supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case').eq('product_id', productId)
+    ).catch(() => ({ data: [] }))
 
     const packConfigsPromise = Promise.resolve(
-      supabase.from('pack_configs')?.select?.('id, base_per_selling')
+      supabase.from('pack_configs').select('id, base_per_selling')
     ).catch(() => ({ data: [] }))
 
     const [{ data: pastItems }, { data: prod }, rulesRes, packRes] = await Promise.all([
@@ -91,10 +94,10 @@ export async function calculateChainInventory(
     ])
 
     const defaultCapacity = prod?.container_capacity ?? 20
-    const ruleByCust = new Map(((rulesRes as any)?.data ?? []).map((r: any) => [r.customer_id, r.packs_per_case]))
-    const packMap = new Map(((packRes as any)?.data ?? []).map((p: any) => [p.id, Number(p.base_per_selling)]))
+    const ruleByCust = new Map(((rulesRes?.data ?? []) as RuleItem[]).map((r) => [r.customer_id, r.packs_per_case]))
+    const packMap = new Map(((packRes?.data ?? []) as PackConfigItem[]).map((p) => [p.id, Number(p.base_per_selling)]))
 
-    for (const it of (pastItems as any[]) ?? []) {
+    for (const it of ((pastItems ?? []) as PastOrderItem[])) {
       const d = orderDateMap.get(it.order_id)
       if (!d) continue
       const custId = orderCustMap.get(it.order_id)

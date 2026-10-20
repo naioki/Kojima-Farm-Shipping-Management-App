@@ -204,7 +204,10 @@ export default async function ShipmentsPage({
   const ruleById = new Map((ruleRows ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
   const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r as Record<string, unknown>]))
   const packsByPair: Record<string, number | null> = {}
-  for (const r of ruleRows ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = (r as any).packs_per_case ?? null
+  type RuleWithPacks = { customer_id: string; product_id: string; packs_per_case?: number | null }
+  for (const r of (ruleRows ?? []) as RuleWithPacks[]) {
+    packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case ?? null
+  }
 
   // 荷姿マスタ取得
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]

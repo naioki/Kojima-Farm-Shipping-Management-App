@@ -279,9 +279,10 @@ export function ShipmentRow({
       setOfflinePending(false)
       onStatusChange?.(itemId, target, json.item.version)
       startUndoGrace(prev, target)
-    } catch (e: any) {
+    } catch (e: unknown) {
       clearTimeout(timer)
-      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || e?.name === 'AbortError' || e instanceof TypeError
+      const err = e as { name?: string } | null
+      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || err?.name === 'AbortError' || e instanceof TypeError
       if (isNetworkOrAbort) {
         try {
           await enqueue({
@@ -339,9 +340,10 @@ export function ShipmentRow({
       onStatusChange?.(itemId, target, json.item.version)
       // すぐには並べ替えず、猶予中は「元に戻す」を出す（誤タップ対策・Issue#5）
       startUndoGrace(prev, target)
-    } catch (e: any) {
+    } catch (e: unknown) {
       clearTimeout(timer)
-      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || e?.name === 'AbortError' || e instanceof TypeError
+      const err = e as { name?: string } | null
+      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || err?.name === 'AbortError' || e instanceof TypeError
       if (isNetworkOrAbort) {
         try {
           await enqueue({

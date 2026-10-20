@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { calculateChainInventory } from './chain'
 
 describe('calculateChainInventory', () => {
@@ -8,7 +9,7 @@ describe('calculateChainInventory', () => {
     // 2026-10-18 (日): 注文0箱 -> 残4箱
     // 2026-10-19 (月): 4箱が引き継がれているべき
     const mockSupabase = {
-      from: (table: string) => ({
+      from: () => ({
         select: () => ({
           eq: () => ({
             gte: () => ({
@@ -38,7 +39,7 @@ describe('calculateChainInventory', () => {
           }),
         }),
       }),
-    } as any
+    } as unknown as SupabaseClient
 
     const res = await calculateChainInventory(mockSupabase, 'p-1', '2026-10-19', 7)
 
@@ -53,7 +54,7 @@ describe('calculateChainInventory', () => {
     // 2026-10-18 (日): 注文0
     // 2026-10-19 (月): 土曜の5箱が引き継がれる
     const mockSupabase = {
-      from: (table: string) => ({
+      from: () => ({
         select: () => ({
           eq: () => ({
             gte: () => ({
@@ -76,7 +77,7 @@ describe('calculateChainInventory', () => {
           }),
         }),
       }),
-    } as any
+    } as unknown as SupabaseClient
 
     const res = await calculateChainInventory(mockSupabase, 'p-1', '2026-10-19', 7)
 
