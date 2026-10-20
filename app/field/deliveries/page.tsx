@@ -226,13 +226,18 @@ export default async function DeliveriesPage({
         destinationName: destName,
         shippingRouteName: dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null),
         departureTime: dest?.departure_time || routeInfo.departureTime,
+        containerType: it.container_type || null,
         cases: 0,
         loose: 0,
+        fractionBoxes: 0,
+        totalBoxes: 0,
         totalQty: 0,
         items: [],
         status: delStatus,
       }
       cEntry.destinationsMap.set(destKey, dEntry)
+    } else if (!dEntry.containerType && it.container_type) {
+      dEntry.containerType = it.container_type
     }
 
     // ケース数・端数換算
@@ -266,7 +271,8 @@ export default async function DeliveriesPage({
     const destinationsList = Array.from(cEntry.destinationsMap.values())
 
     let totalCases = 0
-    let totalLoose = 0
+    let totalFractionBoxes = 0
+    let totalFractionPacks = 0
     let totalQty = 0
     let grandTotalContainers = 0
 
@@ -275,11 +281,14 @@ export default async function DeliveriesPage({
         d.cases += Math.floor(d.loose / 20)
         d.loose %= 20
       }
+      d.fractionBoxes = d.loose > 0 ? 1 : 0
+      d.totalBoxes = d.cases + d.fractionBoxes
+
       totalCases += d.cases
-      totalLoose += d.loose
+      totalFractionBoxes += d.fractionBoxes
+      totalFractionPacks += d.loose
       totalQty += d.totalQty
-      // 納品先ごとに必要な箱数（ケース数 ＋ 端数があれば1箱）
-      grandTotalContainers += d.cases + (d.loose > 0 ? 1 : 0)
+      grandTotalContainers += d.totalBoxes
     }
 
     if (grandTotalContainers < totalCases) {
@@ -307,7 +316,8 @@ export default async function DeliveriesPage({
       customerColor: cEntry.customerColor,
       deliveryDate: date,
       totalCases,
-      totalLoose,
+      totalFractionBoxes,
+      totalFractionPacks,
       grandTotalContainers,
       totalQty,
       notes: Array.from(cEntry.notesSet),

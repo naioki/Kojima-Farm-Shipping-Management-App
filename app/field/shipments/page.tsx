@@ -13,6 +13,7 @@ import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import { getSetting } from '@/lib/settings'
 import { ProductSelectorTabs, type ProductTabItem } from '@/components/field/ProductSelectorTabs'
 import { HarvestPulseSummary, type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
+import { calculateChainInventory } from '@/lib/inventory/chain'
 import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import type { SpecWarning, PackPhotoKind, FieldStatus } from '@/types/database'
@@ -241,28 +242,13 @@ export default async function ShipmentsPage({
   const ruleById = new Map((ruleRows ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
   const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r as Record<string, unknown>]))
 
-  // ⑦ 在庫（コンテナ）の取得（当日＆前日持ち越し・テーブル未作成時もエラーにしない）
-  const prevDate = new Date(date)
-  prevDate.setDate(prevDate.getDate() - 1)
-  const prevDateStr = prevDate.toISOString().split('T')[0]
+  // ⑦ 在庫（コンテナ）の連鎖キャリーオーバー取得（過去14日間の日跨ぎ累積繰越＋手動アンカー）
+  const chainInventory = selectedProductId
+    ? await calculateChainInventory(supabase, selectedProductId, date, 14)
+    : { effectiveStock: 0, inheritedCarryover: 0, hasManualStock: false, manualStock: null }
 
-  const [{ data: currentInv }, { data: prevInv }] = await Promise.all([
-    supabase
-      .from('daily_container_inventory')
-      .select('stock_containers, carryover_to_next_day')
-      .eq('target_date', date)
-      .eq('product_id', selectedProductId)
-      .maybeSingle(),
-    supabase
-      .from('daily_container_inventory')
-      .select('carryover_to_next_day')
-      .eq('target_date', prevDateStr)
-      .eq('product_id', selectedProductId)
-      .maybeSingle(),
-  ])
-
-  const prevCarryover = prevInv?.carryover_to_next_day ?? 0
-  const hasManualStock = currentInv?.stock_containers !== undefined && currentInv?.stock_containers !== null
+  const prevCarryover = chainInventory.inheritedCarryover
+  const hasManualStock = chainInventory.hasManualStock
 
   // ⑧ 選択中品目の集計（注文総箱数・総パック数・コンテナ内訳・規格内訳・袋詰め進捗箱数）
   let totalPacks = 0
@@ -373,7 +359,7 @@ export default async function ShipmentsPage({
   }))
 
   // 在庫の初期値（手動設定値があればそれ、なければ「前日繰越 + 本日途中仕上がり」）
-  const initialStock = hasManualStock ? currentInv.stock_containers : (prevCarryover + packedBoxes)
+  const initialStock = hasManualStock ? (chainInventory.manualStock ?? 0) : (prevCarryover + packedBoxes)
 
   // 追加フォーム用
   const [
