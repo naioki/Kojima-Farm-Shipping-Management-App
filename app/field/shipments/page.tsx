@@ -400,24 +400,16 @@ export default async function ShipmentsPage({
         <DateNav date={date} basePath={PATH} />
       </div>
 
-      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 全品目便別積込・配送） */}
-      <div className="flex items-center justify-between rounded-xl bg-bg-soft p-1 border border-line text-xs font-bold">
-        <div className="flex items-center gap-1">
-          <span className="flex items-center gap-1.5 rounded-lg bg-forest-700 px-3 py-1.5 text-white shadow-xs">
-            🥬 収穫・袋詰めボード
-          </span>
-          <Link
-            href={`/field/deliveries?date=${date}`}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink hover:bg-white/60 transition"
-          >
-            🚚 便別積込・配送リスト
-          </Link>
-        </div>
+      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
+      <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs">
+        <span className="flex items-center justify-center gap-1.5 rounded-lg bg-forest-700 py-2 text-white shadow-xs">
+          🥬 収穫・袋詰めボード
+        </span>
         <Link
           href={`/field/deliveries?date=${date}`}
-          className="text-[11px] text-ink-muted hover:text-forest-700 pr-2 transition"
+          className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
-          全品目の便別積込へ →
+          🚚 便別積込・配送リスト
         </Link>
       </div>
 

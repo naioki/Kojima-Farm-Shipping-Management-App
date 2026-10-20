@@ -283,25 +283,17 @@ export default async function DeliveriesPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 全品目便別積込・配送） */}
-      <div className="flex items-center justify-between rounded-xl bg-bg-soft p-1 border border-line text-xs font-bold print:hidden">
-        <div className="flex items-center gap-1">
-          <Link
-            href={`/field/shipments?date=${date}`}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink hover:bg-white/60 transition"
-          >
-            🥬 収穫・袋詰めボード
-          </Link>
-          <span className="flex items-center gap-1.5 rounded-lg bg-earth-700 px-3 py-1.5 text-white shadow-xs">
-            🚚 便別積込・配送リスト
-          </span>
-        </div>
+      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
+      <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs print:hidden">
         <Link
           href={`/field/shipments?date=${date}`}
-          className="text-[11px] text-ink-muted hover:text-earth-800 pr-2 transition"
+          className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
-          品目別（収穫計算・袋詰め）へ →
+          🥬 収穫・袋詰めボード
         </Link>
+        <span className="flex items-center justify-center gap-1.5 rounded-lg bg-forest-700 py-2 text-white shadow-xs">
+          🚚 便別積込・配送リスト
+        </span>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
