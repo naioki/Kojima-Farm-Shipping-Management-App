@@ -400,21 +400,6 @@ export function ShipmentAddForm({
         </div>
       </div>
 
-      {/* モバイル用フローティング追加ボタン（親指で押しやすい自然な右下に配置） */}
-      <div
-        className="fixed right-5 z-40 sm:hidden"
-        style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
-      >
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-xl border-2 border-white ring-2 ring-forest-700/20 hover:bg-forest-700 active:scale-90 transition-all focus:outline-none focus:ring-4 focus:ring-forest-300/50"
-          aria-label="出荷を新規追加"
-        >
-          <Plus className="h-7 w-7" aria-hidden />
-        </button>
-      </div>
-
       {/* 新規追加モーダルダイアログ */}
       <Modal
         open={isOpen}

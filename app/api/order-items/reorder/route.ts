@@ -12,9 +12,9 @@ export async function POST(req: NextRequest) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const supabase = createClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
+  // 認証済みユーザーであれば並び順の更新を許可（社内スタッフ・管理者）
+  const role = (user.app_metadata?.role as string) || (user.user_metadata?.role as string)
+  if (role === 'portal') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 

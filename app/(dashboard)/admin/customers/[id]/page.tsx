@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ChevronLeft, Lock } from 'lucide-react'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { CustomerRulesEditor, type RuleRow } from '@/components/admin/CustomerRulesEditor'
@@ -25,7 +26,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
   const guard = await requireAdmin('取引先設定は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const user = await getAuthedUser()
 
   const [

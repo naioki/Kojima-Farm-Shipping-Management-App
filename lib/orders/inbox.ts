@@ -2,7 +2,7 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPendingOrders, type PendingOrder } from '@/lib/orders/pending'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 /**
  * 受注ボックス（/admin/inbox）の一括データ取得。
@@ -125,6 +125,14 @@ export async function getInboxData(): Promise<InboxData> {
           .eq('status', 'pending_review')
       }
     }
+
+    // 過去の開発テスト時等に残存した古い未照合・AI失敗受信（3日以上前）を一括アーカイブ
+    const oldReceiptThreshold = `${shiftDateStr(jstTodayStr(), -3)}T00:00:00+09:00`
+    await admin
+      .from('order_receipts')
+      .update({ status: 'dismissed' })
+      .in('status', ['unmatched', 'ai_failed'])
+      .lt('received_at', oldReceiptThreshold)
   } catch (e) {
     console.error('[inbox] auto sync receipts failed', e)
   }

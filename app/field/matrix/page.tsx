@@ -148,54 +148,25 @@ export default async function MatrixPage({
 
       {/* 品目タブ（出荷がある品目のみ表示） */}
       {filteredProducts.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {filteredProducts.map((p) => {
-              const active = p.id === selected.id
-              const hasShipment = productIdsWithShipments.has(p.id)
-              return (
-                <Link
-                  key={p.id}
-                  href={`${PATH}?week=${week}&product=${p.id}`}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'rounded-full border px-3 py-1.5 text-sm font-bold transition-colors flex items-center gap-1.5',
-                    active
-                      ? 'border-earth-400 bg-earth-100 text-earth-900 shadow-xs'
-                      : 'border-line text-ink-soft hover:bg-bg-soft',
-                  )}
-                >
-                  <span>{p.name}</span>
-                  {hasShipment && (
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  )}
-                </Link>
-              )
-            })}
-          </div>
-
-          {otherProducts.length > 0 && (
-            <form method="get" action={PATH} className="flex items-center gap-1">
-              <input type="hidden" name="week" value={week} />
-              <select
-                name="product"
-                onChange={(e) => {
-                  if (e.target.value) e.target.form?.submit()
-                }}
-                defaultValue=""
-                className="h-8 rounded-lg border border-dashed border-earth-300 bg-earth-50/60 px-2.5 text-xs font-semibold text-earth-800 hover:bg-earth-100 focus:outline-none focus:ring-1 focus:ring-earth-400"
+        <div className="flex flex-wrap items-center gap-2">
+          {filteredProducts.map((p) => {
+            const active = p.id === selected.id
+            return (
+              <Link
+                key={p.id}
+                href={`${PATH}?week=${week}&product=${p.id}`}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'rounded-full border px-4 py-2 text-sm font-black transition-all flex items-center gap-2',
+                  active
+                    ? 'border-forest-600 bg-forest-600 text-white shadow-sm'
+                    : 'border-line bg-white text-ink-soft hover:bg-bg-soft hover:text-ink',
+                )}
               >
-                <option value="" disabled>
-                  ＋ 他の品目を追加...
-                </option>
-                {otherProducts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </form>
-          )}
+                <span>{p.name}</span>
+              </Link>
+            )
+          })}
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-bg-soft p-3">

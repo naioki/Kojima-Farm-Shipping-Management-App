@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { AddCustomerForm } from '@/components/admin/AddCustomerForm'
@@ -17,8 +18,8 @@ export default async function CustomersPage() {
   const guard = await requireAdmin('取引先設定は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
-  const { data: customers, error } = await supabase
+  const admin = createAdminClient()
+  const { data: customers, error } = await admin
     .from('customers')
     .select('id, name, name_kana, payment_terms, is_active, display_color')
     .order('name')
