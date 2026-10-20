@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
-import { BulkInvoiceForm } from '@/components/admin/BulkInvoiceForm'
 import { InvoiceCsvExport } from '@/components/admin/InvoiceCsvExport'
 import { formatYen } from '@/lib/calculations/tax'
 import { formatJpMonth } from '@/lib/dates'
@@ -22,7 +21,7 @@ const STATUS_LABEL: Record<InvoiceStatus, { label: string; cls: string }> = {
 }
 
 /**
- * 請求（月締め会計）。取引先×対象月で請求書を作成・一覧する。
+ * 請求（月締め会計）。取引先×対象期間で請求書を作成・一覧する。
  * 納品書（出荷ごとの伝票）とは用途が異なるため別メニュー（/admin/delivery-notes）。
  */
 export default async function InvoicesPage() {
@@ -40,35 +39,21 @@ export default async function InvoicesPage() {
   const { data: custRows, error: custErr } = customerIds.length
     ? await supabase.from('customers').select('id, name').in('id', customerIds)
     : { data: [] as { id: string; name: string }[], error: null }
-  // 取引先名の解決（補助）。失敗しても一覧本体は殺さず、名前未解決で続行する。
   if (custErr) console.error('[invoices] 取引先名の解決に失敗:', custErr.message)
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
-
-  const { data: activeCustomers, error: activeErr } = await supabase
-    .from('customers')
-    .select('id, name')
-    .eq('is_active', true)
-    .order('name')
-  // 作成フォームの取引先候補（補助）。失敗しても一覧本体は表示する。
-  if (activeErr) console.error('[invoices] 作成フォーム用の取引先取得に失敗:', activeErr.message)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">請求</h1>
 
-      <Card className="space-y-3">
-        <h2 className="font-display text-base font-bold text-ink">請求書を作成</h2>
-        <GenerateInvoiceForm customers={(activeCustomers ?? []).map((c) => ({ id: c.id, name: c.name }))} />
-        <p className="text-sm text-ink-faint">
-          対象期間（開始日〜終了日）の承認/出荷済み明細を税率別に集計し、欠番なしで採番します（インボイス制度対応・tax.md）。
-        </p>
-        <div className="border-t border-line pt-3">
-          <p className="mb-2 text-sm font-medium text-ink">月次一括（全取引先まとめて）</p>
-          <BulkInvoiceForm />
-          <p className="mt-2 text-sm text-ink-faint">
-            対象明細が無い取引先・同期間で作成済みの取引先は自動スキップします。
+      <Card className="space-y-4">
+        <div>
+          <h2 className="font-display text-base font-bold text-ink">請求書を作成</h2>
+          <p className="text-xs text-ink-soft mt-0.5">
+            対象期間を指定すると、出荷実績のある取引先のみが自動抽出されます。
           </p>
         </div>
+        <GenerateInvoiceForm />
         <div className="border-t border-line pt-3">
           <p className="mb-2 text-sm font-medium text-ink">会計ソフト取り込み（CSV）</p>
           <InvoiceCsvExport />

@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
@@ -57,6 +59,36 @@ export default async function SettingsPage() {
           取り込み・AI・保管・通知の接続設定。秘密情報は保存後に表示されません（「設定済み」のみ）。
         </p>
       </div>
+
+      {/* マスタ管理クイックカード */}
+      <Card className="space-y-3 bg-earth-50/50 border-earth-200">
+        <h2 className="font-display text-base font-bold text-ink">マスタ管理（取引先・品目）</h2>
+        <p className="text-xs text-ink-soft">
+          新規出荷や請求書で利用する取引先や品目の追加・不要な項目の非表示（削除）はこちらから行えます。
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2 pt-1">
+          <Link
+            href="/admin/customers"
+            className="flex items-center justify-between p-3 rounded-xl border border-line bg-white hover:bg-bg-soft transition-all shadow-xs"
+          >
+            <div>
+              <p className="font-bold text-sm text-ink">🏢 取引先・納品先設定</p>
+              <p className="text-xs text-ink-soft">取引先の追加・納品先・不要な取引先の非表示</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-ink-faint" />
+          </Link>
+          <Link
+            href="/admin/products"
+            className="flex items-center justify-between p-3 rounded-xl border border-line bg-white hover:bg-bg-soft transition-all shadow-xs"
+          >
+            <div>
+              <p className="font-bold text-sm text-ink">🥬 品目（商品）設定</p>
+              <p className="text-xs text-ink-soft">品目の追加・単位・不要な品目の非表示</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-ink-faint" />
+          </Link>
+        </div>
+      </Card>
 
       <div className="rounded border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-ink-soft">
         ⚠️ 秘密情報（APIキー・パスワード等）はDBに保存されます。Secret Manager より弱いため、本番では

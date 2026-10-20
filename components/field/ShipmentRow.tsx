@@ -353,6 +353,15 @@ export function ShipmentRow({
   }
 
   async function saveDetails() {
+    if (spec !== initialSpec || container !== initialContainer) {
+      if (
+        !window.confirm(
+          '⚠️【注意】規格や荷姿を変更すると、パック進捗や出荷集計に直接影響します。本当に変更しますか？',
+        )
+      ) {
+        return
+      }
+    }
     setSavingDetails(true)
     try {
       const res = await fetch(`/api/order-items/${itemId}`, {
@@ -451,8 +460,8 @@ export function ShipmentRow({
               </span>
             )}
             {(needsManualConfirm || lineNote?.includes('⚠') || lineNote?.includes('数量変更:')) && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-[11px] font-black text-amber-900">
-                ⚠️ 要確認
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900 shadow-xs">
+                ⚠️ 注意（要確認）
               </span>
             )}
           </div>
@@ -490,7 +499,7 @@ export function ShipmentRow({
         {/* GAS版準拠：数量変更・要確認のオレンジ警告バー（常時露出） */}
         {lineNote && (lineNote.includes('数量変更:') || lineNote.includes('⚠')) && (
           <div className="mt-1.5 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-950">
-            🔄 {lineNote}
+            ⚠️ 注意: {lineNote}
           </div>
         )}
 
@@ -622,70 +631,28 @@ export function ShipmentRow({
           )}
         </div>
 
-        {/* 2段目: 補助ボタン [ 途中数 ] [ 追記 ] [ ✏️ 編集 ] [ 原本を開く ] */}
-        <div className="grid grid-cols-4 gap-1.5">
+        {/* 2段目: 補助ボタン [ 途中数 ] [ 💬 メモ ]（大きく押しやすい2大ボタン） */}
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => setQuickOpen(!quickOpen)}
             className={cn(
-              'h-10 rounded-xl border text-xs font-bold transition-all active:scale-[0.97]',
+              "h-12 rounded-xl border text-sm font-bold shadow-xs transition-all active:scale-[0.97]",
               isPartial
-                ? 'border-harvest-300 bg-harvest-100 text-earth-800 font-extrabold'
-                : 'border-line bg-white text-ink-soft hover:bg-bg-soft',
+                ? "border-amber-400 bg-amber-100 text-amber-950 font-black ring-1 ring-amber-400"
+                : "border-line-strong bg-white text-ink hover:bg-bg-soft",
             )}
           >
-            {isPartial ? `途中(${shippedNum})` : '途中数'}
+            {isPartial ? `途中 (${shippedNum}P)` : "途中数"}
           </button>
 
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-[0.97]"
+            className="h-12 rounded-xl border border-line-strong bg-white text-sm font-bold text-ink hover:bg-bg-soft active:scale-[0.97] shadow-xs"
           >
             💬 メモ
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (
-                window.confirm(
-                  '⚠️【注意】注文数量や荷姿を変更すると、記録されたパック済・途中数がリセットされ、収穫・出荷の総数が変わります。変更を続けますか？',
-                )
-              ) {
-                setOpen(true)
-              }
-            }}
-            className="h-10 rounded-xl border border-line bg-white text-xs font-bold text-amber-900 bg-amber-50/50 hover:bg-amber-100/50 active:scale-[0.97]"
-          >
-            ✏️ 規格変更
-          </button>
-
-          {receipt?.id ? (
-            <a
-              href={`/field/viewer/${receipt.id}?date=${deliveryDate || ''}`}
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-xs font-bold text-sky-700 hover:bg-sky-100 active:scale-[0.97]"
-            >
-              原本を開く
-            </a>
-          ) : receipt?.originalUrl ? (
-            <a
-              href={receipt.originalUrl}
-              target="_blank"
-              rel="noopener"
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-xs font-bold text-sky-700 hover:bg-sky-100 active:scale-[0.97]"
-            >
-              原本を開く
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="h-10 rounded-xl border border-line bg-bg-soft/50 text-xs font-medium text-ink-faint"
-            >
-              原本なし
-            </button>
-          )}
         </div>
       </div>
 

@@ -85,7 +85,7 @@ export function HarvestPulseSummary({
       setTempStock(validStock)
       setIsManualOverride(true)
       setIsEditingStock(false)
-      toast.success('冷蔵庫在庫を更新しました')
+      toast.success('在庫を更新しました')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '更新に失敗しました')
     } finally {
@@ -130,11 +130,11 @@ export function HarvestPulseSummary({
           <span className="text-xs font-bold text-white/80">{date}</span>
         </div>
 
-        {/* 収穫必要数（一番目立たせる） */}
+        {/* 収穫箱数（最重要ヘッダー：注文合計 − 在庫） */}
         <div className="pt-3 pb-2 text-center">
           <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-200">
             <Tractor className="h-4 w-4" />
-            <span>今日 畑で収穫すべき箱数（必要実数）</span>
+            <span>収穫箱数</span>
           </div>
           <div className="mt-1 flex items-baseline justify-center gap-2">
             <span className="font-display text-5xl font-black tracking-tight text-white tabular-nums sm:text-6xl">
@@ -147,8 +147,8 @@ export function HarvestPulseSummary({
           </div>
         </div>
 
-        {/* 注文総数 vs 冷蔵庫在庫の対比グリッド */}
-        <div className="mt-3 grid grid-cols-2 gap-2 pt-3 border-t border-white/15">
+        {/* 注文合計 − 在庫 ＝ 収穫箱数の対比グリッド */}
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-3 border-t border-white/15">
           {/* ① 今日の注文合計 */}
           <div className="rounded-xl bg-white/10 p-2.5 text-center">
             <span className="block text-[11px] font-bold text-white/80">📦 今日の注文合計</span>
@@ -158,10 +158,13 @@ export function HarvestPulseSummary({
             <span className="text-[11px] text-emerald-200">({totalPacks.toLocaleString()} P)</span>
           </div>
 
-          {/* ② 冷蔵庫在庫（タップして変更可能） */}
+          {/* 演算記号 − */}
+          <div className="text-xl font-black text-white/70 text-center select-none">−</div>
+
+          {/* ② 在庫（タップして変更可能） */}
           <div className="rounded-xl bg-white/10 p-2.5 text-center relative">
             <div className="flex items-center justify-center gap-1">
-              <span className="text-[11px] font-bold text-white/80">🧊 冷蔵庫在庫</span>
+              <span className="text-[11px] font-bold text-white/80">🧊 在庫</span>
               <button
                 type="button"
                 onClick={() => {

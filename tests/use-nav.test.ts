@@ -11,9 +11,9 @@ describe('findActiveHref（最長一致・単一アクティブ）', () => {
   })
 
   it('配下ページで /admin（ダッシュボード）を誤ってアクティブにしない', () => {
-    expect(findActiveHref('/admin/inbox', adminHrefs)).toBe('/admin/inbox')
-    // 受注ボックスの配下（承認待ちフィルタ等）でも受注ボックスがアクティブになる。
-    expect(findActiveHref('/admin/inbox/anything', adminHrefs)).toBe('/admin/inbox')
+    expect(findActiveHref('/admin/customers', adminHrefs)).toBe('/admin/customers')
+    // 取引先設定の配下（詳細等）でも取引先がアクティブになる。
+    expect(findActiveHref('/admin/customers/anything', adminHrefs)).toBe('/admin/customers')
     expect(findActiveHref('/admin/rules', adminHrefs)).toBe('/admin/rules')
   })
 

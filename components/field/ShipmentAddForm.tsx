@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, ArrowRight, UserPlus, PackagePlus, Check, Sparkles } from 'lucide-react'
+import { Plus, ArrowRight, UserPlus, PackagePlus, Check, Sparkles, Camera, Loader2, AlertCircle, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -52,7 +52,8 @@ const ADD_ERRORS: Record<string, string> = {
 /**
  * 出荷一覧の「スマート追加」フォーム。
  * 普段は「＋ 新規出荷を追加」ボタンとしてスッキリ配置し、タップでモーダル展開。
- * 品目（大分類）→ 規格（荷姿・バラ/平箱等）の2段階選択で、現場の誤タップ・縦長スクロールを根絶。
+ * 1. 📷 写真・メモから自動読込 ＆ 不足項目のAI聞き返し（対話的確定）
+ * 2. ✏️ 手動で品目・規格を選んで追加
  */
 export function ShipmentAddForm({
   deliveryDate,
@@ -62,8 +63,8 @@ export function ShipmentAddForm({
   packsByPair,
 }: ShipmentAddFormProps) {
   const router = useRouter()
-  // モーダルの開閉状態
   const [isOpen, setIsOpen] = useState(false)
+  const [mode, setMode] = useState<'photo' | 'manual'>('photo')
 
   // 現場がその場で作った取引先・品目を即リストへ反映する（楽観追加）ためローカル state で保持。
   const [customers, setCustomers] = useState<LocalCustomer[]>(initialCustomers)
@@ -73,7 +74,16 @@ export function ShipmentAddForm({
   const [productId, setProductId] = useState('')
   const [destinationId, setDestinationId] = useState('')
   const [qtyRaw, setQtyRaw] = useState('')
+  const [targetDate, setTargetDate] = useState(deliveryDate)
   const [submitting, setSubmitting] = useState(false)
+
+  // 画像・カメラ読み取り & AI聞き返し用 state
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [analyzingPhoto, setAnalyzingPhoto] = useState(false)
+  const [missingDatePrompt, setMissingDatePrompt] = useState(false)
+  const [rawAiCustomerName, setRawAiCustomerName] = useState<string | null>(null)
+  const [rawAiProductName, setRawAiProductName] = useState<string | null>(null)
 
   // インライン新規作成パネルの開閉と入力値。
   const [showNewCustomer, setShowNewCustomer] = useState(false)
@@ -87,6 +97,7 @@ export function ShipmentAddForm({
   // 親からの再取得で初期リストが更新されたら追従
   useEffect(() => setCustomers(initialCustomers), [initialCustomers])
   useEffect(() => setProducts(initialProducts), [initialProducts])
+  useEffect(() => setTargetDate(deliveryDate), [deliveryDate])
 
   // 品目をカテゴリ（大分類）ごとにグループ化
   const categoryGroups = useMemo(() => {
@@ -108,20 +119,19 @@ export function ShipmentAddForm({
       return a.localeCompare(b, 'ja')
     })
 
-    return sortedCategories.map((cat) => ({
-      category: cat,
-      products: map.get(cat)!,
+    return sortedCategories.map((category) => ({
+      category,
+      products: map.get(category) ?? [],
     }))
   }, [products])
 
-  // 初期カテゴリ・品目の自動補完
+  // 初期カテゴリ・品目の選択
   useEffect(() => {
-    if (categoryGroups.length > 0 && (!selectedCategory || !categoryGroups.some((g) => g.category === selectedCategory))) {
-      const firstCat = categoryGroups[0]!.category
-      setSelectedCategory(firstCat)
-      const catProds = categoryGroups[0]!.products
-      if (catProds.length > 0 && !productId) {
-        setProductId(catProds[0]!.id)
+    if (categoryGroups.length > 0 && !selectedCategory) {
+      const defaultGroup = categoryGroups[0]!
+      setSelectedCategory(defaultGroup.category)
+      if (defaultGroup.products.length > 0 && !productId) {
+        setProductId(defaultGroup.products[0]!.id)
       }
     }
   }, [categoryGroups, selectedCategory, productId])
@@ -182,18 +192,13 @@ export function ShipmentAddForm({
       const res = await fetch('/api/products/quick', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, base_unit: newProductUnit.trim() || '個' }),
+        body: JSON.stringify({ name, unit: newProductUnit.trim() || '個' }),
       })
-      const json = (await res.json().catch(() => ({}))) as {
-        id?: string; name?: string; unit?: string; existed?: boolean; error?: string
-      }
+      const json = (await res.json().catch(() => ({}))) as { id?: string; name?: string; unit?: string; existed?: boolean; error?: string }
       if (!res.ok || !json.id) throw new Error(json.error ?? `作成に失敗 (${res.status})`)
-      const unit = json.unit ?? newProductUnit.trim() ?? '個'
-      const newProd: LocalProduct = { id: json.id!, name: json.name!, unit }
-      setProducts((prev) => (prev.some((p) => p.id === json.id) ? prev : [...prev, newProd]))
-      const newCat = resolveProductCategory(newProd)
-      setSelectedCategory(newCat)
-      setProductId(json.id!)
+      const newP: LocalProduct = { id: json.id!, name: json.name!, unit: json.unit || '個' }
+      setProducts((prev) => (prev.some((p) => p.id === newP.id) ? prev : [...prev, newP]))
+      setProductId(json.id)
       setNewProductName('')
       setNewProductUnit('')
       setShowNewProduct(false)
@@ -241,6 +246,93 @@ export function ShipmentAddForm({
 
   const destinationRequired = customerDestinations.length >= 2
 
+  // 📷 写真アップロード & AI解析ハンドラ
+  async function handlePhotoFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const dataUrl = e.target?.result as string
+      if (!dataUrl) return
+      setPhotoPreview(dataUrl)
+      const base64 = dataUrl.split(',')[1]
+      const mime = file.type || 'image/jpeg'
+
+      setAnalyzingPhoto(true)
+      setMissingDatePrompt(false)
+      setRawAiCustomerName(null)
+      setRawAiProductName(null)
+
+      try {
+        const res = await fetch('/api/ocr/analyze', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ imageBase64: base64, mimeType: mime }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
+
+        const parsedOrder = data.orders?.[0]
+        if (!parsedOrder) {
+          toast('注文情報を特定できませんでした。手動で入力してください。', { icon: 'ℹ️' })
+          setMode('manual')
+          return
+        }
+
+        // 1. 取引先マッチング
+        const cName = parsedOrder.customer_name?.trim() || ''
+        setRawAiCustomerName(cName || null)
+        const matchedCust = customers.find(
+          (c) => c.name.includes(cName) || cName.includes(c.name),
+        )
+        if (matchedCust) {
+          setCustomerId(matchedCust.id)
+        }
+
+        // 2. 納品日の確認・聞き返し
+        if (parsedOrder.delivery_date) {
+          setTargetDate(parsedOrder.delivery_date)
+          setMissingDatePrompt(false)
+        } else {
+          // 日付が不明な場合は聞き返しプロンプトをONにする
+          setMissingDatePrompt(true)
+        }
+
+        // 3. 品目・数量のマッチング
+        const firstItem = parsedOrder.items?.[0]
+        if (firstItem) {
+          const pName = firstItem.product_name || firstItem.raw_name || ''
+          setRawAiProductName(pName)
+          const matchedProd = products.find(
+            (p) => p.name.includes(pName) || pName.includes(p.name) || (pName.includes('チンゲン') && p.name.includes('青梗菜')),
+          )
+          if (matchedProd) {
+            setProductId(matchedProd.id)
+            setSelectedCategory(resolveProductCategory(matchedProd))
+          }
+
+          if (firstItem.cases != null && firstItem.cases > 0) {
+            setQtyRaw(`${firstItem.cases}c`)
+          } else if (firstItem.quantity) {
+            setQtyRaw(String(firstItem.quantity))
+          }
+        }
+
+        toast.success('画像を読み取りました！内容を確認して確定してください')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '読み取りに失敗しました')
+      } finally {
+        setAnalyzingPhoto(false)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // 納品日クイック計算
+  const tomorrowStr = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0] || ''
+  }, [])
+
   async function submit() {
     if (!customerId || !productId || qtyRaw.trim() === '') {
       toast.error('取引先・品目・数量をすべて入力してください')
@@ -258,7 +350,7 @@ export function ShipmentAddForm({
         body: JSON.stringify({
           customer_id: customerId,
           product_id: productId,
-          delivery_date: deliveryDate,
+          delivery_date: targetDate,
           quantity_raw: qtyRaw,
           destination_id: destinationId || null,
         }),
@@ -269,6 +361,7 @@ export function ShipmentAddForm({
       }
       toast.success('出荷を追加しました')
       setQtyRaw('')
+      setPhotoPreview(null)
       setIsOpen(false)
       router.refresh()
     } catch (e) {
@@ -289,10 +382,10 @@ export function ShipmentAddForm({
           <div className="space-y-0.5">
             <h2 className="font-display text-base font-bold text-forest-950 flex items-center justify-center sm:justify-start gap-1.5">
               <Sparkles className="h-4 w-4 text-forest-600" aria-hidden />
-              <span>当日出荷の手動追加</span>
+              <span>当日出荷の追加</span>
             </h2>
             <p className="text-xs text-forest-700">
-              電話注文や追加出荷を、品目・規格を選んで当日の出荷明細に即座に追加できます。
+              写真撮影（手書きメモ・FAX）または手動選択で、出荷明細を即座に追加できます。
             </p>
           </div>
           <Button
@@ -326,7 +419,7 @@ export function ShipmentAddForm({
       <Modal
         open={isOpen}
         onClose={() => setIsOpen(false)}
-        title={`新規出荷の追加（${deliveryDate}）`}
+        title="新規出荷の追加"
         className="max-w-lg max-h-[92vh] overflow-y-auto"
         footer={
           <div className="flex w-full items-center justify-end gap-2.5">
@@ -344,229 +437,294 @@ export function ShipmentAddForm({
               isLoading={submitting}
               className="bg-forest-600 hover:bg-forest-700 text-white font-bold px-6"
             >
-              <Plus className="h-4 w-4" aria-hidden />
-              出荷を追加
+              <Check className="h-4 w-4" aria-hidden />
+              この内容で出荷を追加
             </Button>
           </div>
         }
       >
         <div className="space-y-4">
-          {/* 取引先セレクト */}
-          <div className="space-y-1">
-            <Select
-              label="取引先"
-              required
-              placeholder="取引先を選択..."
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              options={customers.map((c) => ({ value: c.id, label: c.name }))}
-            />
-            {!showNewCustomer && (
-              <div className="text-right">
-                <button
-                  type="button"
-                  onClick={() => setShowNewCustomer(true)}
-                  className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
-                >
-                  <UserPlus className="h-3 w-3" aria-hidden />
-                  新しい取引先を登録
-                </button>
-              </div>
-            )}
+          {/* モード切り替えタブ */}
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-bg-soft border border-line">
+            <button
+              type="button"
+              onClick={() => setMode('photo')}
+              className={cn(
+                'py-2 text-xs font-bold rounded-lg transition-all',
+                mode === 'photo' ? 'bg-white shadow-xs text-ink' : 'text-ink-soft hover:text-ink',
+              )}
+            >
+              📷 写真/メモから自動読込
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('manual')}
+              className={cn(
+                'py-2 text-xs font-bold rounded-lg transition-all',
+                mode === 'manual' ? 'bg-white shadow-xs text-ink' : 'text-ink-soft hover:text-ink',
+              )}
+            >
+              ✏️ 手動で選択・入力
+            </button>
           </div>
 
-          {/* インライン取引先新規登録 */}
-          {showNewCustomer && (
-            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-earth-200 bg-earth-50/60 p-3">
-              <Input
-                label="新しい取引先の名前"
-                placeholder="例：マルショク青果"
-                value={newCustomerName}
-                onChange={(e) => setNewCustomerName(e.target.value)}
-                className="min-w-[12rem] flex-1"
-                autoFocus
-              />
-              <Button onClick={createCustomer} isLoading={creatingCustomer} className="h-10">
-                作成して使う
-              </Button>
-              <Button
-                variant="tertiary"
-                onClick={() => {
-                  setShowNewCustomer(false)
-                  setNewCustomerName('')
+          {mode === 'photo' && (
+            <div className="space-y-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handlePhotoFile(file)
                 }}
-                className="h-10"
-              >
-                やめる
-              </Button>
+                className="hidden"
+                id="shipment-camera-input"
+              />
+
+              {!photoPreview ? (
+                <label
+                  htmlFor="shipment-camera-input"
+                  className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-300 bg-emerald-50/50 rounded-2xl cursor-pointer hover:bg-emerald-50 transition-all text-center"
+                >
+                  <Camera className="h-10 w-10 text-emerald-600 mb-2" />
+                  <span className="text-sm font-bold text-ink">スマホで写真を撮る / 画像を選ぶ</span>
+                  <span className="text-xs text-ink-soft mt-1">
+                    手書きメモ、急なFAX、注文伝票を撮影するとAIが自動入力します
+                  </span>
+                </label>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative rounded-xl border border-line overflow-hidden bg-black/5 p-2 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <img src={photoPreview} alt="アップロード画像" className="h-14 w-14 object-cover rounded-lg border border-line" />
+                      <div>
+                        <p className="text-xs font-bold text-ink">画像を読み込みました</p>
+                        <p className="text-[11px] text-ink-soft">内容を確認・補完してください</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoPreview(null)
+                        setMissingDatePrompt(false)
+                      }}
+                      className="text-xs text-alert hover:underline font-bold px-2 py-1"
+                    >
+                      撮り直す
+                    </button>
+                  </div>
+
+                  {analyzingPhoto && (
+                    <div className="flex items-center justify-center gap-2 rounded-xl bg-forest-50 p-4 text-sm font-bold text-forest-800 border border-forest-200">
+                      <Loader2 className="h-5 w-5 animate-spin text-forest-600" />
+                      <span>AIが注文内容を解析中...</span>
+                    </div>
+                  )}
+
+                  {/* AI聞き返しカード（日付が抜けている場合） */}
+                  {missingDatePrompt && (
+                    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3.5 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                        <AlertCircle className="h-4 w-4 text-amber-600" />
+                        <span>⚠️ 納品日が記載されていませんでした。納品日はいつにしますか？</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetDate(deliveryDate)
+                            setMissingDatePrompt(false)
+                          }}
+                          className={cn(
+                            'h-10 rounded-lg border text-xs font-bold shadow-xs',
+                            targetDate === deliveryDate
+                              ? 'border-emerald-500 bg-emerald-600 text-white'
+                              : 'border-line bg-white text-ink hover:bg-bg-soft',
+                          )}
+                        >
+                          今日 ({deliveryDate})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetDate(tomorrowStr)
+                            setMissingDatePrompt(false)
+                          }}
+                          className={cn(
+                            'h-10 rounded-lg border text-xs font-bold shadow-xs',
+                            targetDate === tomorrowStr
+                              ? 'border-emerald-500 bg-emerald-600 text-white'
+                              : 'border-line bg-white text-ink hover:bg-bg-soft',
+                          )}
+                        >
+                          明日 ({tomorrowStr})
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* 納入先セレクト（複数ある取引先のみ） */}
-          {customerDestinations.length >= 2 && (
-            <Select
-              label="納入先"
-              required
-              placeholder="納入先を選択..."
-              value={destinationId}
-              onChange={(e) => setDestinationId(e.target.value)}
-              options={customerDestinations.map((d) => ({ value: d.id, label: d.label }))}
-            />
-          )}
+          {/* 共通の確認・手動入力フォーム */}
+          <div className="space-y-3 pt-1 border-t border-line/60">
+            {/* 納品日 */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-ink-muted">納品日</span>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="date"
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
 
-          {/* ① 品目グループ（大分類：きゅうり、チンゲン菜、トマト、ネギ等） */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-bold text-ink">
-              ① 品目（野菜） <span className="text-alert">*</span>
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {categoryGroups.map((g) => {
-                const isSelected = selectedCategory === g.category
-                return (
+            {/* 取引先セレクト */}
+            <div className="space-y-1">
+              <Select
+                label="取引先"
+                required
+                placeholder="取引先を選択..."
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+              />
+              {rawAiCustomerName && !customerId && (
+                <p className="text-xs text-amber-700 bg-amber-50 p-1.5 rounded">
+                  💡 画像の発信元: 「{rawAiCustomerName}」。上の取引先から選択してください。
+                </p>
+              )}
+              {!showNewCustomer && (
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewCustomer(true)}
+                    className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
+                  >
+                    <UserPlus className="h-3 w-3" aria-hidden />
+                    新しい取引先を登録
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* インライン取引先新規登録 */}
+            {showNewCustomer && (
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border border-earth-200 bg-earth-50/60 p-3">
+                <Input
+                  label="新しい取引先の名前"
+                  placeholder="例：株式会社○○"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  className="min-w-[12rem] flex-1"
+                  autoFocus
+                />
+                <Button onClick={createCustomer} isLoading={creatingCustomer} className="h-10">
+                  作成して使う
+                </Button>
+                <Button
+                  variant="tertiary"
+                  onClick={() => {
+                    setShowNewCustomer(false)
+                    setNewCustomerName('')
+                  }}
+                  className="h-10"
+                >
+                  やめる
+                </Button>
+              </div>
+            )}
+
+            {/* 納入先セレクト */}
+            {customerDestinations.length > 0 && (
+              <Select
+                label={`納入先${destinationRequired ? '（必須）' : '（任意）'}`}
+                placeholder="納入先を選択..."
+                value={destinationId}
+                onChange={(e) => setDestinationId(e.target.value)}
+                options={customerDestinations.map((d) => ({ value: d.id, label: d.label }))}
+              />
+            )}
+
+            {/* 品目選択 */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {categoryGroups.map((g) => (
                   <button
                     key={g.category}
                     type="button"
                     onClick={() => handleSelectCategory(g.category)}
                     className={cn(
-                      'py-2.5 px-3 rounded-xl text-sm font-bold border transition-all text-center flex items-center justify-center gap-1 active:scale-95',
-                      isSelected
-                        ? 'bg-forest-600 border-forest-600 text-white shadow-sm ring-2 ring-forest-200'
-                        : 'bg-white border-line text-ink hover:bg-forest-50 hover:border-forest-300'
+                      'rounded-lg px-2.5 py-1 text-xs font-bold transition-all',
+                      selectedCategory === g.category
+                        ? 'bg-forest-700 text-white shadow-xs'
+                        : 'border border-line bg-white text-ink-soft hover:bg-bg-soft',
                     )}
                   >
-                    {isSelected && <Check className="h-3.5 w-3.5" aria-hidden />}
-                    <span>{g.category}</span>
+                    {g.category}
                   </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* ② 規格・荷姿（バラ、平箱、標準等） */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-bold text-ink">
-                ② 規格・荷姿 <span className="text-alert">*</span>
-              </label>
-              {!showNewProduct && (
-                <button
-                  type="button"
-                  onClick={() => setShowNewProduct(true)}
-                  className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-trust-600"
-                >
-                  <PackagePlus className="h-3 w-3" aria-hidden />
-                  新しい品目を追加
-                </button>
-              )}
-            </div>
-
-            {categoryProducts.length === 1 ? (
-              <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/70 px-3.5 py-2.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-600 shrink-0" aria-hidden />
-                  <span className="font-bold text-emerald-950">
-                    規格: {categoryProducts[0]!.name} ({categoryProducts[0]!.unit})
-                  </span>
-                </div>
-                <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
-                  自動選択済
-                </span>
+                ))}
               </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {categoryProducts.map((p) => {
-                  const isSelected = productId === p.id
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setProductId(p.id)}
-                      className={cn(
-                        'flex-1 min-w-[95px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold border transition-all text-center flex items-center justify-center gap-1 active:scale-95',
-                        isSelected
-                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm ring-2 ring-emerald-200'
-                          : 'bg-white border-line text-ink hover:bg-emerald-50 hover:border-emerald-300'
-                      )}
-                    >
-                      {isSelected && <Check className="h-3.5 w-3.5" aria-hidden />}
-                      <span>{p.name}</span>
-                      <span className="text-[11px] opacity-80">({p.unit})</span>
-                    </button>
-                  )
-                })}
+
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                {categoryProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setProductId(p.id)}
+                    className={cn(
+                      'rounded-xl border p-2 text-left text-xs font-bold transition-all',
+                      productId === p.id
+                        ? 'border-forest-600 bg-forest-50 text-forest-900 ring-2 ring-forest-600'
+                        : 'border-line bg-white text-ink hover:bg-bg-soft',
+                    )}
+                  >
+                    <p className="truncate">{p.name}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 数量入力 */}
+            <div className="space-y-1.5">
+              <Input
+                label={`数量（単位: ${unit}）`}
+                placeholder="例: 10 / 15c / x58"
+                inputMode="text"
+                value={qtyRaw}
+                onChange={(e) => setQtyRaw(e.target.value)}
+                hint="バラ数（10）、ケース記法（15c = 15ケース）、x記法（x58）が入力できます"
+              />
+            </div>
+
+            {/* ライブプレビュー */}
+            {previewText && (
+              <div
+                className={cn(
+                  'rounded-xl p-3 text-sm font-medium',
+                  previewText.kind === 'error'
+                    ? 'border border-red-200 bg-red-50 text-alert'
+                    : 'border border-emerald-200 bg-emerald-50 text-forest-900',
+                )}
+              >
+                <p>{previewText.text}</p>
+                {previewText.kind === 'error' && previewText.reason === 'packs_per_case_required' && customerId && (
+                  <Link
+                    href={`/admin/customers/${customerId}`}
+                    className="mt-1 inline-flex items-center gap-0.5 text-xs font-bold text-trust-700 underline underline-offset-2 hover:text-trust-800"
+                  >
+                    取引先設定を開く
+                    <ArrowRight className="h-3 w-3" aria-hidden />
+                  </Link>
+                )}
               </div>
             )}
           </div>
-
-          {/* インライン品目新規登録 */}
-          {showNewProduct && (
-            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-earth-200 bg-earth-50/60 p-3">
-              <Input
-                label="新しい品目の名前"
-                placeholder="例：ミニトマト"
-                value={newProductName}
-                onChange={(e) => setNewProductName(e.target.value)}
-                className="min-w-[12rem] flex-1"
-                autoFocus
-              />
-              <Input
-                label="基準単位"
-                placeholder="個 / 本 / 束 / kg"
-                value={newProductUnit}
-                onChange={(e) => setNewProductUnit(e.target.value)}
-                className="w-28"
-              />
-              <Button onClick={createProduct} isLoading={creatingProduct} className="h-10">
-                作成して使う
-              </Button>
-              <Button
-                variant="tertiary"
-                onClick={() => {
-                  setShowNewProduct(false)
-                  setNewProductName('')
-                  setNewProductUnit('')
-                }}
-                className="h-10"
-              >
-                やめる
-              </Button>
-            </div>
-          )}
-
-          {/* 数量入力 */}
-          <div className="space-y-1.5">
-            <Input
-              label={`数量（単位: ${unit}）`}
-              placeholder="例: 10 / 15c2 / x58"
-              inputMode="text"
-              value={qtyRaw}
-              onChange={(e) => setQtyRaw(e.target.value)}
-              hint="バラ数（10）、ケース記法（15c2 = 15ケース+2袋）、x記法（x58）が入力できます"
-            />
-          </div>
-
-          {/* ライブプレビュー */}
-          {previewText && (
-            <div
-              className={cn(
-                'rounded-xl p-3 text-sm font-medium',
-                previewText.kind === 'error'
-                  ? 'border border-red-200 bg-red-50 text-alert'
-                  : 'border border-emerald-200 bg-emerald-50 text-forest-900',
-              )}
-            >
-              <p>{previewText.text}</p>
-              {previewText.kind === 'error' && previewText.reason === 'packs_per_case_required' && customerId && (
-                <Link
-                  href={`/admin/customers/${customerId}`}
-                  className="mt-1 inline-flex items-center gap-0.5 text-xs font-bold text-trust-700 underline underline-offset-2 hover:text-trust-800"
-                >
-                  取引先設定を開く
-                  <ArrowRight className="h-3 w-3" aria-hidden />
-                </Link>
-              )}
-            </div>
-          )}
         </div>
       </Modal>
     </>
