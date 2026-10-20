@@ -5,7 +5,11 @@ import { createClient } from '@/lib/supabase/server'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
 import { DateNav } from '@/components/field/DateNav'
-import { DeliveryCheckCard, type DeliveryCheckItem } from '@/components/field/DeliveryCheckCard'
+import {
+  CustomerDeliveryCard,
+  type CustomerDeliveryCardProps,
+  type DestinationDetail,
+} from '@/components/field/CustomerDeliveryCard'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, formatJpDate } from '@/lib/dates'
 import type { DeliveryStatus } from '@/types/database'
@@ -14,23 +18,23 @@ export const dynamic = 'force-dynamic'
 
 const PATH = '/field/deliveries'
 
-interface DeliveryGroup {
+interface RouteGroup {
   key: string
-  customerId: string
-  destinationId: string | null
-  customerName: string
-  destinationName: string | null
-  shippingRouteName: string | null
+  title: string
   departureTime: string | null
-  packSortOrder: number
-  items: DeliveryCheckItem[]
+  customers: CustomerDeliveryCardProps[]
+  totalLines: number
+  completedCustomerCount: number
+  isDone: boolean
 }
 
 /**
- * 配送リスト（設計提案 Phase 0-1）。その日の注文を「取引先＞納入先」＝配送単位でまとめ、
- * 出発前ダブルチェック（1行ずつタップ→積込OK→納品完了）を記録する。
- * 印刷すると紙の配送一覧（チェック欄付き）になる（並行運用期は紙が正・アプリは紙の生成元）。
- * スタッフ・管理者どちらも使う（認証は field レイアウトが担う）。
+ * 配送リスト（手書き伝票思想の「取引先ワンボックス集約」画面）。
+ * - 納品先や品目ごとに分裂させず、「取引先」をキーにカードを集約。
+ * - 最優先情報として「総コンテナ（ケース）数 ＋ 端数」を特大フォントで配置。
+ * - 事前アクション喚起型メモ（空コンテナ持参など）を見落とさない注意枠プレビュー。
+ * - 指で押しやすい大きな「積込 OK」トグルボタンで一括チェック。
+ * - 納品先別内訳はアコーディオン内に格納（デフォルト非表示）。
  */
 export default async function DeliveriesPage({
   searchParams,
@@ -49,8 +53,6 @@ export default async function DeliveriesPage({
   if (ordersErr) return <ErrorState message={ordersErr.message} />
 
   const orderIds = (orders ?? []).map((o) => o.id)
-  // ★取得失敗を「この日の配送はありません」に化けさせない。出発前ダブルチェックの
-  //   対象が空で出ると、積み忘れたまま出発してしまう。必ずエラーとして見せる。
   const itemsRes = orderIds.length
     ? await supabase
         .from('order_items')
@@ -62,7 +64,7 @@ export default async function DeliveriesPage({
     return <ErrorState message="配送明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
   const items = itemsRes?.data ?? []
 
-  // 表示用マスタ（表示は常に「取引先＞納入先」）＋その日の配送チェック状態
+  // 表示用マスタ＋その日の配送チェック状態
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
   const productIds = [...new Set(items.map((i) => i.product_id))]
@@ -77,11 +79,10 @@ export default async function DeliveriesPage({
     pack_sort_order?: number | null
   }
 
-  // ★納入先マスタ取得（0026 未適用環境への安全なフォールバック付き）
   const [custRes, destRes, prodRes, packRes, deliveryRes] = await Promise.all([
     customerIds.length
-      ? supabase.from('customers').select('id, name').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
     (async (): Promise<{ data: DestRow[] | null; error: { message: string } | null }> => {
       if (!destinationIds.length) return { data: [], error: null }
       const r1 = await supabase
@@ -89,7 +90,6 @@ export default async function DeliveriesPage({
         .select('id, code, full_name, shipping_route_name, departure_time, pack_sort_order')
         .in('id', destinationIds)
       if (!r1.error) return { data: (r1.data ?? []) as DestRow[], error: null }
-      // 0026 未適用DBへのフォールバック
       const r2 = await supabase
         .from('delivery_destinations')
         .select('id, code, full_name')
@@ -103,33 +103,25 @@ export default async function DeliveriesPage({
     packIds.length
       ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
       : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
-    supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url').eq('delivery_date', date),
+    supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
   ])
-  if (custRes.error)
-    return <ErrorState message="取引先名を読み込めませんでした。時間をおいて再度お試しください。" detail={custRes.error.message} />
-  if (destRes.error)
-    return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destRes.error.message} />
-  if (prodRes.error)
-    return <ErrorState message="商品情報を読み込めませんでした。時間をおいて再度お試しください。" detail={prodRes.error.message} />
-  if (packRes.error)
-    return <ErrorState message="荷姿情報を読み込めませんでした。時間をおいて再度お試しください。" detail={packRes.error.message} />
-  if (deliveryRes.error)
-    return <ErrorState message="配送チェックの状態を読み込めませんでした。時間をおいて再度お試しください。" detail={deliveryRes.error.message} />
-  const { data: custRows } = custRes
-  const { data: destRows } = destRes
-  const { data: prodRows } = prodRes
-  const { data: packRows } = packRes
-  const { data: deliveryRows } = deliveryRes
-  const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
-  const destById = new Map((destRows ?? []).map((d) => [d.id, d]))
-  const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
+
+  if (custRes.error) return <ErrorState message="取引先名を読み込めませんでした。" detail={custRes.error.message} />
+  if (destRes.error) return <ErrorState message="納入先を読み込めませんでした。" detail={destRes.error.message} />
+  if (prodRes.error) return <ErrorState message="商品情報を読み込めませんでした。" detail={prodRes.error.message} />
+  if (packRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={packRes.error.message} />
+  if (deliveryRes.error) return <ErrorState message="配送チェック状態を読み込めませんでした。" detail={deliveryRes.error.message} />
+
+  const custById = new Map((custRes.data ?? []).map((c) => [c.id, c]))
+  const destById = new Map((destRes.data ?? []).map((d) => [d.id, d]))
+  const capacityById = new Map((prodRes.data ?? []).map((p) => [p.id, p.container_capacity]))
   const packById = new Map(
-    (packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
+    (packRes.data ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
   )
   const deliveryByKey = new Map(
-    (deliveryRows ?? []).map((d) => [
+    (deliveryRes.data ?? []).map((d) => [
       `${d.customer_id}:${d.destination_id ?? ''}`,
-      { id: d.id, status: d.status as DeliveryStatus, photoUrl: d.photo_url },
+      { id: d.id, status: d.status as DeliveryStatus, photoUrl: d.photo_url, note: d.note },
     ]),
   )
 
@@ -148,68 +140,22 @@ export default async function DeliveriesPage({
     return null
   }
 
-  // 配送単位（取引先×納入先）にグルーピング。deliveries テーブルと同じキー設計（migrations/0015）。
-  const orderById = new Map((orders ?? []).map((o) => [o.id, o]))
-  const groups = new Map<string, DeliveryGroup>()
-  for (const it of items) {
-    const order = orderById.get(it.order_id)
-    if (!order) continue
-    const key = `${order.customer_id}:${order.destination_id ?? ''}`
-    let g = groups.get(key)
-    if (!g) {
-      const dest = order.destination_id ? destById.get(order.destination_id) : null
-      const resolvedDestName =
-        dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note)
-      g = {
-        key,
-        customerId: order.customer_id,
-        destinationId: order.destination_id ?? null,
-        customerName: customerName.get(order.customer_id) ?? '—',
-        destinationName: resolvedDestName,
-        shippingRouteName: dest?.shipping_route_name ?? null,
-        departureTime: dest?.departure_time ?? null,
-        packSortOrder: dest?.pack_sort_order ?? 100,
-        items: [],
-      }
-      groups.set(key, g)
-    }
-    g.items.push({
-      id: it.id,
-      productName: it.product_name,
-      quantityText: formatQty(
-        it.quantity,
-        capacityById.get(it.product_id) ?? null,
-        it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
-      ),
-      unit: it.unit,
-      quantity: it.quantity,
-      noteText:
-        [it.spec, it.container_type, it.has_card ? 'カード有' : null, it.line_note].filter(Boolean).join('・') || '—',
-    })
-  }
-
-  // 便（ルート・出発時刻）ごとのグループ化（納入先名からの自動推測付き）
-  interface RouteGroup {
-    key: string
-    title: string
-    departureTime: string | null
-    groups: DeliveryGroup[]
-    totalLines: number
-    deliveredCount: number
-    isDone: boolean
-  }
-
-  function resolveRouteInfo(g: DeliveryGroup): { title: string; departureTime: string | null } {
-    if (g.shippingRouteName || g.departureTime) {
-      const timePrefix = g.departureTime ? `${g.departureTime}発` : ''
-      const routeSuffix = g.shippingRouteName ? ` ${g.shippingRouteName}` : ''
+  // 便（ルート・出発時刻）の自動解決ヘルパー
+  function resolveRouteInfo(
+    destName: string | null,
+    customerName: string,
+    dest?: DestRow | null,
+  ): { title: string; departureTime: string | null } {
+    if (dest?.shipping_route_name || dest?.departure_time) {
+      const timePrefix = dest.departure_time ? `${dest.departure_time}発` : ''
+      const routeSuffix = dest.shipping_route_name ? ` ${dest.shipping_route_name}` : ''
       return {
         title: `${timePrefix}${routeSuffix}`.trim(),
-        departureTime: g.departureTime,
+        departureTime: dest.departure_time ?? null,
       }
     }
-    const d = g.destinationName ?? ''
-    const c = g.customerName ?? ''
+    const d = destName ?? ''
+    const c = customerName ?? ''
     if (d.includes('岩槻') || c.includes('パルシステム')) {
       return { title: '11:30発 岩槻便', departureTime: '11:30' }
     }
@@ -225,46 +171,195 @@ export default async function DeliveriesPage({
     return { title: '一般配送・時間未指定', departureTime: null }
   }
 
-  const routeMap = new Map<string, RouteGroup>()
-  for (const g of groups.values()) {
-    const routeInfo = resolveRouteInfo(g)
+  // 1. 便 ＞ 取引先 ＞ 納品先 の3層データ集約
+  const orderById = new Map((orders ?? []).map((o) => [o.id, o]))
+
+  // 便キー => 取引先ID => 取引先集約オブジェクト
+  const routeCustomerMap = new Map<
+    string,
+    {
+      title: string
+      departureTime: string | null
+      customers: Map<
+        string,
+        {
+          customerId: string
+          customerName: string
+          customerColor?: string | null
+          shippingRouteName?: string | null
+          departureTime?: string | null
+          packSortOrder: number
+          notesSet: Set<string>
+          destinationsMap: Map<string, DestinationDetail>
+        }
+      >
+    }
+  >()
+
+  for (const it of items) {
+    const order = orderById.get(it.order_id)
+    if (!order) continue
+
+    const cust = custById.get(order.customer_id)
+    const customerName = cust?.name ?? '—'
+    const dest = order.destination_id ? destById.get(order.destination_id) : null
+    const destName = dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note) || '直接納品'
+
+    const routeInfo = resolveRouteInfo(destName, customerName, dest)
     const routeKey = routeInfo.title
 
-    let rg = routeMap.get(routeKey)
-    if (!rg) {
-      rg = {
-        key: routeKey,
+    let rEntry = routeCustomerMap.get(routeKey)
+    if (!rEntry) {
+      rEntry = {
         title: routeInfo.title,
         departureTime: routeInfo.departureTime,
-        groups: [],
-        totalLines: 0,
-        deliveredCount: 0,
-        isDone: false,
+        customers: new Map(),
       }
-      routeMap.set(routeKey, rg)
+      routeCustomerMap.set(routeKey, rEntry)
     }
-    rg.groups.push(g)
-    rg.totalLines += g.items.length
-    if (deliveryByKey.get(g.key)?.status === 'delivered') {
-      rg.deliveredCount += 1
-    }
-  }
 
-  // 便内・便自体の並び替え
-  for (const rg of routeMap.values()) {
-    rg.groups.sort((a, b) => {
-      if (a.packSortOrder !== b.packSortOrder) {
-        return a.packSortOrder - b.packSortOrder
+    let cEntry = rEntry.customers.get(order.customer_id)
+    if (!cEntry) {
+      cEntry = {
+        customerId: order.customer_id,
+        customerName,
+        customerColor: cust?.display_color ?? null,
+        shippingRouteName: dest?.shipping_route_name ?? null,
+        departureTime: dest?.departure_time ?? null,
+        packSortOrder: dest?.pack_sort_order ?? 100,
+        notesSet: new Set<string>(),
+        destinationsMap: new Map(),
       }
-      return `${a.customerName}${a.destinationName ?? ''}`.localeCompare(
-        `${b.customerName}${b.destinationName ?? ''}`,
-        'ja',
-      )
+      rEntry.customers.set(order.customer_id, cEntry)
+    }
+
+    // 特記事項（事前アクション喚起用メモ）の抽出
+    if (order.note && !order.note.startsWith('【納入先')) {
+      const cleanNote = order.note.replace(/(?:納入先|お届け先|配送先)[^\n,、・\]】]+[\]】]?/g, '').trim()
+      if (cleanNote) cEntry.notesSet.add(cleanNote)
+    }
+    if (it.line_note && (it.line_note.includes('持参') || it.line_note.includes('注意') || it.line_note.includes('便') || it.line_note.includes('コンテナ'))) {
+      cEntry.notesSet.add(it.line_note.trim())
+    }
+    const deliveryNote = deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.note
+    if (deliveryNote?.trim()) {
+      cEntry.notesSet.add(deliveryNote.trim())
+    }
+
+    // 納品先マップへの追加
+    const destKey = order.destination_id ?? 'direct'
+    let dEntry = cEntry.destinationsMap.get(destKey)
+    if (!dEntry) {
+      const delStatus = deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.status ?? 'planned'
+      dEntry = {
+        destinationId: order.destination_id ?? null,
+        destinationName: destName,
+        cases: 0,
+        loose: 0,
+        totalQty: 0,
+        items: [],
+        status: delStatus,
+      }
+      cEntry.destinationsMap.set(destKey, dEntry)
+    }
+
+    // ケース数・端数換算
+    const perCase: number = (it.pack_config_id ? packById.get(it.pack_config_id)?.base : null) || (capacityById.get(it.product_id) ?? 20) || 20
+    const itemCases = Math.floor(it.quantity / perCase)
+    const itemLoose = it.quantity % perCase
+
+    dEntry.cases += itemCases
+    dEntry.loose += itemLoose
+    dEntry.totalQty += it.quantity
+    dEntry.items.push({
+      id: it.id,
+      productName: it.product_name,
+      quantityText: formatQty(
+        it.quantity,
+        capacityById.get(it.product_id) ?? null,
+        it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
+      ),
+      unit: it.unit,
+      quantity: it.quantity,
+      noteText: [it.spec, it.container_type, it.has_card ? 'カード有' : null, it.line_note].filter(Boolean).join('・') || '—',
     })
-    rg.isDone = rg.deliveredCount === rg.groups.length
   }
 
-  const sortedRoutes = Array.from(routeMap.values()).sort((a, b) => {
+  // 2. 取引先カード用オブジェクト配列の整形
+  const sortedRoutes: RouteGroup[] = []
+  let globalTotalCustomers = 0
+  let globalCompletedCustomers = 0
+
+  for (const [rKey, rEntry] of routeCustomerMap.entries()) {
+    const customerCards: CustomerDeliveryCardProps[] = []
+
+    for (const cEntry of rEntry.customers.values()) {
+      const destinationsList = Array.from(cEntry.destinationsMap.values())
+
+      // 端数の繰り上げ調整
+      let totalCases = 0
+      let totalLoose = 0
+      let totalQty = 0
+
+      for (const d of destinationsList) {
+        if (d.loose >= 20) {
+          d.cases += Math.floor(d.loose / 20)
+          d.loose %= 20
+        }
+        totalCases += d.cases
+        totalLoose += d.loose
+        totalQty += d.totalQty
+      }
+
+      if (totalLoose >= 20) {
+        totalCases += Math.floor(totalLoose / 20)
+        totalLoose %= 20
+      }
+
+      // 取引先配下の全納品先が loaded または delivered なら完了
+      const isCompleted =
+        destinationsList.length > 0 &&
+        destinationsList.every((d) => d.status === 'loaded' || d.status === 'delivered')
+
+      customerCards.push({
+        customerId: cEntry.customerId,
+        customerName: cEntry.customerName,
+        customerColor: cEntry.customerColor,
+        deliveryDate: date,
+        totalCases,
+        totalLoose,
+        totalQty,
+        notes: Array.from(cEntry.notesSet),
+        isCompleted,
+        destinations: destinationsList,
+        shippingRouteName: cEntry.shippingRouteName,
+        departureTime: cEntry.departureTime,
+      })
+    }
+
+    // 未積込の取引先を優先表示、完了済みは下へ
+    customerCards.sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1
+      return a.customerName.localeCompare(b.customerName, 'ja')
+    })
+
+    const completedCount = customerCards.filter((c) => c.isCompleted).length
+    globalTotalCustomers += customerCards.length
+    globalCompletedCustomers += completedCount
+
+    sortedRoutes.push({
+      key: rKey,
+      title: rEntry.title,
+      departureTime: rEntry.departureTime,
+      customers: customerCards,
+      totalLines: customerCards.reduce((acc, c) => acc + c.destinations.reduce((dacc, d) => dacc + d.items.length, 0), 0),
+      completedCustomerCount: completedCount,
+      isDone: customerCards.length > 0 && completedCount === customerCards.length,
+    })
+  }
+
+  // 便（ルート）自体のソート
+  sortedRoutes.sort((a, b) => {
     const isUnscheduledA = a.key.includes('時間未指定')
     const isUnscheduledB = b.key.includes('時間未指定')
     if (isUnscheduledA && !isUnscheduledB) return 1
@@ -276,10 +371,6 @@ export default async function DeliveriesPage({
     if (!a.departureTime && b.departureTime) return 1
     return a.title.localeCompare(b.title, 'ja')
   })
-
-  const sorted = [...groups.values()]
-  const totalItems = items.length
-  const doneCount = sorted.filter((g) => deliveryByKey.get(g.key)?.status === 'delivered').length
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -296,6 +387,7 @@ export default async function DeliveriesPage({
         </span>
       </div>
 
+      {/* ヘッダー */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
         <h1 className="flex items-center gap-2 font-display text-xl sm:text-2xl font-bold text-ink">
           <Truck className="h-6 w-6 text-earth-600 shrink-0" aria-hidden />
@@ -303,33 +395,35 @@ export default async function DeliveriesPage({
         </h1>
         <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <DateNav date={date} basePath={PATH} />
-          {sorted.length > 0 && <PrintButton label="印刷" />}
+          {globalTotalCustomers > 0 && <PrintButton label="印刷" />}
         </div>
       </div>
 
-      {sorted.length === 0 ? (
+      {globalTotalCustomers === 0 ? (
         <EmptyState
           title="この日の配送はありません"
           description="承認済み注文の出荷日がこの日になると表示されます。"
         />
       ) : (
         <>
-          {/* 進捗表示（全品目便別） */}
+          {/* 進捗表示（取引先単位の一覧集約進捗） */}
           <div className="flex items-center justify-between rounded-xl border border-earth-200 bg-earth-50 px-4 py-3 print:hidden">
-            <span className="text-sm font-bold text-ink-soft">本日の配送進捗（全品目横断）</span>
-            <span className="text-ink-soft font-medium">
-              完了 <span className="num text-2xl font-bold tabular-nums text-earth-700">{doneCount}</span>
+            <span className="text-xs sm:text-sm font-bold text-ink-soft">
+              本日の積込進捗（取引先集約）
+            </span>
+            <span className="text-ink-soft font-medium text-xs sm:text-sm">
+              完了 <span className="num text-2xl font-black tabular-nums text-earth-700">{globalCompletedCustomers}</span>
               <span className="mx-1">/</span>
-              {sorted.length} 配送先
+              {globalTotalCustomers} 取引先
               <span className="ml-2 text-xs text-ink-muted">（全 {sortedRoutes.length} 便）</span>
             </span>
           </div>
 
           {/* 印刷帳票ヘッダー（印刷時のみ） */}
           <div className="hidden print:block">
-            <h1 className="text-xl font-bold">便別配送一覧　{formatJpDate(date)}</h1>
+            <h1 className="text-xl font-bold">便別配送一覧（取引先集約）　{formatJpDate(date)}</h1>
             <p className="mt-1 text-sm">
-              配送先 {sorted.length} 件 ／ 全 {sortedRoutes.length} 便 ／ 明細 {totalItems} 行　　確認者：＿＿＿＿＿＿＿＿
+              取引先 {globalTotalCustomers} 件 ／ 全 {sortedRoutes.length} 便 ／ 明細 {items.length} 行　　確認者：＿＿＿＿＿＿＿＿
             </p>
           </div>
 
@@ -339,7 +433,7 @@ export default async function DeliveriesPage({
               <div
                 key={rg.key}
                 className={cn(
-                  'rounded-2xl border p-4 shadow-sm space-y-3.5 transition-all',
+                  'rounded-2xl border p-3.5 sm:p-4 shadow-sm space-y-3.5 transition-all',
                   rg.isDone
                     ? 'border-emerald-200 bg-emerald-50/20'
                     : 'border-earth-300 bg-white border-l-4 border-l-earth-600 shadow-md',
@@ -353,42 +447,32 @@ export default async function DeliveriesPage({
                       {rg.title}
                     </span>
                     <span className="text-xs font-bold text-ink-soft">
-                      ({rg.groups.length} 配送先 / {rg.totalLines} 品目明細)
+                      ({rg.customers.length} 取引先)
                     </span>
                   </div>
 
                   {rg.isDone ? (
                     <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" /> 積込・配送完了
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" /> 積込完了
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 rounded-md border border-earth-300 bg-earth-50 px-2.5 py-0.5 text-xs font-bold text-earth-800">
-                      残り {rg.groups.length - rg.deliveredCount} 配送先
+                      残り {rg.customers.length - rg.completedCustomerCount} 取引先
                     </span>
                   )}
                 </div>
 
                 {/* 帳票印刷用ルート見出し */}
                 <div className="hidden print:block pt-1 pb-1">
-                  <h2 className="text-sm font-bold text-ink">【便】 {rg.title}（{rg.groups.length}件）</h2>
+                  <h2 className="text-sm font-bold text-ink">【便】 {rg.title}（{rg.customers.length}取引先）</h2>
                 </div>
 
-                {/* この便に含まれる配送カード一覧 */}
+                {/* 取引先ワンボックス集約カード一覧 */}
                 <div className="space-y-3">
-                  {rg.groups.map((g) => (
-                    <DeliveryCheckCard
-                      key={g.key}
-                      status={deliveryByKey.get(g.key)?.status ?? 'planned'}
-                      customerName={g.customerName}
-                      destinationName={g.destinationName}
-                      departureTime={g.departureTime}
-                      shippingRouteName={g.shippingRouteName}
-                      items={g.items}
-                      deliveryDate={date}
-                      customerId={g.customerId}
-                      destinationId={g.destinationId}
-                      deliveryId={deliveryByKey.get(g.key)?.id ?? null}
-                      hasPhoto={Boolean(deliveryByKey.get(g.key)?.photoUrl)}
+                  {rg.customers.map((c) => (
+                    <CustomerDeliveryCard
+                      key={c.customerId}
+                      {...c}
                     />
                   ))}
                 </div>

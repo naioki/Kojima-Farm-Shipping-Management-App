@@ -607,29 +607,46 @@ export function ShipmentRow({
         </div>
       </div>
 
-      {/* ④ コンテナ・箱数カード */}
-      <div className="rounded-xl border border-line bg-bg-card p-2.5 flex items-center justify-between mb-3 shadow-xs">
-        <span className="text-sm font-bold text-ink">コンテナ・箱数</span>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">
-            {container || '青コン'}
+      {/* ④ 梱包・荷姿仕様エリア（コンテナ種別・カード有無・荷姿指定バッジ） */}
+      <div className="rounded-xl border border-line bg-bg-soft/50 p-2.5 mb-3 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ① コンテナ種別バッジ */}
+          <span className="inline-flex items-center gap-1 rounded-lg bg-sky-100 border border-sky-300 px-2.5 py-1 text-xs font-black text-sky-950 shadow-2xs">
+            📦 {container || '青コン'}
           </span>
-          <span className="num text-base font-black text-ink tabular-nums">
-            {casesText !== '—' ? (
-              Number(looseText) > 0 ? (
-                <span>
-                  {casesText}箱 ＋ 端数1コンテナ{' '}
-                  <span className="text-xs font-bold text-ink-soft">
-                    (計 {Number(casesText) + 1} 箱)
-                  </span>
-                </span>
-              ) : (
-                `${casesText} 箱`
-              )
-            ) : (
-              `${orderedQty} 箱`
-            )}
-          </span>
+
+          {/* ② カード・現品票の有無バッジ（最重要） */}
+          {hasCard ? (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-100 border border-indigo-400 px-2.5 py-1 text-xs font-black text-indigo-950 shadow-2xs">
+              🃏 カード: 貼付要
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 border border-slate-300 px-2 py-1 text-xs font-bold text-slate-600">
+              カード不要
+            </span>
+          )}
+
+          {/* ③ その他の荷姿・作業指示（存在する場合） */}
+          {bagType && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-300 px-2 py-1 text-xs font-bold text-amber-900">
+              🛍️ {bagType}
+            </span>
+          )}
+          {(hasSeal || sealText) && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-rose-50 border border-rose-300 px-2 py-1 text-xs font-bold text-rose-900">
+              🏷️ {sealText || 'シール有'}
+            </span>
+          )}
+          {masterTapeColor && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-300 px-2 py-1 text-xs font-bold text-emerald-900">
+              テープ: {masterTapeColor}
+            </span>
+          )}
+          {masterPackingNotes && (
+            <span className="inline-flex items-center gap-1 rounded-lg bg-purple-50 border border-purple-300 px-2 py-1 text-xs font-bold text-purple-900">
+              📝 {masterPackingNotes}
+            </span>
+          )}
         </div>
       </div>
 
