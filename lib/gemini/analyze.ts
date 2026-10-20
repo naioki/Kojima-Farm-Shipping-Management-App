@@ -67,30 +67,37 @@ async function generateWithFallback(
 
   let lastError: unknown
   for (const modelName of order) {
-    try {
-      const model = api.getGenerativeModel({
-        model: modelName,
-        ...(systemInstruction ? { systemInstruction } : {}),
-        generationConfig: {
-          temperature: 0.0,
-          responseMimeType: 'application/json',
-        },
-      })
-      const result = await model.generateContent(parts)
-      return { result, usedModel: modelName }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      const isTransient =
-        msg.includes('503') ||
-        msg.includes('429') ||
-        msg.includes('404') ||
-        msg.toLowerCase().includes('unavailable') ||
-        msg.toLowerCase().includes('not found') ||
-        msg.toLowerCase().includes('high demand') ||
-        msg.toLowerCase().includes('quota') ||
-        msg.toLowerCase().includes('resource_exhausted')
-      if (!isTransient) throw e
-      lastError = e
+    const model = api.getGenerativeModel({
+      model: modelName,
+      ...(systemInstruction ? { systemInstruction } : {}),
+      generationConfig: {
+        temperature: 0.0,
+        responseMimeType: 'application/json',
+      },
+    })
+
+    // 同一モデルで最大2回試行（初回失敗が過負荷/レート制限の場合は800msバックオフ待機して再試行）
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = await model.generateContent(parts)
+        return { result, usedModel: modelName }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        const isTransient =
+          msg.includes('503') ||
+          msg.includes('429') ||
+          msg.includes('404') ||
+          msg.toLowerCase().includes('unavailable') ||
+          msg.toLowerCase().includes('not found') ||
+          msg.toLowerCase().includes('high demand') ||
+          msg.toLowerCase().includes('quota') ||
+          msg.toLowerCase().includes('resource_exhausted')
+        if (!isTransient) throw e
+        lastError = e
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 800))
+        }
+      }
     }
   }
   throw lastError

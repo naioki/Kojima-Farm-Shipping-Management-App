@@ -48,44 +48,60 @@ export function GenerateInvoiceForm() {
   const [to, setTo] = useState(iso(new Date()))
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [loadingCandidates, setLoadingCandidates] = useState(false)
+  const [candidateError, setCandidateError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
 
-  // 期間が変わるたびに候補を再取得
+  // 期間が変わるたびに候補を再取得（250ms デバウンス付き）
   useEffect(() => {
-    if (!from || !to || from > to) {
+    if (!from || !to) {
       setCandidates([])
+      setCandidateError(null)
       return
     }
-    let cancelled = false
-    setLoadingCandidates(true)
+    if (from > to) {
+      setCandidates([])
+      setCandidateError('開始日は終了日以前の日付を指定してください。')
+      return
+    }
 
-    fetch(`/api/invoices/candidates?from=${from}&to=${to}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('取得失敗'))))
-      .then((data: { candidates?: Candidate[] }) => {
-        if (!cancelled) {
-          const list = data.candidates ?? []
-          setCandidates(list)
-          const firstCandidate = list[0]
-          if (firstCandidate && !list.some((c) => c.customerId === selectedCustomerId)) {
-            setSelectedCustomerId(firstCandidate.customerId)
-          } else if (list.length === 0) {
-            setSelectedCustomerId('')
+    let cancelled = false
+    const timer = setTimeout(() => {
+      setLoadingCandidates(true)
+      setCandidateError(null)
+
+      fetch(`/api/invoices/candidates?from=${from}&to=${to}`)
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('取得失敗'))))
+        .then((data: { candidates?: Candidate[] }) => {
+          if (!cancelled) {
+            const list = data.candidates ?? []
+            setCandidates(list)
+            const firstCandidate = list[0]
+            if (firstCandidate && !list.some((c) => c.customerId === selectedCustomerId)) {
+              setSelectedCustomerId(firstCandidate.customerId)
+            } else if (list.length === 0) {
+              setSelectedCustomerId('')
+            }
           }
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setCandidates([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingCandidates(false)
-      })
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCandidates([])
+            setCandidateError('取引先候補の取得に失敗しました。通信状況を確認してください。')
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingCandidates(false)
+        })
+    }, 250)
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
-  }, [from, to])
+  }, [from, to, retryCount])
 
   async function submitSingle(targetId?: string) {
     const custId = targetId || selectedCustomerId
@@ -187,7 +203,21 @@ export function GenerateInvoiceForm() {
         </div>
       </div>
 
-      {/* 対象取引先の自動抽出結果 */}
+      {/* エラー表示 */}
+      {candidateError && (
+        <div className="flex items-center justify-between rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-900 shadow-xs">
+          <span>⚠️ {candidateError}</span>
+          <button
+            type="button"
+            onClick={() => setRetryCount((c) => c + 1)}
+            className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-red-50 transition-colors"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
+            {/* 対象取引先の自動抽出結果 */}
       <div className="rounded-xl border border-line bg-bg-card p-3 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

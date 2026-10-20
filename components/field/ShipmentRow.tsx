@@ -209,7 +209,23 @@ export function ShipmentRow({
     looseText = String(orderedQty % 20)
   }
 
-  // アンマウント時に猶予タイマーを掃除（画面遷移してもサーバー状態は反映済み）
+  // 親からのProps変更を内部Stateへ安全に同期（通信中やUndo猶予中の上書きを防ぐガード付き）
+  useEffect(() => {
+    if (!busy && !undoGrace) {
+      setStatus(initialStatus)
+      setVersion(initialVersion)
+    }
+  }, [initialStatus, initialVersion, busy, undoGrace])
+
+  useEffect(() => {
+    setShippedQty(initialShippedQty == null ? '' : String(initialShippedQty))
+  }, [initialShippedQty])
+
+  useEffect(() => {
+    setFieldNote(initialFieldNote ?? '')
+  }, [initialFieldNote])
+
+    // アンマウント時に猶予タイマーを掃除（画面遷移してもサーバー状態は反映済み）
   useEffect(() => {
     return () => {
       if (undoTimerRef.current != null) window.clearTimeout(undoTimerRef.current)
@@ -420,7 +436,6 @@ export function ShipmentRow({
       setVersion(json.item.version)
       toast.success('メモを保存しました')
       setNoteOpen(false)
-      router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, 'メモの保存に失敗しました'))
     } finally {
@@ -778,6 +793,12 @@ export function ShipmentRow({
             className={cn(fieldInput, 'h-10 text-sm font-bold text-ink')}
             value={fieldNote}
             onChange={(e) => setFieldNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                saveQuickNote()
+              }
+            }}
             placeholder="例: 午前便に積込 / 黄コンテナ使用 / 傷み注意 等"
             autoFocus
           />
@@ -808,6 +829,12 @@ export function ShipmentRow({
             className={cn(fieldInput, 'num h-10 w-24 tabular-nums font-bold')}
             value={shippedQty}
             onChange={(e) => setShippedQty(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                saveQuick()
+              }
+            }}
             placeholder="例: 20"
           />
           <span className="shrink-0 text-xs text-ink-muted">／ 受注 {orderedQty}</span>

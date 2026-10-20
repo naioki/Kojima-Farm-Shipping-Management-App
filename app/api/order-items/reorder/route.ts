@@ -12,8 +12,17 @@ export async function POST(req: NextRequest) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  // 認証済みユーザーであれば並び順の更新を許可（社内スタッフ・管理者）
-  const role = (user.app_metadata?.role as string) || (user.user_metadata?.role as string)
+  // 認証済みユーザーであれば並び順の更新を許可（社内スタッフ・管理者）。改ざん可能な user_metadata は参照しない
+  let role = user.app_metadata?.role as string | undefined
+  if (!role) {
+    const admin = createAdminClient()
+    const { data: profile } = await admin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    role = (profile?.role as string) ?? 'staff'
+  }
   if (role === 'portal') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
