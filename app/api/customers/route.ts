@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { customerCreateSchema } from '@/types/database'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 
 export const runtime = 'nodejs'
 
-/** 取引先の新規作成（Laravel版 画面5）。admin のみ（RLS）。 */
+/** 取引先の新規作成（Laravel版 画面5）。 */
 export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 重複登録防止（Issue#6-(5)）: 正規化名（法人格・全半角・空白ゆれ吸収）が一致する既存を先に探す。
   // DB の UNIQUE INDEX(uq_customers_norm_name) が最終防波堤だが、ここで 409＋既存候補を返すことで

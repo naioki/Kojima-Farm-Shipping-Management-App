@@ -20,8 +20,7 @@ export interface CustomerManageProps {
 
 /**
  * 取引先の管理（情報編集・有効/無効・削除）。
- * 削除は未使用の取引先のみ。使用中（注文・請求書・取引ルール・納品書）は履歴保護のため不可で、
- * 「有効」オフ（非表示化）に誘導する。
+ * 未使用の取引先は付随ルールごと物理削除し、過去の注文・請求書がある取引先は自動的に非表示（無効化）にする。
  */
 export function CustomerManage({ customer }: CustomerManageProps) {
   const router = useRouter()
@@ -62,17 +61,14 @@ export function CustomerManage({ customer }: CustomerManageProps) {
     setDeleting(true)
     try {
       const res = await fetch(`/api/customers/${customer.id}`, { method: 'DELETE' })
-      if (res.status === 409) {
-        const j = (await res.json().catch(() => ({}))) as { message?: string }
-        toast.error(j.message ?? '使用中のため削除できません。「有効」をオフにしてください。', { duration: 6000 })
-        return
-      }
       if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(j.error ?? `削除に失敗 (${res.status})`)
+        const j = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
+        throw new Error(j.message ?? j.error ?? `削除に失敗 (${res.status})`)
       }
-      toast.success('取引先を削除しました')
+      const j = (await res.json().catch(() => ({}))) as { message?: string }
+      toast.success(j.message ?? '取引先を削除しました')
       router.push('/admin/customers')
+      router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '削除に失敗しました')
     } finally {
@@ -118,7 +114,7 @@ export function CustomerManage({ customer }: CustomerManageProps) {
         onClose={() => setConfirmOpen(false)}
         onConfirm={remove}
         title="取引先を削除しますか？"
-        message={`「${customer.name}」を削除します。注文・請求書・取引ルール・納品書で使われている取引先は削除できません（その場合は「有効」をオフにして非表示にしてください）。`}
+        message={`「${customer.name}」を削除します。過去の注文・請求書がある取引先は履歴保護のため自動的に非表示（無効化）になります。`}
         confirmLabel="削除する"
         isLoading={deleting}
       />

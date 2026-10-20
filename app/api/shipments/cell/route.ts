@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
@@ -16,6 +18,9 @@ export const runtime = 'nodejs'
 export async function PUT(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!(await isStaffUser(user.id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const body = await req.json().catch(() => null)
   const parsed = matrixCellSchema.safeParse(body)
@@ -23,7 +28,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const { customer_id, product_id, delivery_date, quantity_raw } = parsed.data
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 商品マスタ
   const { data: product, error: prodErr } = await supabase

@@ -105,10 +105,10 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
     setSavingId(id)
     try {
       const res = await fetch(`/api/destinations/${id}`, { method: 'DELETE' })
-      const json = (await res.json().catch(() => ({}))) as { error?: string }
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
       if (!res.ok) throw new Error(json.error ?? `削除失敗 (${res.status})`)
       setRows((p) => p.filter((r) => r.id !== id))
-      toast.success('削除しました')
+      toast.success(json.message ?? '納入先を削除しました')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '削除に失敗しました')
     } finally {

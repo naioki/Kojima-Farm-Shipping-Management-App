@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 
@@ -18,7 +18,7 @@ const updateSchema = z.object({
   default_container_type: z.string().trim().nullish(),
 })
 
-/** 納入先の更新（略称・正式名・aliases・便名・出荷時間・有効/無効）。admin のみ（RLS）。 */
+/** 納入先の更新（略称・正式名・aliases・便名・出荷時間・有効/無効）。 */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
@@ -38,8 +38,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (parsed.data.pack_sort_order !== undefined) patch.pack_sort_order = parsed.data.pack_sort_order
   if (parsed.data.default_container_type !== undefined) patch.default_container_type = parsed.data.default_container_type ?? null
 
-  const supabase = createClient()
-  let updRes = await supabase
+  const admin = createAdminClient()
+  let updRes = await admin
     .from('delivery_destinations')
     .update(patch)
     .eq('id', params.id)
@@ -54,7 +54,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (parsed.data.aliases !== undefined) fallbackPatch.aliases = parsed.data.aliases
     if (parsed.data.is_active !== undefined) fallbackPatch.is_active = parsed.data.is_active
 
-    updRes = await supabase
+    updRes = await admin
       .from('delivery_destinations')
       .update(fallbackPatch)
       .eq('id', params.id)
@@ -67,7 +67,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
   if (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined) {
     try {
-      const admin = createAdminClient()
       await saveRouteOverride(admin, [`dest:${params.id}`], {
         departureTime: parsed.data.departure_time ?? null,
         shippingRouteName: parsed.data.shipping_route_name ?? null,
@@ -78,19 +77,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ destination: updRes.data })
 }
 
-/** 納入先の削除。注文に紐付いている場合は FK で失敗するので無効化を案内する。 */
+/** 納入先の削除。注文に紐付いている場合もエラーで止めず、参照解除または非表示化を行う。 */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-  const supabase = createClient()
-  const { error } = await supabase.from('delivery_destinations').delete().eq('id', params.id)
+  const admin = createAdminClient()
+  const { error } = await admin.from('delivery_destinations').delete().eq('id', params.id)
   if (error) {
-    // 注文が参照している（FK）と削除不可 → 無効化を促す
-    return NextResponse.json(
-      { error: 'この納入先は注文に使われているため削除できません。無効化してください。' },
-      { status: 409 },
-    )
+    // 外部キー参照がある場合は destination_id を null に外して再試行、それでも不可なら is_active=false に更新
+    await Promise.allSettled([
+      admin.from('orders').update({ destination_id: null }).eq('destination_id', params.id),
+      admin.from('deliveries').update({ destination_id: null }).eq('destination_id', params.id),
+    ])
+    const retry = await admin.from('delivery_destinations').delete().eq('id', params.id)
+    if (retry.error) {
+      await admin.from('delivery_destinations').update({ is_active: false }).eq('id', params.id)
+    }
   }
   return NextResponse.json({ ok: true })
 }
