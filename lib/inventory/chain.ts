@@ -12,6 +12,61 @@ export interface ChainInventoryResult {
   manualStock: number | null
 }
 
+export type FallbackInventoryRecord = Record<
+  string,
+  { stock_containers?: number | null; carryover_to_next_day?: number | null; updated_at?: string }
+>
+
+/**
+ * 0026未適用環境（daily_container_inventory不在）用の在庫フォールバック読み込み
+ */
+export async function readFallbackInventory(
+  admin: SupabaseClient,
+  productId: string,
+): Promise<FallbackInventoryRecord> {
+  try {
+    const res = await admin
+      .from('app_settings')
+      .select('value')
+      .eq('key', `v5_container_inv:${productId}`)
+      .maybeSingle()
+    if (!res?.data?.value) return {}
+    return JSON.parse(res.data.value) as FallbackInventoryRecord
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * 0026未適用環境（daily_container_inventory不在）用の在庫フォールバック書き込み
+ */
+export async function writeFallbackInventory(
+  admin: SupabaseClient,
+  productId: string,
+  date: string,
+  patch: { stock_containers?: number | null; carryover_to_next_day?: number | null },
+): Promise<void> {
+  const existing = await readFallbackInventory(admin, productId)
+  const current = existing[date] ?? {}
+  existing[date] = {
+    ...current,
+    ...(patch.stock_containers !== undefined ? { stock_containers: patch.stock_containers } : {}),
+    ...(patch.carryover_to_next_day !== undefined ? { carryover_to_next_day: patch.carryover_to_next_day } : {}),
+    updated_at: new Date().toISOString(),
+  }
+  await admin
+    .from('app_settings')
+    .upsert(
+      {
+        key: `v5_container_inv:${productId}`,
+        value: JSON.stringify(existing),
+        is_secret: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    )
+}
+
 /**
  * 過去の日付（デフォルト14日間）の在庫手動設定と注文出荷実績から、日跨ぎの連鎖キャリーオーバー在庫を算出する。
  * - 週末・祝日や出荷のない日を挟んでも、未消化分が翌日・翌々日以降へ連続して自動波及する。
@@ -44,6 +99,22 @@ export async function calculateChainInventory(
       stock_containers: r.stock_containers,
       carryover_to_next_day: r.carryover_to_next_day,
     })
+  }
+
+  // 0026未適用環境（daily_container_inventory不在）または空の場合、app_settingsのフォールバックをマージ
+  try {
+    const fallback = await readFallbackInventory(supabase, productId)
+    for (const [d, rec] of Object.entries(fallback)) {
+      if (d >= startDateStr && d <= targetDate) {
+        const existing = invByDate.get(d)
+        invByDate.set(d, {
+          stock_containers: existing?.stock_containers ?? rec.stock_containers ?? null,
+          carryover_to_next_day: existing?.carryover_to_next_day ?? rec.carryover_to_next_day ?? null,
+        })
+      }
+    }
+  } catch {
+    // 単体テスト等でのモック不在時は安全に無視
   }
 
   // 2. 過去14日間の注文・明細データを取得（日ごとの必要箱数を集計）

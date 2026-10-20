@@ -2,6 +2,8 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -37,15 +39,43 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (parsed.data.default_container_type !== undefined) patch.default_container_type = parsed.data.default_container_type ?? null
 
   const supabase = createClient()
-  const { data, error } = await supabase
+  let updRes = await supabase
     .from('delivery_destinations')
     .update(patch)
     .eq('id', params.id)
     .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name, pack_sort_order, default_container_type')
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ destination: data })
+  if (updRes.error && updRes.error.code === '42703') {
+    // 0026 未適用環境: 新規追加カラムを除外して更新
+    const fallbackPatch: Record<string, unknown> = {}
+    if (parsed.data.code !== undefined) fallbackPatch.code = parsed.data.code ?? null
+    if (parsed.data.full_name !== undefined) fallbackPatch.full_name = parsed.data.full_name
+    if (parsed.data.aliases !== undefined) fallbackPatch.aliases = parsed.data.aliases
+    if (parsed.data.is_active !== undefined) fallbackPatch.is_active = parsed.data.is_active
+
+    updRes = await supabase
+      .from('delivery_destinations')
+      .update(fallbackPatch)
+      .eq('id', params.id)
+      .select('id, code, full_name, aliases, is_active')
+      .single()
+  }
+
+  if (updRes.error) return NextResponse.json({ error: updRes.error.message }, { status: 500 })
+
+  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
+  if (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined) {
+    try {
+      const admin = createAdminClient()
+      await saveRouteOverride(admin, [`dest:${params.id}`], {
+        departureTime: parsed.data.departure_time ?? null,
+        shippingRouteName: parsed.data.shipping_route_name ?? null,
+      })
+    } catch {}
+  }
+
+  return NextResponse.json({ destination: updRes.data })
 }
 
 /** 納入先の削除。注文に紐付いている場合は FK で失敗するので無効化を案内する。 */

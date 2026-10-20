@@ -2,7 +2,9 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
+import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -34,29 +36,72 @@ export async function POST(req: Request) {
   // DB の UNIQUE INDEX(uq_dest_norm_fullname) が最終防波堤。ここで 409＋既存候補を返し、
   // UI が「既存の◯◯を使いますか？」を提示できるようにする。
   const norm = normalizeOrgName(parsed.data.full_name)
-  const { data: siblings, error: listErr } = await supabase
+  let siblings: Array<{ id: string; full_name: string }> | null = null
+  const { data: s1, error: listErr } = await supabase
     .from('delivery_destinations')
     .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
     .eq('customer_id', parsed.data.customer_id)
-  if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
+
+  if (listErr && listErr.code === '42703') {
+    const { data: s2, error: listErr2 } = await supabase
+      .from('delivery_destinations')
+      .select('id, code, full_name, aliases, is_active')
+      .eq('customer_id', parsed.data.customer_id)
+    if (listErr2) return NextResponse.json({ error: listErr2.message }, { status: 500 })
+    siblings = s2
+  } else if (listErr) {
+    return NextResponse.json({ error: listErr.message }, { status: 500 })
+  } else {
+    siblings = s1
+  }
+
   const existing = (siblings ?? []).find((d) => normalizeOrgName(d.full_name) === norm)
   if (existing) {
     return NextResponse.json({ error: 'duplicate', existing }, { status: 409 })
   }
 
-  const { data, error } = await supabase
+  const fullPayload = {
+    customer_id: parsed.data.customer_id,
+    code: parsed.data.code ?? null,
+    full_name: parsed.data.full_name,
+    aliases: parsed.data.aliases,
+    departure_time: parsed.data.departure_time ?? null,
+    shipping_route_name: parsed.data.shipping_route_name ?? null,
+  }
+
+  let insRes = await supabase
     .from('delivery_destinations')
-    .insert({
+    .insert(fullPayload)
+    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
+    .single()
+
+  if (insRes.error && insRes.error.code === '42703') {
+    // 0026 未適用環境
+    const basePayload = {
       customer_id: parsed.data.customer_id,
       code: parsed.data.code ?? null,
       full_name: parsed.data.full_name,
       aliases: parsed.data.aliases,
-      departure_time: parsed.data.departure_time ?? null,
-      shipping_route_name: parsed.data.shipping_route_name ?? null,
-    })
-    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
-    .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    insRes = await supabase
+      .from('delivery_destinations')
+      .insert(basePayload)
+      .select('id, code, full_name, aliases, is_active')
+      .single()
+  }
 
-  return NextResponse.json({ destination: data }, { status: 201 })
+  if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 500 })
+
+  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
+  if (insRes.data?.id && (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined)) {
+    try {
+      const admin = createAdminClient()
+      await saveRouteOverride(admin, [`dest:${insRes.data.id}`], {
+        departureTime: parsed.data.departure_time ?? null,
+        shippingRouteName: parsed.data.shipping_route_name ?? null,
+      })
+    } catch {}
+  }
+
+  return NextResponse.json({ destination: insRes.data }, { status: 201 })
 }

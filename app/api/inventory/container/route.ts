@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { calculateChainInventory } from '@/lib/inventory/chain'
+import { calculateChainInventory, readFallbackInventory, writeFallbackInventory } from '@/lib/inventory/chain'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,12 +27,33 @@ export async function GET(req: NextRequest) {
   const chain = await calculateChainInventory(admin, productId, date, 14)
 
   // 当日レコード
-  const { data: current } = await admin
-    .from('daily_container_inventory')
-    .select('*')
-    .eq('target_date', date)
-    .eq('product_id', productId)
-    .maybeSingle()
+  let current: Record<string, unknown> | null = null
+  try {
+    const { data, error } = await admin
+      .from('daily_container_inventory')
+      .select('*')
+      .eq('target_date', date)
+      .eq('product_id', productId)
+      .maybeSingle()
+    if (!error && data) {
+      current = data as Record<string, unknown>
+    }
+  } catch {}
+
+  // 0026未適用環境（daily_container_inventory不在）の場合は app_settings から取得
+  if (!current) {
+    try {
+      const fb = await readFallbackInventory(admin, productId)
+      if (fb[date]) {
+        current = {
+          target_date: date,
+          product_id: productId,
+          stock_containers: fb[date].stock_containers ?? null,
+          carryover_to_next_day: fb[date].carryover_to_next_day ?? null,
+        }
+      }
+    } catch {}
+  }
 
   return NextResponse.json({
     ok: true,
@@ -70,7 +91,25 @@ export async function POST(req: NextRequest) {
     .select()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // 0026未適用環境（daily_container_inventory不在）の場合は app_settings にフォールバック保存
+    try {
+      await writeFallbackInventory(admin, productId, date, {
+        stock_containers: stockContainers !== undefined ? Math.max(0, Number(stockContainers) || 0) : undefined,
+        carryover_to_next_day: carryoverToNextDay !== undefined ? Math.max(0, Number(carryoverToNextDay) || 0) : undefined,
+      })
+      return NextResponse.json({
+        ok: true,
+        data: {
+          target_date: date,
+          product_id: productId,
+          stock_containers: stockContainers !== undefined ? Math.max(0, Number(stockContainers) || 0) : null,
+          carryover_to_next_day: carryoverToNextDay !== undefined ? Math.max(0, Number(carryoverToNextDay) || 0) : null,
+        },
+      })
+    } catch (fbErr: unknown) {
+      const msg = fbErr instanceof Error ? fbErr.message : String(fbErr)
+      return NextResponse.json({ error: error.message || msg }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ ok: true, data: data?.[0] })

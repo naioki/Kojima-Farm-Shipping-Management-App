@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
+import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -42,30 +43,74 @@ export async function GET(req: NextRequest) {
   const todayStr = `${y}-${m}-${d}`
   const curTimeStr = `${curHour}:${curMin}`
 
-  // 今日の納品日、キャンセル以外の注文を取得
-  const { data: orders, error: ordersErr } = await supabase
-    .from('orders')
-    .select(`
-      id,
-      customer_id,
-      destination_id,
-      delivery_date,
-      customers (name),
-      delivery_destinations (full_name, shipping_route_name, departure_time),
-      order_items (
-        id,
-        product_name,
-        quantity,
-        field_status
-      )
-    `)
-    .eq('delivery_date', todayStr)
-    .neq('status', 'cancelled')
-
-  if (ordersErr) {
-    console.error('[cron/overdue-shipments] orders取得失敗:', ordersErr.message)
-    return NextResponse.json({ ok: false, error: ordersErr.message }, { status: 500 })
+  // 今日の納品日、キャンセル以外の注文を取得（0026未適用環境およびRouteOverrideフォールバック対応）
+  type RawOrderItem = {
+    id: string
+    product_name: string
+    quantity: number
+    field_status: string
   }
+  type RawOrder = {
+    id: string
+    customer_id: string
+    destination_id: string | null
+    delivery_date: string
+    customers: { name?: string } | null
+    delivery_destinations: { full_name?: string; shipping_route_name?: string | null; departure_time?: string | null } | null
+    order_items: RawOrderItem[] | null
+  }
+  let orders: RawOrder[] | null = null
+  const [ordersRes, overrides] = await Promise.all([
+    (async () => {
+      const res1 = await supabase
+        .from('orders')
+        .select(`
+          id,
+          customer_id,
+          destination_id,
+          delivery_date,
+          customers (name),
+          delivery_destinations (full_name, shipping_route_name, departure_time),
+          order_items (
+            id,
+            product_name,
+            quantity,
+            field_status
+          )
+        `)
+        .eq('delivery_date', todayStr)
+        .neq('status', 'cancelled')
+
+      if (!res1.error) return res1
+
+      // 0026 未適用環境への安全なフォールバック
+      return await supabase
+        .from('orders')
+        .select(`
+          id,
+          customer_id,
+          destination_id,
+          delivery_date,
+          customers (name),
+          delivery_destinations (full_name),
+          order_items (
+            id,
+            product_name,
+            quantity,
+            field_status
+          )
+        `)
+        .eq('delivery_date', todayStr)
+        .neq('status', 'cancelled')
+    })(),
+    getRouteOverrides(supabase).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+  ])
+
+  if (ordersRes.error) {
+    console.error('[cron/overdue-shipments] orders取得失敗:', ordersRes.error.message)
+    return NextResponse.json({ ok: false, error: ordersRes.error.message }, { status: 500 })
+  }
+  orders = (ordersRes.data ?? []) as unknown as RawOrder[]
 
   const overdueList: Array<{
     customerName: string
@@ -82,7 +127,12 @@ export async function GET(req: NextRequest) {
       departure_time?: string | null
     } | null
 
-    const depTime = dest?.departure_time
+    const override = (order.destination_id && overrides[`dest:${order.destination_id}`])
+      || (dest?.full_name ? overrides[`cust:${order.customer_id}:${dest.full_name}`] : null)
+      || overrides[`cust:${order.customer_id}:default`]
+      || null
+
+    const depTime = override?.departureTime ?? dest?.departure_time
     if (!depTime) continue // 出発予定時刻の設定がない場合はスキップ
 
     // 時間比較 (HH:mm)
@@ -102,7 +152,7 @@ export async function GET(req: NextRequest) {
       overdueList.push({
         customerName: cust?.name || '取引先不明',
         destinationName: dest?.full_name || '',
-        routeName: dest?.shipping_route_name || '通常便',
+        routeName: override?.shippingRouteName ?? dest?.shipping_route_name ?? '通常便',
         departureTime: depTime,
         unshippedItems: unshipped.map((it) => `${it.product_name} (${it.quantity})`),
       })

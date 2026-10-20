@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
+import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -113,31 +114,49 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. 当日の orders テーブルの shipping_time および destination_id を更新（確実な時間反映）
-    const orderUpdatePayload: Record<string, unknown> = {
-      shipping_time: cleanTime,
-    }
+    // 3. 当日の orders テーブルの destination_id を更新（shipping_timeは CHECK (shipping_time IN ('am', 'pm')) 制約があるため am/pm/null のみ反映）
+    const orderUpdatePayload: Record<string, unknown> = {}
     if (targetDestId) {
       orderUpdatePayload.destination_id = targetDestId
     }
-
-    let orderQuery = admin
-      .from('orders')
-      .update(orderUpdatePayload)
-      .eq('delivery_date', deliveryDate)
-      .eq('customer_id', customerId)
-      .neq('status', 'cancelled')
-
-    if (targetDestId) {
-      orderQuery = orderQuery.or(`destination_id.eq.${targetDestId},destination_id.is.null`)
+    if (cleanTime === 'am' || cleanTime === 'pm' || cleanTime === null) {
+      orderUpdatePayload.shipping_time = cleanTime
     }
 
-    const { error: orderErr } = await orderQuery
-    if (orderErr) {
-      console.warn('[departure-time] orders 更新警告:', orderErr)
+    if (Object.keys(orderUpdatePayload).length > 0) {
+      let orderQuery = admin
+        .from('orders')
+        .update(orderUpdatePayload)
+        .eq('delivery_date', deliveryDate)
+        .eq('customer_id', customerId)
+        .neq('status', 'cancelled')
+
+      if (targetDestId) {
+        orderQuery = orderQuery.or(`destination_id.eq.${targetDestId},destination_id.is.null`)
+      }
+
+      const { error: orderErr } = await orderQuery
+      if (orderErr) {
+        console.warn('[departure-time] orders 更新警告:', orderErr)
+      }
     }
 
-    // 4. deliveries テーブルの status / note も同期（存在する場合）
+    // 4. app_settings に RouteOverride を保存（0026未適用環境・CHECK制約環境でも100%確実に永続化）
+    try {
+      const overrideKeys: string[] = []
+      if (targetDestId) overrideKeys.push(`dest:${targetDestId}`)
+      if (destinationName?.trim()) overrideKeys.push(`cust:${customerId}:${destinationName.trim()}`)
+      overrideKeys.push(`cust:${customerId}:default`)
+
+      await saveRouteOverride(admin, overrideKeys, {
+        departureTime: cleanTime,
+        shippingRouteName: cleanRoute,
+      })
+    } catch (saveErr) {
+      console.warn('[departure-time] saveRouteOverride エラー:', saveErr)
+    }
+
+    // 5. deliveries テーブルの status / note も同期（存在する場合）
     try {
       const { data: existingDelivery } = await admin
         .from('deliveries')

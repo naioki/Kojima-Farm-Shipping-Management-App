@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { Truck, Clock, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
 import {
@@ -32,6 +34,8 @@ export default async function DeliveriesPage({
 }) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const supabase = createClient()
+
+  const admin = createAdminClient()
 
   // その日の出荷対象注文（キャンセルは除外）
   const { data: orders, error: ordersErr } = await supabase
@@ -68,7 +72,7 @@ export default async function DeliveriesPage({
     pack_sort_order?: number | null
   }
 
-  const [custRes, destRes, prodRes, packRes, deliveryRes] = await Promise.all([
+  const [custRes, destRes, prodRes, packRes, deliveryRes, routeOverrides] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
@@ -93,6 +97,7 @@ export default async function DeliveriesPage({
       ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
       : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
     supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
+    getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
   ])
 
   if (custRes.error) return <ErrorState message="取引先名を読み込めませんでした。" detail={custRes.error.message} />
@@ -135,7 +140,20 @@ export default async function DeliveriesPage({
     customerName: string,
     dest?: DestRow | null,
     orderShippingTime?: string | null,
+    override?: { departureTime: string | null; shippingRouteName: string | null } | null,
   ): { title: string; departureTime: string | null } {
+    if (override) {
+      const effectiveTime = override.departureTime
+      const routeName = override.shippingRouteName || dest?.shipping_route_name || null
+      if (routeName || effectiveTime) {
+        const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
+        const routeSuffix = routeName ? ` ${routeName}` : ''
+        return {
+          title: `${timePrefix}${routeSuffix}`.trim(),
+          departureTime: effectiveTime,
+        }
+      }
+    }
     const effectiveTime = orderShippingTime || dest?.departure_time || null
     if (dest?.shipping_route_name || effectiveTime) {
       const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
@@ -186,7 +204,13 @@ export default async function DeliveriesPage({
     const dest = order.destination_id ? destById.get(order.destination_id) : null
     const destName = dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note) || '直接納品'
 
-    const routeInfo = resolveRouteInfo(destName, customerName, dest, order.shipping_time)
+    // 0026未適用環境でも確実に反映されるよう app_settings からの RouteOverride を最優先適用
+    const override = (order.destination_id && routeOverrides[`dest:${order.destination_id}`])
+      || (destName ? routeOverrides[`cust:${order.customer_id}:${destName}`] : null)
+      || routeOverrides[`cust:${order.customer_id}:default`]
+      || null
+
+    const routeInfo = resolveRouteInfo(destName, customerName, dest, order.shipping_time, override)
 
     let cEntry = customerGroupMap.get(order.customer_id)
     if (!cEntry) {
@@ -218,6 +242,14 @@ export default async function DeliveriesPage({
     }
 
     // 納品先マップへの追加（同一納品先が便やメモ違いで分裂しないよう、納品先IDまたは正規化名で1本化）
+    const effectiveDepTime = override?.departureTime !== undefined
+      ? override.departureTime
+      : (order.shipping_time || dest?.departure_time || routeInfo.departureTime)
+
+    const effectiveRouteName = override?.shippingRouteName !== undefined
+      ? override.shippingRouteName
+      : (dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null))
+
     const destKey = order.destination_id || `name:${destName}`
     let dEntry = cEntry.destinationsMap.get(destKey)
     if (!dEntry) {
@@ -225,8 +257,8 @@ export default async function DeliveriesPage({
       dEntry = {
         destinationId: order.destination_id ?? null,
         destinationName: destName,
-        shippingRouteName: dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null),
-        departureTime: order.shipping_time || dest?.departure_time || routeInfo.departureTime,
+        shippingRouteName: effectiveRouteName,
+        departureTime: effectiveDepTime,
         containerType: it.container_type || null,
         cases: 0,
         loose: 0,
@@ -241,11 +273,15 @@ export default async function DeliveriesPage({
       if (!dEntry.containerType && it.container_type) {
         dEntry.containerType = it.container_type
       }
-      if (!dEntry.departureTime && (order.shipping_time || dest?.departure_time || routeInfo.departureTime)) {
-        dEntry.departureTime = order.shipping_time || dest?.departure_time || routeInfo.departureTime
+      if (override?.departureTime !== undefined) {
+        dEntry.departureTime = override.departureTime
+      } else if (!dEntry.departureTime && effectiveDepTime) {
+        dEntry.departureTime = effectiveDepTime
       }
-      if (!dEntry.shippingRouteName && (dest?.shipping_route_name || routeInfo.title)) {
-        dEntry.shippingRouteName = dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null)
+      if (override?.shippingRouteName !== undefined) {
+        dEntry.shippingRouteName = override.shippingRouteName
+      } else if (!dEntry.shippingRouteName && effectiveRouteName) {
+        dEntry.shippingRouteName = effectiveRouteName
       }
     }
 
