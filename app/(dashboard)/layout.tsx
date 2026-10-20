@@ -20,7 +20,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
   if (profileErr) console.error('[dashboard/layout] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
-  const name = profile?.full_name?.trim() || user.email?.split('@')[0] || 'ユーザー'
+  // 経営者欄には個人の名前を出さず、農園名「小島農園」を表示する
+  const name = role === 'admin' ? '小島農園' : (profile?.full_name?.trim() || user.email?.split('@')[0] || 'スタッフ')
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
 
   return (

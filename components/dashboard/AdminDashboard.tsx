@@ -1,7 +1,6 @@
 import { DashboardHeader, type DashboardHeaderProps } from './DashboardHeader'
 import { ShipmentStatusCards } from './ShipmentStatusCards'
 import { SalesTrendChart } from './SalesTrendChart'
-import { AlertsPanel, type AlertItem } from './AlertsPanel'
 import { QuickActionsGrid, type QuickAction } from './QuickActionsGrid'
 import { RecentOrdersTable } from './RecentOrdersTable'
 import { MonthlySummary } from './MonthlySummary'
@@ -11,15 +10,15 @@ export interface AdminDashboardData {
   header: DashboardHeaderProps
   stats: TodayShipmentStats
   trend: TrendPoint[]
-  alerts: AlertItem[]
+  alerts?: unknown
   actions: QuickAction[]
   recentOrders: RecentOrderRow[]
   summary: SummaryRow[]
 }
 
 /**
- * 経営ダッシュボードの構成（純表示）。データ取得とは分離し、
- * /admin（実データ）と /ui-preview（サンプル）が同じ見た目を共有する。
+ * 経営ダッシュボードの構成（純表示）。
+ * 赤い通知欄・アラートパネルを撤去し、出荷推移チャートをすっきりワイドに表示。
  */
 export function AdminDashboard({ data }: { data: AdminDashboardData }) {
   return (
@@ -31,13 +30,8 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
         <ShipmentStatusCards stats={data.stats} />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <SalesTrendChart data={data.trend} />
-        </div>
-        <div className="lg:col-span-1">
-          <AlertsPanel alerts={data.alerts} />
-        </div>
+      <div>
+        <SalesTrendChart data={data.trend} />
       </div>
 
       <QuickActionsGrid actions={data.actions} />

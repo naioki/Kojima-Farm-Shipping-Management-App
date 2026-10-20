@@ -37,7 +37,8 @@ export interface NavGroup {
  * 管理（経営）サーフェスのナビ。業務フェーズでグルーピングして俯瞰しやすくする。
  *
  * 2026-10 Webアプリ一本化アップデート（docs/web_app_migration_plan.md 準拠）:
- * - 受注: 「受注ボックス」「スプリット承認（/admin/approvals）」「受注一覧（/admin/orders）」「AI学習ルール（/admin/rules）」
+ * - 受注: 「受注ボックス」「受注一覧（/admin/orders）」「AI学習ルール（/admin/rules）」
+ * - 取引先・品目はAI自動抽出・学習のためメインナビから整理。
  */
 export const ADMIN_GROUPS: NavGroup[] = [
   { label: null, items: [{ href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard }] },
@@ -61,7 +62,6 @@ export const ADMIN_GROUPS: NavGroup[] = [
     label: '請求・管理',
     items: [
       { href: '/admin/invoices', label: '請求・月次確定', icon: FileText },
-      { href: '/admin/customers', label: '取引先・品目マスタ', icon: Users },
       { href: '/admin/settings', label: 'システム設定', icon: Settings },
     ],
   },

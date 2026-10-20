@@ -285,11 +285,13 @@ export default async function ShipmentsPage({
   ])
 
   const prevCarryover = prevInv?.carryover_to_next_day ?? 0
-  const initialStock = currentInv?.stock_containers ?? prevCarryover
+  const hasManualStock = currentInv?.stock_containers !== undefined && currentInv?.stock_containers !== null
 
-  // ⑧ 選択中品目の集計（注文総箱数・総パック数・コンテナ内訳・規格内訳）
+  // ⑧ 選択中品目の集計（注文総箱数・総パック数・コンテナ内訳・規格内訳・袋詰め進捗箱数）
   let totalPacks = 0
   let totalBoxes = 0
+  let packedBoxes = 0
+  let shippedBoxes = 0
   const containerCounts = new Map<string, number>()
   const specCounts = new Map<string, { packs: number; boxes: number }>()
 
@@ -325,6 +327,12 @@ export default async function ShipmentsPage({
     const rem = qty % perCase
     const boxCount = cases + (rem > 0 ? 1 : 0)
     totalBoxes += boxCount
+
+    if (it.field_status === 'packed') {
+      packedBoxes += boxCount
+    } else if (it.field_status === 'shipped') {
+      shippedBoxes += boxCount
+    }
 
     // コンテナ集計
     const contType = it.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
@@ -387,6 +395,9 @@ export default async function ShipmentsPage({
     boxes: data.boxes,
   }))
 
+  // 冷蔵庫在庫の初期値（手動設定値があればそれ、なければ「前日繰越 + 本日途中仕上がり」）
+  const initialStock = hasManualStock ? currentInv.stock_containers : (prevCarryover + packedBoxes)
+
   // 追加フォーム用
   const [
     { data: allCustomers },
@@ -399,8 +410,6 @@ export default async function ShipmentsPage({
   ])
   const packsByPair: Record<string, number | null> = {}
   for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
-
-  const unconfirmedCount = pendingReceiptCount ?? 0
 
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
@@ -435,21 +444,6 @@ export default async function ShipmentsPage({
         </Link>
       </div>
 
-      {/* B案：判別不能・要確認の未確定FAXがある場合の最上部赤バナー */}
-      {unconfirmedCount > 0 && (
-        <a
-          href={isAdmin ? '/admin/inbox' : '/field/approvals'}
-          className="flex items-center justify-between gap-2 rounded-2xl border-2 border-red-500 bg-red-50 px-4 py-3 text-red-900 shadow-sm transition hover:bg-red-100"
-        >
-          <div className="flex items-center gap-2 text-sm font-black">
-            <span>🚨 未確定・要確認のFAXが {unconfirmedCount} 件あります</span>
-          </div>
-          <span className="shrink-0 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white shadow-xs">
-            タップして確認 →
-          </span>
-        </a>
-      )}
-
       {/* ① 最上部：品目セレクタ（タブ） */}
       <ProductSelectorTabs
         products={productTabs}
@@ -468,6 +462,8 @@ export default async function ShipmentsPage({
           totalBoxes={totalBoxes}
           initialStock={initialStock}
           prevCarryover={prevCarryover}
+          interimPackedBoxes={packedBoxes}
+          hasManualStock={hasManualStock}
           containerBreakdown={containerBreakdown}
           specBreakdown={specBreakdown}
         />

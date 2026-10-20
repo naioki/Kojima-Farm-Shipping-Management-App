@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { invoiceStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -46,4 +47,52 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   })
 
   return NextResponse.json({ invoice: updated })
+}
+
+/**
+ * 請求書の削除（admin のみ）。
+ * 誤作成した請求書の取り消し・再作成用。invoice_items はカスケード削除。
+ */
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const user = await getAuthedUser()
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const supabase = createClient()
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profile?.role !== 'admin') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
+  const { data: current, error: currentErr } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, customer_id, billing_month, total_amount, status')
+    .eq('id', params.id)
+    .maybeSingle()
+  if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 })
+  if (!current) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+
+  const admin = createAdminClient()
+  const { error: delErr } = await admin
+    .from('invoices')
+    .delete()
+    .eq('id', params.id)
+
+  if (delErr) {
+    return NextResponse.json({ error: delErr.message }, { status: 500 })
+  }
+
+  await writeAudit(admin, {
+    entityType: 'invoices',
+    entityId: params.id,
+    action: 'DELETE',
+    oldValues: current,
+    newValues: null,
+    userId: user.id,
+  })
+
+  return NextResponse.json({ ok: true, deletedId: params.id })
 }

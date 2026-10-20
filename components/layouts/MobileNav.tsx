@@ -150,7 +150,9 @@ export function MobileNav({
                   <UserRound className="h-4 w-4" aria-hidden />
                 </span>
                 <div className="min-w-0 leading-tight">
-                  <div className="truncate text-sm font-medium text-white">{user.name}</div>
+                  <div className="truncate text-sm font-medium text-white">
+                    {user.roleLabel === '経営者' ? '小島農園' : user.name}
+                  </div>
                   <div className="text-[11px] text-forest-200">{user.roleLabel}</div>
                 </div>
               </div>

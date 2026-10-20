@@ -19,7 +19,7 @@ describe('findActiveHref（最長一致・単一アクティブ）', () => {
 
   it('詳細ページ（サブパス）でも親メニューに一致する', () => {
     expect(findActiveHref('/admin/orders/123', adminHrefs)).toBe('/admin/orders')
-    expect(findActiveHref('/admin/customers/abc/edit', adminHrefs)).toBe('/admin/customers')
+    expect(findActiveHref('/admin/invoices/abc', adminHrefs)).toBe('/admin/invoices')
   })
 
   it('前方一致が重なる href では長い方が勝つ', () => {

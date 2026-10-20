@@ -307,12 +307,15 @@ export function ShipmentAddForm({
         </div>
       </div>
 
-      {/* モバイル用フローティング追加ボタン（下部スクロール不要でいつでも親指1タップ） */}
-      <div className="fixed bottom-6 right-6 z-40 sm:hidden">
+      {/* モバイル用フローティング追加ボタン（下部固定ナビバーと重ならないよう十分な高さを確保・背景と境界を明確化） */}
+      <div
+        className="fixed right-4 z-40 sm:hidden"
+        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-2xl hover:bg-forest-700 active:scale-90 transition-transform focus:outline-none focus:ring-4 focus:ring-forest-300/50"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-xl border-2 border-white ring-2 ring-forest-700/20 hover:bg-forest-700 active:scale-90 transition-all focus:outline-none focus:ring-4 focus:ring-forest-300/50"
           aria-label="出荷を新規追加"
         >
           <Plus className="h-7 w-7" aria-hidden />

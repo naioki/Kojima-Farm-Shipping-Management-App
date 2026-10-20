@@ -95,14 +95,16 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
         })}
       </div>
 
-      {/* ユーザーチップ */}
+      {/* ユーザーチップ（経営者欄には個人の名前を出さず、農園名を表示） */}
       {user && (
         <div className="mt-3 flex items-center gap-2.5 rounded-lg bg-forest-700/60 px-3 py-2.5">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forest-500 text-white">
             <UserRound className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-medium text-white">{user.name}</div>
+            <div className="truncate text-sm font-medium text-white">
+              {user.roleLabel === '経営者' ? '小島農園' : user.name}
+            </div>
             <div className="text-[11px] text-forest-200">{user.roleLabel}</div>
           </div>
         </div>

@@ -25,6 +25,8 @@ interface HarvestPulseSummaryProps {
   totalBoxes: number
   initialStock: number
   prevCarryover: number
+  interimPackedBoxes?: number
+  hasManualStock?: boolean
   containerBreakdown: ContainerBreakdownItem[]
   specBreakdown: SpecBreakdownItem[]
 }
@@ -37,11 +39,18 @@ export function HarvestPulseSummary({
   totalBoxes,
   initialStock,
   prevCarryover,
+  interimPackedBoxes = 0,
+  hasManualStock = false,
   containerBreakdown,
   specBreakdown,
 }: HarvestPulseSummaryProps) {
-  const [stock, setStock] = useState<number>(initialStock)
-  const [tempStock, setTempStock] = useState<number>(initialStock)
+  // 手動入力値がない場合は「前日繰越 + 本日途中仕上がり」で自動計算（手入力不要）
+  const autoStock = prevCarryover + interimPackedBoxes
+  const defaultStock = hasManualStock ? initialStock : autoStock
+
+  const [stock, setStock] = useState<number>(defaultStock)
+  const [tempStock, setTempStock] = useState<number>(defaultStock)
+  const [isManualOverride, setIsManualOverride] = useState<boolean>(hasManualStock)
   const [carryover, setCarryover] = useState<number>(0)
   const [tempCarryover, setTempCarryover] = useState<number>(0)
   const [isEditingStock, setIsEditingStock] = useState<boolean>(false)
@@ -74,6 +83,7 @@ export function HarvestPulseSummary({
       if (!res.ok) throw new Error('在庫の保存に失敗しました')
       setStock(validStock)
       setTempStock(validStock)
+      setIsManualOverride(true)
       setIsEditingStock(false)
       toast.success('冷蔵庫在庫を更新しました')
     } catch (e) {
@@ -215,6 +225,20 @@ export function HarvestPulseSummary({
                   >
                     {busy ? '保存中...' : '確定'}
                   </button>
+                  {isManualOverride && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        saveStock(autoStock)
+                        setIsManualOverride(false)
+                      }}
+                      className="h-9 rounded-lg bg-white/20 px-2 text-[10px] font-bold text-white hover:bg-white/30"
+                      title="前日繰越と途中仕上がりからの自動計算に戻す"
+                    >
+                      自動計算に戻す
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -222,8 +246,10 @@ export function HarvestPulseSummary({
                 <span className="num mt-0.5 block text-xl font-black text-white tabular-nums">
                   {stock.toLocaleString()} <small className="text-xs font-bold text-white/80">箱</small>
                 </span>
-                <span className="text-[10px] text-emerald-200/80">
-                  {prevCarryover > 0 && stock === prevCarryover ? '※前日余りを自動引継済' : '手動入力値'}
+                <span className="text-[10px] text-emerald-200/90 font-medium">
+                  {isManualOverride
+                    ? '※手動指定値'
+                    : `自動反映（前日 ${prevCarryover}箱 ＋ 途中 ${interimPackedBoxes}箱）`}
                 </span>
               </>
             )}

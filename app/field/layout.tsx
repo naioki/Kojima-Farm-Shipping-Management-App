@@ -5,13 +5,13 @@ import { FieldBottomBar, type FieldAction } from '@/components/field/FieldBottom
 import { ConnectionStatus } from '@/components/field/ConnectionStatus'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 
+export const dynamic = 'force-dynamic'
+
 /**
- * 圃場（staff）画面の認証ガード＋下部バー（タブレット最優先）。
- * 未認証は /login へ。role は users テーブルから取得しナビ出し分けに使う。
- * admin/staff 共通で /field 配下にアクセスできる（admin も現場状況を見られる）。
- * 現場は「下部バー（今日の出荷＋その他）」を主動線にし、全画面ナビは上部ハンバーガー（MobileNav
- * を persistent で常時表示）に集約する。大きいサイドバーはタブレット横で場所を食い下部バーと重複する
- * ため /field では出さない（管理者のPC全機能アクセスはハンバーガーが担う）。
+ * 現場（スタッフ・作業者）サーフェスの外枠。
+ * - MobileNav は persistent（lg 以上でもハンバーガーを残す：タブレット/PC で全画面作業）。
+ * - FieldBottomBar（画面最下部固定の3ボタン、design.md）。
+ * - 現場向け権限チェック: 未ログインは /login へ。admin は全機能パス、staff は解放済み機能のみ。
  */
 export default async function FieldLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthedUser()
@@ -26,7 +26,8 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
   if (profileErr) console.error('[field/layout] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
-  const name = profile?.full_name?.trim() || user.email?.split('@')[0] || 'ユーザー'
+  // 経営者欄には個人の名前を出さず、農園名「小島農園」を表示する
+  const name = role === 'admin' ? '小島農園' : (profile?.full_name?.trim() || user.email?.split('@')[0] || 'スタッフ')
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
 
   // 解放済み機能を「その他」ドロワーに並べる（admin は常に全許可）。
