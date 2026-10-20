@@ -36,7 +36,7 @@ export default async function DeliveriesPage({
   // その日の出荷対象注文（キャンセルは除外）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('id, customer_id, destination_id, status, note')
+    .select('id, customer_id, destination_id, status, note, shipping_time')
     .eq('delivery_date', date)
     .neq('status', 'cancelled')
   if (ordersErr) return <ErrorState message={ordersErr.message} />
@@ -134,13 +134,15 @@ export default async function DeliveriesPage({
     destName: string | null,
     customerName: string,
     dest?: DestRow | null,
+    orderShippingTime?: string | null,
   ): { title: string; departureTime: string | null } {
-    if (dest?.shipping_route_name || dest?.departure_time) {
-      const timePrefix = dest.departure_time ? `${dest.departure_time}発` : ''
-      const routeSuffix = dest.shipping_route_name ? ` ${dest.shipping_route_name}` : ''
+    const effectiveTime = orderShippingTime || dest?.departure_time || null
+    if (dest?.shipping_route_name || effectiveTime) {
+      const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
+      const routeSuffix = dest?.shipping_route_name ? ` ${dest.shipping_route_name}` : ''
       return {
         title: `${timePrefix}${routeSuffix}`.trim(),
-        departureTime: dest.departure_time ?? null,
+        departureTime: effectiveTime,
       }
     }
     const d = destName ?? ''
@@ -184,7 +186,7 @@ export default async function DeliveriesPage({
     const dest = order.destination_id ? destById.get(order.destination_id) : null
     const destName = dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note) || '直接納品'
 
-    const routeInfo = resolveRouteInfo(destName, customerName, dest)
+    const routeInfo = resolveRouteInfo(destName, customerName, dest, order.shipping_time)
 
     let cEntry = customerGroupMap.get(order.customer_id)
     if (!cEntry) {
@@ -224,7 +226,7 @@ export default async function DeliveriesPage({
         destinationId: order.destination_id ?? null,
         destinationName: destName,
         shippingRouteName: dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null),
-        departureTime: dest?.departure_time || routeInfo.departureTime,
+        departureTime: order.shipping_time || dest?.departure_time || routeInfo.departureTime,
         containerType: it.container_type || null,
         cases: 0,
         loose: 0,
@@ -239,8 +241,8 @@ export default async function DeliveriesPage({
       if (!dEntry.containerType && it.container_type) {
         dEntry.containerType = it.container_type
       }
-      if (!dEntry.departureTime && (dest?.departure_time || routeInfo.departureTime)) {
-        dEntry.departureTime = dest?.departure_time || routeInfo.departureTime
+      if (!dEntry.departureTime && (order.shipping_time || dest?.departure_time || routeInfo.departureTime)) {
+        dEntry.departureTime = order.shipping_time || dest?.departure_time || routeInfo.departureTime
       }
       if (!dEntry.shippingRouteName && (dest?.shipping_route_name || routeInfo.title)) {
         dEntry.shippingRouteName = dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null)
