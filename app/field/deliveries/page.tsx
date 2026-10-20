@@ -257,7 +257,10 @@ export default async function DeliveriesPage({
     const destKey = order.destination_id || `name:${destName}`
     let dEntry = cEntry.destinationsMap.get(destKey)
     if (!dEntry) {
-      const delStatus = deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.status ?? 'planned'
+      const delStatus =
+        deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.status ??
+        deliveryByKey.get(`${order.customer_id}:`)?.status ??
+        'planned'
       dEntry = {
         destinationId: order.destination_id ?? null,
         destinationName: destName,

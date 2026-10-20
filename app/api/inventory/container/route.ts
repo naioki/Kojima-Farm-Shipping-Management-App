@@ -82,8 +82,17 @@ export async function POST(req: NextRequest) {
     product_id: productId,
     updated_at: new Date().toISOString(),
   }
-  if (stockContainers !== undefined) payload.stock_containers = Math.max(0, Number(stockContainers) || 0)
-  if (carryoverToNextDay !== undefined) payload.carryover_to_next_day = Math.max(0, Number(carryoverToNextDay) || 0)
+  const normalizedStock =
+    stockContainers === undefined ? undefined : stockContainers === null ? null : Math.max(0, Number(stockContainers) || 0)
+  const normalizedCarryover =
+    carryoverToNextDay === undefined
+      ? undefined
+      : carryoverToNextDay === null
+        ? null
+        : Math.max(0, Number(carryoverToNextDay) || 0)
+
+  if (normalizedStock !== undefined) payload.stock_containers = normalizedStock
+  if (normalizedCarryover !== undefined) payload.carryover_to_next_day = normalizedCarryover
 
   const { data, error } = await admin
     .from('daily_container_inventory')
@@ -94,16 +103,16 @@ export async function POST(req: NextRequest) {
     // 0026未適用環境（daily_container_inventory不在）の場合は app_settings にフォールバック保存
     try {
       await writeFallbackInventory(admin, productId, date, {
-        stock_containers: stockContainers !== undefined ? Math.max(0, Number(stockContainers) || 0) : undefined,
-        carryover_to_next_day: carryoverToNextDay !== undefined ? Math.max(0, Number(carryoverToNextDay) || 0) : undefined,
+        stock_containers: normalizedStock,
+        carryover_to_next_day: normalizedCarryover,
       })
       return NextResponse.json({
         ok: true,
         data: {
           target_date: date,
           product_id: productId,
-          stock_containers: stockContainers !== undefined ? Math.max(0, Number(stockContainers) || 0) : null,
-          carryover_to_next_day: carryoverToNextDay !== undefined ? Math.max(0, Number(carryoverToNextDay) || 0) : null,
+          stock_containers: normalizedStock ?? null,
+          carryover_to_next_day: normalizedCarryover ?? null,
         },
       })
     } catch (fbErr: unknown) {

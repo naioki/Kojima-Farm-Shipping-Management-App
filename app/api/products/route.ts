@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { productCreateSchema } from '@/types/database'
 
 export const runtime = 'nodejs'
 
 /**
- * 商品（品目）の新規作成（設定から追加）。admin のみ（RLS）。
+ * 商品（品目）の新規作成（設定から追加）。
  * 週間マトリックスの品目タブ・スマート追加の選択肢になる。
  * default_tax_rate はマスタ既定であり、計算には order_items.tax_rate を使う（tax.md）。
  */
@@ -18,11 +19,11 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const supabase = createClient()
+  const admin = createAdminClient()
 
   // 基準単位（base_unit）を正とし、旧 unit も同値で揃える（二重単位を解消）。
   const baseUnit = parsed.data.base_unit
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from('products')
     .insert({
       name: parsed.data.name,
@@ -33,6 +34,7 @@ export async function POST(req: Request) {
       default_tax_rate: parsed.data.default_tax_rate,
       container_capacity: parsed.data.container_capacity ?? null,
       default_unit_price: parsed.data.default_unit_price ?? null,
+      is_active: true,
     })
     .select('id, name')
     .single()

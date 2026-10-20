@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { AlertTriangle, ChevronRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { AddProductForm } from '@/components/admin/AddProductForm'
@@ -18,10 +18,11 @@ export default async function ProductsPage() {
   const guard = await requireAdmin('商品設定は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: products, error } = await supabase
     .from('products')
     .select('id, name, name_kana, unit, base_unit, category, default_tax_rate, stock_qty, is_active')
+    .order('is_active', { ascending: false })
     .order('category', { nullsFirst: false })
     .order('name')
   if (error) return <ErrorState message={error.message} />
@@ -68,7 +69,10 @@ export default async function ProductsPage() {
         <EmptyState title="品目がありません" description="上のフォームから追加してください。" />
       ) : (
         <Card className="space-y-3">
-          <h2 className="font-display text-base font-bold text-ink">品目一覧・在庫</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display text-base font-bold text-ink">品目一覧・在庫</h2>
+            <span className="text-xs text-ink-soft">※内容を変更したら各行の「保存」を押してください（有効切替・削除は即時反映）</span>
+          </div>
           <ProductsTable products={rows} categories={categories} />
         </Card>
       )}

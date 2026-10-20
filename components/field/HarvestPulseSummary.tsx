@@ -26,6 +26,7 @@ interface HarvestPulseSummaryProps {
   totalBoxes: number
   initialStock: number
   prevCarryover: number
+  initialCarryover?: number
   interimPackedBoxes?: number
   hasManualStock?: boolean
   containerBreakdown: ContainerBreakdownItem[]
@@ -42,6 +43,7 @@ export function HarvestPulseSummary({
   totalBoxes,
   initialStock,
   prevCarryover,
+  initialCarryover = 0,
   interimPackedBoxes = 0,
   hasManualStock = false,
   containerBreakdown,
@@ -57,9 +59,9 @@ export function HarvestPulseSummary({
   const [stock, setStock] = useState<number>(defaultStock)
   const [tempStockStr, setTempStockStr] = useState<string>(String(defaultStock))
   const [isManualOverride, setIsManualOverride] = useState<boolean>(hasManualStock)
-  const [carryover, setCarryover] = useState<number>(0)
-  const [tempCarryover, setTempCarryover] = useState<number>(0)
-  const [tempCarryoverStr, setTempCarryoverStr] = useState<string>('0')
+  const [carryover, setCarryover] = useState<number>(initialCarryover)
+  const [tempCarryover, setTempCarryover] = useState<number>(initialCarryover)
+  const [tempCarryoverStr, setTempCarryoverStr] = useState<string>(String(initialCarryover))
   const [isEditingStock, setIsEditingStock] = useState<boolean>(false)
   const [isEditingCarryover, setIsEditingCarryover] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
@@ -69,9 +71,12 @@ export function HarvestPulseSummary({
     setStock(defaultStock)
     setTempStockStr(String(defaultStock))
     setIsManualOverride(hasManualStock)
+    setCarryover(initialCarryover)
+    setTempCarryover(initialCarryover)
+    setTempCarryoverStr(String(initialCarryover))
     setIsEditingStock(false)
     setIsEditingCarryover(false)
-  }, [productId, date, defaultStock, hasManualStock])
+  }, [productId, date, defaultStock, hasManualStock, initialCarryover])
 
   // 今日畑で採るべき箱数 = max(0, 注文合計箱数 - 在庫箱数)
   const harvestNeededBoxes = Math.max(0, totalBoxes - stock)
@@ -87,8 +92,8 @@ export function HarvestPulseSummary({
         ? Math.max(0, Math.round(totalPacks * (harvestNeededBoxes / totalBoxes)))
         : 0
 
-  const saveStock = async (newStock: number) => {
-    const validStock = Math.max(0, Number(newStock) || 0)
+  const saveStock = async (newStock: number | null) => {
+    const validStock = newStock === null ? null : Math.max(0, Number(newStock) || 0)
     setBusy(true)
     try {
       const res = await fetch('/api/inventory/container', {
@@ -104,11 +109,18 @@ export function HarvestPulseSummary({
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error ?? '在庫の保存に失敗しました')
       }
-      setStock(validStock)
-      setTempStockStr(String(validStock))
-      setIsManualOverride(true)
+      if (validStock === null) {
+        setStock(autoStock)
+        setTempStockStr(String(autoStock))
+        setIsManualOverride(false)
+        toast.success('自動計算（前日繰越＋途中仕上がり）に戻しました')
+      } else {
+        setStock(validStock)
+        setTempStockStr(String(validStock))
+        setIsManualOverride(true)
+        toast.success('在庫を更新しました')
+      }
       setIsEditingStock(false)
-      toast.success('在庫を更新しました')
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '更新に失敗しました')
@@ -288,10 +300,7 @@ export function HarvestPulseSummary({
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => {
-                        saveStock(autoStock)
-                        setIsManualOverride(false)
-                      }}
+                      onClick={() => void saveStock(null)}
                       className="h-9 rounded-lg bg-white/20 px-2.5 text-xs font-bold text-white hover:bg-white/30"
                       title="前日繰越と途中仕上がりからの自動計算に戻す"
                     >

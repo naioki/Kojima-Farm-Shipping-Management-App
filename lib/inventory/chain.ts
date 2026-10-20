@@ -11,6 +11,8 @@ export interface ChainInventoryResult {
   hasManualStock: boolean
   /** 当日の手動指定値（設定されている場合） */
   manualStock: number | null
+  /** 当日の夕方登録済み翌朝持ち越し数 */
+  todayCarryover?: number
 }
 
 export type FallbackInventoryRecord = Record<
@@ -226,11 +228,14 @@ export async function calculateChainInventory(
   const currentDayInv = invByDate.get(targetDate)
   const hasManual = currentDayInv?.stock_containers != null
   const effectiveStock = hasManual ? currentDayInv.stock_containers! : prevCarryover
+  const todayCarryover =
+    currentDayInv?.carryover_to_next_day != null ? Math.max(0, Number(currentDayInv.carryover_to_next_day) || 0) : 0
 
   return {
     effectiveStock,
     inheritedCarryover: prevCarryover,
     hasManualStock: hasManual,
     manualStock: hasManual ? currentDayInv.stock_containers! : null,
+    todayCarryover,
   }
 }

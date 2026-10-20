@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { productUpdateSchema } from '@/types/database'
 
 export const runtime = 'nodejs'
 
 /**
- * 商品の更新（編集・在庫調整）。admin のみ（RLS）。
+ * 商品の更新（編集・在庫調整）。
  * default_tax_rate はマスタ既定。請求計算には order_items.tax_rate を使う（tax.md）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -39,8 +40,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'no_fields' }, { status: 400 })
   }
 
-  const supabase = createClient()
-  const { data, error } = await supabase
+  const admin = createAdminClient()
+  const { data, error } = await admin
     .from('products')
     .update(updates)
     .eq('id', params.id)
@@ -53,51 +54,72 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 /**
- * 商品の物理削除（admin のみ）。
- * 注文履歴・取引ルール・収穫見込み等から参照されている品目は履歴/税務保護のため削除不可（409）。
- * その場合は「有効」をオフ（ソフト削除＝一覧・選択肢から非表示）で対応する。
- * 未使用（打ち間違い等）の品目のみ物理削除を許可する。
+ * 商品の削除。
+ * - 注文明細（order_items）の履歴が0件の品目は、紐づく取引ルール・荷姿・価格設定等を自動クリーンアップして物理削除する。
+ * - 過去の注文明細が存在する品目は、請求・出荷履歴を壊さないよう自動で is_active = false（アーカイブ削除）にし、一覧・選択肢から即座に除外する。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const id = params.id
-  const supabase = createClient()
+  const admin = createAdminClient()
 
-  // 参照の有無を確認（分かりやすいメッセージ用）。DBの外部キーも最終防壁になる。
-  const [oi, cpr, he] = await Promise.all([
-    supabase.from('order_items').select('id', { count: 'exact', head: true }).eq('product_id', id),
-    supabase.from('customer_product_rules').select('id', { count: 'exact', head: true }).eq('product_id', id),
-    supabase.from('harvest_estimates').select('id', { count: 'exact', head: true }).eq('product_id', id),
-  ])
-  const reasons: string[] = []
-  if ((oi.count ?? 0) > 0) reasons.push('注文・出荷の履歴')
-  if ((cpr.count ?? 0) > 0) reasons.push('取引先の取引ルール')
-  if ((he.count ?? 0) > 0) reasons.push('収穫見込み')
-  if (reasons.length > 0) {
-    return NextResponse.json(
-      {
-        error: 'in_use',
-        reasons,
-        message: `使用中のため削除できません（${reasons.join('・')}）。代わりに「有効」をオフにすると一覧・選択肢から非表示にできます。`,
-      },
-      { status: 409 },
-    )
-  }
+  // 注文明細（実取引データ）の参照有無を確認
+  const { count: orderItemCount } = await admin
+    .from('order_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('product_id', id)
 
-  const { data, error } = await supabase.from('products').delete().eq('id', id).select('id').maybeSingle()
-  if (error) {
-    // 外部キー違反（他テーブルからの参照）も使用中として扱う
-    if (error.code === '23503') {
-      return NextResponse.json(
-        { error: 'in_use', message: '使用中のため削除できません。代わりに「有効」をオフにしてください。' },
-        { status: 409 },
-      )
+  if ((orderItemCount ?? 0) === 0) {
+    // 注文履歴が無い場合は、付随するマスタ・設定テーブルの参照をクリーンアップして完全物理削除を試みる
+    await Promise.allSettled([
+      admin.from('price_rules').delete().eq('product_id', id),
+      admin.from('pack_configs').delete().eq('product_id', id),
+      admin.from('customer_product_rules').delete().eq('product_id', id),
+      admin.from('harvest_tasks').delete().eq('product_id', id),
+      admin.from('harvest_estimates').delete().eq('product_id', id),
+      admin.from('ai_learning_examples').update({ product_id: null }).eq('product_id', id),
+      admin.from('spec_reports').update({ product_id: null }).eq('product_id', id),
+      admin.from('print_jobs').update({ product_id: null }).eq('product_id', id),
+      admin.from('app_settings').delete().eq('key', `v5_container_inv:${id}`),
+    ])
+
+    const { data, error } = await admin
+      .from('products')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .maybeSingle()
+
+    if (!error && data) {
+      return NextResponse.json({ deleted: true, mode: 'physical' })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-  if (!data) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
-  return NextResponse.json({ deleted: true })
+    // 万が一他テーブルの外部キー制約（23503）が残っていた場合はエラーにせずアーカイブ削除へフォールバック
+    if (error && error.code !== '23503') {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+  }
+
+  // 過去の注文履歴がある場合（またはFK保護が働いた場合）は is_active = false に更新して一覧から削除（アーカイブ）
+  const { data: archived, error: archErr } = await admin
+    .from('products')
+    .update({ is_active: false })
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (archErr) {
+    return NextResponse.json({ error: archErr.message }, { status: 500 })
+  }
+  if (!archived) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  }
+
+  return NextResponse.json({
+    deleted: true,
+    mode: 'archived',
+    message: '過去の注文履歴を保護しつつ、品目一覧から削除しました。',
+  })
 }

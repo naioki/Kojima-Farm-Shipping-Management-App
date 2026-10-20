@@ -483,6 +483,7 @@ export default async function ShipmentsPage({
           totalBoxes={totalBoxes}
           initialStock={initialStock}
           prevCarryover={prevCarryover}
+          initialCarryover={chainInventory.todayCarryover ?? 0}
           interimPackedBoxes={packedBoxes}
           hasManualStock={hasManualStock}
           containerBreakdown={containerBreakdown}
