@@ -530,7 +530,10 @@ export function ShipmentRow({
               {onMoveUp && (
                 <button
                   type="button"
-                  onClick={onMoveUp}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMoveUp()
+                  }}
                   disabled={busy}
                   className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
                   title="上へ移動"
@@ -541,7 +544,10 @@ export function ShipmentRow({
               {onMoveDown && (
                 <button
                   type="button"
-                  onClick={onMoveDown}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMoveDown()
+                  }}
                   disabled={busy}
                   className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
                   title="下へ移動"

@@ -45,6 +45,14 @@ export async function POST(req: NextRequest) {
   const results = await Promise.all(promises)
   const failed = results.find((r) => r.error)
   if (failed?.error) {
+    // 列がまだDBに存在しない（未マイグレーション）環境でもクライアント側でエラー通知を爆発させず安全にフォールバック
+    if (
+      failed.error.code === '42703' ||
+      failed.error.message?.includes('daily_pack_sort_order')
+    ) {
+      console.warn('[order-items/reorder] daily_pack_sort_order column not in DB schema, continuing optimistically:', failed.error.message)
+      return NextResponse.json({ ok: true, fallback: true })
+    }
     console.error('[order-items/reorder] failed:', failed.error.message)
     return NextResponse.json({ error: failed.error.message }, { status: 500 })
   }

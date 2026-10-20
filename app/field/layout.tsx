@@ -31,7 +31,7 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen flex-col">
       <MobileNav role={role} persistent user={{ name, roleLabel }} />
-      <main className="flex-1 p-4 pb-10 lg:p-8">{children}</main>
+      <main className="flex-1 p-4 pb-4 lg:p-8">{children}</main>
       {/* 圏外インジケーター（features.md §10 失敗#4） */}
       <ConnectionStatus />
     </div>
