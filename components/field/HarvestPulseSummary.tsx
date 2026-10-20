@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, PackageCheck, Tractor, Box, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
@@ -56,6 +56,15 @@ export function HarvestPulseSummary({
   const [isEditingStock, setIsEditingStock] = useState<boolean>(false)
   const [isEditingCarryover, setIsEditingCarryover] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
+
+  // 品目タブ切り替え・日付変更時に最新の集計値と状態を確実に同期
+  useEffect(() => {
+    setStock(defaultStock)
+    setTempStock(defaultStock)
+    setIsManualOverride(hasManualStock)
+    setIsEditingStock(false)
+    setIsEditingCarryover(false)
+  }, [productId, date, defaultStock, hasManualStock])
 
   // 今日畑で採るべき箱数 = max(0, 注文合計箱数 - 在庫箱数)
   const harvestNeededBoxes = Math.max(0, totalBoxes - stock)

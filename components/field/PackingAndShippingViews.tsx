@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Truck, Package, Clock, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
@@ -36,6 +36,11 @@ export function PackingAndShippingViews({
   const [activeTab, setActiveTab] = useState<'pack' | 'ship'>('pack')
   const [items, setItems] = useState<ShipmentItemData[]>(initialItems)
   const [busyReorder, setBusyReorder] = useState<boolean>(false)
+
+  // サーバー側や親コンポーネント（日付変更・品目タブ切り替え）から届く最新の明細リストを確実に同期
+  useEffect(() => {
+    setItems(initialItems)
+  }, [initialItems])
 
   // パック画面用ソート: 管理者指定順 (dailyPackSortOrder) -> 納品先デフォルト順 (defaultPackSortOrder)
   const sortedPackItems = [...items].sort((a, b) => {
@@ -178,8 +183,8 @@ export function PackingAndShippingViews({
                 {...item}
                 deliveryDate={date}
                 isAdmin={isAdmin}
-                onMoveUp={idx > 0 ? () => handleMove(idx, 'up') : undefined}
-                onMoveDown={idx < sortedPackItems.length - 1 ? () => handleMove(idx, 'down') : undefined}
+                onMoveUp={!busyReorder && idx > 0 ? () => handleMove(idx, 'up') : undefined}
+                onMoveDown={!busyReorder && idx < sortedPackItems.length - 1 ? () => handleMove(idx, 'down') : undefined}
                 onStatusChange={handleStatusChange}
               />
             ))}

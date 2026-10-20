@@ -246,84 +246,154 @@ export function ShipmentAddForm({
 
   const destinationRequired = customerDestinations.length >= 2
 
+  /**
+   * スマホ撮影写真（5MB〜12MB）による 413 Payload Too Large を防ぐため、
+   * クライアント側で長辺最大 1600px・JPEG品質 0.8 に縮小圧縮する。
+   */
+  async function compressImageFile(file: File): Promise<{ dataUrl: string; base64: string; mime: string }> {
+    if (!file.type.startsWith('image/')) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string
+          resolve({
+            dataUrl,
+            base64: dataUrl.split(',')[1] || '',
+            mime: file.type || 'application/octet-stream',
+          })
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const img = new Image()
+        img.onload = () => {
+          const MAX_DIM = 1600
+          let { width, height } = img
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width)
+              width = MAX_DIM
+            } else {
+              width = Math.round((width * MAX_DIM) / height)
+              height = MAX_DIM
+            }
+          }
+
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            const dataUrl = e.target?.result as string
+            resolve({
+              dataUrl,
+              base64: dataUrl.split(',')[1] || '',
+              mime: file.type || 'image/jpeg',
+            })
+            return
+          }
+          ctx.drawImage(img, 0, 0, width, height)
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8)
+          const base64 = compressedDataUrl.split(',')[1] || ''
+          resolve({
+            dataUrl: compressedDataUrl,
+            base64,
+            mime: 'image/jpeg',
+          })
+        }
+        img.onerror = () => {
+          const dataUrl = e.target?.result as string
+          resolve({
+            dataUrl,
+            base64: dataUrl.split(',')[1] || '',
+            mime: file.type || 'image/jpeg',
+          })
+        }
+        img.src = e.target?.result as string
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
   // 📷 写真アップロード & AI解析ハンドラ
   async function handlePhotoFile(file: File) {
-    const reader = new FileReader()
-    reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string
-      if (!dataUrl) return
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    setAnalyzingPhoto(true)
+    setMissingDatePrompt(false)
+    setRawAiCustomerName(null)
+    setRawAiProductName(null)
+
+    try {
+      const { dataUrl, base64, mime } = await compressImageFile(file)
       setPhotoPreview(dataUrl)
-      const base64 = dataUrl.split(',')[1]
-      const mime = file.type || 'image/jpeg'
 
-      setAnalyzingPhoto(true)
-      setMissingDatePrompt(false)
-      setRawAiCustomerName(null)
-      setRawAiProductName(null)
+      const res = await fetch('/api/ocr/analyze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mimeType: mime }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
 
-      try {
-        const res = await fetch('/api/ocr/analyze', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64, mimeType: mime }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
-
-        const parsedOrder = data.orders?.[0]
-        if (!parsedOrder) {
-          toast('注文情報を特定できませんでした。手動で入力してください。', { icon: 'ℹ️' })
-          setMode('manual')
-          return
-        }
-
-        // 1. 取引先マッチング
-        const cName = parsedOrder.customer_name?.trim() || ''
-        setRawAiCustomerName(cName || null)
-        const matchedCust = customers.find(
-          (c) => c.name.includes(cName) || cName.includes(c.name),
-        )
-        if (matchedCust) {
-          setCustomerId(matchedCust.id)
-        }
-
-        // 2. 納品日の確認・聞き返し
-        if (parsedOrder.delivery_date) {
-          setTargetDate(parsedOrder.delivery_date)
-          setMissingDatePrompt(false)
-        } else {
-          // 日付が不明な場合は聞き返しプロンプトをONにする
-          setMissingDatePrompt(true)
-        }
-
-        // 3. 品目・数量のマッチング
-        const firstItem = parsedOrder.items?.[0]
-        if (firstItem) {
-          const pName = firstItem.product_name || firstItem.raw_name || ''
-          setRawAiProductName(pName)
-          const matchedProd = products.find(
-            (p) => p.name.includes(pName) || pName.includes(p.name) || (pName.includes('チンゲン') && p.name.includes('青梗菜')),
-          )
-          if (matchedProd) {
-            setProductId(matchedProd.id)
-            setSelectedCategory(resolveProductCategory(matchedProd))
-          }
-
-          if (firstItem.cases != null && firstItem.cases > 0) {
-            setQtyRaw(`${firstItem.cases}c`)
-          } else if (firstItem.quantity) {
-            setQtyRaw(String(firstItem.quantity))
-          }
-        }
-
-        toast.success('画像を読み取りました！内容を確認して確定してください')
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : '読み取りに失敗しました')
-      } finally {
-        setAnalyzingPhoto(false)
+      const parsedOrder = data.orders?.[0]
+      if (!parsedOrder) {
+        toast('注文情報を特定できませんでした。手動で入力してください。', { icon: 'ℹ️' })
+        setMode('manual')
+        return
       }
+
+      // 1. 取引先マッチング
+      const cName = parsedOrder.customer_name?.trim() || ''
+      setRawAiCustomerName(cName || null)
+      const matchedCust = customers.find(
+        (c) => c.name.includes(cName) || cName.includes(c.name),
+      )
+      if (matchedCust) {
+        setCustomerId(matchedCust.id)
+      }
+
+      // 2. 納品日の確認・聞き返し
+      if (parsedOrder.delivery_date) {
+        setTargetDate(parsedOrder.delivery_date)
+        setMissingDatePrompt(false)
+      } else {
+        // 日付が不明な場合は聞き返しプロンプトをONにする
+        setMissingDatePrompt(true)
+      }
+
+      // 3. 品目・数量のマッチング
+      const firstItem = parsedOrder.items?.[0]
+      if (firstItem) {
+        const pName = firstItem.product_name || firstItem.raw_name || ''
+        setRawAiProductName(pName)
+        const matchedProd = products.find(
+          (p) => p.name.includes(pName) || pName.includes(p.name) || (pName.includes('チンゲン') && p.name.includes('青梗菜')),
+        )
+        if (matchedProd) {
+          setProductId(matchedProd.id)
+          setSelectedCategory(resolveProductCategory(matchedProd))
+        }
+
+        if (firstItem.cases != null && firstItem.cases > 0) {
+          setQtyRaw(`${firstItem.cases}c`)
+        } else if (firstItem.quantity) {
+          setQtyRaw(String(firstItem.quantity))
+        }
+      }
+
+      toast.success('画像を読み取りました！内容を確認して確定してください')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '読み取りに失敗しました')
+    } finally {
+      setAnalyzingPhoto(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
-    reader.readAsDataURL(file)
   }
 
   // 納品日クイック計算

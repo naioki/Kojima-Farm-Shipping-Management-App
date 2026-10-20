@@ -162,6 +162,9 @@ export function ShipmentRow({
   // 行から開かずに「できた数」を素早く記録するクイック入力
   const [quickOpen, setQuickOpen] = useState(false)
   const [savingQuick, setSavingQuick] = useState(false)
+  // 現場メモ専用クイック入力
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
 
   const meta = FIELD_STATUS_META[status]
   const Icon = ICONS[meta.icon]
@@ -221,6 +224,7 @@ export function ShipmentRow({
       undoTimerRef.current = null
       setUndoGrace(null)
       onStatusSettled?.(itemId, rowStatusKey(settled, isPartial ? shippedNum : null, orderedQty))
+      router.refresh()
     }, UNDO_GRACE_MS)
   }
 
@@ -323,6 +327,7 @@ export function ShipmentRow({
         itemId,
         rowStatusKey(json.item.field_status, isPartial ? shippedNum : null, orderedQty),
       )
+      router.refresh()
     } catch (e) {
       setStatus(prev)
       toast.error(fieldErrorMessage(e, '戻す操作に失敗しました'))
@@ -393,6 +398,36 @@ export function ShipmentRow({
     }
   }
 
+  /** クイック入力：現場メモ（field_note）だけを即保存。集計値・画面状態も同期する。 */
+  async function saveQuickNote() {
+    setSavingNote(true)
+    try {
+      const res = await fetch(`/api/order-items/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          field_note: fieldNote.trim() || null,
+          version,
+        }),
+      })
+      if (res.status === 409) {
+        setConflict(true)
+        toast.error('競合しました。画面を更新してください')
+        return
+      }
+      if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
+      const json = (await res.json()) as { item: { version: number } }
+      setVersion(json.item.version)
+      toast.success('メモを保存しました')
+      setNoteOpen(false)
+      router.refresh()
+    } catch (e) {
+      toast.error(fieldErrorMessage(e, 'メモの保存に失敗しました'))
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
   /** クイック入力：できた数（shipped_qty）だけを即保存。荷姿・メモは触らない。 */
   async function saveQuick() {
     setSavingQuick(true)
@@ -415,6 +450,7 @@ export function ShipmentRow({
       setVersion(json.item.version)
       toast.success('できた数を記録しました')
       setQuickOpen(false)
+      router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))
     } finally {
@@ -476,7 +512,8 @@ export function ShipmentRow({
                 <button
                   type="button"
                   onClick={onMoveUp}
-                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                  disabled={busy}
+                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
                   title="上へ移動"
                 >
                   ▲
@@ -486,7 +523,8 @@ export function ShipmentRow({
                 <button
                   type="button"
                   onClick={onMoveDown}
-                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                  disabled={busy}
+                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
                   title="下へ移動"
                 >
                   ▼
@@ -631,11 +669,14 @@ export function ShipmentRow({
           )}
         </div>
 
-        {/* 2段目: 補助ボタン [ 途中数 ] [ 💬 メモ ]（大きく押しやすい2大ボタン） */}
+        {/* 2段目: 補助ボタン [ 途中数 ] [ 💬 メモ ]（大きく押しやすい2大ボタン・排他制御） */}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setQuickOpen(!quickOpen)}
+            onClick={() => {
+              setQuickOpen(!quickOpen)
+              if (!quickOpen) setNoteOpen(false)
+            }}
             className={cn(
               "h-12 rounded-xl border text-sm font-bold shadow-xs transition-all active:scale-[0.97]",
               isPartial
@@ -648,10 +689,18 @@ export function ShipmentRow({
 
           <button
             type="button"
-            onClick={() => setOpen(!open)}
-            className="h-12 rounded-xl border border-line-strong bg-white text-sm font-bold text-ink hover:bg-bg-soft active:scale-[0.97] shadow-xs"
+            onClick={() => {
+              setNoteOpen(!noteOpen)
+              if (!noteOpen) setQuickOpen(false)
+            }}
+            className={cn(
+              "h-12 rounded-xl border text-sm font-bold shadow-xs transition-all active:scale-[0.97]",
+              fieldNote.trim() !== ''
+                ? "border-blue-400 bg-blue-50 text-blue-950 font-black ring-1 ring-blue-300"
+                : "border-line-strong bg-white text-ink hover:bg-bg-soft",
+            )}
           >
-            💬 メモ
+            {fieldNote.trim() !== '' ? '💬 メモあり' : '💬 メモ'}
           </button>
         </div>
       </div>
@@ -695,17 +744,55 @@ export function ShipmentRow({
         <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-warning/40 bg-warning-bg/40 p-2">
           {specWarnings.map((w, i) =>
             w.type === 'forbidden' ? (
-              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold text-alert bg-alert/10">
+              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-bold text-alert bg-alert/10">
                 <AlertTriangle className="h-3 w-3" aria-hidden />
                 {w.text}
               </span>
             ) : (
-              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold text-harvest-700 bg-harvest-50">
+              <span key={i} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-bold text-harvest-700 bg-harvest-50">
                 <ShieldCheck className="h-3 w-3" aria-hidden />
                 {w.text}
               </span>
             ),
           )}
+        </div>
+      )}
+
+      {/* クイックメモ入力パネル */}
+      {noteOpen && (
+        <div className="mt-2 space-y-2 rounded-xl border border-blue-200 bg-blue-50/70 p-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-blue-950">現場メモ・特記事項:</span>
+            {fieldNote.trim() !== '' && (
+              <button
+                type="button"
+                onClick={() => setFieldNote('')}
+                className="text-xs text-ink-faint hover:text-ink font-bold"
+              >
+                クリア
+              </button>
+            )}
+          </div>
+          <input
+            type="text"
+            className={cn(fieldInput, 'h-10 text-sm font-bold text-ink')}
+            value={fieldNote}
+            onChange={(e) => setFieldNote(e.target.value)}
+            placeholder="例: 午前便に積込 / 黄コンテナ使用 / 傷み注意 等"
+            autoFocus
+          />
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setNoteOpen(false)}
+              className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+            >
+              閉じる
+            </button>
+            <Button size="sm" onClick={saveQuickNote} isLoading={savingNote}>
+              メモを保存
+            </Button>
+          </div>
         </div>
       )}
 
