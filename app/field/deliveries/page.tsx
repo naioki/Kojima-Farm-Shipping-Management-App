@@ -240,6 +240,10 @@ export default async function DeliveriesPage({
     if (deliveryNote?.trim()) {
       cEntry.notesSet.add(deliveryNote.trim())
     }
+    const customerDefaultNote = deliveryByKey.get(`${order.customer_id}:`)?.note
+    if (customerDefaultNote?.trim()) {
+      cEntry.notesSet.add(customerDefaultNote.trim())
+    }
 
     // 納品先マップへの追加（同一納品先が便やメモ違いで分裂しないよう、納品先IDまたは正規化名で1本化）
     const effectiveDepTime = override?.departureTime !== undefined

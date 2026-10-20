@@ -50,7 +50,47 @@ export async function POST(req: NextRequest) {
       failed.error.code === '42703' ||
       failed.error.message?.includes('daily_pack_sort_order')
     ) {
-      console.warn('[order-items/reorder] daily_pack_sort_order column not in DB schema, continuing optimistically:', failed.error.message)
+      console.warn('[order-items/reorder] daily_pack_sort_order column not in DB schema, falling back to app_settings:', failed.error.message)
+      try {
+        const { data: settingRow } = await admin
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'v5_pack_sort_order')
+          .maybeSingle()
+
+        let map: Record<string, number> = {}
+        if (settingRow?.value) {
+          try {
+            map = JSON.parse(settingRow.value) as Record<string, number>
+          } catch {}
+        }
+
+        for (const it of items) {
+          map[it.id] = it.sortOrder
+        }
+
+        // 肥大化防止（最新500件程度を保持）
+        const keys = Object.keys(map)
+        if (keys.length > 500) {
+          const trimmed: Record<string, number> = {}
+          for (const k of keys.slice(-500)) {
+            if (map[k] !== undefined) trimmed[k] = map[k]
+          }
+          map = trimmed
+        }
+
+        await admin.from('app_settings').upsert(
+          {
+            key: 'v5_pack_sort_order',
+            value: JSON.stringify(map),
+            is_secret: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' },
+        )
+      } catch (fbErr) {
+        console.warn('[order-items/reorder] fallback app_settings failed:', fbErr)
+      }
       return NextResponse.json({ ok: true, fallback: true })
     }
     console.error('[order-items/reorder] failed:', failed.error.message)

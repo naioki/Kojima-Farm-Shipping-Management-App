@@ -10,6 +10,7 @@ import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHis
 import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
 import { DestinationManager, type Destination } from '@/components/admin/DestinationManager'
 import { getSetting } from '@/lib/settings'
+import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
 import type { FractionPolicy } from '@/types/database'
@@ -37,6 +38,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     { data: destinations, error: destErr },
     lockRaw,
     masterRaw,
+    routeOverrides,
   ] = await Promise.all([
     supabase
       .from('customers')
@@ -72,6 +74,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     })(),
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
+    getRouteOverrides(supabase).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
   ])
   // 取引ルール・納入先は編集の主データ。取得失敗を「未登録（空）」に化けさせない
   // （荷姿マスタが空に見えた実害と同種の事故を防ぐ・CLAUDE.md）。
@@ -136,6 +139,22 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     }
   })
 
+  const mergedDestinations = ((destinations ?? []) as Array<Record<string, unknown>>).map((d) => {
+    const destId = d.id as string
+    const code = d.code as string | null
+    const fullName = d.full_name as string
+    const ov = (destId ? routeOverrides[`dest:${destId}`] : null)
+      ?? (code ? routeOverrides[`cust:${params.id}:${code}`] : null)
+      ?? (fullName ? routeOverrides[`cust:${params.id}:${fullName}`] : null)
+      ?? routeOverrides[`cust:${params.id}:default`]
+      ?? null
+    return {
+      ...d,
+      departure_time: (d.departure_time as string | null) ?? ov?.departureTime ?? null,
+      shipping_route_name: (d.shipping_route_name as string | null) ?? ov?.shippingRouteName ?? null,
+    }
+  })
+
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <Link
@@ -190,7 +209,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
         <DestinationManager
           customerId={customer.id}
           customerName={customer.name}
-          initial={(destinations ?? []) as Destination[]}
+          initial={mergedDestinations as unknown as Destination[]}
         />
       </Card>
 

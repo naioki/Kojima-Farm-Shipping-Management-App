@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { shiftDateStr } from '@/lib/dates'
 
 export interface ChainInventoryResult {
@@ -102,8 +103,13 @@ export async function calculateChainInventory(
   }
 
   // 0026未適用環境（daily_container_inventory不在）または空の場合、app_settingsのフォールバックをマージ
+  // ※ app_settings は admin_all RLSのため service_role (createAdminClient) を優先して読み込む
   try {
-    const fallback = await readFallbackInventory(supabase, productId)
+    let adminClient = supabase
+    try {
+      adminClient = createAdminClient()
+    } catch {}
+    const fallback = await readFallbackInventory(adminClient, productId)
     for (const [d, rec] of Object.entries(fallback)) {
       if (d >= startDateStr && d <= targetDate) {
         const existing = invByDate.get(d)

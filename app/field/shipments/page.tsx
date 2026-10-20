@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { ErrorState } from '@/components/ui/States'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -38,6 +40,7 @@ export default async function ShipmentsPage({
 }) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const supabase = createClient()
+  const admin = createAdminClient()
 
   const user = await getAuthedUser()
   const { data: profile, error: profileErr } = user
@@ -172,11 +175,11 @@ export default async function ShipmentsPage({
   }
 
   // マスタ取得（取引先・納入先・ルールを一括取得し、明細集計と追加フォームで共有）
-  const [custRes, prodCapRes, destRows, { data: ruleRows }] = await Promise.all([
+  const [custRes, prodCapRes, destRows, rulesRes, routeOverrides, packSortMap] = await Promise.all([
     supabase.from('customers').select('id, name, display_color').eq('is_active', true).order('name'),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
     (async (): Promise<DestRow[]> => {
       const r1 = await supabase
         .from('delivery_destinations')
@@ -192,7 +195,21 @@ export default async function ShipmentsPage({
       return (r2.data ?? []) as DestRow[]
     })(),
     supabase.from('customer_product_rules').select('*'),
+    getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    (async (): Promise<Record<string, number>> => {
+      try {
+        const r = await admin
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'v5_pack_sort_order')
+          .maybeSingle()
+        if (r.data?.value) return JSON.parse(r.data.value) as Record<string, number>
+      } catch {}
+      return {}
+    })(),
   ])
+
+  const ruleRows = rulesRes.data
 
   const allCustomers = custRes.data ?? []
   const allDestinations = destRows
@@ -250,7 +267,7 @@ export default async function ShipmentsPage({
 
   // ⑦ 在庫（コンテナ）の連鎖キャリーオーバー取得（過去14日間の日跨ぎ累積繰越＋手動アンカー）
   const chainInventory = selectedProductId
-    ? await calculateChainInventory(supabase, selectedProductId, date, 14)
+    ? await calculateChainInventory(admin, selectedProductId, date, 14)
     : { effectiveStock: 0, inheritedCarryover: 0, hasManualStock: false, manualStock: null }
 
   const prevCarryover = chainInventory.inheritedCarryover
@@ -314,6 +331,21 @@ export default async function ShipmentsPage({
     curSpec.boxes += boxCount
     specCounts.set(specLabel, curSpec)
 
+    const override = (destId ? routeOverrides['dest:' + destId] : null)
+      || (dName ? routeOverrides['cust:' + custId + ':' + dName] : null)
+      || (custId ? routeOverrides['cust:' + custId + ':default'] : null)
+      || null
+
+    const resolvedShippingRoute = override?.shippingRouteName !== undefined
+      ? override.shippingRouteName
+      : dest?.shipping_route_name
+
+    const resolvedDepartureTime = override?.departureTime !== undefined
+      ? override.departureTime
+      : dest?.departure_time
+
+    const resolvedDailyPackSortOrder = it.daily_pack_sort_order ?? (it.id ? packSortMap[it.id] : null) ?? null
+
     return {
       itemId: it.id,
       customerName: cName,
@@ -343,10 +375,10 @@ export default async function ShipmentsPage({
       bagType: it.bag_type ?? ruleBagType,
       sealText: it.seal_text ?? ruleSealText,
       hasSeal: it.has_seal ?? ruleHasSeal,
-      dailyPackSortOrder: it.daily_pack_sort_order,
+      dailyPackSortOrder: resolvedDailyPackSortOrder,
       defaultPackSortOrder: dest?.pack_sort_order ?? 100,
-      shippingRouteName: dest?.shipping_route_name,
-      departureTime: dest?.departure_time,
+      shippingRouteName: resolvedShippingRoute,
+      departureTime: resolvedDepartureTime,
       deliveryDate: date,
       showShippingButton: false,
       receipt: receiptByOrder.get(it.order_id) ?? null,

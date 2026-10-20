@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   }
 
   // もし deliveries レコードがまだ無い場合は作成
-  const { data: count } = await admin
+  const { count } = await admin
     .from('deliveries')
     .select('id', { count: 'exact', head: true })
     .eq('delivery_date', delivery_date)
