@@ -27,7 +27,7 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
 
       {/* 日本標準の「月/日(曜)」とカレンダー入力をすっきり横並び */}
       <label className="flex items-center gap-1 sm:gap-1.5 rounded-lg border border-line-strong bg-bg-card px-2 py-1 sm:px-2.5 sm:py-1.5 shadow-xs">
-        <span className="num text-xs sm:text-sm font-black tabular-nums text-ink whitespace-nowrap">
+        <span className="num text-sm sm:text-base font-black tabular-nums text-ink whitespace-nowrap">
           {formatJpDateShort(date)}
         </span>
         <input
@@ -39,7 +39,7 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
             router.refresh()
           }}
           aria-label="表示日"
-          className="num h-5 sm:h-6 w-20 sm:w-28 rounded border-0 bg-transparent p-0 text-[11px] sm:text-xs text-ink-muted focus:outline-none cursor-pointer"
+          className="num h-6 w-24 sm:w-32 rounded border-0 bg-transparent p-0 text-xs sm:text-sm text-ink-soft focus:outline-none cursor-pointer font-bold"
         />
       </label>
 

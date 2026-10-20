@@ -10,9 +10,9 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 export const dynamic = 'force-dynamic'
 
 /**
- * 設定（Google Drive / Gemini / メール / R2 / 通知 / 運用）。
+ * 設定（自社情報 / AI / LINE WORKS通知 / 高度な設定）。
  * admin 限定。秘密情報は値を表示せず「設定済み/未設定」のみ（書き込み専用）。
- * 解決順は DB（app_settings）→ 環境変数。実際の取り込み稼働には外部の認証情報が必要。
+ * 解決順は DB（app_settings）→ 環境変数。
  */
 export default async function SettingsPage() {
   const guard = await requireAdmin('設定は管理者のみアクセスできます。')
@@ -26,14 +26,17 @@ export default async function SettingsPage() {
   const dbMap = new Map((rows ?? []).map((r) => [r.key, r.value]))
 
   const items: SettingItem[] = SETTINGS_SPEC.map((spec) => {
-    const dbVal = dbMap.get(spec.key) ?? null
+    // 旧キー NOTIFY_LINEWORKS_WEBHOOK_URL からの移行フォールバック
+    const dbVal =
+      dbMap.get(spec.key) ??
+      (spec.key === 'LINE_WORKS_WEBHOOK_URL' ? dbMap.get('NOTIFY_LINEWORKS_WEBHOOK_URL') : null) ??
+      null
     const envVal = process.env[spec.key] ?? null
     const isSet = Boolean((dbVal && dbVal !== '') || (envVal && envVal !== ''))
     return {
       key: spec.key,
       label: spec.label,
       section: spec.section,
-      layer: spec.layer,
       secret: spec.secret,
       kind: spec.kind,
       placeholder: spec.placeholder,
@@ -47,57 +50,51 @@ export default async function SettingsPage() {
       defaultPrompt: spec.defaultPrompt,
       dependsOn: spec.dependsOn,
       danger: spec.danger,
-      status: spec.status,
     }
   })
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-6 pb-8">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">設定</h1>
-        <p className="text-sm text-ink-soft">
-          取り込み・AI・保管・通知の接続設定。秘密情報は保存後に表示されません（「設定済み」のみ）。
+        <h1 className="font-display text-2xl sm:text-3xl font-black text-ink">設定</h1>
+        <p className="mt-1 text-base text-ink-soft">
+          伝票印字・AI読取・LINE WORKS通知の基本設定。秘密情報は保存後に非表示（「設定済み」）となります。
         </p>
       </div>
 
-      {/* マスタ管理クイックカード */}
-      <Card className="space-y-3 bg-earth-50/50 border-earth-200">
-        <h2 className="font-display text-base font-bold text-ink">マスタ管理（取引先・品目）</h2>
-        <p className="text-xs text-ink-soft">
-          新規出荷や請求書で利用する取引先や品目の追加・不要な項目の非表示（削除）はこちらから行えます。
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2 pt-1">
+      {/* マスタ管理クイックカード（視認性を向上） */}
+      <div className="rounded-2xl border-2 border-forest-200 bg-forest-50/50 p-5 space-y-3">
+        <div>
+          <h2 className="font-display text-lg font-black text-forest-950">マスタ管理（取引先・品目）</h2>
+          <p className="mt-0.5 text-sm text-forest-800">
+            新規出荷や請求書で利用する取引先・品目の追加、使わない項目の非表示（削除）はこちらから管理できます。
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 pt-1">
           <Link
             href="/admin/customers"
-            className="flex items-center justify-between p-3 rounded-xl border border-line bg-white hover:bg-bg-soft transition-all shadow-xs"
+            className="flex items-center justify-between p-4 rounded-xl border border-forest-300 bg-white hover:bg-forest-50/80 transition-all shadow-xs group"
           >
             <div>
-              <p className="font-bold text-sm text-ink">🏢 取引先・納品先設定</p>
-              <p className="text-xs text-ink-soft">取引先の追加・納品先・不要な取引先の非表示</p>
+              <p className="font-black text-base text-ink group-hover:text-forest-800">🏢 取引先・納品先設定</p>
+              <p className="mt-0.5 text-xs font-bold text-ink-soft">取引先の追加・納品先・不要な取引先の非表示</p>
             </div>
-            <ChevronRight className="h-4 w-4 text-ink-faint" />
+            <ChevronRight className="h-5 w-5 text-forest-600 shrink-0" />
           </Link>
           <Link
             href="/admin/products"
-            className="flex items-center justify-between p-3 rounded-xl border border-line bg-white hover:bg-bg-soft transition-all shadow-xs"
+            className="flex items-center justify-between p-4 rounded-xl border border-forest-300 bg-white hover:bg-forest-50/80 transition-all shadow-xs group"
           >
             <div>
-              <p className="font-bold text-sm text-ink">🥬 品目（商品）設定</p>
-              <p className="text-xs text-ink-soft">品目の追加・単位・不要な品目の非表示</p>
+              <p className="font-black text-base text-ink group-hover:text-forest-800">🥬 品目（商品）設定</p>
+              <p className="mt-0.5 text-xs font-bold text-ink-soft">品目の追加・単位・不要な品目の非表示</p>
             </div>
-            <ChevronRight className="h-4 w-4 text-ink-faint" />
+            <ChevronRight className="h-5 w-5 text-forest-600 shrink-0" />
           </Link>
         </div>
-      </Card>
-
-      <div className="rounded border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-ink-soft">
-        ⚠️ 秘密情報（APIキー・パスワード等）はDBに保存されます。Secret Manager より弱いため、本番では
-        環境変数（Secret Manager）併用を推奨します。ここでの保存は admin 限定・サーバーのみが読み取ります。
       </div>
 
-      <Card>
-        <SettingsForm items={items} />
-      </Card>
+      <SettingsForm items={items} />
     </div>
   )
 }

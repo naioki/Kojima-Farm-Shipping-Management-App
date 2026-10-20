@@ -153,7 +153,7 @@ export function MobileNav({
                   <div className="truncate text-sm font-medium text-white">
                     {user.roleLabel === '経営者' ? '小島農園' : user.name}
                   </div>
-                  <div className="text-[11px] text-forest-200">{user.roleLabel}</div>
+                  <div className="text-xs text-forest-200 font-medium">{user.roleLabel}</div>
                 </div>
               </div>
             )}

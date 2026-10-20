@@ -48,10 +48,6 @@ export default async function ShipmentsPage({
   const staffFeatures = await getStaffFeatures()
   const canReportSpec = canStaffUse('reportSpec', role, staffFeatures)
 
-  // 通知設定
-  const overdueAlertSetting = await getSetting('OVERDUE_ALERT_ENABLED')
-  const isOverdueAlertOn = overdueAlertSetting !== 'off'
-
   // ① 全商品一覧の取得（品目タブ構築用）
   const { data: allProducts, error: prodErr } = await supabase
     .from('products')
@@ -476,7 +472,6 @@ export default async function ShipmentsPage({
           items={shipmentItems}
           date={date}
           isAdmin={isAdmin}
-          overdueAlertEnabled={isOverdueAlertOn}
         />
       ) : (
         <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted space-y-3">

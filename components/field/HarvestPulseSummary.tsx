@@ -132,7 +132,7 @@ export function HarvestPulseSummary({
 
         {/* 収穫箱数（最重要ヘッダー：注文合計 − 在庫） */}
         <div className="pt-3 pb-2 text-center">
-          <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-200">
+          <div className="inline-flex items-center gap-2 text-sm font-black text-emerald-100">
             <Tractor className="h-4 w-4" />
             <span>収穫箱数</span>
           </div>
@@ -151,11 +151,11 @@ export function HarvestPulseSummary({
         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-3 border-t border-white/15">
           {/* ① 今日の注文合計 */}
           <div className="rounded-xl bg-white/10 p-2.5 text-center">
-            <span className="block text-[11px] font-bold text-white/80">📦 今日の注文合計</span>
+            <span className="block text-xs sm:text-sm font-black text-white/95">📦 今日の注文合計</span>
             <span className="num mt-0.5 block text-xl font-black text-white tabular-nums">
               {totalBoxes.toLocaleString()} <small className="text-xs font-bold text-white/80">箱</small>
             </span>
-            <span className="text-[11px] text-emerald-200">({totalPacks.toLocaleString()} P)</span>
+            <span className="text-xs sm:text-sm font-bold text-emerald-100">({totalPacks.toLocaleString()} P)</span>
           </div>
 
           {/* 演算記号 − */}
@@ -164,14 +164,14 @@ export function HarvestPulseSummary({
           {/* ② 在庫（タップして変更可能） */}
           <div className="rounded-xl bg-white/10 p-2.5 text-center relative">
             <div className="flex items-center justify-center gap-1">
-              <span className="text-[11px] font-bold text-white/80">🧊 在庫</span>
+              <span className="text-xs sm:text-sm font-black text-white/95">🧊 在庫</span>
               <button
                 type="button"
                 onClick={() => {
                   setTempStock(stock)
                   setIsEditingStock(!isEditingStock)
                 }}
-                className="text-[10px] text-emerald-300 underline font-semibold"
+                className="text-xs text-emerald-200 underline font-bold"
               >
                 {isEditingStock ? '閉じる' : '修正'}
               </button>
@@ -236,7 +236,7 @@ export function HarvestPulseSummary({
                         saveStock(autoStock)
                         setIsManualOverride(false)
                       }}
-                      className="h-9 rounded-lg bg-white/20 px-2 text-[10px] font-bold text-white hover:bg-white/30"
+                      className="h-9 rounded-lg bg-white/20 px-2.5 text-xs font-bold text-white hover:bg-white/30"
                       title="前日繰越と途中仕上がりからの自動計算に戻す"
                     >
                       自動計算に戻す
@@ -249,7 +249,7 @@ export function HarvestPulseSummary({
                 <span className="num mt-0.5 block text-xl font-black text-white tabular-nums">
                   {stock.toLocaleString()} <small className="text-xs font-bold text-white/80">箱</small>
                 </span>
-                <span className="text-[10px] text-emerald-200/90 font-medium">
+                <span className="text-xs text-emerald-100 font-medium">
                   {isManualOverride
                     ? '※手動指定値'
                     : `自動反映（前日 ${prevCarryover}箱 ＋ 途中 ${interimPackedBoxes}箱）`}
@@ -281,9 +281,9 @@ export function HarvestPulseSummary({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {containerBreakdown.map((cb) => (
                   <div key={cb.type} className="rounded-lg border border-line bg-white p-2 text-center">
-                    <span className="block text-[11px] font-bold text-ink-soft">{cb.type}</span>
+                    <span className="block text-xs font-bold text-ink">{cb.type}</span>
                     <span className="text-base font-black text-ink tabular-nums">
-                      {cb.boxes} <small className="text-[10px] font-normal text-ink-muted">箱</small>
+                      {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
                     </span>
                   </div>
                 ))}
@@ -304,7 +304,7 @@ export function HarvestPulseSummary({
                     <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
                     <span className="font-black text-ink tabular-nums">
                       {sb.packs.toLocaleString()} P{' '}
-                      <span className="text-ink-muted text-[11px]">({sb.boxes} 箱)</span>
+                      <span className="text-ink-soft text-xs font-bold">({sb.boxes} 箱)</span>
                     </span>
                   </div>
                 ))}
@@ -315,7 +315,7 @@ export function HarvestPulseSummary({
           {/* 夕方の持ち越し入力 */}
           <div className="pt-2 border-t border-line/60">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-bold text-ink-soft">夕方の翌朝持ち越し登録:</span>
+              <span className="text-xs sm:text-sm font-bold text-ink">夕方の翌朝持ち越し登録:</span>
               <button
                 type="button"
                 onClick={() => {

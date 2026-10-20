@@ -36,8 +36,8 @@ export async function sendMultiChannelAlert(
   ] = await Promise.all([
     getSetting('NOTIFY_DISCORD_WEBHOOK_URL').then((v) => v || process.env.DISCORD_WEBHOOK_URL || ''),
     getSetting('NOTIFY_DISCORD_ENABLED').then((v) => v || (process.env.NOTIFY_DISCORD !== 'off' ? 'on' : 'off')),
-    getSetting('NOTIFY_LINEWORKS_WEBHOOK_URL').then((v) => v || process.env.LINE_WORKS_WEBHOOK_URL || ''),
-    getSetting('NOTIFY_LINEWORKS_ENABLED').then((v) => v || (process.env.NOTIFY_LINE_WORKS !== 'off' ? 'on' : 'off')),
+    getSetting('LINE_WORKS_WEBHOOK_URL').then((v) => v || getSetting('NOTIFY_LINEWORKS_WEBHOOK_URL')).then((v) => v || process.env.LINE_WORKS_WEBHOOK_URL || ''),
+    getSetting('NOTIFY_LINEWORKS_ENABLED').then((v) => v || getSetting('NOTIFY_LINE_WORKS')).then((v) => v || (process.env.NOTIFY_LINE_WORKS !== 'off' ? 'on' : 'off')),
     getSetting('NOTIFY_LINE_TOKEN').then((v) => v || process.env.LINE_CHANNEL_ACCESS_TOKEN || ''),
     getSetting('NOTIFY_LINE_TO').then((v) => v || process.env.LINE_USER_ID || ''),
     getSetting('NOTIFY_LINE_ENABLED').then((v) => v || (process.env.NOTIFY_LINE === 'on' ? 'on' : 'off')),

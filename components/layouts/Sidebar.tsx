@@ -26,7 +26,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
         </span>
         <div className="leading-tight">
           <div className="font-display text-lg font-bold text-white">小島農園</div>
-          <div className="text-[11px] text-forest-200">タスク管理</div>
+          <div className="text-xs text-forest-200 font-bold">タスク管理</div>
         </div>
       </div>
 
@@ -75,7 +75,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
                 type="button"
                 onClick={() => toggleGroup(group.label!)}
                 aria-expanded={open}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-forest-200 transition-colors hover:bg-forest-700/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-forest-200 transition-colors hover:bg-forest-700/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
               >
                 {group.label}
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
@@ -105,7 +105,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
             <div className="truncate text-sm font-medium text-white">
               {user.roleLabel === '経営者' ? '小島農園' : user.name}
             </div>
-            <div className="text-[11px] text-forest-200">{user.roleLabel}</div>
+            <div className="text-xs text-forest-200 font-medium">{user.roleLabel}</div>
           </div>
         </div>
       )}

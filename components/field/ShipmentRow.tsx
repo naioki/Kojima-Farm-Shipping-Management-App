@@ -455,7 +455,7 @@ export function ShipmentRow({
           </div>
           <div className="flex items-center gap-1">
             {lineNote?.includes('★新規追加') && (
-              <span className="inline-flex items-center rounded-md bg-orange-500 px-2 py-0.5 text-[11px] font-black text-white shadow-xs">
+              <span className="inline-flex items-center rounded-md bg-orange-500 px-2.5 py-0.5 text-xs font-black text-white shadow-xs">
                 新規 ★
               </span>
             )}
@@ -506,17 +506,17 @@ export function ShipmentRow({
         {/* 資材タグバー（袋・シール・カード） */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {bagType && (
-            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800 border border-amber-200">
+            <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
               🛍️ {bagType}
             </span>
           )}
           {(hasSeal || sealText) && (
-            <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-800 border border-rose-200">
+            <span className="inline-flex items-center rounded-md bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-800 border border-rose-200">
               🏷️ {sealText || 'シール有'}
             </span>
           )}
           {hasCard && (
-            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-800 border border-indigo-200">
+            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
               🃏 カード有
             </span>
           )}
@@ -526,19 +526,19 @@ export function ShipmentRow({
       {/* ② 数量グリッド（ケース数 / 端数パック） */}
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
-          <span className="block text-[11px] font-medium text-ink-soft">ケース数</span>
+          <span className="block text-xs sm:text-sm font-bold text-ink">ケース数</span>
           <span className="num mt-0.5 block text-xl font-black text-ink tabular-nums">
             {casesText !== '—' ? `${casesText} ケース` : `${quantityText}`}
           </span>
         </div>
         <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
-          <span className="block text-[11px] font-medium text-ink-soft">端数パック</span>
+          <span className="block text-xs sm:text-sm font-bold text-ink">端数パック</span>
           <div className="num mt-0.5 flex items-center justify-center gap-1.5 tabular-nums">
             <span className="text-xl font-black text-ink">
               {looseText !== '—' ? `${looseText} P` : '0 P'}
             </span>
             {Number(looseText) > 0 && (
-              <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900 border border-amber-300">
+              <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 border border-amber-300">
                 1コンテナ
               </span>
             )}
@@ -548,7 +548,7 @@ export function ShipmentRow({
 
       {/* ③ 【最重要】総パック数カード（フォレストグリーンの巨大ハイライトブロック） */}
       <div className="rounded-xl bg-[#1b5e20] p-3.5 text-white mb-2 shadow-sm">
-        <div className="text-[11px] font-bold text-white/90 tracking-wide">総パック数</div>
+        <div className="text-sm font-black text-white/95 tracking-wide">総パック数</div>
         <div className="num mt-0.5 text-3xl font-black tracking-tight text-white tabular-nums">
           {orderedQty} <span className="text-lg font-bold text-white/80">P</span>
         </div>
@@ -556,7 +556,7 @@ export function ShipmentRow({
 
       {/* ④ コンテナ・箱数カード */}
       <div className="rounded-xl border border-line bg-bg-card p-2.5 flex items-center justify-between mb-3 shadow-xs">
-        <span className="text-xs font-semibold text-ink-soft">コンテナ・箱数</span>
+        <span className="text-sm font-bold text-ink">コンテナ・箱数</span>
         <div className="flex items-center gap-1.5">
           <span className="inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">
             {container || '青コン'}
@@ -746,24 +746,24 @@ export function ShipmentRow({
         <div className="mt-2 space-y-2 border-t border-line/60 pt-3">
           {/* 状態カード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">状態</span>
-            <span className="text-xs font-bold text-ink">
+            <span className="block text-xs font-bold text-ink-soft">状態</span>
+            <span className="text-sm font-bold text-ink">
               {status === 'shipped' ? '出荷済' : status === 'packed' ? 'パック済' : '有効（未着手）'}
             </span>
           </div>
 
           {/* 注文キーカード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">注文キー</span>
-            <span className="num break-all text-xs font-medium text-ink">
+            <span className="block text-xs font-bold text-ink-soft">注文キー</span>
+            <span className="num break-all text-sm font-medium text-ink">
               {`${customerName}|${destinationName ?? customerName}|${spec || masterLabelSpec || '規格未設定'}`}
             </span>
           </div>
 
           {/* 数量（原文）カード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">数量（原文）</span>
-            <span className="num text-xs font-bold text-ink">
+            <span className="block text-xs font-bold text-ink-soft">数量（原文）</span>
+            <span className="num text-sm font-bold text-ink">
               総数{orderedQty}点（
               {casesText !== '—'
                 ? Number(looseText) > 0
@@ -776,8 +776,8 @@ export function ShipmentRow({
 
           {/* コンテナ（原文）カード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">コンテナ（原文）</span>
-            <span className="text-xs font-bold text-ink">
+            <span className="block text-xs font-bold text-ink-soft">コンテナ（原文）</span>
+            <span className="text-sm font-bold text-ink">
               {container
                 ? `${container}: ${
                     casesText !== '—'
@@ -792,19 +792,19 @@ export function ShipmentRow({
 
           {/* 備考カード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">備考</span>
-            <span className="text-xs text-ink">{lineNote || '—'}</span>
+            <span className="block text-xs font-bold text-ink-soft">備考</span>
+            <span className="text-sm text-ink">{lineNote || '—'}</span>
           </div>
 
           {/* 原本ファイルカード */}
           {receipt?.originalUrl && (
             <div className="rounded-xl border border-line bg-bg-card p-2.5">
-              <span className="block text-[10px] font-bold text-ink-muted">原本ファイル</span>
+              <span className="block text-xs font-bold text-ink-soft">原本ファイル</span>
               <a
                 href={receipt.originalUrl}
                 target="_blank"
                 rel="noopener"
-                className="text-xs font-bold text-trust-700 hover:underline inline-flex items-center gap-1"
+                className="text-sm font-bold text-trust-700 hover:underline inline-flex items-center gap-1"
               >
                 原本を開く ↗
               </a>
@@ -813,14 +813,14 @@ export function ShipmentRow({
 
           {/* 追記メモカード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">追記メモ</span>
-            <span className="text-xs text-ink">{fieldNote || '—'}</span>
+            <span className="block text-xs font-bold text-ink-soft">追記メモ</span>
+            <span className="text-sm text-ink">{fieldNote || '—'}</span>
           </div>
 
           {/* 登録元カード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
-            <span className="block text-[10px] font-bold text-ink-muted">登録元</span>
-            <span className="text-xs text-ink">{receipt ? '受信明細 (FAX/OCR)' : '受注明細'}</span>
+            <span className="block text-xs font-bold text-ink-soft">登録元</span>
+            <span className="text-sm text-ink">{receipt ? '受信明細 (FAX/OCR)' : '受注明細'}</span>
           </div>
 
           {/* 荷姿マスタ作業指示 */}

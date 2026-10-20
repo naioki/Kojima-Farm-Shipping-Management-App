@@ -8,12 +8,17 @@ import type { NotifyChannel } from './index'
  * （buildChannelsFromEnv は env のみ参照するため、設定UIで入れた値も拾えるこちらを使う）
  */
 export async function buildChannelsFromSettings(): Promise<NotifyChannel[]> {
-  const [discordUrl, discordOn, lwUrl, lwOn] = await Promise.all([
+  const [discordUrl, discordOn, lwUrlA, lwUrlB, lwOnA, lwOnB] = await Promise.all([
     getSetting('DISCORD_WEBHOOK_URL'),
     getSetting('NOTIFY_DISCORD'),
     getSetting('LINE_WORKS_WEBHOOK_URL'),
+    getSetting('NOTIFY_LINEWORKS_WEBHOOK_URL'),
+    getSetting('NOTIFY_LINEWORKS_ENABLED'),
     getSetting('NOTIFY_LINE_WORKS'),
   ])
+
+  const lwUrl = lwUrlA || lwUrlB || process.env.LINE_WORKS_WEBHOOK_URL || null
+  const lwOn = (lwOnA ?? lwOnB) !== 'off'
 
   const channels: NotifyChannel[] = []
   if (discordUrl && discordOn !== 'off') {
@@ -25,7 +30,7 @@ export async function buildChannelsFromSettings(): Promise<NotifyChannel[]> {
       },
     })
   }
-  if (lwUrl && lwOn !== 'off') {
+  if (lwUrl && lwOn) {
     channels.push({
       name: 'line_works',
       send: async (m) => {
