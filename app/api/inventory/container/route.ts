@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { calculateChainInventory } from '@/lib/inventory/chain'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 /**
  * コンテナ在庫＆翌日持ち越し保存 API
- * GET: 指定日・品目の在庫と前日からの持ち越しを取得
+ * GET: 指定日・品目の連鎖キャリーオーバー在庫と手動設定値を取得
  * POST: 在庫コンテナ数 (stock_containers) や翌日持ち越し (carryover_to_next_day) を更新
  */
 export async function GET(req: NextRequest) {
@@ -22,7 +23,10 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // 当日分
+  // 14日間の連鎖在庫計算
+  const chain = await calculateChainInventory(admin, productId, date, 14)
+
+  // 当日レコード
   const { data: current } = await admin
     .from('daily_container_inventory')
     .select('*')
@@ -30,25 +34,13 @@ export async function GET(req: NextRequest) {
     .eq('product_id', productId)
     .maybeSingle()
 
-  // 前日分（持ち越し取得用）
-  const prevDate = new Date(date)
-  prevDate.setDate(prevDate.getDate() - 1)
-  const prevDateStr = prevDate.toISOString().split('T')[0]
-
-  const { data: prev } = await admin
-    .from('daily_container_inventory')
-    .select('carryover_to_next_day')
-    .eq('target_date', prevDateStr)
-    .eq('product_id', productId)
-    .maybeSingle()
-
-  const defaultStock = current?.stock_containers ?? prev?.carryover_to_next_day ?? 0
-
   return NextResponse.json({
     ok: true,
     current,
-    prevCarryover: prev?.carryover_to_next_day ?? 0,
-    effectiveStock: defaultStock,
+    prevCarryover: chain.inheritedCarryover,
+    effectiveStock: chain.effectiveStock,
+    hasManualStock: chain.hasManualStock,
+    manualStock: chain.manualStock,
   })
 }
 

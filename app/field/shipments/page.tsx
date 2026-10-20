@@ -161,6 +161,7 @@ export default async function ShipmentsPage({
 
   type DestRow = {
     id: string
+    customer_id?: string
     code: string | null
     full_name: string
     sort_order?: number
@@ -170,32 +171,40 @@ export default async function ShipmentsPage({
     default_container_type?: string | null
   }
 
-  const [custRes, prodCapRes, destRows] = await Promise.all([
-    customerIds.length
-      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [], error: null }),
+  // マスタ取得（取引先・納入先・ルールを一括取得し、明細集計と追加フォームで共有）
+  const [custRes, prodCapRes, destRows, { data: ruleRows }] = await Promise.all([
+    supabase.from('customers').select('id, name, display_color').eq('is_active', true).order('name'),
     productIds.length
       ? supabase.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [], error: null }),
     (async (): Promise<DestRow[]> => {
-      if (!destinationIds.length) return []
       const r1 = await supabase
         .from('delivery_destinations')
-        .select('id, code, full_name, sort_order, pack_sort_order, shipping_route_name, departure_time, default_container_type')
-        .in('id', destinationIds)
+        .select('id, customer_id, code, full_name, sort_order, pack_sort_order, shipping_route_name, departure_time, default_container_type')
+        .eq('is_active', true)
+        .order('sort_order')
       if (!r1.error) return (r1.data ?? []) as DestRow[]
       const r2 = await supabase
         .from('delivery_destinations')
-        .select('id, code, full_name, sort_order')
-        .in('id', destinationIds)
+        .select('id, customer_id, code, full_name, sort_order')
+        .eq('is_active', true)
+        .order('sort_order')
       return (r2.data ?? []) as DestRow[]
     })(),
+    supabase.from('customer_product_rules').select('*'),
   ])
 
-  const customerName = new Map((custRes.data ?? []).map((c) => [c.id, c.name]))
-  const customerColor = new Map((custRes.data ?? []).map((c) => [c.id, c.display_color]))
+  const allCustomers = custRes.data ?? []
+  const allDestinations = destRows
+  const customerName = new Map(allCustomers.map((c) => [c.id, c.name]))
+  const customerColor = new Map(allCustomers.map((c) => [c.id, c.display_color]))
   const capacityById = new Map((prodCapRes.data ?? []).map((p) => [p.id, p.container_capacity]))
-  const destinationMap = new Map(destRows.map((d) => [d.id, d]))
+  const destinationMap = new Map(allDestinations.map((d) => [d.id, d]))
+
+  const ruleById = new Map((ruleRows ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
+  const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r as Record<string, unknown>]))
+  const packsByPair: Record<string, number | null> = {}
+  for (const r of ruleRows ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = (r as any).packs_per_case ?? null
 
   // 荷姿マスタ取得
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
@@ -235,13 +244,6 @@ export default async function ShipmentsPage({
       parent: null,
     })
   }
-
-  // 梱包マスタ（rule_id 紐付けだけでなく customer_id × product_id のペアでも確実に解決）
-  const { data: ruleRows } = await supabase
-    .from('customer_product_rules')
-    .select('*')
-  const ruleById = new Map((ruleRows ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
-  const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r as Record<string, unknown>]))
 
   // ⑦ 在庫（コンテナ）の連鎖キャリーオーバー取得（過去14日間の日跨ぎ累積繰越＋手動アンカー）
   const chainInventory = selectedProductId
@@ -362,19 +364,6 @@ export default async function ShipmentsPage({
   // 在庫の初期値（手動設定値があればそれ、なければ「前日繰越 + 本日途中仕上がり」）
   const initialStock = hasManualStock ? (chainInventory.manualStock ?? 0) : (prevCarryover + packedBoxes)
 
-  // 追加フォーム用
-  const [
-    { data: allCustomers },
-    { data: rules },
-    { data: allDestinations },
-  ] = await Promise.all([
-    supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
-    supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case'),
-    supabase.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).order('sort_order'),
-  ])
-  const packsByPair: Record<string, number | null> = {}
-  for (const r of rules ?? []) packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case
-
   // 翌日の注文合計箱数・パック数を取得（余剰在庫の引き当て・翌日の収穫見通し用）
   const nextDateStr = shiftDateStr(date, 1)
   let nextDayTotalBoxes = 0
@@ -383,21 +372,33 @@ export default async function ShipmentsPage({
   if (selectedProductId) {
     const { data: nextOrders } = await supabase
       .from('orders')
-      .select('id')
+      .select('id, customer_id')
       .eq('delivery_date', nextDateStr)
       .neq('status', 'cancelled')
 
     const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
+    const nextOrderCustMap = new Map((nextOrders ?? []).map((o) => [o.id, o.customer_id]))
+
     if (nextOrderIds.length > 0) {
       const { data: nextItems } = await supabase
         .from('order_items')
-        .select('quantity, pack_config_id')
+        .select('order_id, quantity, pack_config_id, spec')
         .eq('product_id', selectedProductId)
         .in('order_id', nextOrderIds)
 
       const defCapacity = capacityById.get(selectedProductId) ?? 20
       for (const ni of nextItems ?? []) {
-        const perCase = (ni.pack_config_id ? packById.get(ni.pack_config_id)?.base : null) || defCapacity || 20
+        const custId = nextOrderCustMap.get(ni.order_id)
+        const pack = ni.pack_config_id ? packById.get(ni.pack_config_id) : null
+        const rule = custId ? ruleByPair.get(`${custId}:${selectedProductId}`) : null
+        const rulePacks = typeof rule?.packs_per_case === 'number' ? rule.packs_per_case : null
+        const cName = custId ? customerName.get(custId) ?? '' : ''
+
+        let perCase = pack?.base || rulePacks || defCapacity
+        if (!perCase || perCase <= 0) {
+          perCase = (cName.includes('農業総合研究所') || cName.includes('NSK') || (ni.spec ?? '').includes('24') ? 24 : 20)
+        }
+
         nextDayTotalPacks += ni.quantity
         nextDayTotalBoxes += Math.ceil(ni.quantity / perCase)
       }
@@ -494,7 +495,7 @@ export default async function ShipmentsPage({
         products={(allProducts ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
         destinations={(allDestinations ?? []).map((d) => ({
           id: d.id,
-          customerId: d.customer_id,
+          customerId: d.customer_id ?? '',
           label: d.code?.trim() || d.full_name,
         }))}
         packsByPair={packsByPair}

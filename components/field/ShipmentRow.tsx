@@ -17,6 +17,7 @@ import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto
 import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
+import { useOutbox } from '@/hooks/useOutbox'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
@@ -137,11 +138,14 @@ export function ShipmentRow({
   onDeleted,
 }: ShipmentRowProps) {
   const router = useRouter()
+  const { enqueue } = useOutbox()
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState(false)
+  const [offlinePending, setOfflinePending] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [specConfirmOpen, setSpecConfirmOpen] = useState(false)
   // ステータス変更直後の「元に戻す」猶予（誤タップ対策・Issue#5）。猶予中は並べ替えない。
   const [undoGrace, setUndoGrace] = useState<FieldStatus | null>(null)
   const undoTimerRef = useRef<number | null>(null)
@@ -249,12 +253,19 @@ export function ShipmentRow({
     const prev = status
     setStatus(target)
     setBusy(true)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new TypeError('Failed to fetch (offline)')
+      }
       const res = await fetch(`/api/order-items/${itemId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ field_status: target, version }),
+        signal: controller.signal,
       })
+      clearTimeout(timer)
       if (res.status === 409) {
         setStatus(prev)
         setConflict(true)
@@ -265,9 +276,29 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setConflict(false)
+      setOfflinePending(false)
       onStatusChange?.(itemId, target, json.item.version)
       startUndoGrace(prev, target)
-    } catch (e) {
+    } catch (e: any) {
+      clearTimeout(timer)
+      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || e?.name === 'AbortError' || e instanceof TypeError
+      if (isNetworkOrAbort) {
+        try {
+          await enqueue({
+            itemId,
+            fieldStatus: target,
+            version,
+            ts: Date.now(),
+          })
+          setOfflinePending(true)
+          toast('圏外のため一時保存しました（電波復帰時に自動送信）', { icon: '📡' })
+          onStatusChange?.(itemId, target, version)
+          startUndoGrace(prev, target)
+          return
+        } catch (enqueueErr) {
+          console.error('Failed to enqueue outbox', enqueueErr)
+        }
+      }
       setStatus(prev)
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {
@@ -281,12 +312,19 @@ export function ShipmentRow({
     const prev = status
     setStatus(target)
     setBusy(true)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new TypeError('Failed to fetch (offline)')
+      }
       const res = await fetch(`/api/order-items/${itemId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ field_status: target, version }),
+        signal: controller.signal,
       })
+      clearTimeout(timer)
       if (res.status === 409) {
         setStatus(prev)
         setConflict(true)
@@ -297,10 +335,30 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setConflict(false)
+      setOfflinePending(false)
       onStatusChange?.(itemId, target, json.item.version)
       // すぐには並べ替えず、猶予中は「元に戻す」を出す（誤タップ対策・Issue#5）
       startUndoGrace(prev, target)
-    } catch (e) {
+    } catch (e: any) {
+      clearTimeout(timer)
+      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || e?.name === 'AbortError' || e instanceof TypeError
+      if (isNetworkOrAbort) {
+        try {
+          await enqueue({
+            itemId,
+            fieldStatus: target,
+            version,
+            ts: Date.now(),
+          })
+          setOfflinePending(true)
+          toast('圏外のため一時保存しました（電波復帰時に自動送信）', { icon: '📡' })
+          onStatusChange?.(itemId, target, version)
+          startUndoGrace(prev, target)
+          return
+        } catch (enqueueErr) {
+          console.error('Failed to enqueue outbox', enqueueErr)
+        }
+      }
       setStatus(prev)
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {
@@ -373,16 +431,15 @@ export function ShipmentRow({
     }
   }
 
-  async function saveDetails() {
+  function handleSaveDetails() {
     if (spec !== initialSpec || container !== initialContainer) {
-      if (
-        !window.confirm(
-          '⚠️【注意】規格や荷姿を変更すると、パック進捗や出荷集計に直接影響します。本当に変更しますか？',
-        )
-      ) {
-        return
-      }
+      setSpecConfirmOpen(true)
+    } else {
+      executeSaveDetails()
     }
+  }
+
+  async function executeSaveDetails() {
     setSavingDetails(true)
     try {
       const res = await fetch(`/api/order-items/${itemId}`, {
@@ -407,6 +464,7 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       toast.success('記録を保存しました')
+      router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))
     } finally {
@@ -436,6 +494,7 @@ export function ShipmentRow({
       setVersion(json.item.version)
       toast.success('メモを保存しました')
       setNoteOpen(false)
+      router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, 'メモの保存に失敗しました'))
     } finally {
@@ -485,9 +544,36 @@ export function ShipmentRow({
           : status === 'packed'
           ? 'border-emerald-300 bg-emerald-50/15'
           : 'border-line',
-        conflict ? 'animate-pulse-alert border-alert' : '',
+        conflict ? 'animate-pulse-alert border-alert ring-2 ring-alert/20' : '',
       )}
     >
+      {/* 競合・更新アラート（ワンタップ自己修復） */}
+      {conflict && (
+        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-alert/10 border border-alert/30 p-2.5 text-xs font-bold text-alert">
+          <span className="flex items-center gap-1.5">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            他で更新されたため競合しました
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setConflict(false)
+              router.refresh()
+            }}
+            className="flex items-center gap-1 rounded-lg bg-alert text-white px-2.5 py-1 text-xs font-bold shadow-xs hover:bg-alert/90 transition-colors"
+          >
+            🔄 最新データを反映
+          </button>
+        </div>
+      )}
+
+      {/* 圏外一時保存バッジ */}
+      {offlinePending && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+          <span>📡 圏外のため一時保存中（電波復帰時に自動送信されます）</span>
+        </div>
+      )}
+
       {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
       <div className="space-y-1.5 pb-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -999,13 +1085,26 @@ export function ShipmentRow({
                 <Trash2 className="h-3.5 w-3.5" aria-hidden />
                 この明細を削除
               </button>
-              <Button size="sm" onClick={saveDetails} isLoading={savingDetails}>
+              <Button size="sm" onClick={handleSaveDetails} isLoading={savingDetails}>
                 保存
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={specConfirmOpen}
+        onClose={() => setSpecConfirmOpen(false)}
+        onConfirm={async () => {
+          setSpecConfirmOpen(false)
+          await executeSaveDetails()
+        }}
+        title="規格・荷姿を変更しますか？"
+        message="規格や荷姿を変更すると、パック進捗や出荷集計に直接影響します。本当に変更しますか？"
+        confirmLabel="変更して保存"
+        isLoading={savingDetails}
+      />
 
       <ConfirmModal
         open={confirmOpen}

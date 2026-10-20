@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { shiftDateStr } from '@/lib/dates'
 
 export interface ChainInventoryResult {
   /** 基準日の有効開始在庫（手動設定値があればそれ、なければ過去からの累積自動繰越） */
@@ -9,10 +10,6 @@ export interface ChainInventoryResult {
   hasManualStock: boolean
   /** 当日の手動指定値（設定されている場合） */
   manualStock: number | null
-}
-
-function toISODateString(d: Date): string {
-  return d.toISOString().slice(0, 10)
 }
 
 /**
@@ -27,10 +24,7 @@ export async function calculateChainInventory(
   targetDate: string,
   daysLookback = 14,
 ): Promise<ChainInventoryResult> {
-  const target = new Date(targetDate)
-  const start = new Date(target)
-  start.setDate(start.getDate() - daysLookback)
-  const startDateStr = toISODateString(start)
+  const startDateStr = shiftDateStr(targetDate, -daysLookback)
 
   // 1. 過去14日間の在庫レコード（手動在庫・持ち越し）を取得
   const { data: invRows } = await supabase
@@ -55,49 +49,76 @@ export async function calculateChainInventory(
   // 2. 過去14日間の注文・明細データを取得（日ごとの必要箱数を集計）
   const { data: pastOrders } = await supabase
     .from('orders')
-    .select('id, delivery_date')
+    .select('id, delivery_date, customer_id')
     .gte('delivery_date', startDateStr)
     .lt('delivery_date', targetDate) // targetDate より前の過去日
     .neq('status', 'cancelled')
 
   const orderIds = (pastOrders ?? []).map((o) => o.id)
   const orderDateMap = new Map((pastOrders ?? []).map((o) => [o.id, o.delivery_date]))
+  const orderCustMap = new Map((pastOrders ?? []).map((o) => [o.id, o.customer_id]))
 
   const dailyBoxesMap = new Map<string, number>()
 
   if (orderIds.length > 0) {
-    const [{ data: pastItems }, { data: prod }] = await Promise.all([
-      supabase
-        .from('order_items')
-        .select('order_id, quantity, product_id, pack_config_id')
-        .eq('product_id', productId)
-        .in('order_id', orderIds),
-      supabase
-        .from('products')
-        .select('container_capacity')
-        .eq('id', productId)
-        .maybeSingle(),
+    const pastItemsPromise = supabase
+      .from('order_items')
+      .select('order_id, quantity, product_id, pack_config_id, spec')
+      .eq('product_id', productId)
+      .in('order_id', orderIds)
+
+    const prodPromise = supabase
+      .from('products')
+      .select('container_capacity')
+      .eq('id', productId)
+      .maybeSingle()
+
+    // 顧客別ルール・荷姿マスタを安全に取得（モック・未定義環境でも安全にフォールバック）
+    const rulesPromise = Promise.resolve(
+      supabase.from('customer_product_rules')?.select?.('customer_id, product_id, packs_per_case')
+    ).then((res: any) => (res && typeof res.then === 'function' ? res : res?.eq ? res.eq('product_id', productId) : res))
+     .catch(() => ({ data: [] }))
+
+    const packConfigsPromise = Promise.resolve(
+      supabase.from('pack_configs')?.select?.('id, base_per_selling')
+    ).catch(() => ({ data: [] }))
+
+    const [{ data: pastItems }, { data: prod }, rulesRes, packRes] = await Promise.all([
+      pastItemsPromise,
+      prodPromise,
+      rulesPromise,
+      packConfigsPromise,
     ])
 
     const defaultCapacity = prod?.container_capacity ?? 20
+    const ruleByCust = new Map(((rulesRes as any)?.data ?? []).map((r: any) => [r.customer_id, r.packs_per_case]))
+    const packMap = new Map(((packRes as any)?.data ?? []).map((p: any) => [p.id, Number(p.base_per_selling)]))
 
-    for (const it of pastItems ?? []) {
+    for (const it of (pastItems as any[]) ?? []) {
       const d = orderDateMap.get(it.order_id)
       if (!d) continue
-      const perCase = defaultCapacity > 0 ? defaultCapacity : 20
-      const boxes = Math.ceil(it.quantity / perCase)
+      const custId = orderCustMap.get(it.order_id)
+
+      const packBase = it.pack_config_id ? packMap.get(it.pack_config_id) : null
+      const rulePacks = custId ? ruleByCust.get(custId) : null
+
+      let perCase = packBase || rulePacks || defaultCapacity || 20
+      if ((it.spec ?? '').includes('24')) {
+        perCase = 24
+      }
+
+      const boxes = Math.ceil(it.quantity / (perCase > 0 ? perCase : 20))
       dailyBoxesMap.set(d, (dailyBoxesMap.get(d) ?? 0) + boxes)
     }
   }
 
-  // 3. startDate から targetDate まで日跨ぎで連鎖推移シミュレーション
+  // 3. startDateStr から targetDate まで日跨ぎで連鎖推移シミュレーション
   let runningStock = 0
   let prevCarryover = 0
+  let curDateStr = startDateStr
 
-  const cur = new Date(startDateStr)
-  while (toISODateString(cur) <= targetDate) {
-    const dStr = toISODateString(cur)
-    const inv = invByDate.get(dStr)
+  while (curDateStr <= targetDate) {
+    const inv = invByDate.get(curDateStr)
 
     // 手動入力値があれば最優先でアンカー設定
     if (inv?.stock_containers != null) {
@@ -105,7 +126,7 @@ export async function calculateChainInventory(
     }
 
     // targetDate に到達したら、直前の日の残りが inheritedCarryover となる
-    if (dStr === targetDate) {
+    if (curDateStr === targetDate) {
       prevCarryover = runningStock
       break
     }
@@ -114,12 +135,12 @@ export async function calculateChainInventory(
     if (inv?.carryover_to_next_day != null) {
       runningStock = Math.max(0, inv.carryover_to_next_day)
     } else {
-      const orderedToday = dailyBoxesMap.get(dStr) ?? 0
+      const orderedToday = dailyBoxesMap.get(curDateStr) ?? 0
       runningStock = Math.max(0, runningStock - orderedToday)
     }
 
     // 翌日へ進める
-    cur.setDate(cur.getDate() + 1)
+    curDateStr = shiftDateStr(curDateStr, 1)
   }
 
   const currentDayInv = invByDate.get(targetDate)
