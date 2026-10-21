@@ -11,10 +11,22 @@ import { cn } from '@/lib/cn'
  * 出荷一覧・マトリックスの日付コントロール（features.md §8）。
  * モバイル（360px〜）でも「今日」ボタンがはみ出さないレスポンシブ設計。
  */
-export function DateNav({ date, basePath }: { date: string; basePath: string }) {
+export function DateNav({
+  date,
+  basePath,
+  defaultDate,
+  defaultLabel,
+}: {
+  date: string
+  basePath: string
+  defaultDate?: string
+  defaultLabel?: string
+}) {
   const router = useRouter()
   const hrefFor = (d: string) => `${basePath}?date=${d}`
-  const isToday = date === jstTodayStr()
+  const targetDate = defaultDate ?? jstTodayStr()
+  const isSelected = date === targetDate
+  const label = defaultLabel ?? '今日'
 
   const btn =
     'flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100 active:scale-95 transition'
@@ -48,15 +60,15 @@ export function DateNav({ date, basePath }: { date: string; basePath: string }) 
       </Link>
 
       <Link
-        href={hrefFor(jstTodayStr())}
+        href={hrefFor(targetDate)}
         className={cn(
           'flex h-9 sm:h-10 shrink-0 items-center justify-center rounded-lg border px-2.5 sm:px-3 text-xs sm:text-sm font-bold transition active:scale-95',
-          isToday
+          isSelected
             ? 'border-forest-400 bg-forest-50 text-forest-800 shadow-xs'
             : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
         )}
       >
-        今日
+        {label}
       </Link>
     </div>
   )

@@ -1084,6 +1084,7 @@ export async function processReceipt(
 
   slipData.alerts = changeAlerts
   cleanPayload['slip_data'] = slipData
+  cleanPayload['created_order_ids'] = createdOrderIds
 
   const finalReceiptStatus: 'pending_review' | 'approved' = anyPendingReview
     ? 'pending_review'

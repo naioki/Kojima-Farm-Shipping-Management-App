@@ -38,7 +38,10 @@ export default async function ShipmentsPage({
 }: {
   searchParams: { date?: string; product?: string }
 }) {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
+  // パック・収穫は全品目「出荷日の前日に収穫・パック」の原則に従うため、
+  // デフォルトは翌日（明日出荷分 ＝ 本日パック作業対象）
+  const defaultDate = shiftDateStr(jstTodayStr(), 1)
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : defaultDate
   const supabase = createClient()
   const admin = createAdminClient()
 
@@ -244,25 +247,84 @@ export default async function ShipmentsPage({
   const needsConfirmByPack = new Map((packRows ?? []).map((p) => [p.id, p.needs_manual_confirm]))
   const packInstructionsById = new Map((packRows ?? []).map((p) => [p.id, p as PackInstructionValues]))
 
-  // 受注原本取得
-  const { data: receiptRows } = orderIds.length
-    ? await supabase
-        .from('order_receipts')
-        .select('id, order_id, channel, r2_key, raw_payload, is_revision')
-        .in('order_id', orderIds)
-    : { data: [] }
+  // 受注原本取得（RLSによるスタッフ閲覧遮断を防ぐため adminClient を使用、週間マトリクス等の複数日展開も完全紐付け）
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
-  for (const rr of receiptRows ?? []) {
-    if (!rr.order_id) continue
-    receiptByOrder.set(rr.order_id, {
-      id: rr.id,
-      channel: rr.channel,
-      hasOriginal: true,
-      originalUrl: `/field/viewer/${rr.id}?date=${date}`,
-      emailText: null,
-      isRevision: Boolean(rr.is_revision),
-      parent: null,
-    })
+  if (orderIds.length > 0) {
+    // ① 直接 order_id が一致するレコード
+    const { data: directReceipts } = await admin
+      .from('order_receipts')
+      .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
+      .in('order_id', orderIds)
+
+    for (const rr of directReceipts ?? []) {
+      if (rr.order_id) {
+        receiptByOrder.set(rr.order_id, {
+          id: rr.id,
+          channel: rr.channel,
+          hasOriginal: true,
+          originalUrl: `/field/viewer/${rr.id}?date=${date}`,
+          emailText: null,
+          isRevision: Boolean(rr.is_revision),
+          parent: null,
+        })
+      }
+    }
+
+    // ② 週間マトリクス等で order_id が先頭1件のみになっているレコードの広域解決
+    const missingOrderIds = orderIds.filter((oid) => !receiptByOrder.has(oid))
+    if (missingOrderIds.length > 0 && customerIds.length > 0) {
+      const { data: candidateReceipts } = await admin
+        .from('order_receipts')
+        .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
+        .in('customer_id', customerIds)
+        .order('created_at', { ascending: false })
+        .limit(40)
+
+      for (const cr of candidateReceipts ?? []) {
+        const p = (cr.raw_payload ?? {}) as Record<string, unknown>
+        const cOrderIds = Array.isArray(p['created_order_ids'])
+          ? (p['created_order_ids'] as string[])
+          : []
+
+        // created_order_ids に含まれている注文
+        for (const mId of missingOrderIds) {
+          if (cOrderIds.includes(mId) && !receiptByOrder.has(mId)) {
+            receiptByOrder.set(mId, {
+              id: cr.id,
+              channel: cr.channel,
+              hasOriginal: true,
+              originalUrl: `/field/viewer/${cr.id}?date=${date}`,
+              emailText: null,
+              isRevision: Boolean(cr.is_revision),
+              parent: null,
+            })
+          }
+        }
+
+        // parsed_orders に含まれる日付・取引先の注文を照合
+        const parsedOrders = Array.isArray(p['parsed_orders'])
+          ? (p['parsed_orders'] as Array<{ delivery_date?: string; destination_name?: string }>)
+          : []
+        for (const mId of missingOrderIds) {
+          if (receiptByOrder.has(mId)) continue
+          const oCust = orderToCustomer.get(mId)
+          if (oCust && oCust === cr.customer_id) {
+            const hasDateMatch = parsedOrders.some((po) => po.delivery_date === date)
+            if (hasDateMatch || cr.delivery_date === date) {
+              receiptByOrder.set(mId, {
+                id: cr.id,
+                channel: cr.channel,
+                hasOriginal: true,
+                originalUrl: `/field/viewer/${cr.id}?date=${date}`,
+                emailText: null,
+                isRevision: Boolean(cr.is_revision),
+                parent: null,
+              })
+            }
+          }
+        }
+      }
+    }
   }
 
   // ⑦ 在庫（コンテナ）の連鎖キャリーオーバー取得（過去14日間の日跨ぎ累積繰越＋手動アンカー）
@@ -445,12 +507,49 @@ export default async function ShipmentsPage({
       {/* ナビゲーションバー */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h1 className="font-display text-xl font-black text-ink">当日出荷・収穫ボード</h1>
+          <h1 className="font-display text-xl font-black text-ink">収穫・パックボード</h1>
           <FieldViewSwitch active="day" date={date} />
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
-        <DateNav date={date} basePath={PATH} />
+        <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日出荷（本日パック）" />
       </div>
+
+      {/* 出荷日 ＆ 作業日 ガイダンスバッジ */}
+      {date === defaultDate ? (
+        <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-300 px-3.5 py-2 text-xs sm:text-sm font-black text-emerald-950 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🥬</span>
+            <span>本日パック作業対象（明日 {date} 出荷分）</span>
+          </div>
+          <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-xs text-white font-bold">作業中</span>
+        </div>
+      ) : date === jstTodayStr() ? (
+        <div className="flex items-center justify-between rounded-xl bg-sky-50 border border-sky-300 px-3.5 py-2 text-xs sm:text-sm font-black text-sky-950 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🚚</span>
+            <span>当日出荷分（{date} 出荷）</span>
+          </div>
+          <Link
+            href={`/field/shipments?date=${defaultDate}`}
+            className="rounded-md bg-emerald-700 px-2.5 py-1 text-xs text-white font-bold hover:bg-emerald-800 transition"
+          >
+            本日パック（明日出荷）へ ➜
+          </Link>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-300 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-800 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📅</span>
+            <span>{date} 出荷分</span>
+          </div>
+          <Link
+            href={`/field/shipments?date=${defaultDate}`}
+            className="rounded-md bg-forest-700 px-2.5 py-1 text-xs text-white font-bold hover:bg-forest-800 transition"
+          >
+            本日パック（明日出荷）へ ➜
+          </Link>
+        </div>
+      )}
 
       {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs">

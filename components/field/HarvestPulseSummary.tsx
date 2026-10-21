@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronDown, PackageCheck, Tractor, Box, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export interface ContainerBreakdownItem {
   type: string
@@ -167,7 +168,9 @@ export function HarvestPulseSummary({
             <span className="text-xl">🥬</span>
             <span className="text-base font-black tracking-wide">{productName} 収穫・在庫サマリー</span>
           </div>
-          <span className="text-xs font-bold text-white/80">{date}</span>
+          <span className="text-xs font-bold text-white/80">
+            {date === shiftDateStr(jstTodayStr(), 1) ? `翌日 ${date} 出荷分（本日収穫・パック）` : `${date} 出荷分`}
+          </span>
         </div>
 
         {/* 収穫箱数（最重要ヘッダー：注文合計 − 在庫） */}
@@ -203,7 +206,9 @@ export function HarvestPulseSummary({
         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-3 border-t border-white/15">
           {/* ① 今日の注文合計 */}
           <div className="rounded-xl bg-white/10 p-2.5 text-center">
-            <span className="block text-xs sm:text-sm font-black text-white/95">📦 今日の注文合計</span>
+            <span className="block text-xs sm:text-sm font-black text-white/95">
+              {date === shiftDateStr(jstTodayStr(), 1) ? '📦 明日出荷の注文合計' : '📦 注文合計'}
+            </span>
             <span className="num mt-0.5 block text-xl font-black text-white tabular-nums">
               {totalBoxes.toLocaleString()} <small className="text-xs font-bold text-white/80">箱</small>
             </span>

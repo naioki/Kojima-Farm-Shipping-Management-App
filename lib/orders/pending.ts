@@ -117,7 +117,12 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
 
   const receiptByOrder = new Map<string, NonNullable<typeof receiptRows>[number]>()
   for (const r of receiptRows ?? []) {
-    if (!receiptByOrder.has(r.order_id)) receiptByOrder.set(r.order_id, r)
+    if (r.order_id && !receiptByOrder.has(r.order_id)) receiptByOrder.set(r.order_id, r)
+    const p = (r.raw_payload ?? {}) as Record<string, unknown>
+    const cOrderIds = Array.isArray(p['created_order_ids']) ? (p['created_order_ids'] as string[]) : []
+    for (const cid of cOrderIds) {
+      if (!receiptByOrder.has(cid)) receiptByOrder.set(cid, r)
+    }
   }
 
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))

@@ -1006,6 +1006,8 @@ export function ShipmentRow({
               </div>
               <a
                 href={receipt.originalUrl || `/field/viewer/${receipt.id}?date=${deliveryDate ?? ''}`}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="h-9 px-3.5 rounded-lg bg-trust-700 text-white text-xs font-black shadow-xs hover:bg-trust-800 active:scale-95 transition flex items-center gap-1.5 shrink-0"
               >
                 <span>原本を見る</span>
