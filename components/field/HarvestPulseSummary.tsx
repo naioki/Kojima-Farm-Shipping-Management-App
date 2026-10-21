@@ -324,21 +324,21 @@ export function HarvestPulseSummary({
           </div>
         </div>
 
-        {/* 翌日注文の先回り連動見通し */}
+        {/* 翌日出荷分（本日収穫・パック対象）の先回り連動見通し */}
         {nextDayTotalBoxes > 0 && (
           <div className="mt-3 rounded-xl bg-black/20 p-2.5 text-xs sm:text-sm border border-white/10 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 font-bold text-emerald-100">
-              <span>📅 翌日の注文予定:</span>
+              <span>📅 翌日出荷分（本日収穫・パック）:</span>
               <span className="text-white font-black text-sm sm:text-base">{nextDayTotalBoxes} 箱</span>
               <span className="text-white/70">({nextDayTotalPacks} P)</span>
             </div>
             <div className="text-white/90 font-bold text-xs sm:text-sm">
               {surplusBoxes > 0 ? (
                 <span>
-                  今日の余剰 <span className="text-emerald-300 font-black">{surplusBoxes}箱</span> 充当後 → 明日の実質収穫見込み: <span className="text-white font-black underline">{Math.max(0, nextDayTotalBoxes - surplusBoxes)} 箱</span>
+                  手元余剰 <span className="text-emerald-300 font-black">{surplusBoxes}箱</span> 充当後 → 本日採る翌日出荷分: <span className="text-white font-black underline">{Math.max(0, nextDayTotalBoxes - surplusBoxes)} 箱</span>
                 </span>
               ) : (
-                <span>明日の収穫予定: {nextDayTotalBoxes} 箱</span>
+                <span>本日採る翌日出荷分: {nextDayTotalBoxes} 箱</span>
               )}
             </div>
           </div>

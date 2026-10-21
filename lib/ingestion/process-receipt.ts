@@ -7,6 +7,7 @@ import { buildCustomerHintText, type ParseHint } from '@/lib/ingestion/learning'
 import { decideReceiptApproval, isAutoApproveOn, parseThreshold } from '@/lib/ingestion/auto-approve'
 import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
+import { shiftDateStr } from '@/lib/dates'
 import { notify } from '@/lib/notify'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
@@ -1016,8 +1017,9 @@ export async function processReceipt(
       }
     }
 
-    // 自動承認された場合は harvest_tasks（収穫タスク）も生成・同期（0001_base_schema.sql & lib/orders/approve.ts 準拠）
+    // 自動承認された場合は harvest_tasks（収穫タスク）も生成・同期（全品目「出荷日の前日に収穫・パック」の原則に従い task_date は delivery_date - 1日）
     if (orderStatus === 'approved' && po.delivery_date && insertedOrUpdatedItems.length > 0) {
+      const harvestTaskDate = shiftDateStr(po.delivery_date, -1)
       const itemIdsForTasks = insertedOrUpdatedItems.map((it) => it.id)
       await admin.from('harvest_tasks').delete().in('order_item_id', itemIdsForTasks)
       const taskRows = insertedOrUpdatedItems
@@ -1026,7 +1028,7 @@ export async function processReceipt(
           product_id: it.product_id as string,
           order_item_id: it.id,
           required_qty: Number(it.quantity),
-          task_date: po.delivery_date!,
+          task_date: harvestTaskDate,
         }))
       if (taskRows.length > 0) {
         const { error: tasksErr } = await admin.from('harvest_tasks').insert(taskRows)

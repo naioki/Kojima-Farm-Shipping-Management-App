@@ -2,6 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/supabase'
 import { writeAudit } from '@/lib/audit/log'
+import { shiftDateStr } from '@/lib/dates'
 import { getSetting } from '@/lib/settings'
 import { getStaffFeatures } from '@/lib/field/features'
 import { decideReceiptApproval, parseThreshold } from '@/lib/ingestion/auto-approve'
@@ -15,11 +16,11 @@ import { decideReceiptApproval, parseThreshold } from '@/lib/ingestion/auto-appr
  * 呼び出し側に残し、この関数は「役割が確定した後の業務ゲート＋副作用」だけを担う。
  *
  * ゲート（すべて既存ルートと同一メッセージ・同一ステータスコード）:
- *   - 納品日ゲート : harvest_tasks.task_date に必須
+ *   - 納品日ゲート : harvest_tasks.task_date に必須（全品目「出荷日の前日に収穫・パック」のため task_date = delivery_date - 1日）
  *   - 納入先ゲート : 取引先に納入先登録があるのに未確定なら拒否（取引先＞納入先の仕分け保証）
  *   - 荷姿ゲート   : 商品×取引先に選べる荷姿があるのに未確定なら拒否（箱数計算の保証）
  *   - スタッフ判定 : role=staff は「機能解放＋高確信・取引先一致・納品日確定」のみ可
- * 成功時: status=approved に更新し、各明細から harvest_tasks を生成、audit_log に記録。
+ * 成功時: status=approved に更新し、各明細から harvest_tasks（出荷日前日）を生成、audit_log に記録。
  */
 
 type AdminClient = SupabaseClient<Database>
@@ -156,14 +157,15 @@ export async function approveOrder(
   const { error: updErr } = await admin.from('orders').update(updates).eq('id', order.id)
   if (updErr) return { ok: false, status: 500, error: updErr.message }
 
-  // 各明細 → 収穫タスク生成（product_id 未照合はスキップ）
+  // 各明細 → 収穫タスク生成（全品目「出荷日の前日に収穫・パック」の原則に従い task_date は deliveryDate - 1日）
+  const harvestTaskDate = shiftDateStr(deliveryDate, -1)
   const tasks = items
     .filter((it) => it.product_id)
     .map((it) => ({
       product_id: it.product_id!,
       order_item_id: it.id,
       required_qty: it.quantity,
-      task_date: deliveryDate,
+      task_date: harvestTaskDate,
     }))
   const { error: taskErr } = await admin.from('harvest_tasks').insert(tasks)
   if (taskErr) {

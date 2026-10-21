@@ -12,7 +12,8 @@
   - 注文・請求実績が0件なら、付随する子テーブル（`pack_configs`, `price_rules`, `customer_product_rules` 等）を自動クリーンアップして物理削除する。
   - 過去の注文・請求実績がある場合は、履歴保護のため自動的に `is_active: false`（非表示・アーカイブ）に更新して `200 OK` を返す。
 
-## 3. AI受発注解析（Gemini）の省トークン・高精度設計
+## 3. AI受発注解析（Gemini）の省トークン・高精度設計 ＆ 前日収穫・パック原則
+- **全品目「出荷日の前日に収穫・パック」の原則**: すべての品目・取引先において、収穫およびパック（袋詰め）作業は出荷日（`delivery_date`）の前日（-1日）に行う（`harvest_tasks.task_date = shiftDateStr(delivery_date, -1)`）。
 - **二重送信禁止**: `lib/gemini/prompts.ts` には全社共通のコア指示・JSONスキーマのみを置き、取引先別ルールは Supabase `ai_rules` テーブル（高密度5ルール）から `systemInstruction` に1回だけ注入する（`parts` 側には絶対に入れない）。
 - **決定論的検算**: 入数換算（標準20／NSK24／勘兵衛ケース×20）・箱数切り上げ・固定書式・注文キー生成は `lib/gemini/analyze.ts`（`verifyAndNormalizeItem`）と `lib/pipeline/schemas.ts` で決定論的に算出する。
 
