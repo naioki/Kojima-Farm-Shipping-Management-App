@@ -329,9 +329,12 @@ export async function processReceipt(
     parsedOrders,
   })
 
-  // 解析成功後は DB 肥大化を防ぐため raw_payload から一時的な file_base64 を除去し、slip_data と parsed_orders を記録する
+  // Google Drive 原本URL（source_file_url）が確実に存在する場合のみ、DB肥大化を防ぐため file_base64 を除去する。
+  // 万一 FAX機側の Drive アップロード遅延・未取得時は、原本閲覧（/api/receipts/[id]/original）フォールバックのために file_base64 を温存する。
   const cleanPayload: Record<string, unknown> = { ...payload }
-  delete cleanPayload['file_base64']
+  if (sourceFileUrl) {
+    delete cleanPayload['file_base64']
+  }
   cleanPayload['parsed_orders'] = parsedOrders
   cleanPayload['slip_data'] = slipData
 
