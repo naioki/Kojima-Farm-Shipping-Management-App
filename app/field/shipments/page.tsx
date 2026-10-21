@@ -248,6 +248,21 @@ export default async function ShipmentsPage({
   const packInstructionsById = new Map((packRows ?? []).map((p) => [p.id, p as PackInstructionValues]))
 
   // 受注原本取得（RLSによるスタッフ閲覧遮断を防ぐため adminClient を使用、週間マトリクス等の複数日展開も完全紐付け）
+  function checkReceiptHasFile(receiptRow: { r2_key?: string | null; raw_payload?: unknown }): boolean {
+    const p = (receiptRow.raw_payload ?? {}) as Record<string, unknown>
+    const slip = (p['slip_data'] ?? {}) as Record<string, unknown>
+    const rawUrl =
+      (typeof p['source_file_url'] === 'string' && p['source_file_url'].trim()) ||
+      (typeof p['drive_url'] === 'string' && p['drive_url'].trim()) ||
+      (typeof p['drive_backup_url'] === 'string' && p['drive_backup_url'].trim()) ||
+      (typeof p['file_url'] === 'string' && p['file_url'].trim()) ||
+      (typeof p['url'] === 'string' && p['url'].trim()) ||
+      (typeof slip['source_file_url'] === 'string' && slip['source_file_url'].trim()) ||
+      (typeof receiptRow.r2_key === 'string' && receiptRow.r2_key.trim()) ||
+      null
+    return Boolean(rawUrl || (typeof p['file_base64'] === 'string' && p['file_base64'].trim()))
+  }
+
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
   if (orderIds.length > 0) {
     // ① 直接 order_id が一致するレコード
@@ -258,11 +273,12 @@ export default async function ShipmentsPage({
 
     for (const rr of directReceipts ?? []) {
       if (rr.order_id) {
+        const hasFile = checkReceiptHasFile(rr)
         receiptByOrder.set(rr.order_id, {
           id: rr.id,
           channel: rr.channel,
-          hasOriginal: true,
-          originalUrl: `/field/viewer/${rr.id}?date=${date}`,
+          hasOriginal: hasFile,
+          originalUrl: hasFile ? `/field/viewer/${rr.id}?date=${date}` : null,
           emailText: null,
           isRevision: Boolean(rr.is_revision),
           parent: null,
@@ -286,14 +302,16 @@ export default async function ShipmentsPage({
           ? (p['created_order_ids'] as string[])
           : []
 
+        const hasFile = checkReceiptHasFile(cr)
+
         // created_order_ids に含まれている注文
         for (const mId of missingOrderIds) {
           if (cOrderIds.includes(mId) && !receiptByOrder.has(mId)) {
             receiptByOrder.set(mId, {
               id: cr.id,
               channel: cr.channel,
-              hasOriginal: true,
-              originalUrl: `/field/viewer/${cr.id}?date=${date}`,
+              hasOriginal: hasFile,
+              originalUrl: hasFile ? `/field/viewer/${cr.id}?date=${date}` : null,
               emailText: null,
               isRevision: Boolean(cr.is_revision),
               parent: null,
@@ -314,8 +332,8 @@ export default async function ShipmentsPage({
               receiptByOrder.set(mId, {
                 id: cr.id,
                 channel: cr.channel,
-                hasOriginal: true,
-                originalUrl: `/field/viewer/${cr.id}?date=${date}`,
+                hasOriginal: hasFile,
+                originalUrl: hasFile ? `/field/viewer/${cr.id}?date=${date}` : null,
                 emailText: null,
                 isRevision: Boolean(cr.is_revision),
                 parent: null,

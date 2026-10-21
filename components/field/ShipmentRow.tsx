@@ -998,7 +998,7 @@ export function ShipmentRow({
           </div>
 
           {/* 原本ファイルカード（FAX元データへの直接ジャンプ） */}
-          {(receipt?.originalUrl || receipt?.id) && (
+          {receipt?.hasOriginal && (receipt.originalUrl || receipt.id) ? (
             <div className="rounded-xl border border-trust-200 bg-trust-50/60 p-3 flex items-center justify-between gap-3 shadow-2xs">
               <div>
                 <span className="block text-xs font-black text-trust-900">📄 受注原本（FAX / OCR）</span>
@@ -1014,7 +1014,17 @@ export function ShipmentRow({
                 <span className="text-[11px]">↗</span>
               </a>
             </div>
-          )}
+          ) : receipt && !receipt.hasOriginal ? (
+            <div className="rounded-xl border border-line bg-bg-card p-2.5 flex items-center justify-between gap-2">
+              <div>
+                <span className="block text-xs font-bold text-ink-soft">📄 受注原本（FAX / OCR）</span>
+                <span className="text-xs text-ink-muted">原本ファイル未登録（テキストのみ取込または手動作成データ）</span>
+              </div>
+              <span className="rounded bg-bg-soft px-2 py-0.5 text-[11px] font-bold text-ink-muted shrink-0">
+                原本なし
+              </span>
+            </div>
+          ) : null}
 
           {/* 追記メモカード */}
           <div className="rounded-xl border border-line bg-bg-card p-2.5">
