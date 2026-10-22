@@ -151,6 +151,8 @@ export const ordersResultSchema = z.object({
   skip_reason: z.string().nullish(),
   slip_no: z.string().nullish(),
   is_full_resending_matrix: z.boolean().nullish(),
+  /** 表形式帳票の表頭に記載された有効日付一覧（例: ["2026-10-23", "2026-10-24", ...]） */
+  valid_header_dates: z.array(z.string()).nullish(),
   orders: z.array(parsedOrderSchema),
   /** 実際に応答したGeminiモデルID（設定画面・ドライラン確認用） */
   used_model: z.string().optional(),
@@ -681,7 +683,24 @@ export async function analyzeOrders(
     // 同一伝票内の重複注文キーに #2, #3 を付与するためのカウンタ（ARCHITECTURE.md §3.2）
     const orderKeyCounts = new Map<string, number>()
 
-    const normalizedOrders: ParsedOrder[] = parsed.orders
+    // ── 決定論的マトリクス・グリッド日付バリデータ（表頭有効日付範囲外の幻覚スライドを完全検知・除外） ──
+    const validHeaderDatesSet =
+      parsed.valid_header_dates && parsed.valid_header_dates.length > 0
+        ? new Set(parsed.valid_header_dates)
+        : null
+
+    const filteredOrders = parsed.orders.filter((order) => {
+      // 表形式FAXで有効な表頭日付リストがある場合、表頭に存在しない日付（スライド誤読で生じた月末はみ出し日等）は安全に排除
+      if (validHeaderDatesSet && order.delivery_date) {
+        if (!validHeaderDatesSet.has(order.delivery_date)) {
+          console.warn(`[analyzeOrders] 表頭日付外の幻覚スライド注文を除外: ${order.delivery_date} (${order.destination_name})`)
+          return false
+        }
+      }
+      return true
+    })
+
+    const normalizedOrders: ParsedOrder[] = filteredOrders
       .map((order) => {
         const isSampleOrd = Boolean(
           (order.note ?? '').includes('サンプル') ||

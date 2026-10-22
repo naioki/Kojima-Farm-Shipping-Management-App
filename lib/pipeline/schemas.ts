@@ -183,8 +183,8 @@ export function determineUnitCount(
     return explicitUnitCount
   }
   const combined = `${clientName ?? ''} ${spec ?? ''}`.normalize('NFKC').toUpperCase()
-  // spec等に「入数24」「24入」「入数6」「30束入」等の記載があれば最優先で抽出
-  const match = combined.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|玉|束|本|パック|P)/)
+  // specや生テキストに「入数24」「24入」「入数:30」「小コン 30」「30束入」等の記載があれば最優先で抽出
+  const match = combined.match(/(?:入数|1箱|1ケース|小コン|大コン|青コン|茶コン|コンテナ)\s*[:：]?\s*(\d+)|(\d+)\s*(?:入|玉|束|本|パック|P)/i)
   if (match) {
     const n = Number(match[1] || match[2])
     if (Number.isFinite(n) && n > 0 && n <= 200) return n

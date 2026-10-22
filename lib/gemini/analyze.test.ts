@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verifyAndNormalizeItem, buildAiRulesSection } from './analyze'
+import { verifyAndNormalizeItem, buildAiRulesSection, ordersResultSchema } from './analyze'
 import { highModelTryOrder, modelTryOrder, normalizeModelId } from './models'
 import {
   generateOrderKey,
@@ -7,6 +7,7 @@ import {
   formatQuantityCaseText,
   toGoogleDrivePreviewUrl,
   toGoogleDriveViewUrl,
+  determineUnitCount,
 } from '@/lib/pipeline/schemas'
 import type { AiRule } from '@/types/database'
 
@@ -166,5 +167,82 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     const section = buildAiRulesSection(rules)
     expect(section).toContain('株式会社勘兵衛')
     expect(section).toContain('ケース数×20を総パック数とする')
+  })
+
+  it('マトリクス表の決定論的バリデータ: 表頭日付 valid_header_dates 外の幻覚スライド注文を安全に除外できるスキーマ構造', () => {
+    const rawAiOutput = {
+      is_order: true,
+      valid_header_dates: ['2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29'],
+      orders: [
+        {
+          customer_name: '農事組合法人 房総食料センター',
+          destination_name: 'BOX用',
+          delivery_date: '2026-10-24',
+          items: [{ raw_name: 'チンゲンサイ', product_name: 'チンゲン菜', quantity: '59', unit: 'P', confidence: 0.95 }],
+        },
+        {
+          customer_name: '農事組合法人 房総食料センター',
+          destination_name: 'BOX用',
+          delivery_date: '2026-10-30', // 表頭ヘッダーに存在しないスライド幻覚日
+          items: [{ raw_name: 'チンゲンサイ', product_name: 'チンゲン菜', quantity: '204', unit: 'P', confidence: 0.8 }],
+        },
+      ],
+    }
+
+    const parsed = ordersResultSchema.parse(rawAiOutput)
+    expect(parsed.valid_header_dates).toEqual([
+      '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29',
+    ])
+
+    const validDatesSet = new Set(parsed.valid_header_dates)
+    const validOrders = parsed.orders.filter(
+      (o) => o.delivery_date && validDatesSet.has(o.delivery_date),
+    )
+    expect(validOrders).toHaveLength(1)
+    expect(validOrders[0]?.delivery_date).toBe('2026-10-24')
+    expect(validOrders[0]?.items[0]?.quantity).toBe('59')
+  })
+
+  it('コンテナ・納品先ごとの動的入数カスケード (小コン30 / 大コン20 / ちばセット30 / NSK24 / 標準20)', () => {
+    // 1. 小コン 30
+    expect(determineUnitCount('房総食料センター', '小コン 30')).toBe(30)
+    // 2. 大コン 20
+    expect(determineUnitCount('房総食料センター', '大コン: 20')).toBe(20)
+    // 3. ちばセットキーワード
+    expect(determineUnitCount('房総食料センター', 'ちばセット用')).toBe(30)
+    // 4. NSK
+    expect(determineUnitCount('株式会社農業総合研究所（NSK）', null)).toBe(24)
+    // 5. デフォルトチンゲン菜
+    expect(determineUnitCount('一般取引先', null)).toBe(20)
+  })
+
+  it('セル単位の約表記単独判定: 約がついたセルのみ confidence が下がり、隣接セルには伝播しない', () => {
+    const approxItem = verifyAndNormalizeItem(
+      {
+        raw_name: 'チンゲン菜',
+        product_name: 'チンゲン菜',
+        quantity: '約280',
+        unit: 'P',
+        confidence: 0.95,
+      },
+      '農事組合法人 房総食料センター',
+    )
+    expect(approxItem.quantity).toBe('280')
+    expect(approxItem.confidence).toBeLessThanOrEqual(0.55)
+    expect(approxItem.needs_review_reason).toContain('約表記')
+
+    const exactItem = verifyAndNormalizeItem(
+      {
+        raw_name: 'チンゲン菜',
+        product_name: 'チンゲン菜',
+        quantity: '59',
+        unit: 'P',
+        confidence: 0.95,
+      },
+      '農事組合法人 房総食料センター',
+    )
+    expect(exactItem.quantity).toBe('59')
+    expect(exactItem.confidence).toBe(0.95)
+    expect(exactItem.needs_review_reason).toBeNull()
   })
 })

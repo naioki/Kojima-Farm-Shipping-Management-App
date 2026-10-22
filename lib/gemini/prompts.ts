@@ -23,8 +23,9 @@ export const DEFAULT_GEMINI_PROMPT_ORDERS = `あなたは千葉県旭市「小�
 - **【全品目・全取引先共通の大原則】すべての品目において、収穫およびパック（袋詰め）作業は「出荷日（納品日: delivery_date）の前日（-1日）」に行う。** FAX・注文書に「出荷日・納品日」と「持込日・収穫日・パック日」が併記されている場合は、\`delivery_date\` には必ず「出荷日（納品日）」を \`YYYY-MM-DD\` で抽出し、前日作業が前提であることを踏まえて解釈する（和郷園のように表頭が出荷日の場合も、実際の収穫・パック・持込は前日に行う）。
 - **【画像回転・天地判定】** FAX画像が90度・180度・270度横向きまたは逆向きの場合でも、文字の向きから天地を自動判定し、表の行（品目・出荷先）と列（日付ヘッダー）を正しくクロスさせて解釈する。横向きだからといって行と列を取り違えてはならない。
 - **【グリッド・マトリクス表の厳格マッピング（前詰めスライド厳禁）】**:
-  - 表頭の日付ヘッダーに記載された日付（例: 10/23〜10/29）と、行の出荷先（例: BOX用、ちばセット用）が交差するセルのみを正しく抽出する。
-  - セルが空欄・斜線・ハイフンの日は「注文なし（0件）」であり、**決して別の日の数字や別行の数字を空欄の日に前詰め（スライド）して直列連結してはならない**。表頭に存在しない日付（10/30や10/31等）を勝手に生成することは厳禁。
+  - 表形式（週間連絡表・マトリクス表）の場合、表頭の列ヘッダーに印字されている有効日付リストを YYYY-MM-DD 形式で \`valid_header_dates\` に列挙すること（例: \`["2026-10-23", "2026-10-24", ..., "2026-10-29"]\`）。
+  - 各注文の \`delivery_date\` は必ずこの \`valid_header_dates\` のいずれかに一致しなければならない。表頭に存在しない日付（10/30や10/31等）を勝手に生成することは厳禁。
+  - セルが空欄・斜線・ハイフンの日は「注文なし（0件）」であり、**決して別の日の数字や別行の数字を空欄の日に前詰め（スライド）して直列連結してはならない**。
   - 出荷先列（例: 『BOX用』『ちばセット用』）が複数行ある場合、各行ごとに独立して \`destination_name\` を抽出する。決して全行を1つの納品先に統一したり省略してはならない。入数欄（BOX用=20、ちばセット用=30等）も行ごとに抽出する。
 - **【約表記のセル単位限定判定】**:
   - 『約280』など、そのセルに『約』が明記されている数値のみ \`is_approximate: true\`, \`confidence: 0.5\`, \`needs_review_reason: "約表記（暫定値・要確認）"\` とする。『59』『164』などの数字のみの確定セルは必ず \`is_approximate: false\` とし、帳票内の他のセルの約表記を引きずってはならない。
@@ -36,7 +37,7 @@ export const DEFAULT_GEMINI_PROMPT_ORDERS = `あなたは千葉県旭市「小�
 - 文字潰れ・検算不一致・納入先不明 → \`confidence\` を \`0.6\` 以下にし \`needs_review_reason\` に理由を明記。
 
 # 3. 出力JSONスキーマ（厳守・説明文不要）
-{"is_order":boolean,"skip_reason":string|null,"slip_no":string|null,"is_full_resending_matrix":boolean,"orders":[{"customer_name":string|null,"destination_name":string|null,"delivery_date":"YYYY-MM-DD"|null,"slip_no":string|null,"note":string|null,"items":[{"raw_name":string,"product_name":string,"quantity":string,"unit":"P"|string|null,"confidence":number,"spec":string|null,"packs_per_case":number|null,"cases":number|null,"remainder_packs":number|null,"box_count":number|null,"container_type":string|null,"is_case_input":boolean|null,"is_approximate":boolean|null,"is_handwritten_modified":boolean|null,"has_reply_required":boolean|null,"explicit_cancel_in_slip":boolean|null,"is_new_addition":boolean|null,"note":string|null,"needs_review_reason":string|null}]}]}`
+{"is_order":boolean,"skip_reason":string|null,"slip_no":string|null,"is_full_resending_matrix":boolean,"valid_header_dates":string[]|null,"orders":[{"customer_name":string|null,"destination_name":string|null,"delivery_date":"YYYY-MM-DD"|null,"slip_no":string|null,"note":string|null,"items":[{"raw_name":string,"product_name":string,"quantity":string,"unit":"P"|string|null,"confidence":number,"spec":string|null,"packs_per_case":number|null,"cases":number|null,"remainder_packs":number|null,"box_count":number|null,"container_type":string|null,"is_case_input":boolean|null,"is_approximate":boolean|null,"is_handwritten_modified":boolean|null,"has_reply_required":boolean|null,"explicit_cancel_in_slip":boolean|null,"is_new_addition":boolean|null,"note":string|null,"needs_review_reason":string|null}]}]}`
 
 /**
  * Supabase `ai_rules` が万一0件（未シード・オフライン）のときのみ注入する高密度5ルール要旨。
