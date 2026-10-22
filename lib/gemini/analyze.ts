@@ -317,8 +317,16 @@ export function normalizeCustomerAndDestination(params: {
     if (!spec) spec = '200gUP (入数24)'
   } else if (normClient.includes('房総食料')) {
     customerName = '農事組合法人 房総食料センター'
-    if (!destinationName) destinationName = 'BOX用'
-    if (!spec || spec.includes('250g')) spec = '200g (入数20)'
+    if (normDest.includes('ちばセット') || normDest.includes('千葉セット')) {
+      destinationName = 'ちばセット用'
+      if (!spec || spec.includes('250g') || spec.includes('200g')) spec = '200g (入数30)'
+    } else if (normDest.includes('box') || normDest.includes('ボックス')) {
+      destinationName = 'BOX用'
+      if (!spec || spec.includes('250g') || spec.includes('200g')) spec = '200g (入数20)'
+    } else if (!destinationName) {
+      destinationName = 'BOX用'
+      if (!spec || spec.includes('250g')) spec = '200g (入数20)'
+    }
   } else if (normClient.includes('和郷園')) {
     customerName = '農事組合法人 和郷園'
     // 4.1 OCR文字潰れ補正
@@ -388,12 +396,12 @@ export function verifyAndNormalizeItem(
     note = note.replace(/★/g, '').trim() || null
   }
 
-  // 「約80」などの暫定表記チェック（ARCHITECTURE.md §4.2）
+  // 「約80」などの暫定表記チェック（セル単位限定。伝票全体のnoteに引きずられない）
   const hasApprox =
     Boolean(item.is_approximate) ||
     quantityStr.includes('約') ||
     item.raw_name.includes('約') ||
-    (note ?? '').includes('約')
+    (item.note ?? '').includes('約')
 
   if (hasApprox && !item.is_handwritten_modified) {
     confidence = Math.min(confidence, 0.55)
