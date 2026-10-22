@@ -70,13 +70,21 @@ export async function GET(req: NextRequest) {
 
   if (dayOrderIds.length > 0) {
     // 注文に直接紐づく受信、または同日・同取引先の受信を取得
-    const dayCustomerIds = [...new Set(dayOrders.map((o) => o.customer_id))]
-    const { data: dayReceiptRows } = await admin
-      .from('order_receipts')
-      .select('id, customer_id, order_id, r2_key, raw_payload, received_at')
-      .or(`order_id.in.(${dayOrderIds.join(',')}),customer_id.in.(${dayCustomerIds.join(',')})`)
-      .order('received_at', { ascending: false })
-      .limit(30)
+    const validOrderIds = dayOrderIds.filter(Boolean)
+    const validCustomerIds = [...new Set(dayOrders.map((o) => o.customer_id).filter(Boolean))]
+
+    const orClauses: string[] = []
+    if (validOrderIds.length > 0) orClauses.push(`order_id.in.(${validOrderIds.join(',')})`)
+    if (validCustomerIds.length > 0) orClauses.push(`customer_id.in.(${validCustomerIds.join(',')})`)
+
+    const { data: dayReceiptRows } = orClauses.length > 0
+      ? await admin
+          .from('order_receipts')
+          .select('id, customer_id, order_id, r2_key, raw_payload, received_at')
+          .or(orClauses.join(','))
+          .order('received_at', { ascending: false })
+          .limit(30)
+      : { data: [] }
 
     for (const r of dayReceiptRows ?? []) {
       const p = (r.raw_payload ?? {}) as Record<string, unknown>

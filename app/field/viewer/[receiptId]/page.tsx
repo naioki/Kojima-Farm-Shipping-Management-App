@@ -48,11 +48,13 @@ export default function ReceiptViewerPage() {
   }, [receiptId, returnDate])
 
   const handleBack = () => {
-    if (window.history.length > 1) {
-      router.back()
-    } else {
-      router.push(returnDate ? `/field/shipments?date=${returnDate}` : '/field/shipments')
+    // 別タブで開いた場合はタブを閉じる試み、または一覧画面へ確実に戻る
+    if (window.opener && window.history.length <= 1) {
+      try {
+        window.close()
+      } catch {}
     }
+    router.push(returnDate ? `/field/shipments?date=${returnDate}` : '/field/shipments')
   }
 
   return (
@@ -116,7 +118,7 @@ export default function ReceiptViewerPage() {
             <button
               key={r.id}
               type="button"
-              onClick={() => router.push(`/field/viewer/${r.id}?date=${returnDate}`)}
+              onClick={() => router.replace(`/field/viewer/${r.id}?date=${returnDate}`)}
               className={cn(
                 'rounded-lg px-3 py-1 text-xs font-black transition active:scale-95 shrink-0 flex items-center gap-1',
                 r.isCurrent

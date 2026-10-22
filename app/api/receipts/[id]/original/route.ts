@@ -170,12 +170,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   <script>
     (async function() {
       const loading = document.getElementById('loading');
+      const fallbackTimer = setTimeout(() => {
+        if (loading && document.body.contains(loading)) {
+          loading.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;max-width:380px;margin:20px auto;text-align:center;"><p style="margin:0 0 14px;color:#f8fafc;font-size:14px;font-weight:bold;">原本PDFが準備できています</p><a href="/api/receipts/${params.id}/original" target="_blank" class="open-btn" style="padding:10px 18px;font-size:14px;">全画面でPDFを開く ↗</a></div>';
+        }
+      }, 5000);
+
       try {
         if (typeof pdfjsLib === 'undefined') {
           throw new Error('PDF.js not loaded');
         }
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        const raw = atob(${JSON.stringify(base64Data)});
+        const raw = atob(${JSON.stringify(base64Data)}.replace(/\\s+/g, ''));
         const rawLength = raw.length;
         const array = new Uint8Array(new ArrayBuffer(rawLength));
         for (let i = 0; i < rawLength; i++) {
@@ -183,6 +189,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         }
         const loadingTask = pdfjsLib.getDocument({ data: array });
         const pdf = await loadingTask.promise;
+        clearTimeout(fallbackTimer);
         if (loading) loading.remove();
         const viewer = document.getElementById('viewer');
 
@@ -197,6 +204,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           await page.render({ canvasContext: context, viewport: viewport }).promise;
         }
       } catch (err) {
+        clearTimeout(fallbackTimer);
         console.error('PDF render error:', err);
         if (loading) {
           loading.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;max-width:380px;margin:20px auto;text-align:center;"><p style="margin:0 0 14px;color:#f8fafc;font-size:14px;font-weight:bold;">原本PDFが準備できています</p><a href="/api/receipts/${params.id}/original" target="_blank" class="open-btn" style="padding:10px 18px;font-size:14px;">全画面でPDFを開く ↗</a></div>';
