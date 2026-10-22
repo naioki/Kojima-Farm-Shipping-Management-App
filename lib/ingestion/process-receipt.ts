@@ -644,12 +644,22 @@ export async function processReceipt(
           : matchedRule?.has_seal != null
             ? matchedRule.has_seal
             : Boolean(sealText)
+      // サンプル注文判定: サンプルの場合は現場カード印刷なし（has_card: false）
+      const isItemSample = Boolean(
+        (po.destination_name || '').includes('サンプル') ||
+        (it.note || '').includes('サンプル') ||
+        (po.note || '').includes('サンプル') ||
+        (sourceFileName || '').includes('サンプル') ||
+        (slipData.source_file_name || '').includes('サンプル')
+      )
       const hasCard =
         it.has_card != null
           ? it.has_card
-          : matchedRule?.has_card != null
-            ? matchedRule.has_card
-            : null
+          : isItemSample
+            ? false
+            : matchedRule?.has_card != null
+              ? matchedRule.has_card
+              : null
 
       const orderKey =
         it.order_key ||
@@ -662,12 +672,20 @@ export async function processReceipt(
         })
 
       const lineNoteParts: string[] = []
+      if (isItemSample && !it.note?.includes('サンプル')) {
+        lineNoteParts.push('【サンプル】カード無し')
+      }
       if (it.is_new_addition) lineNoteParts.push('★新規追加')
       if (it.note) lineNoteParts.push(it.note)
       if (it.needs_review_reason) lineNoteParts.push(`⚠${it.needs_review_reason}`)
       if (needsDestination && po.destination_name) {
         lineNoteParts.push(`⚠納入先要確認(${po.destination_name})`)
       }
+
+      // 単価・買値・金額は現場ボード・指示に絶対に含めない（AIルール・現場規約遵守）
+      const safeLineNotes = lineNoteParts.filter(
+        (p) => !p.includes('単価') && !p.includes('買値') && !p.includes('¥'),
+      )
 
       enriched.push({
         parsed: it,
@@ -683,7 +701,7 @@ export async function processReceipt(
         quantityChangeMemo: null,
         containerType,
         quantityCaseText,
-        lineNote: lineNoteParts.length > 0 ? lineNoteParts.join(' / ') : null,
+        lineNote: safeLineNotes.length > 0 ? safeLineNotes.join(' / ') : null,
         bagType,
         hasSeal,
         sealText,
@@ -708,6 +726,20 @@ export async function processReceipt(
     let existingOrder: ExistingOrderRow | undefined
     let prevItems: PrevItemRow[] = []
 
+    // ★ サンプル注文の精密判定（伝票番号連番のstartsWith('42')等の脆い誤判定は完全排除）
+    const rawText = typeof payload['text'] === 'string' ? payload['text'] : ''
+    const destFullName = custDests.find((d) => d.id === destinationId)?.full_name || ''
+    const isIncomingSample = Boolean(
+      (po.note || '').includes('サンプル') ||
+      (po.destination_name || '').includes('サンプル') ||
+      destFullName.includes('サンプル') ||
+      (sourceFileName || '').includes('サンプル') ||
+      (slipData.source_file_name || '').includes('サンプル') ||
+      rawText.includes('サンプル依頼書') ||
+      rawText.includes('サンプル') ||
+      enriched.some((e) => (e.parsed.note || '').includes('サンプル'))
+    )
+
     if (orderCustomerId && po.delivery_date) {
       let existingQuery = admin
         .from('orders')
@@ -720,25 +752,14 @@ export async function processReceipt(
       } else {
         existingQuery = existingQuery.is('destination_id', null)
       }
-      const { data: existingOrders } = await existingQuery.limit(1)
-      existingOrder = (existingOrders?.[0] as ExistingOrderRow | undefined)
 
-      // ★ サンプル注文と通常注文の相互上書き・吸収を完全遮断
-      const isExistingSample = Boolean(
-        (existingOrder?.note || '').includes('サンプル')
-      )
-      const isIncomingSample = Boolean(
-        (po.note || '').includes('サンプル') ||
-        (po.destination_name || '').includes('サンプル') ||
-        (sourceFileName || '').includes('サンプル') ||
-        (slipData.source_file_name || '').includes('サンプル') ||
-        (slipNo || '').startsWith('42')
-      )
-
-      if (isExistingSample !== isIncomingSample) {
-        // サンプルと通常注文が同一納入先であっても上書きをブロックし、別注文として作成
-        existingOrder = undefined
-        prevItems = []
+      // 同一顧客・納入先・日付で通常とサンプルが併存する場合に備え、複数取得して一致する種別をバインド
+      const { data: existingOrders } = await existingQuery.limit(10)
+      if (existingOrders && existingOrders.length > 0) {
+        existingOrder = existingOrders.find((ord) => {
+          const isSample = Boolean((ord.note || '').includes('サンプル'))
+          return isIncomingSample ? isSample : !isSample
+        }) as ExistingOrderRow | undefined
       }
 
       if (existingOrder) {
@@ -823,6 +844,9 @@ export async function processReceipt(
 
     // 注文ヘッダー note（単数形: 0001_base_schema.sql 準拠）に伝票No・納入先・規格・入数・箱数・数量変更メモ等を集約
     const noteParts: string[] = []
+    if (isIncomingSample && !noteParts.some((p) => p.includes('サンプル'))) {
+      noteParts.push('【サンプル依頼】')
+    }
     if (po.slip_no || slipNo) noteParts.push(`伝票No: ${po.slip_no || slipNo}`)
     if (po.note) noteParts.push(po.note)
     if (po.destination_name && !destinationId) {
@@ -843,6 +867,11 @@ export async function processReceipt(
       }
     }
 
+    // 単価・買値・金額は注文ヘッダー備考にも絶対に含めない（AIルール・現場規約遵守）
+    const safeNoteParts = noteParts.filter(
+      (p) => !p.includes('単価') && !p.includes('買値') && !p.includes('¥'),
+    )
+
     // 既存注文がある場合は重複INSERTせずインプレース更新（GAS版 注文キー冪等更新・二重ガード）
     let targetOrderId: string
     const insertedOrUpdatedItems: { id: string; product_id: string | null; quantity: number }[] = []
@@ -853,7 +882,7 @@ export async function processReceipt(
         .from('orders')
         .update({
           status: orderStatus,
-          note: noteParts.length > 0 ? noteParts.join('\n') : existingOrder.note,
+          note: safeNoteParts.length > 0 ? safeNoteParts.join('\n') : existingOrder.note,
         })
         .eq('id', targetOrderId)
       createdOrderIds.push(targetOrderId)
@@ -1006,7 +1035,7 @@ export async function processReceipt(
           delivery_date_source: po.delivery_date ? 'parsed' : null,
           source: receipt.channel,
           status: orderStatus,
-          note: noteParts.length > 0 ? noteParts.join('\n') : null,
+          note: safeNoteParts.length > 0 ? safeNoteParts.join('\n') : null,
         })
         .select('id')
         .single()

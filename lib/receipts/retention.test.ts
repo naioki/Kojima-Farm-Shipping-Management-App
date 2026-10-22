@@ -26,7 +26,7 @@ describe('purgeOldReceiptBase64', () => {
     const mockAdmin = {
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
-          lt: vi.fn().mockReturnValue({
+          or: vi.fn().mockReturnValue({
             not: vi.fn().mockReturnValue({
               limit: vi.fn().mockResolvedValue({ data: mockReceipts, error: null }),
             }),
@@ -41,14 +41,14 @@ describe('purgeOldReceiptBase64', () => {
       }),
     }
 
-    const result = await purgeOldReceiptBase64(mockAdmin as any, 7)
+    const result = await purgeOldReceiptBase64(mockAdmin as unknown as import('@supabase/supabase-js').SupabaseClient, 7)
 
     expect(result.checkedCount).toBe(2)
     expect(result.purgedCount).toBe(2)
     expect(updatedRows).toHaveLength(2)
 
     // file_base64 が消去され、text や filename は保持されていることを検証
-    const row1 = updatedRows.find((r) => r.id === 'rec-old-1') as any
+    const row1 = updatedRows.find((r) => r.id === 'rec-old-1') as { id: string; raw_payload: Record<string, unknown> }
     expect(row1.raw_payload.file_base64).toBeUndefined()
     expect(row1.raw_payload.text).toBe('注文書テキスト')
     expect(row1.raw_payload.filename).toBe('fax.pdf')
@@ -58,7 +58,7 @@ describe('purgeOldReceiptBase64', () => {
     const mockAdmin = {
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
-          lt: vi.fn().mockReturnValue({
+          or: vi.fn().mockReturnValue({
             not: vi.fn().mockReturnValue({
               limit: vi.fn().mockResolvedValue({ data: [], error: null }),
             }),
@@ -67,7 +67,7 @@ describe('purgeOldReceiptBase64', () => {
       }),
     }
 
-    const result = await purgeOldReceiptBase64(mockAdmin as any, 7)
+    const result = await purgeOldReceiptBase64(mockAdmin as unknown as import('@supabase/supabase-js').SupabaseClient, 7)
     expect(result.checkedCount).toBe(0)
     expect(result.purgedCount).toBe(0)
   })

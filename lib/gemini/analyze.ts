@@ -290,6 +290,7 @@ export function normalizeCustomerAndDestination(params: {
   customerName?: string | null
   destinationName?: string | null
   spec?: string | null
+  isSample?: boolean
 }): {
   customerName: string | null
   destinationName: string | null
@@ -301,6 +302,11 @@ export function normalizeCustomerAndDestination(params: {
 
   const normClient = (customerName ?? '').normalize('NFKC')
   const normDest = (destinationName ?? '').normalize('NFKC')
+  const isSample = Boolean(
+    params.isSample ||
+    normDest.includes('サンプル') ||
+    (params.spec ?? '').includes('サンプル')
+  )
 
   if (normClient.includes('勘兵衛')) {
     customerName = '株式会社勘兵衛'
@@ -317,7 +323,7 @@ export function normalizeCustomerAndDestination(params: {
     customerName = '農事組合法人 和郷園'
     // 4.1 OCR文字潰れ補正
     if (normDest.includes('岩槻') || (normDest.includes('パルシステム') && !normDest.includes('相模'))) {
-      if (normDest.includes('サンプル')) {
+      if (isSample) {
         destinationName = 'パルシステム 岩槻 (サンプル)'
       } else {
         destinationName = 'パルシステム 岩槻'
@@ -328,10 +334,14 @@ export function normalizeCustomerAndDestination(params: {
         normDest.includes(k),
       )
     ) {
-      destinationName = 'ちばコープ グリーンボックス(戸田)'
+      if (isSample) {
+        destinationName = 'ちばコープ グリンBOXサンプル戸田'
+      } else {
+        destinationName = 'ちばコープ グリーンボックス(戸田)'
+      }
       if (!spec) spec = '2〜3株 (入数20)'
-    } else if (normDest.includes('サンプル') || normDest.includes('グリンBOX')) {
-      if (normDest.includes('パルシステム') || normDest.includes('パル')) {
+    } else if (isSample || normDest.includes('グリンBOX')) {
+      if (normDest.includes('パルシステム') || normDest.includes('パル') || normDest.includes('岩槻')) {
         destinationName = 'パルシステム 岩槻 (サンプル)'
       } else {
         destinationName = 'ちばコープ グリンBOXサンプル戸田'
@@ -665,9 +675,15 @@ export async function analyzeOrders(
 
     const normalizedOrders: ParsedOrder[] = parsed.orders
       .map((order) => {
+        const isSampleOrd = Boolean(
+          (order.note ?? '').includes('サンプル') ||
+          (order.destination_name ?? '').includes('サンプル') ||
+          (order.items ?? []).some((i) => (i.note ?? '').includes('サンプル'))
+        )
         const std = normalizeCustomerAndDestination({
           customerName: order.customer_name,
           destinationName: order.destination_name,
+          isSample: isSampleOrd,
         })
         const resolvedCustomer = std.customerName ?? order.customer_name
         const resolvedDest = std.destinationName ?? order.destination_name ?? null
@@ -826,9 +842,15 @@ export async function reviseOrdersWithInstruction(params: {
   await logUsage('revision', 'web', true, res.response.usageMetadata?.totalTokenCount)
 
   const normalizedOrders: ParsedOrder[] = parsed.orders.map((order) => {
+    const isSampleOrd = Boolean(
+      (order.note ?? '').includes('サンプル') ||
+      (order.destination_name ?? '').includes('サンプル') ||
+      (order.items ?? []).some((i) => (i.note ?? '').includes('サンプル'))
+    )
     const std = normalizeCustomerAndDestination({
       customerName: order.customer_name,
       destinationName: order.destination_name,
+      isSample: isSampleOrd,
     })
     const resolvedCustomer = std.customerName ?? order.customer_name
     const resolvedDest = std.destinationName ?? order.destination_name ?? null

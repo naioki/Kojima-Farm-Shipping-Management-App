@@ -24,7 +24,7 @@ export async function purgeOldReceiptBase64(
     const { data: oldReceipts, error } = await admin
       .from('order_receipts')
       .select('id, raw_payload')
-      .lt('received_at', thresholdDate)
+      .or(`received_at.lt.${thresholdDate},and(received_at.is.null,created_at.lt.${thresholdDate})`)
       .not('raw_payload->file_base64', 'is', null)
       .limit(100)
 
@@ -35,7 +35,7 @@ export async function purgeOldReceiptBase64(
     let purgedCount = 0
     for (const r of oldReceipts) {
       const p = (r.raw_payload ?? {}) as Record<string, unknown>
-      if (typeof p['file_base64'] === 'string' && p['file_base64']) {
+      if (p['file_base64'] !== undefined) {
         delete p['file_base64']
         const { error: upErr } = await admin
           .from('order_receipts')
