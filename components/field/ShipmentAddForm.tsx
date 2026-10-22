@@ -131,7 +131,12 @@ export function ShipmentAddForm({
   // 親更新追従
   useEffect(() => setCustomers(initialCustomers), [initialCustomers])
   useEffect(() => setProducts(initialProducts), [initialProducts])
-  useEffect(() => setTargetDate(deliveryDate), [deliveryDate])
+  useEffect(() => {
+    if (isOpen) {
+      setStep('input')
+      setTargetDate(deliveryDate)
+    }
+  }, [isOpen, deliveryDate])
 
   // クイック日付用
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0] || '', [])
@@ -515,9 +520,9 @@ export function ShipmentAddForm({
   }
 
   // -------------------------------------------------------------
-  // ステップ1: 確認画面への遷移バリデーション
+  // ステップ1: 確認画面への遷移バリデーション（最新の既存出荷差分を取得）
   // -------------------------------------------------------------
-  function proceedToConfirm() {
+  async function proceedToConfirm() {
     if (!customerId) {
       toast.error('取引先を選択してください')
       return
@@ -534,6 +539,28 @@ export function ShipmentAddForm({
       toast.error('納入先を選択してください')
       return
     }
+
+    // 選択された最新の(取引先・納入先・品目・納品日)に基づき、最新の既存出荷状況を取得
+    try {
+      const q = new URLSearchParams({
+        customerId,
+        deliveryDate: targetDate,
+        productId,
+        ...(destinationId ? { destinationId } : {}),
+      })
+      const res = await fetch(`/api/shipments?${q.toString()}`)
+      if (res.ok) {
+        const json = await res.json()
+        setExistingShipmentInfo(json.existingShipment || null)
+        if (json.existingShipment && mode === 'create') {
+          // 既に同一出荷が存在する場合は自動的に加算（増量）を提案
+          setMode('increase')
+        }
+      }
+    } catch {
+      // ネットワーク不通時は手動設定値を維持
+    }
+
     setStep('confirm')
   }
 
@@ -706,17 +733,17 @@ export function ShipmentAddForm({
               {/* 数量（差分表示） */}
               <div className="rounded-xl border border-forest-300 bg-white p-3.5 space-y-1">
                 <p className="text-[11px] font-bold text-ink-muted">出荷数量・ケース換算</p>
-                {existingShipmentInfo && mode !== 'create' ? (
+                {existingShipmentInfo ? (
                   <div className="space-y-1">
                     <div className="flex items-center gap-3 text-sm">
                       <span className="text-ink-muted font-bold line-through">
-                        修正前: {existingShipmentInfo.current_quantity} {unit}
+                        現在: {existingShipmentInfo.current_quantity} {unit}
                       </span>
                       <span className="font-black text-forest-700 text-lg">
-                        ➔ 修正後:{' '}
+                        ➔ {mode === 'set' ? '変更後' : '反映後'}:{' '}
                         {(() => {
                           const delta = preview && preview.type === 'ok' ? preview.total.toNumber() : 0
-                          if (mode === 'increase') return existingShipmentInfo.current_quantity + delta
+                          if (mode === 'increase' || mode === 'create') return existingShipmentInfo.current_quantity + delta
                           if (mode === 'decrease') return Math.max(0, existingShipmentInfo.current_quantity - delta)
                           return delta
                         })()}{' '}
@@ -724,8 +751,8 @@ export function ShipmentAddForm({
                       </span>
                     </div>
                     <p className="text-xs font-bold text-forest-800">
-                      （差分: {mode === 'increase' ? '+' : mode === 'decrease' ? '-' : ''}
-                      {previewText?.text}）
+                      （差分: {mode === 'decrease' ? '-' : '+'}{previewText?.text}
+                      {mode === 'create' ? ' ※既存出荷に自動合算されます' : ''}）
                     </p>
                   </div>
                 ) : (

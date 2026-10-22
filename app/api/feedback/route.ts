@@ -2,6 +2,7 @@ import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 
 export const runtime = 'nodejs'
 
@@ -105,23 +106,22 @@ export async function POST(req: NextRequest) {
 
   reports.unshift(newReport)
 
-  // app_settings に保存（存在しなければINSERT、あればUPDATE）
+  // app_settings にアトミック保存
   const payloadValue = JSON.stringify(reports)
-  if (setting) {
-    await admin
-      .from('app_settings')
-      .update({ value: payloadValue, updated_at: new Date().toISOString() })
-      .eq('key', SETTING_KEY)
-  } else {
-    await admin
-      .from('app_settings')
-      .insert({
-        key: SETTING_KEY,
-        value: payloadValue,
-        is_secret: false,
-        updated_at: new Date().toISOString(),
-      })
-  }
+  await admin.from('app_settings').upsert({
+    key: SETTING_KEY,
+    value: payloadValue,
+    is_secret: false,
+    updated_at: new Date().toISOString(),
+  })
+
+  // 管理者へ通知（LINE / Discord）
+  sendMultiChannelAlert({
+    title: '💬【現場からの改善要望・バグ報告】',
+    message: `【投稿者】${userName}\n【内容(What)】${what}${newReport.where ? `\n【場所】${newReport.where}` : ''}${newReport.when ? `\n【いつ】${newReport.when}` : ''}`,
+    urgent: false,
+    url: '/admin/settings',
+  }).catch((err) => console.warn('[feedback] 通知スキップ:', err))
 
   return NextResponse.json({ ok: true, report: newReport }, { status: 201 })
 }
@@ -163,10 +163,12 @@ export async function PATCH(req: NextRequest) {
   }
 
   const payloadValue = JSON.stringify(reports)
-  await admin
-    .from('app_settings')
-    .update({ value: payloadValue, updated_at: new Date().toISOString() })
-    .eq('key', SETTING_KEY)
+  await admin.from('app_settings').upsert({
+    key: SETTING_KEY,
+    value: payloadValue,
+    is_secret: false,
+    updated_at: new Date().toISOString(),
+  })
 
   return NextResponse.json({ ok: true, report: target })
 }

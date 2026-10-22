@@ -9,6 +9,75 @@ import { writeAudit } from '@/lib/audit/log'
 export const runtime = 'nodejs'
 
 /**
+ * GET /api/shipments?customerId=...&deliveryDate=...&productId=...&destinationId=...
+ * 登録・変更前の既存出荷状況（差分プレビュー用）を高速チェック。
+ */
+export async function GET(req: Request) {
+  const user = await getAuthedUser()
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(req.url)
+  const customerId = searchParams.get('customerId')
+  const deliveryDate = searchParams.get('deliveryDate')
+  const productId = searchParams.get('productId')
+  const destinationId = searchParams.get('destinationId')
+
+  if (!customerId || !deliveryDate) {
+    return NextResponse.json({ ok: true, existingShipment: null })
+  }
+
+  const supabase = createAdminClient()
+  let query = supabase
+    .from('orders')
+    .select(`
+      id,
+      delivery_date,
+      order_items (
+        id,
+        product_id,
+        product_name,
+        quantity
+      )
+    `)
+    .eq('customer_id', customerId)
+    .eq('delivery_date', deliveryDate)
+    .neq('status', 'cancelled')
+
+  if (destinationId) {
+    query = query.eq('destination_id', destinationId)
+  }
+
+  const { data: orders } = await query.order('created_at', { ascending: false }).limit(1)
+  const ord = orders?.[0]
+  if (!ord) {
+    return NextResponse.json({ ok: true, existingShipment: null })
+  }
+
+  type RawItem = { id: string; product_id: string | null; product_name: string; quantity: number }
+  const items = (ord.order_items || []) as unknown as RawItem[]
+  const matchingItems = productId
+    ? items.filter((i) => i.product_id === productId)
+    : items
+
+  if (matchingItems.length === 0) {
+    return NextResponse.json({ ok: true, existingShipment: null, orderId: ord.id })
+  }
+
+  const totalQty = matchingItems.reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0)
+  const firstMatch = matchingItems[0]!
+
+  return NextResponse.json({
+    ok: true,
+    existingShipment: {
+      order_id: ord.id,
+      delivery_date: ord.delivery_date,
+      product_name: firstMatch.product_name,
+      current_quantity: totalQty,
+    },
+  })
+}
+
+/**
  * 出荷一覧の「スマート追加」（Laravel版 画面2）。手動入力チャネル。
  *   - 数量はスマートパース（"15c2" など）。c記法は customer_product_rules.packs_per_case で換算。
  *   - 同一 (取引先 × 出荷日 × source='manual') の注文があれば再利用、無ければ作成。
@@ -70,13 +139,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: result.reason, input: result.input }, { status: 400 })
   }
 
-  // 同一 (取引先 × 納入先 × 出荷日 × manual) の注文を再利用、無ければ作成。
+  // 同一 (取引先 × 納入先 × 出荷日) の有効注文（キャンセル除外）を再利用、無ければ作成。
   const findQuery = supabase
     .from('orders')
     .select('id')
     .eq('customer_id', customer_id)
     .eq('delivery_date', delivery_date)
-    .eq('source', 'manual')
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
   const { data: existing, error: findErr } = await (
     destination_id ? findQuery.eq('destination_id', destination_id) : findQuery.is('destination_id', null)
   )
@@ -105,7 +175,7 @@ export async function POST(req: Request) {
 
   const deltaQty = result.total.toNumber()
 
-  // 既存明細の検索（加算・減量・上書き時）
+  // 既存明細の検索（加算・減量・上書き時、または同一品目が既に存在する場合の合算）
   type OrderItemRow = {
     id: string
     quantity: number
@@ -113,7 +183,7 @@ export async function POST(req: Request) {
     [key: string]: unknown
   }
   let existingItem: OrderItemRow | null = null
-  if (existing?.id && mode !== 'create') {
+  if (existing?.id) {
     const { data: itm } = await supabase
       .from('order_items')
       .select('*')
@@ -125,9 +195,9 @@ export async function POST(req: Request) {
   }
 
   let finalItem: Record<string, unknown>
-  if (existingItem && mode !== 'create') {
+  if (existingItem) {
     let newQty = Number(existingItem.quantity) || 0
-    if (mode === 'increase') newQty += deltaQty
+    if (mode === 'increase' || mode === 'create') newQty += deltaQty
     else if (mode === 'decrease') newQty = Math.max(0, newQty - deltaQty)
     else if (mode === 'set') newQty = deltaQty
 

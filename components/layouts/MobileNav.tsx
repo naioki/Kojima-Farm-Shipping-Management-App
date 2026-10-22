@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
+import { Menu, X, LogOut, ChevronDown, Leaf, UserRound, MessageSquarePlus } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navFor } from '@/components/layouts/nav-items'
 import { useNavState } from '@/components/layouts/use-nav'
@@ -199,7 +199,17 @@ export function MobileNav({
                 )
               })}
             </div>
-            <form action="/auth/signout" method="post" className="pt-2">
+            <div className="pt-2 border-t border-forest-700/60">
+              <Link
+                href={role === 'admin' ? '/admin/settings' : '/field/feedback'}
+                onClick={() => setOpen(false)}
+                className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-emerald-300 hover:bg-forest-700 hover:text-white transition-colors"
+              >
+                <MessageSquarePlus className="h-5 w-5 shrink-0" aria-hidden />
+                改善・バグ報告 (5W1H)
+              </Link>
+            </div>
+            <form action="/auth/signout" method="post" className="pt-1">
               <button
                 type="submit"
                 className="flex h-14 w-full items-center gap-3 rounded-lg px-3 text-base font-medium text-forest-100/80 transition-colors hover:bg-forest-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"

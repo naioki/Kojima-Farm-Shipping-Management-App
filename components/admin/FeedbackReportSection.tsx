@@ -20,7 +20,7 @@ export interface FeedbackReport {
   how?: string
 }
 
-export function FeedbackReportSection() {
+export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean }) {
   const [reports, setReports] = useState<FeedbackReport[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -323,16 +323,18 @@ export function FeedbackReportSection() {
                     </div>
 
                     {/* 管理者ステータス変更セレクト */}
-                    <select
-                      value={r.status}
-                      onChange={(e) => handleStatusChange(r.id, e.target.value as FeedbackReport['status'])}
-                      className="rounded-lg border border-ink/20 bg-white px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
-                    >
-                      <option value="pending">未着手にする</option>
-                      <option value="in_progress">対応中にする</option>
-                      <option value="resolved">対応済にする</option>
-                      <option value="archived">アーカイブ</option>
-                    </select>
+                    {isAdmin && (
+                      <select
+                        value={r.status}
+                        onChange={(e) => handleStatusChange(r.id, e.target.value as FeedbackReport['status'])}
+                        className="rounded-lg border border-ink/20 bg-white px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
+                      >
+                        <option value="pending">未着手にする</option>
+                        <option value="in_progress">対応中にする</option>
+                        <option value="resolved">対応済にする</option>
+                        <option value="archived">アーカイブ</option>
+                      </select>
+                    )}
                   </div>
 
                   {/* 本文 (What) */}
@@ -350,54 +352,62 @@ export function FeedbackReportSection() {
                   )}
 
                   {/* 管理者メモ */}
-                  <div className="pt-1 text-xs">
-                    {editingId === r.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={editAdminNote}
-                          onChange={(e) => setEditAdminNote(e.target.value)}
-                          placeholder="管理者対応メモ（例: 次回デプロイでボタン配置修正）"
-                          className="flex-1 rounded-lg border border-ink/20 p-1.5 text-xs"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => handleSaveAdminNote(r.id)}
-                          className="text-xs py-1 h-7"
-                        >
-                          保存
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(null)}
-                          className="text-xs text-ink-soft hover:underline"
-                        >
-                          閉じる
-                        </button>
+                  {isAdmin ? (
+                    <div className="pt-1 text-xs">
+                      {editingId === r.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={editAdminNote}
+                            onChange={(e) => setEditAdminNote(e.target.value)}
+                            placeholder="管理者対応メモ（例: 次回デプロイでボタン配置修正）"
+                            className="flex-1 rounded-lg border border-ink/20 p-1.5 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSaveAdminNote(r.id)}
+                            className="text-xs py-1 h-7"
+                          >
+                            保存
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                            className="text-xs text-ink-soft hover:underline"
+                          >
+                            閉じる
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-ink-soft">
+                          <span>
+                            {r.admin_note ? (
+                              <span className="text-emerald-800 font-bold">💬 管理メモ: {r.admin_note}</span>
+                            ) : (
+                              <span className="text-ink-soft/70">管理メモなし</span>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(r.id)
+                              setEditAdminNote(r.admin_note || '')
+                            }}
+                            className="text-emerald-700 hover:underline font-bold text-xs"
+                          >
+                            {r.admin_note ? 'メモ編集' : '＋メモ追加'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    r.admin_note && (
+                      <div className="pt-1 text-xs font-bold text-emerald-800">
+                        🛠 農園管理者からの回答: {r.admin_note}
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between text-ink-soft">
-                        <span>
-                          {r.admin_note ? (
-                            <span className="text-emerald-800 font-bold">💬 管理メモ: {r.admin_note}</span>
-                          ) : (
-                            <span className="text-ink-soft/70">管理メモなし</span>
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(r.id)
-                            setEditAdminNote(r.admin_note || '')
-                          }}
-                          className="text-emerald-700 hover:underline font-bold text-xs"
-                        >
-                          {r.admin_note ? 'メモ編集' : '＋メモ追加'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                    )
+                  )}
                 </div>
               )
             })}

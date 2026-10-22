@@ -38,6 +38,15 @@ interface NaturalParseResult {
   } | null
 }
 
+function extractJson<T>(text: string): T {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const raw = fenced ? fenced[1]! : text
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start === -1 || end === -1) throw new Error('AIの応答からJSONを抽出できませんでした')
+  return JSON.parse(raw.slice(start, end + 1)) as T
+}
+
 export async function POST(req: NextRequest) {
   const user = await getAuthedUser()
   if (!user) {
@@ -149,12 +158,26 @@ ${prodListStr}
 
     const res = await model.generateContent(prompt)
     const rawText = res.response.text()
-    const parsed = JSON.parse(rawText) as NaturalParseResult
+    const parsed = extractJson<NaturalParseResult>(rawText)
 
-    // 顧客ID・品目IDの確実な名寄せ補正
+    // 顧客ID・納入先ID・品目IDの確実な名寄せ補正
     if (parsed.customer_name && !parsed.customer_id) {
       const hit = customers.find((c) => c.name.includes(parsed.customer_name!) || parsed.customer_name!.includes(c.name))
-      if (hit) parsed.customer_id = hit.id
+      if (hit) {
+        parsed.customer_id = hit.id
+        parsed.customer_name = hit.name
+      }
+    }
+    if (parsed.destination_name && !parsed.destination_id) {
+      const hit = destinations.find(
+        (d) =>
+          (!parsed.customer_id || d.customer_id === parsed.customer_id) &&
+          (d.full_name.includes(parsed.destination_name!) || parsed.destination_name!.includes(d.full_name)),
+      )
+      if (hit) {
+        parsed.destination_id = hit.id
+        parsed.destination_name = hit.full_name
+      }
     }
     if (parsed.product_name && !parsed.product_id) {
       const hit = products.find(
@@ -163,14 +186,17 @@ ${prodListStr}
           parsed.product_name!.includes(p.name) ||
           (parsed.product_name!.includes('チンゲン') && p.name.includes('青梗菜')),
       )
-      if (hit) parsed.product_id = hit.id
+      if (hit) {
+        parsed.product_id = hit.id
+        parsed.product_name = hit.name
+      }
     }
 
     // 既存注文の差分確認（もし顧客と日付と品目が特定できた場合、既存出荷を取得）
     let existingShipment: NaturalParseResult['existing_shipment'] = null
     const targetDate = parsed.delivery_date || referenceDate
     if (parsed.customer_id && targetDate) {
-      const { data: existOrders } = await admin
+      let existQuery = admin
         .from('orders')
         .select(`
           id,
@@ -185,19 +211,26 @@ ${prodListStr}
         .eq('customer_id', parsed.customer_id)
         .eq('delivery_date', targetDate)
         .neq('status', 'cancelled')
-        .limit(1)
+
+      if (parsed.destination_id) {
+        existQuery = existQuery.eq('destination_id', parsed.destination_id)
+      }
+      const { data: existOrders } = await existQuery.limit(1)
 
       const ord = existOrders?.[0]
       if (ord) {
         type RawItem = { id: string; product_id: string | null; product_name: string; quantity: number }
         const items = (ord.order_items || []) as unknown as RawItem[]
-        const matchedItem = items.find((i) => (parsed.product_id && i.product_id === parsed.product_id) || i.product_name.includes('チンゲン') || i.product_name.includes('青梗菜'))
-        if (matchedItem) {
+        const matchingItems = items.filter(
+          (i) => (parsed.product_id && i.product_id === parsed.product_id) || i.product_name.includes('チンゲン') || i.product_name.includes('青梗菜')
+        )
+        if (matchingItems.length > 0) {
+          const totalQty = matchingItems.reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0)
           existingShipment = {
             order_id: ord.id,
             delivery_date: ord.delivery_date,
-            product_name: matchedItem.product_name,
-            current_quantity: Number(matchedItem.quantity) || 0,
+            product_name: matchingItems[0]!.product_name,
+            current_quantity: totalQty,
           }
         }
       }
