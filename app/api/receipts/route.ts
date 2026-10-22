@@ -11,6 +11,7 @@ import {
   buildPipelineSlipResult,
   processReceipt,
 } from '@/lib/ingestion/process-receipt'
+import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -381,6 +382,11 @@ export async function POST(req: NextRequest) {
         { status: 502 },
       )
     }
+
+    // 7日経過した古い原本データ（file_base64）を自律クリーンアップ（DB容量保護）
+    purgeOldReceiptBase64(admin, 7).catch((err) =>
+      console.warn('[POST /api/receipts] purgeOldReceiptBase64 スキップ:', err),
+    )
 
     const pipelineStatus = result.status === 'not_order' ? 'skipped_non_order' : 'ingested'
     return NextResponse.json(

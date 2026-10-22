@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
+import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,6 +22,9 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createAdminClient()
+  purgeOldReceiptBase64(supabase, 7).catch((err) =>
+    console.warn('[cron/overdue-shipments] purgeOldReceiptBase64 スキップ:', err),
+  )
 
   // 今日のJST日付を取得
   const now = new Date()
