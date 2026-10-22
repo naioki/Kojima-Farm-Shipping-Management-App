@@ -518,6 +518,10 @@ export const shipmentAddSchema = z.object({
   quantity_raw: z.string().min(1),
   /** 納入先（届け先）。複数納入先を持つ取引先で確定させる。単一/無しの取引先は null。 */
   destination_id: z.string().uuid().nullish(),
+  /** 登録モード（新規作成、既存への加算、減量、数量上書き）。既定は create。 */
+  mode: z.enum(['create', 'increase', 'decrease', 'set']).optional(),
+  /** 現場メモ・備考 */
+  note: z.string().optional(),
 })
 export type ShipmentAddInput = z.infer<typeof shipmentAddSchema>
 

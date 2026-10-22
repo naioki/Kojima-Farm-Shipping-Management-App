@@ -13,14 +13,11 @@ export const runtime = 'nodejs'
  *   - 数量はスマートパース（"15c2" など）。c記法は customer_product_rules.packs_per_case で換算。
  *   - 同一 (取引先 × 出荷日 × source='manual') の注文があれば再利用、無ければ作成。
  *   - 税率・単価・名称は商品マスタから確定して order_items に冗長保持（tax.md）。
- *     ※ products.default_tax_rate は「マスタ既定の取得」であり、計算には order_items.tax_rate を使う。
+ *   - mode: 'increase' | 'decrease' | 'set' | 'create' による既存出荷の加算・減量・上書きに対応。
  */
 export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  // 社内ユーザー（admin/staff）だけを通す。純 staff は orders/order_items への
-  // INSERT ポリシーを持たないため、RLS を緩めず検証済み経路を admin client で通す（Issue#20）。
-  // 抜け道を作らない: 社内ユーザー以外（ポータル取引先など）は 403。
   if (!(await isStaffUser(user.id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
@@ -30,12 +27,10 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { customer_id, product_id, delivery_date, quantity_raw, destination_id } = parsed.data
-  // 社内判定を通したので admin client（service_role）で書き込む。バリデーション・監査ログ・
-  // 楽観ロックは以下のとおり維持する。
+  const { customer_id, product_id, delivery_date, quantity_raw, destination_id, mode = 'create', note } = parsed.data
   const supabase = createAdminClient()
 
-  // 納入先が指定されたら、その取引先の配下（有効）であることを検証（他取引先の届け先を混入させない）。
+  // 納入先が指定されたら、その取引先の配下（有効）であることを検証
   if (destination_id) {
     const { data: dest, error: destErr } = await supabase
       .from('delivery_destinations')
@@ -64,7 +59,6 @@ export async function POST(req: Request) {
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
-  // P/C は c記法換算の補助（未設定でも動く）。取得失敗しても続行するが無言にはしない。
   if (ruleErr) console.error('[api/shipments] P/Cルールの取得に失敗:', ruleErr.message)
 
   // スマートパース（誤解釈防止のため lib に集約・Decimal.js）
@@ -73,12 +67,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'empty_quantity' }, { status: 400 })
   }
   if (result.type === 'error') {
-    // c記法なのに P/C 未設定 → 取引先設定で登録してもらう（勝手に推測しない）
     return NextResponse.json({ error: result.reason, input: result.input }, { status: 400 })
   }
 
   // 同一 (取引先 × 納入先 × 出荷日 × manual) の注文を再利用、無ければ作成。
-  // 納入先が別なら別注文として分ける（表示は常に「取引先＞納入先」。届け先違いを1注文に混ぜない）。
   const findQuery = supabase
     .from('orders')
     .select('id')
@@ -111,37 +103,89 @@ export async function POST(req: Request) {
     orderId = order.id
   }
 
-  // 明細作成（税率は注文時確定値を冗長保持・confidence=1.0 は人間入力）
-  const { data: item, error: itemErr } = await supabase
-    .from('order_items')
-    .insert({
-      order_id: orderId,
-      product_id,
-      product_name: product.name,
-      quantity: result.total.toNumber(),
-      unit: product.unit,
-      unit_price: product.default_unit_price ?? 0,
-      tax_rate: product.default_tax_rate,
-      rule_id: rule?.id ?? null,
-      confidence: 1.0,
-      field_status: 'not_started',
-      // 荷姿を規則から自動補完（出荷ごとにアコーディオンで上書き可）
-      spec: rule?.spec ?? null,
-      container_type: rule?.container_type ?? null,
-      has_card: rule?.has_card ?? null,
+  const deltaQty = result.total.toNumber()
+
+  // 既存明細の検索（加算・減量・上書き時）
+  type OrderItemRow = {
+    id: string
+    quantity: number
+    line_note: string | null
+    [key: string]: unknown
+  }
+  let existingItem: OrderItemRow | null = null
+  if (existing?.id && mode !== 'create') {
+    const { data: itm } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', existing.id)
+      .eq('product_id', product_id)
+      .limit(1)
+      .maybeSingle()
+    existingItem = itm as OrderItemRow | null
+  }
+
+  let finalItem: Record<string, unknown>
+  if (existingItem && mode !== 'create') {
+    let newQty = Number(existingItem.quantity) || 0
+    if (mode === 'increase') newQty += deltaQty
+    else if (mode === 'decrease') newQty = Math.max(0, newQty - deltaQty)
+    else if (mode === 'set') newQty = deltaQty
+
+    const { data: updatedItem, error: upErr } = await supabase
+      .from('order_items')
+      .update({
+        quantity: newQty,
+        line_note: note ? [existingItem.line_note, note].filter(Boolean).join(' / ') : existingItem.line_note,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingItem.id)
+      .select()
+      .single()
+    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
+    finalItem = updatedItem
+
+    await writeAudit(supabase, {
+      entityType: 'order_items',
+      entityId: existingItem.id,
+      action: 'UPDATE',
+      oldValues: existingItem,
+      newValues: updatedItem,
+      userId: user.id,
     })
-    .select()
-    .single()
-  if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
+  } else {
+    // 新規明細作成（単価・税率は商品マスタから）
+    const { data: item, error: itemErr } = await supabase
+      .from('order_items')
+      .insert({
+        order_id: orderId,
+        product_id,
+        product_name: product.name,
+        quantity: deltaQty,
+        unit: product.unit,
+        unit_price: product.default_unit_price ?? 0,
+        tax_rate: product.default_tax_rate,
+        rule_id: rule?.id ?? null,
+        confidence: 1.0,
+        field_status: 'not_started',
+        line_note: note ?? null,
+        spec: rule?.spec ?? null,
+        container_type: rule?.container_type ?? null,
+        has_card: rule?.has_card ?? null,
+      })
+      .select()
+      .single()
+    if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
+    finalItem = item
 
-  await writeAudit(supabase, {
-    entityType: 'order_items',
-    entityId: item.id,
-    action: 'INSERT',
-    oldValues: null,
-    newValues: item,
-    userId: user.id,
-  })
+    await writeAudit(supabase, {
+      entityType: 'order_items',
+      entityId: item.id,
+      action: 'INSERT',
+      oldValues: null,
+      newValues: item,
+      userId: user.id,
+    })
+  }
 
-  return NextResponse.json({ item }, { status: 201 })
+  return NextResponse.json({ item: finalItem, mode }, { status: 201 })
 }

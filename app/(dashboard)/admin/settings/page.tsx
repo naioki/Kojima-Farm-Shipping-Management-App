@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { SettingsForm, type SettingItem } from '@/components/admin/SettingsForm'
+import { FeedbackReportSection } from '@/components/admin/FeedbackReportSection'
 import { SETTINGS_SPEC } from '@/lib/settings-spec'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -95,6 +96,9 @@ export default async function SettingsPage() {
       </div>
 
       <SettingsForm items={items} />
+
+      {/* 現場からの改善要望・バグ報告（5W1H） */}
+      <FeedbackReportSection />
     </div>
   )
 }
