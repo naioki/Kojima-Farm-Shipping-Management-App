@@ -85,13 +85,50 @@ function matchDestinationId(
 ): string | null {
   if (!text) return null
   const lower = text.normalize('NFKC').toLowerCase().replace(/[\s　]/g, '')
-  const hit = dests.find((d) => {
+  const isSampleQuery = lower.includes('サンプル')
+
+  // 1. 完全一致（最優先）
+  const exactHit = dests.find((d) => {
     const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
       .filter((s): s is string => Boolean(s))
       .map((s) => s.normalize('NFKC').toLowerCase().replace(/[\s　]/g, ''))
-    return cands.some((c) => c === lower || c.includes(lower) || lower.includes(c))
+    return cands.some((c) => c === lower)
   })
-  return hit?.id ?? null
+  if (exactHit) return exactHit.id
+
+  // 2. 部分一致（サンプル問い合わせならサンプル付き納入先を、通常ならサンプルなし納入先を優先）
+  const partialHits = dests.filter((d) => {
+    const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
+      .filter((s): s is string => Boolean(s))
+      .map((s) => s.normalize('NFKC').toLowerCase().replace(/[\s　]/g, ''))
+    return cands.some((c) => c.includes(lower) || lower.includes(c))
+  })
+
+  if (partialHits.length === 1 && partialHits[0]) return partialHits[0].id
+  if (partialHits.length > 1) {
+    if (isSampleQuery) {
+      const sampleHit = partialHits.find((d) =>
+        Boolean(
+          d.code?.includes('サンプル') ||
+          d.full_name.includes('サンプル') ||
+          (d.aliases ?? []).some((a) => a.includes('サンプル')),
+        ),
+      )
+      if (sampleHit) return sampleHit.id
+    } else {
+      const nonSampleHit = partialHits.find((d) =>
+        !Boolean(
+          d.code?.includes('サンプル') ||
+          d.full_name.includes('サンプル') ||
+          (d.aliases ?? []).some((a) => a.includes('サンプル')),
+        ),
+      )
+      if (nonSampleHit) return nonSampleHit.id
+    }
+    return partialHits[0]?.id ?? null
+  }
+
+  return null
 }
 
 /** 現在日時を MM/dd HH:mm (JST) で返す（数量変更メモ用: ARCHITECTURE.md §3.3） */
@@ -685,6 +722,25 @@ export async function processReceipt(
       }
       const { data: existingOrders } = await existingQuery.limit(1)
       existingOrder = (existingOrders?.[0] as ExistingOrderRow | undefined)
+
+      // ★ サンプル注文と通常注文の相互上書き・吸収を完全遮断
+      const isExistingSample = Boolean(
+        (existingOrder?.note || '').includes('サンプル')
+      )
+      const isIncomingSample = Boolean(
+        (po.note || '').includes('サンプル') ||
+        (po.destination_name || '').includes('サンプル') ||
+        (sourceFileName || '').includes('サンプル') ||
+        (slipData.source_file_name || '').includes('サンプル') ||
+        (slipNo || '').startsWith('42')
+      )
+
+      if (isExistingSample !== isIncomingSample) {
+        // サンプルと通常注文が同一納入先であっても上書きをブロックし、別注文として作成
+        existingOrder = undefined
+        prevItems = []
+      }
+
       if (existingOrder) {
         const { data: pItems } = await admin
           .from('order_items')

@@ -316,8 +316,12 @@ export function normalizeCustomerAndDestination(params: {
   } else if (normClient.includes('和郷園')) {
     customerName = '農事組合法人 和郷園'
     // 4.1 OCR文字潰れ補正
-    if (normDest.includes('岩槻')) {
-      destinationName = 'パルシステム 岩槻'
+    if (normDest.includes('岩槻') || (normDest.includes('パルシステム') && !normDest.includes('相模'))) {
+      if (normDest.includes('サンプル')) {
+        destinationName = 'パルシステム 岩槻 (サンプル)'
+      } else {
+        destinationName = 'パルシステム 岩槻'
+      }
       if (!spec) spec = '2〜3株 (入数20)'
     } else if (
       ['口一天', '列述', 'グリーンボックス(戸田)', 'グリーンボックス（戸田）'].some((k) =>
@@ -327,7 +331,11 @@ export function normalizeCustomerAndDestination(params: {
       destinationName = 'ちばコープ グリーンボックス(戸田)'
       if (!spec) spec = '2〜3株 (入数20)'
     } else if (normDest.includes('サンプル') || normDest.includes('グリンBOX')) {
-      destinationName = 'ちばコープ グリンBOXサンプル戸田'
+      if (normDest.includes('パルシステム') || normDest.includes('パル')) {
+        destinationName = 'パルシステム 岩槻 (サンプル)'
+      } else {
+        destinationName = 'ちばコープ グリンBOXサンプル戸田'
+      }
       if (!spec) spec = '2〜3株 (入数20)'
     }
   }
