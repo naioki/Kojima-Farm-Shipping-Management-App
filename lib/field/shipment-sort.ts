@@ -44,3 +44,60 @@ export function sortIdsByStatus(
     .sort((a, b) => a.rank - b.rank || a.i - b.i)
     .map((e) => e.id)
 }
+
+export interface PackSortableItem {
+  itemId: string
+  customerName: string
+  destinationName?: string | null
+  dailyPackSortOrder?: number | null
+  defaultPackSortOrder?: number | null
+  shippingRouteName?: string | null
+  departureTime?: string | null
+  initialSpec?: string | null
+  productName?: string | null
+}
+
+/**
+ * 収穫・パックボード用ソート（同一出荷先デフォルト集約 ＆ 便順優先）.
+ * 1. 管理者の当日手動ソート（dailyPackSortOrder: 10, 20... 最優先）
+ * 2. 出発予定時刻（departureTime: 06:00 → 11:30 早い便優先）
+ * 3. 納品先デフォルト設定順（defaultPackSortOrder）
+ * 4. 出荷先集約（取引先名 ＋ 納品先名）
+ * 5. 規格順（spec）
+ */
+export function comparePackItems(a: PackSortableItem, b: PackSortableItem): number {
+  // 1. 管理者当日手動ソート
+  const manualA = a.dailyPackSortOrder
+  const manualB = b.dailyPackSortOrder
+  if (manualA != null && manualB != null && manualA !== manualB) {
+    return manualA - manualB
+  }
+  if (manualA != null && manualB == null) return -1
+  if (manualA == null && manualB != null) return 1
+
+  // 2. 出発時刻順（早い便を先に）
+  if (a.departureTime && b.departureTime && a.departureTime !== b.departureTime) {
+    return a.departureTime.localeCompare(b.departureTime)
+  }
+  if (a.departureTime && !b.departureTime) return -1
+  if (!a.departureTime && b.departureTime) return 1
+
+  // 3. 納品先デフォルト順
+  const defaultA = a.defaultPackSortOrder ?? 100
+  const defaultB = b.defaultPackSortOrder ?? 100
+  if (defaultA !== defaultB) {
+    return defaultA - defaultB
+  }
+
+  // 4. ★ 出荷先キー（取引先名 + 納品先名）で同一出荷先を完全集約
+  const keyA = `${a.customerName}__${a.destinationName || ''}`
+  const keyB = `${b.customerName}__${b.destinationName || ''}`
+  if (keyA !== keyB) {
+    return keyA.localeCompare(keyB, 'ja')
+  }
+
+  // 5. 同一出荷先内の規格順
+  const specA = a.initialSpec || ''
+  const specB = b.initialSpec || ''
+  return specA.localeCompare(specB, 'ja')
+}

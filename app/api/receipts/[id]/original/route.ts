@@ -74,11 +74,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
   }
 
+  // プレビュー表示時または現場スタッフ表示時: サニタイズ済み（買値切除）画像があれば最優先で配信
+  const hasSanitized = typeof payload['sanitized_file_base64'] === 'string' && Boolean(payload['sanitized_file_base64'])
+  const useSanitized = hasSanitized && (isPreview || profile?.role !== 'admin')
+
   // Google Drive URL が無い場合でも一時保持された file_base64 があればインライン返却
-  if (typeof payload['file_base64'] === 'string' && payload['file_base64']) {
-    const base64Data = payload['file_base64']
+  if (useSanitized || (typeof payload['file_base64'] === 'string' && payload['file_base64'])) {
+    const base64Data = (useSanitized ? payload['sanitized_file_base64'] : payload['file_base64']) as string
     const contentType =
-      (typeof payload['content_type'] === 'string' && payload['content_type']) || 'application/pdf'
+      (typeof payload['content_type'] === 'string' && payload['content_type']) || (useSanitized ? 'image/jpeg' : 'application/pdf')
 
     // プレビュー表示（iframe埋め込み）かつ PDF の場合:
     // iPhone Safari 等でも「original Open」にならず他のFAXと同様にプレビュー表示できるよう、

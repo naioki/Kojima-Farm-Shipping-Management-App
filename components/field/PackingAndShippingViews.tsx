@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import toast from 'react-hot-toast'
 import type { FieldStatus } from '@/types/database'
+import { comparePackItems } from '@/lib/field/shipment-sort'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -31,6 +32,7 @@ interface PackingAndShippingViewsProps {
  * - 画面切替は画面最上部のタブ（収穫・袋詰めボード ⇋ 便別積込・配送リスト）に一本化。
  * - 重複していた下部の「袋詰め/出荷」切り替えバーは完全撤去し、作業カードの表示領域を最大化。
  * - 並び替え（▲▼）は管理者（isAdmin）時のみ表示し、現場作業員の通常操作やスクロール時の誤タップ・エラー通知を根絶。
+ * - デフォルト作業順: 出発予定時刻（早い便） -> 納品先マスタ順 -> 同一出荷先集約 -> 規格順
  */
 export function PackingAndShippingViews({
   items: initialItems,
@@ -45,12 +47,8 @@ export function PackingAndShippingViews({
     setItems(initialItems)
   }, [initialItems])
 
-  // パック画面用ソート: 管理者指定順 (dailyPackSortOrder) -> 納品先デフォルト順 (defaultPackSortOrder)
-  const sortedPackItems = [...items].sort((a, b) => {
-    const orderA = a.dailyPackSortOrder ?? a.defaultPackSortOrder ?? 100
-    const orderB = b.dailyPackSortOrder ?? b.defaultPackSortOrder ?? 100
-    return orderA - orderB
-  })
+  // パック画面用ソート: 管理者指定順 (dailyPackSortOrder) -> 便順 -> 納品先集約 -> 規格順
+  const sortedPackItems = [...items].sort(comparePackItems)
 
   // ステータス即時連動（タップした瞬間に親Stateの initialStatus と initialVersion を即座に更新）
   const handleStatusChange = (itemId: string, newStatus: FieldStatus, newVersion: number) => {
@@ -98,7 +96,7 @@ export function PackingAndShippingViews({
       })
       if (!res.ok) throw new Error('並び順の保存に失敗しました')
       toast.success('パック作業順を更新しました')
-    } catch (e) {
+    } catch {
       toast.error('並び替えに失敗しました')
       // dailyPackSortOrder のみを安全にロールバック
       setItems((prev) =>
@@ -117,24 +115,63 @@ export function PackingAndShippingViews({
       {/* 作業順ヘッダー案内 */}
       <div className="flex items-center justify-between px-1">
         <span className="text-sm font-bold text-ink">
-          📋 作業順（{isAdmin ? '▲▼で並び替え可能' : '上から順番にパック'}）
+          📋 作業順（{isAdmin ? '▲▼で並び替え可能' : '同一出荷先まとめ・上から順にパック'}）
         </span>
         <span className="text-sm font-bold text-ink-soft">全 {sortedPackItems.length} 件</span>
       </div>
 
-      {/* パック作業カード一覧 */}
+      {/* パック作業カード一覧（出荷先グループ境界ヘッダー付き） */}
       <div className="space-y-3">
-        {sortedPackItems.map((item, idx) => (
-          <ShipmentRow
-            key={item.itemId}
-            {...item}
-            deliveryDate={date}
-            isAdmin={isAdmin}
-            onMoveUp={isAdmin && !busyReorder && idx > 0 ? () => handleMove(idx, 'up') : undefined}
-            onMoveDown={isAdmin && !busyReorder && idx < sortedPackItems.length - 1 ? () => handleMove(idx, 'down') : undefined}
-            onStatusChange={handleStatusChange}
-          />
-        ))}
+        {sortedPackItems.map((item, idx) => {
+          const currentDestKey = `${item.customerName}__${item.destinationName || ''}`
+          const prevDestKey =
+            idx > 0
+              ? `${sortedPackItems[idx - 1]!.customerName}__${sortedPackItems[idx - 1]!.destinationName || ''}`
+              : null
+          const isNewSection = idx === 0 || currentDestKey !== prevDestKey
+
+          return (
+            <div key={item.itemId} className="space-y-2">
+              {isNewSection && (
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 pb-0.5 px-1 border-b border-line-soft">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs">🏢</span>
+                    <span className="text-xs font-black text-ink">
+                      {item.customerName}
+                      {item.destinationName ? ` ➜ ${item.destinationName}` : ''}
+                    </span>
+                    {item.shippingRouteName && (
+                      <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.2 text-[10px] font-bold">
+                        {item.shippingRouteName}
+                      </span>
+                    )}
+                    {item.departureTime && (
+                      <span className="rounded bg-amber-100 text-amber-900 px-1.5 py-0.2 text-[10px] font-bold">
+                        ⏰ {item.departureTime}発
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
+                    <span>{item.initialContainer || 'コンテナ'}</span>
+                    {item.masterPacksPerCase && <span>({item.masterPacksPerCase}入)</span>}
+                  </div>
+                </div>
+              )}
+              <ShipmentRow
+                {...item}
+                deliveryDate={date}
+                isAdmin={isAdmin}
+                onMoveUp={isAdmin && !busyReorder && idx > 0 ? () => handleMove(idx, 'up') : undefined}
+                onMoveDown={
+                  isAdmin && !busyReorder && idx < sortedPackItems.length - 1
+                    ? () => handleMove(idx, 'down')
+                    : undefined
+                }
+                onStatusChange={handleStatusChange}
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
