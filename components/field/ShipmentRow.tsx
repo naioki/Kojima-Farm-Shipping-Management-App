@@ -14,7 +14,6 @@ import { FIELD_STATUS_STYLE, fieldStatusStyle } from '@/lib/field/status-style'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto } from '@/components/admin/PackInstructions'
-import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
@@ -1004,15 +1003,12 @@ export function ShipmentRow({
                 <span className="block text-xs font-black text-trust-900">📄 受注原本（FAX / OCR）</span>
                 <span className="text-xs text-ink-soft">受信した元FAX画像やPDFを全画面で確認</span>
               </div>
-              <a
+              <Link
                 href={receipt.originalUrl || `/field/viewer/${receipt.id}?date=${deliveryDate ?? ''}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="h-9 px-3.5 rounded-lg bg-trust-700 text-white text-xs font-black shadow-xs hover:bg-trust-800 active:scale-95 transition flex items-center gap-1.5 shrink-0"
               >
                 <span>原本を見る</span>
-                <span className="text-[11px]">↗</span>
-              </a>
+              </Link>
             </div>
           ) : receipt && !receipt.hasOriginal ? (
             <div className="rounded-xl border border-line bg-bg-card p-2.5 flex items-center justify-between gap-2">

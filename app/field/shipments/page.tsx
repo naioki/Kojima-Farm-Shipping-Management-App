@@ -551,10 +551,8 @@ export default async function ShipmentsPage({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {uniqueReceipts.length > 0 && firstReceiptId && (
-              <a
+              <Link
                 href={`/field/viewer/${firstReceiptId}?date=${date}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 text-white hover:bg-emerald-900 px-2.5 py-1 text-xs font-black shadow-xs transition active:scale-95"
                 title="該当FAX原本を表示"
               >
@@ -562,8 +560,7 @@ export default async function ShipmentsPage({
                 <span className="rounded-full bg-emerald-950/70 px-1.5 py-0.2 text-[10px] text-emerald-200">
                   {uniqueReceipts.length}件
                 </span>
-                <span className="text-[10px]">↗</span>
-              </a>
+              </Link>
             )}
             <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-xs text-white font-bold">作業中</span>
           </div>
@@ -576,10 +573,8 @@ export default async function ShipmentsPage({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {uniqueReceipts.length > 0 && firstReceiptId && (
-              <a
+              <Link
                 href={`/field/viewer/${firstReceiptId}?date=${date}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg bg-sky-800 text-white hover:bg-sky-900 px-2.5 py-1 text-xs font-black shadow-xs transition active:scale-95"
                 title="該当FAX原本を表示"
               >
@@ -587,8 +582,7 @@ export default async function ShipmentsPage({
                 <span className="rounded-full bg-sky-950/70 px-1.5 py-0.2 text-[10px] text-sky-200">
                   {uniqueReceipts.length}件
                 </span>
-                <span className="text-[10px]">↗</span>
-              </a>
+              </Link>
             )}
             <Link
               href={`/field/shipments?date=${defaultDate}`}
@@ -606,10 +600,8 @@ export default async function ShipmentsPage({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {uniqueReceipts.length > 0 && firstReceiptId && (
-              <a
+              <Link
                 href={`/field/viewer/${firstReceiptId}?date=${date}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg bg-slate-700 text-white hover:bg-slate-800 px-2.5 py-1 text-xs font-black shadow-xs transition active:scale-95"
                 title="該当FAX原本を表示"
               >
@@ -617,8 +609,7 @@ export default async function ShipmentsPage({
                 <span className="rounded-full bg-slate-900/70 px-1.5 py-0.2 text-[10px] text-slate-200">
                   {uniqueReceipts.length}件
                 </span>
-                <span className="text-[10px]">↗</span>
-              </a>
+              </Link>
             )}
             <Link
               href={`/field/shipments?date=${defaultDate}`}
