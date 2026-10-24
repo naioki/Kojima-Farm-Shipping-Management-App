@@ -17,6 +17,7 @@ import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
@@ -544,22 +545,41 @@ export function ShipmentRow({
   const fieldInput =
     'h-10 w-full rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
 
+  const todayStr = jstTodayStr()
+  const tomorrowStr = shiftDateStr(todayStr, 1)
+
+  const isTodayOrder = deliveryDate === todayStr && !isNextDay
+  const isTomorrowOrder = deliveryDate === tomorrowStr && !isNextDay
+  const isFutureOrNextDay = isNextDay || Boolean(deliveryDate && deliveryDate > tomorrowStr)
+
   return (
     <div
       className={cn(
-        'rounded-2xl border bg-bg-card p-3.5 shadow-sm transition-all duration-200',
-        isNextDay
+        'rounded-2xl border p-3.5 shadow-sm transition-all duration-200',
+        isFutureOrNextDay
           ? 'border-slate-300 bg-slate-100/95 text-slate-800 shadow-xs'
+          : isTodayOrder
+          ? status === 'shipped'
+            ? 'border-sky-400 bg-sky-100/80'
+            : status === 'packed'
+            ? 'border-sky-300 bg-sky-50/80 ring-1 ring-sky-300'
+            : 'border-sky-300 bg-sky-50/60 shadow-xs'
+          : isTomorrowOrder
+          ? status === 'shipped'
+            ? 'border-emerald-400 bg-emerald-100/80'
+            : status === 'packed'
+            ? 'border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-300'
+            : 'border-emerald-300/80 bg-emerald-50/40 shadow-xs'
           : status === 'shipped'
-          ? 'border-sky-300 bg-sky-50/15'
+          ? 'border-sky-300 bg-sky-50/30'
           : status === 'packed'
-          ? 'border-emerald-300 bg-emerald-50/15'
-          : 'border-line',
+          ? 'border-emerald-300 bg-emerald-50/30'
+          : 'border-line bg-white shadow-xs',
         conflict ? 'animate-pulse-alert border-alert ring-2 ring-alert/20' : '',
       )}
     >
-      {/* 翌日出荷予定バッジ（先行作業・閲覧用） */}
-      {isNextDay && (
+      {/* 日付識別ヘッダーバッジ（今日＝スカイブルー 🚚 / 明日＝エメラルド 🥬 / 翌日先行＝スレートチャコール 📅） */}
+      {isFutureOrNextDay ? (
         <div className="mb-2.5 flex items-center justify-between rounded-xl bg-slate-200 border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-800 shadow-2xs">
           <span className="flex items-center gap-1.5">
             <span className="text-sm">📅</span>
@@ -569,7 +589,27 @@ export function ShipmentRow({
             {deliveryDate ? `${deliveryDate} 出荷` : '翌日出荷分'}
           </span>
         </div>
-      )}
+      ) : isTodayOrder ? (
+        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-sky-100 border border-sky-300 px-3 py-1.5 text-xs font-black text-sky-950 shadow-2xs">
+          <span className="flex items-center gap-1.5">
+            <span className="text-sm">🚚</span>
+            <span>当日出荷分（本日便）</span>
+          </span>
+          <span className="rounded bg-sky-700 text-white px-2 py-0.5 text-[10px] font-bold">
+            {deliveryDate} 出荷
+          </span>
+        </div>
+      ) : isTomorrowOrder ? (
+        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-emerald-100/90 border border-emerald-300 px-3 py-1.5 text-xs font-black text-emerald-950 shadow-2xs">
+          <span className="flex items-center gap-1.5">
+            <span className="text-sm">🥬</span>
+            <span>明日出荷分（本日パック作業対象）</span>
+          </span>
+          <span className="rounded bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-bold">
+            {deliveryDate} 出荷
+          </span>
+        </div>
+      ) : null}
 
       {/* 競合・更新アラート（ワンタップ自己修復） */}
       {conflict && (
@@ -734,18 +774,36 @@ export function ShipmentRow({
         </div>
       </div>
 
-      {/* ③ 【最重要】総パック数カード（今日＝フォレストグリーン / 翌日先行枠＝シックなチャコールグレー） */}
+      {/* ③ 【最重要】総パック数カード（今日便＝スカイネイビー / 本日パック＝フォレストグリーン / 翌日先行＝シックなチャコール） */}
       <div
         className={cn(
           'rounded-xl p-3.5 text-white mb-3 shadow-sm transition-colors',
-          isNextDay ? 'bg-[#334155] border border-slate-500/30' : 'bg-[#1b5e20]',
+          isFutureOrNextDay
+            ? 'bg-[#334155] border border-slate-500/30'
+            : isTodayOrder
+            ? 'bg-[#0369a1] border border-sky-600/30'
+            : 'bg-[#1b5e20]',
         )}
       >
         <div className="flex items-center justify-between text-sm font-black text-white/95 tracking-wide">
-          <span>{isNextDay ? '総パック数（翌日先行分）' : '総パック数'}</span>
-          {isNextDay && (
+          <span>
+            {isFutureOrNextDay
+              ? '総パック数（翌日先行分）'
+              : isTodayOrder
+              ? '総パック数（当日出荷分）'
+              : '総パック数'}
+          </span>
+          {isFutureOrNextDay ? (
             <span className="rounded bg-slate-800/80 px-2 py-0.5 text-[10px] font-bold text-slate-300">
               📅 翌日作業枠
+            </span>
+          ) : isTodayOrder ? (
+            <span className="rounded bg-sky-900/80 px-2 py-0.5 text-[10px] font-bold text-sky-200">
+              🚚 当日便
+            </span>
+          ) : (
+            <span className="rounded bg-emerald-900/80 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+              🥬 本日パック
             </span>
           )}
         </div>

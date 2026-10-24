@@ -132,43 +132,75 @@ export function HarvestPulseSummary({
           </span>
         </div>
 
-        {/* 統合進捗ヒーローカード（上：特大 パック数(P) ｜ 下：通常 箱数・あと残りP/箱） */}
-        <div className="rounded-2xl bg-black/25 border border-white/15 p-3.5 sm:p-4 text-center space-y-2.5 shadow-inner">
-          {/* 上段：特大サイズ（完成 / 目標 パック数 ＆ 箱数併記） */}
+        {/* 統合進捗ヒーローカード（上段：パック数 特大 ｜ 下段：箱数 特大 ｜ 最下部：あと残りP/箱） */}
+        <div className="rounded-2xl bg-black/25 border border-white/15 p-4 sm:p-5 text-center space-y-3.5 shadow-inner">
+          {/* ① パック数（特大表示） */}
           <div className="flex flex-col items-center justify-center">
-            <div className="flex items-baseline justify-center gap-1.5 font-display">
-              <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-sm">
+            <span className="text-xs font-black tracking-wider text-white/75 mb-0.5">
+              パック数 (P)
+            </span>
+            <div className="flex items-baseline justify-center gap-2 font-display">
+              <span className="text-5xl sm:text-6xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
                 {completedPacks.toLocaleString()}
               </span>
-              <span className="text-2xl sm:text-3xl font-bold text-white/50">/</span>
+              <span className="text-2xl sm:text-3xl font-bold text-white/40">/</span>
               <span
                 className={cn(
-                  'text-3xl sm:text-4xl font-extrabold tabular-nums',
-                  isTodayWork ? 'text-emerald-200/90' : 'text-slate-200/90',
+                  'text-4xl sm:text-5xl font-extrabold tabular-nums',
+                  isTodayWork ? 'text-emerald-200' : 'text-slate-200',
                 )}
               >
                 {totalPacks.toLocaleString()}
               </span>
               <span
                 className={cn(
-                  'text-base sm:text-lg font-black ml-1',
-                  isTodayWork ? 'text-emerald-200' : 'text-slate-200',
+                  'text-lg sm:text-xl font-black ml-1',
+                  isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                 )}
               >
                 P
               </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold text-white/80 tabular-nums mt-0.5">
-              （約 {completedBoxes.toLocaleString()} / {totalBoxes.toLocaleString()} 箱）
+          </div>
+
+          {/* 区切り線 */}
+          <div className="w-full border-t border-white/15" />
+
+          {/* ② 箱数（特大表示） */}
+          <div className="flex flex-col items-center justify-center">
+            <span className="text-xs font-black tracking-wider text-white/75 mb-0.5">
+              箱数 (ケース)
+            </span>
+            <div className="flex items-baseline justify-center gap-2 font-display">
+              <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
+                {completedBoxes.toLocaleString()}
+              </span>
+              <span className="text-2xl sm:text-3xl font-bold text-white/40">/</span>
+              <span
+                className={cn(
+                  'text-3xl sm:text-4xl font-extrabold tabular-nums',
+                  isTodayWork ? 'text-emerald-200' : 'text-slate-200',
+                )}
+              >
+                {totalBoxes.toLocaleString()}
+              </span>
+              <span
+                className={cn(
+                  'text-base sm:text-lg font-black ml-1',
+                  isTodayWork ? 'text-emerald-300' : 'text-slate-300',
+                )}
+              >
+                箱
+              </span>
             </div>
           </div>
 
-          {/* 下段：通常サイズ（あと何P・何箱 / 達成バッジ） */}
-          <div className="flex items-center justify-center">
+          {/* ③ 下段：残り数・達成バッジ */}
+          <div className="flex items-center justify-center pt-0.5">
             {remainingPacks > 0 ? (
               <div
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs sm:text-sm font-bold shadow-xs border',
+                  'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold shadow-xs border',
                   isTodayWork
                     ? 'bg-emerald-400/20 border-emerald-300/30 text-emerald-100'
                     : 'bg-slate-700/60 border-slate-600/50 text-slate-200',
@@ -176,7 +208,7 @@ export function HarvestPulseSummary({
               >
                 <Clock
                   className={cn(
-                    'h-3.5 w-3.5 shrink-0',
+                    'h-4 w-4 shrink-0',
                     isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                   )}
                 />
@@ -184,21 +216,21 @@ export function HarvestPulseSummary({
                 <span className="font-black text-white text-sm sm:text-base tabular-nums">
                   {remainingPacks.toLocaleString()} P
                 </span>
-                <span className="text-[11px] text-white/80 font-normal">
+                <span className="text-xs text-white/80 font-semibold">
                   (約 {remainingBoxes.toLocaleString()} 箱)
                 </span>
               </div>
             ) : totalPacks > 0 ? (
               <div
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs sm:text-sm font-black shadow-xs',
+                  'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black shadow-xs',
                   isTodayWork
                     ? 'bg-emerald-400 text-emerald-950'
                     : 'bg-slate-200 text-slate-900',
                 )}
               >
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>🎉 パック目標達成！（全 {totalPacks} P 完了）</span>
+                <span>🎉 パック目標達成！（全 {totalPacks} P / {totalBoxes} 箱 完了）</span>
               </div>
             ) : (
               <div className="text-xs text-white/60">この日の注文はありません</div>
