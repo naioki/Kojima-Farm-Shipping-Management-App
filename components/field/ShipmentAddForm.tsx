@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState, useRef } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus,
@@ -91,6 +90,8 @@ export function ShipmentAddForm({
   // マスタ state
   const [customers, setCustomers] = useState<LocalCustomer[]>(initialCustomers)
   const [products, setProducts] = useState<LocalProduct[]>(initialProducts)
+  const [allDestinations, setAllDestinations] = useState<Array<{ id: string; customerId: string; label: string }>>(destinations)
+  const [localPacksByPair, setLocalPacksByPair] = useState<Record<string, number | null>>(packsByPair)
 
   // フォーム入力値
   const [targetDate, setTargetDate] = useState(deliveryDate)
@@ -104,6 +105,11 @@ export function ShipmentAddForm({
   const [note, setNote] = useState('')
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const fileSelectorRef = useRef<HTMLInputElement | null>(null)
+
+  // 📦 3連動数量エディタ state（入数 × 箱数 ＝ 総パック数）
+  const [inputPacksPerCase, setInputPacksPerCase] = useState<number>(20)
+  const [inputCases, setInputCases] = useState<string>('')
+  const [inputTotalPacks, setInputTotalPacks] = useState<string>('')
 
   // 自然言語スマート入力 state
   const [naturalText, setNaturalText] = useState('')
@@ -128,15 +134,21 @@ export function ShipmentAddForm({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false)
 
-  // インライン新規作成
+  // 🏢 新規取引先ワンストップ一括作成 state
   const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState('')
+  const [newDestinationName, setNewDestinationName] = useState('')
+  const [newPacksPerCase, setNewPacksPerCase] = useState<number>(20)
+  const [newContainerType, setNewContainerType] = useState<'ケース' | 'コンテナ'>('ケース')
+  const [newAliases, setNewAliases] = useState('')
   const [creatingCustomer, setCreatingCustomer] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // 親更新追従
   useEffect(() => setCustomers(initialCustomers), [initialCustomers])
   useEffect(() => setProducts(initialProducts), [initialProducts])
+  useEffect(() => setAllDestinations(destinations), [destinations])
+  useEffect(() => setLocalPacksByPair(packsByPair), [packsByPair])
   useEffect(() => {
     if (isOpen) {
       setStep('input')
@@ -209,8 +221,8 @@ export function ShipmentAddForm({
 
   // 納入先リスト
   const customerDestinations = useMemo(
-    () => destinations.filter((d) => d.customerId === customerId),
-    [destinations, customerId],
+    () => allDestinations.filter((d) => d.customerId === customerId),
+    [allDestinations, customerId],
   )
 
   useEffect(() => {
@@ -220,13 +232,69 @@ export function ShipmentAddForm({
 
   const selectedProduct = products.find((p) => p.id === productId)
   const unit = selectedProduct?.unit ?? 'P'
-  const packsPerCase = customerId && productId ? packsByPair[`${customerId}:${productId}`] ?? null : null
+  const packsPerCase = customerId && productId ? localPacksByPair[`${customerId}:${productId}`] ?? null : null
+
+  // 取引先・品目変更時に連動して1箱の入数を更新
+  useEffect(() => {
+    if (customerId && productId) {
+      const p = localPacksByPair[`${customerId}:${productId}`]
+      if (p != null && p > 0) {
+        setInputPacksPerCase(p)
+        if (inputCases && Number(inputCases) > 0) {
+          const tot = Math.round(Number(inputCases) * p)
+          setInputTotalPacks(String(tot))
+          setQtyRaw(`${inputCases}c`)
+        }
+      }
+    }
+  }, [customerId, productId, localPacksByPair])
+
+  // 📦 3連動数量ハンドラ
+  const handlePacksPerCaseChange = (newP: number) => {
+    const p = Math.max(1, newP)
+    setInputPacksPerCase(p)
+    if (inputCases && Number(inputCases) > 0) {
+      const tot = Math.round(Number(inputCases) * p)
+      setInputTotalPacks(String(tot))
+      setQtyRaw(`${inputCases}c`)
+    } else if (inputTotalPacks && Number(inputTotalPacks) > 0) {
+      setInputCases(String(Math.floor(Number(inputTotalPacks) / p)))
+    }
+  }
+
+  const handleCasesChange = (val: string) => {
+    setInputCases(val)
+    const c = parseFloat(val)
+    if (!isNaN(c) && c >= 0) {
+      const tot = Math.round(c * inputPacksPerCase)
+      setInputTotalPacks(String(tot))
+      setQtyRaw(`${val}c`)
+    } else if (val === '') {
+      setInputTotalPacks('')
+      setQtyRaw('')
+    }
+  }
+
+  const handleTotalPacksChange = (val: string) => {
+    setInputTotalPacks(val)
+    const tot = parseFloat(val)
+    if (!isNaN(tot) && tot >= 0) {
+      setQtyRaw(val)
+      if (inputPacksPerCase > 0) {
+        const c = Math.floor(tot / inputPacksPerCase)
+        setInputCases(String(c))
+      }
+    } else if (val === '') {
+      setInputCases('')
+      setQtyRaw('')
+    }
+  }
 
   // 数量プレビュー
   const preview = useMemo(() => {
     if (qtyRaw.trim() === '') return null
-    return parseQuantity(qtyRaw, { packsPerCase })
-  }, [qtyRaw, packsPerCase])
+    return parseQuantity(qtyRaw, { packsPerCase: inputPacksPerCase || packsPerCase })
+  }, [qtyRaw, inputPacksPerCase, packsPerCase])
 
   const previewText = (() => {
     if (!preview) return null
@@ -235,7 +303,7 @@ export function ShipmentAddForm({
       return { kind: 'error' as const, text: ADD_ERRORS[preview.reason] ?? '解釈できません', reason: preview.reason }
     const parts = [`合計 ${preview.total.toString()} ${unit}`]
     if (preview.interpretation === 'cases' && preview.cases != null) {
-      parts.push(`（${preview.cases}ケース × ${packsPerCase || 20} + 端数${preview.loose}）`)
+      parts.push(`（${preview.cases}ケース × ${inputPacksPerCase || packsPerCase || 20} + 端数${preview.loose}）`)
     }
     return { kind: 'ok' as const, text: parts.join(' ') }
   })()
@@ -423,35 +491,79 @@ export function ShipmentAddForm({
     })
   }
 
-  function applyParsedOrder(parsedOrder?: {
-    customer_name?: string | null
-    delivery_date?: string | null
-    destination_name?: string | null
-    items?: Array<{
-      product_name?: string | null
-      raw_name?: string | null
-      cases?: number | null
-      quantity?: string | number | null
-    }>
-  } | null) {
+  function applyParsedOrder(
+    parsedOrder?: {
+      customer_name?: string | null
+      delivery_date?: string | null
+      destination_name?: string | null
+      items?: Array<{
+        product_name?: string | null
+        raw_name?: string | null
+        cases?: number | null
+        quantity?: string | number | null
+        packs_per_case?: number | null
+      }>
+    } | null,
+    clarifications?: Array<{
+      targetField: string
+      title: string
+      reason: string
+      options: Array<{ label: string; value: string }>
+    }> | null,
+  ) {
     if (!parsedOrder) {
       toast('注文を特定できませんでした。下の欄に手動入力してください。', { icon: 'ℹ️' })
       return
     }
 
     const badges: string[] = []
-    // 1. 取引先
-    const cName = parsedOrder.customer_name?.trim() || ''
-    const matchedCust = customers.find((c) => c.name.includes(cName) || cName.includes(c.name))
+    let detectedCustName = parsedOrder.customer_name?.trim() || ''
+
+    // 宛名「アイプラス」「小島農園」は当農園（受託側）のため取引先トリガーとしない
+    if (/アイプラス|小島農園/.test(detectedCustName)) {
+      detectedCustName = ''
+    }
+
+    // 1. 取引先照合
+    const matchedCust = detectedCustName
+      ? customers.find((c) => {
+          const cNorm = c.name.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
+          const dNorm = detectedCustName.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
+          return cNorm.includes(dNorm) || dNorm.includes(cNorm)
+        })
+      : undefined
+
     if (matchedCust) {
       setCustomerId(matchedCust.id)
       badges.push(`取引先: ${matchedCust.name}`)
+    } else if (detectedCustName) {
+      // 未知の取引先が検出された場合：ワンストップ新規登録を開き、AI抽出値を初期セット！
+      setNewCustomerName(detectedCustName)
+      if (parsedOrder.destination_name) setNewDestinationName(parsedOrder.destination_name.trim())
+      const firstItemPacks = parsedOrder.items?.[0]?.packs_per_case
+      if (firstItemPacks && firstItemPacks > 0) setNewPacksPerCase(firstItemPacks)
+      setNewAliases(detectedCustName)
+      setShowNewCustomer(true)
+      badges.push(`未登録取引先: ${detectedCustName} (一括登録枠を開きました)`)
     }
 
     // 2. 納品日
     if (parsedOrder.delivery_date) {
-      setTargetDate(parsedOrder.delivery_date)
-      badges.push(`納品日: ${parsedOrder.delivery_date}`)
+      // 過去日付判定
+      if (parsedOrder.delivery_date < todayStr) {
+        setUncertainItems((prev) => [
+          ...prev,
+          {
+            field: 'delivery_date',
+            question: `伝票上の日付（${parsedOrder.delivery_date}）は過去です。いつの納品にしますか？`,
+            suggestions: [`直近の次回納品 (${tomorrowStr})`, `今日 (${todayStr})`, `明後日 (${dayAfterTomorrowStr})`],
+          },
+        ])
+        setTargetDate(tomorrowStr)
+      } else {
+        setTargetDate(parsedOrder.delivery_date)
+        badges.push(`納品日: ${parsedOrder.delivery_date}`)
+      }
     } else {
       setUncertainItems((prev) => [
         ...prev,
@@ -466,16 +578,19 @@ export function ShipmentAddForm({
     // 3. 納入先
     if (parsedOrder.destination_name) {
       const dName = parsedOrder.destination_name.trim()
-      const matchedDest = destinations.find(
+      const matchedDest = allDestinations.find(
         (d) => d.label.includes(dName) || dName.includes(d.label),
       )
       if (matchedDest) {
         setDestinationId(matchedDest.id)
         badges.push(`納入先: ${matchedDest.label}`)
+      } else {
+        setNewDestinationName(dName)
+        badges.push(`納入先候補: ${dName}`)
       }
     }
 
-    // 4. 品目・数量
+    // 4. 品目・数量・入数
     const firstItem = parsedOrder.items?.[0]
     if (firstItem) {
       const pName = firstItem.product_name || firstItem.raw_name || ''
@@ -490,13 +605,43 @@ export function ShipmentAddForm({
         setSelectedCategory(resolveProductCategory(matchedProd))
         badges.push(`品目: ${matchedProd.name}`)
       }
-      if (firstItem.cases != null && firstItem.cases > 0) {
-        setQtyRaw(`${firstItem.cases}c`)
-        badges.push(`数量: ${firstItem.cases}ケース`)
-      } else if (firstItem.quantity) {
-        setQtyRaw(String(firstItem.quantity))
-        badges.push(`数量: ${firstItem.quantity} P`)
+
+      // 伝票上の入数
+      const rawText = firstItem.raw_name || ''
+      const parsedPacks = firstItem.packs_per_case || (rawText.match(/(\d+)入/)?.[1] ? parseInt(RegExp.$1, 10) : null)
+      const currentPacks = parsedPacks || inputPacksPerCase || 20
+      if (parsedPacks) {
+        setInputPacksPerCase(parsedPacks)
       }
+
+      // 箱数・総パック数の連動反映
+      if (firstItem.cases != null && firstItem.cases > 0) {
+        const c = firstItem.cases
+        const tot = c * currentPacks
+        setInputCases(String(c))
+        setInputTotalPacks(String(tot))
+        setQtyRaw(`${c}c`)
+        badges.push(`数量: ${c}箱 (${currentPacks}P/箱 ＝ 計${tot}P)`)
+      } else if (firstItem.quantity) {
+        const qNum = typeof firstItem.quantity === 'number' ? firstItem.quantity : parseInt(String(firstItem.quantity), 10)
+        if (!isNaN(qNum) && qNum > 0) {
+          setInputTotalPacks(String(qNum))
+          setQtyRaw(String(qNum))
+          const c = Math.floor(qNum / currentPacks)
+          setInputCases(String(c))
+          badges.push(`数量: ${qNum} P (${c}箱相当)`)
+        }
+      }
+    }
+
+    // 5. 不明点・確認カードの統合
+    if (clarifications && clarifications.length > 0) {
+      const mapped: UncertainItem[] = clarifications.map((c) => ({
+        field: c.targetField,
+        question: c.title ? `${c.title}: ${c.reason}` : c.reason,
+        suggestions: c.options.map((o) => o.label),
+      }))
+      setUncertainItems((prev) => [...prev, ...mapped])
     }
 
     setConfirmedBadges(badges)
@@ -521,7 +666,7 @@ export function ShipmentAddForm({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
 
-      applyParsedOrder(data.orders?.[0])
+      applyParsedOrder(data.orders?.[0], data.clarifications)
     } catch (err: unknown) {
       toast.error((err as Error)?.message || '読み取りに失敗しました')
     } finally {
@@ -558,7 +703,7 @@ export function ShipmentAddForm({
           })
           const data = await res.json()
           if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
-          applyParsedOrder(data.orders?.[0])
+          applyParsedOrder(data.orders?.[0], data.clarifications)
         } catch (err: unknown) {
           toast.error((err as Error)?.message || 'ファイルの読み取りに失敗しました')
         } finally {
@@ -576,26 +721,75 @@ export function ShipmentAddForm({
     }
   }
 
-  // 取引先その場作成
-  async function createCustomer() {
+  // 🏢 新規取引先ワンストップ一括作成（納入先・入数ルール・AIルールも同時登録）
+  async function handleCreateOneStopCustomer() {
     const name = newCustomerName.trim()
-    if (!name) return
+    if (!name) {
+      toast.error('取引先名を入力してください')
+      return
+    }
     setCreatingCustomer(true)
     try {
+      const aliasList = newAliases
+        .split(/[,、\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+
       const res = await fetch('/api/customers/quick', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({
+          name,
+          destination_name: newDestinationName.trim() || undefined,
+          packs_per_case: newPacksPerCase > 0 ? newPacksPerCase : undefined,
+          container_type: newContainerType,
+          aliases: aliasList.length > 0 ? aliasList : undefined,
+          product_id: productId || undefined,
+        }),
       })
       const json = await res.json()
       if (!res.ok || !json.id) throw new Error(json.error ?? '作成失敗')
+
+      // 取引先リストへ追加・選択
       setCustomers((prev) => (prev.some((c) => c.id === json.id) ? prev : [...prev, { id: json.id, name: json.name }]))
       setCustomerId(json.id)
-      setNewCustomerName('')
+
+      // 納入先が作成された場合は追加・選択
+      if (json.destination) {
+        setAllDestinations((prev) => [
+          ...prev.filter((d) => d.id !== json.destination.id),
+          { id: json.destination.id, customerId: json.id, label: json.destination.label },
+        ])
+        setDestinationId(json.destination.id)
+      }
+
+      // 入数が設定された場合は反映
+      if (json.packs_per_case) {
+        setInputPacksPerCase(json.packs_per_case)
+        if (productId) {
+          setLocalPacksByPair((prev) => ({
+            ...prev,
+            [`${json.id}:${productId}`]: json.packs_per_case,
+          }))
+        }
+        if (inputCases && Number(inputCases) > 0) {
+          const tot = Math.round(Number(inputCases) * json.packs_per_case)
+          setInputTotalPacks(String(tot))
+          setQtyRaw(`${inputCases}c`)
+        }
+      }
+
       setShowNewCustomer(false)
-      toast.success(`「${json.name}」を作成しました`)
+      setNewCustomerName('')
+      setNewDestinationName('')
+      setNewAliases('')
+      toast.success(
+        `「${json.name}」を一括登録しました！` +
+          (json.destination ? `（納入先: ${json.destination.label}）` : '') +
+          (json.packs_per_case ? `（入数: ${json.packs_per_case}P）` : ''),
+      )
     } catch (e: unknown) {
-      toast.error(fieldErrorMessage(e, '作成に失敗しました'))
+      toast.error(fieldErrorMessage(e, '取引先の作成に失敗しました'))
     } finally {
       setCreatingCustomer(false)
     }
@@ -1175,30 +1369,138 @@ export function ShipmentAddForm({
                 )}
               </div>
 
-              {/* 取引先インライン作成 */}
+              {/* 取引先ワンストップ一括作成 */}
               {showNewCustomer && (
-                <div className="flex flex-wrap items-end gap-2 rounded-xl border border-forest-300 bg-forest-50/70 p-3">
-                  <Input
-                    label="新しい取引先の名前"
-                    placeholder="例：株式会社○○"
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                    className="min-w-[12rem] flex-1"
-                    autoFocus
-                  />
-                  <Button onClick={createCustomer} isLoading={creatingCustomer} className="h-10 text-xs">
-                    作成して使う
-                  </Button>
-                  <Button
-                    variant="tertiary"
-                    onClick={() => {
-                      setShowNewCustomer(false)
-                      setNewCustomerName('')
-                    }}
-                    className="h-10 text-xs"
-                  >
-                    閉じる
-                  </Button>
+                <div className="rounded-2xl border-2 border-forest-400 bg-gradient-to-br from-forest-50 to-sand-50 p-4 space-y-3.5 shadow-md animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between border-b border-forest-200 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-lg bg-forest-600 p-1 text-white">
+                        <UserPlus className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <h4 className="text-xs font-black text-forest-950">✨ 新規取引先のワンストップ一括登録</h4>
+                        <p className="text-[10px] text-ink-muted">納入先・入数ルール・AI解析ルールも同時に登録し即座に適用します</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewCustomer(false)}
+                      className="text-xs font-bold text-ink-muted hover:text-ink px-2 py-1 rounded-md hover:bg-forest-100"
+                    >
+                      ✕ 閉じる
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {/* 取引先名 */}
+                    <div className="space-y-1">
+                      <label className="font-black text-ink">取引先名（必須）</label>
+                      <Input
+                        placeholder="例: ランドローム（やなぎさわファーム）"
+                        value={newCustomerName}
+                        onChange={(e) => setNewCustomerName(e.target.value)}
+                        className="h-9 text-xs"
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* 納入先（店舗・センター・運送会社） */}
+                    <div className="space-y-1">
+                      <label className="font-black text-ink">納入先（店舗・センター・運送）</label>
+                      <Input
+                        placeholder="例: 小松運輸 / 本社 / 成田センター"
+                        value={newDestinationName}
+                        onChange={(e) => setNewDestinationName(e.target.value)}
+                        className="h-9 text-xs"
+                      />
+                    </div>
+
+                    {/* 入数（P/箱） */}
+                    <div className="space-y-1">
+                      <label className="font-black text-ink">1箱の入数（P/箱）</label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="1"
+                          value={newPacksPerCase}
+                          onChange={(e) => setNewPacksPerCase(Math.max(1, Number(e.target.value)))}
+                          className="h-9 text-xs w-24"
+                        />
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setNewPacksPerCase(10)}
+                            className={cn(
+                              'px-2 py-1 text-xs font-bold rounded transition-colors',
+                              newPacksPerCase === 10 ? 'bg-forest-600 text-white' : 'bg-sand-200 text-ink hover:bg-sand-300',
+                            )}
+                          >
+                            10入
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewPacksPerCase(20)}
+                            className={cn(
+                              'px-2 py-1 text-xs font-bold rounded transition-colors',
+                              newPacksPerCase === 20 ? 'bg-forest-600 text-white' : 'bg-sand-200 text-ink hover:bg-sand-300',
+                            )}
+                          >
+                            20入
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 容器種別 */}
+                    <div className="space-y-1">
+                      <label className="font-black text-ink">荷姿・容器種別</label>
+                      <select
+                        value={newContainerType}
+                        onChange={(e) => setNewContainerType(e.target.value as 'ケース' | 'コンテナ')}
+                        className="w-full h-9 rounded-md border border-line bg-white px-2 text-xs font-bold text-ink"
+                      >
+                        <option value="ケース">ケース（ダンボール・箱）</option>
+                        <option value="コンテナ">コンテナ（通い箱）</option>
+                      </select>
+                    </div>
+
+                    {/* FAX・伝票上の別名（AI自動識別用） */}
+                    <div className="sm:col-span-2 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="font-black text-ink">伝票上の表記・別名（AI自動認識用）</label>
+                        <span className="text-[10px] text-ink-muted">カンマ区切りで複数指定可</span>
+                      </div>
+                      <Input
+                        placeholder="例: やなぎさわファーム, ランドローム, 株式会社 やなぎさわファーム"
+                        value={newAliases}
+                        onChange={(e) => setNewAliases(e.target.value)}
+                        className="h-9 text-xs"
+                      />
+                      <p className="text-[10px] text-forest-800">
+                        💡 ここに入力した別名やルールは AI（ai_rules）にも即座に学習され、次回以降のFAX・注文書で自動認識されます。
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-forest-200">
+                    <Button
+                      variant="tertiary"
+                      size="sm"
+                      onClick={() => setShowNewCustomer(false)}
+                      className="h-8 text-xs"
+                    >
+                      キャンセル
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleCreateOneStopCustomer}
+                      isLoading={creatingCustomer}
+                      disabled={!newCustomerName.trim()}
+                      className="bg-forest-700 hover:bg-forest-800 text-white font-bold h-8 text-xs px-4 shadow-sm"
+                    >
+                      ✨ 取引先・納入先・ルールを一括作成して適用
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -1253,40 +1555,189 @@ export function ShipmentAddForm({
                 </div>
               </div>
 
-              {/* 数量入力 */}
-              <div className="space-y-1.5">
-                <Input
-                  label={`数量（単位: ${unit}）`}
-                  placeholder="例: 10 / 15c / x58"
-                  inputMode="text"
-                  value={qtyRaw}
-                  onChange={(e) => setQtyRaw(e.target.value)}
-                  hint="バラ数（10）、ケース記法（15c = 15ケース）、x記法（x58）が入力できます"
-                />
-              </div>
+              {/* 📦 3連動数量エディタ（箱数・入数・総パック数の完全連動） */}
+              <div className="rounded-2xl border-2 border-forest-300 bg-gradient-to-br from-forest-50/60 to-emerald-50/40 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-forest-950 flex items-center gap-1.5">
+                    <span>📦 数量入力（箱数・入数・総パック数の連動計算）</span>
+                  </label>
+                  <span className="text-[11px] font-bold text-forest-700 bg-forest-100 px-2 py-0.5 rounded-full">
+                    どの枠に入力しても自動計算
+                  </span>
+                </div>
 
-              {/* 数量リアルタイム換算プレビュー */}
-              {previewText && (
-                <div
-                  className={cn(
-                    'rounded-xl p-3 text-sm font-bold',
-                    previewText.kind === 'error'
-                      ? 'border border-red-200 bg-red-50 text-alert'
-                      : 'border border-emerald-200 bg-emerald-50 text-forest-900',
-                  )}
-                >
-                  <p>{previewText.text}</p>
-                  {previewText.kind === 'error' && previewText.reason === 'packs_per_case_required' && customerId && (
-                    <Link
-                      href={`/admin/customers/${customerId}`}
-                      className="mt-1 inline-flex items-center gap-0.5 text-xs font-bold text-trust-700 underline underline-offset-2 hover:text-trust-800"
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {/* ① 1箱の入数 (P/箱) */}
+                  <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-ink">① 1箱の入数</span>
+                      <span className="text-[10px] font-bold text-ink-muted">P/箱</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        value={inputPacksPerCase}
+                        onChange={(e) => handlePacksPerCaseChange(Number(e.target.value))}
+                        className="w-full h-10 rounded-lg border border-line bg-white px-2.5 font-black text-base text-ink focus:border-forest-600 focus:outline-none"
+                      />
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handlePacksPerCaseChange(10)}
+                          className={cn(
+                            'text-[10px] font-bold px-2 py-0.5 rounded transition-colors',
+                            inputPacksPerCase === 10 ? 'bg-forest-600 text-white' : 'bg-sand-100 hover:bg-sand-200 text-ink',
+                          )}
+                        >
+                          10入
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePacksPerCaseChange(20)}
+                          className={cn(
+                            'text-[10px] font-bold px-2 py-0.5 rounded transition-colors',
+                            inputPacksPerCase === 20 ? 'bg-forest-600 text-white' : 'bg-sand-100 hover:bg-sand-200 text-ink',
+                          )}
+                        >
+                          20入
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-ink-muted">標準: 20P（やなぎさわ等は10P）</p>
+                  </div>
+
+                  {/* ② 箱数（ケース数） */}
+                  <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-forest-900">② 箱数（ケース）</span>
+                      <span className="text-[10px] font-bold text-forest-700">箱 / ケース</span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="例: 30"
+                      value={inputCases}
+                      onChange={(e) => handleCasesChange(e.target.value)}
+                      className="w-full h-10 rounded-lg border-2 border-forest-400 bg-forest-50/30 px-3 font-black text-lg text-forest-900 focus:border-forest-600 focus:outline-none"
+                    />
+                    <div className="flex items-center gap-1 pt-0.5">
+                      {[5, 10, 20, 30].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => {
+                            const cur = Number(inputCases) || 0
+                            handleCasesChange(String(cur + n))
+                          }}
+                          className="flex-1 text-[10px] font-bold py-0.5 rounded bg-sand-100 hover:bg-forest-100 text-ink active:scale-95 transition"
+                        >
+                          +{n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ③ 総パック数 (P) */}
+                  <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-emerald-900">③ 総パック数</span>
+                      <span className="text-[10px] font-bold text-emerald-700">{unit}</span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="例: 300"
+                      value={inputTotalPacks}
+                      onChange={(e) => handleTotalPacksChange(e.target.value)}
+                      className="w-full h-10 rounded-lg border-2 border-emerald-400 bg-emerald-50/30 px-3 font-black text-lg text-emerald-950 focus:border-emerald-600 focus:outline-none"
+                    />
+                    <div className="flex items-center gap-1 pt-0.5">
+                      {[50, 100, 200].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => {
+                            const cur = Number(inputTotalPacks) || 0
+                            handleTotalPacksChange(String(cur + n))
+                          }}
+                          className="flex-1 text-[10px] font-bold py-0.5 rounded bg-sand-100 hover:bg-emerald-100 text-ink active:scale-95 transition"
+                        >
+                          +{n}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInputCases('')
+                          setInputTotalPacks('')
+                          setQtyRaw('')
+                        }}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700 hover:bg-red-100"
+                      >
+                        クリア
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 連動計算ビジュアル帯 */}
+                <div className="rounded-xl border border-forest-200 bg-white/95 p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2 text-xs font-black text-forest-950">
+                    <span className="text-sm">📦</span>
+                    <span>{inputCases || 0} 箱</span>
+                    <span className="text-ink-muted">×</span>
+                    <span>{inputPacksPerCase} P/箱</span>
+                    <span className="text-forest-600">＝</span>
+                    <span className="text-sm text-forest-800 underline decoration-forest-400 font-black">
+                      {inputTotalPacks || 0} {unit}（総数）
+                    </span>
+                  </div>
+                  {previewText && (
+                    <span
+                      className={cn(
+                        'text-xs font-bold px-2 py-0.5 rounded',
+                        previewText.kind === 'error' ? 'bg-red-100 text-alert' : 'bg-forest-100 text-forest-900',
+                      )}
                     >
-                      取引先設定を開く
-                      <ArrowRight className="h-3 w-3" aria-hidden />
-                    </Link>
+                      {previewText.text}
+                    </span>
                   )}
                 </div>
-              )}
+
+                {/* 自由入力・記法併用用インプット */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-ink-muted">
+                      自由記法入力（直接のバラ数や「15c2」「x58」など）
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    value={qtyRaw}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setQtyRaw(val)
+                      const cMatch = val.match(/^(\d+)\s*[cCケース箱]$/)
+                      if (cMatch && cMatch[1]) {
+                        const c = parseInt(cMatch[1], 10)
+                        setInputCases(String(c))
+                        setInputTotalPacks(String(c * inputPacksPerCase))
+                      } else {
+                        const num = parseInt(val, 10)
+                        if (!isNaN(num) && num > 0) {
+                          setInputTotalPacks(String(num))
+                          if (inputPacksPerCase > 0) {
+                            setInputCases(String(Math.floor(num / inputPacksPerCase)))
+                          }
+                        }
+                      }
+                    }}
+                    placeholder="例: 10 / 15c / x58"
+                    className="w-full h-8 rounded-lg border border-line bg-white px-2.5 text-xs text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none"
+                  />
+                </div>
+              </div>
 
               {/* 現場メモ */}
               <div>

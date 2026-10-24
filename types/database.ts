@@ -670,11 +670,17 @@ export const settingsUpdateSchema = z.object({
 })
 export type SettingsUpdateInput = z.infer<typeof settingsUpdateSchema>
 
-/** 取引先の新規作成（Laravel版 画面5） */
+/** 取引先の新規作成（Laravel版 画面5・現場ワンストップ作成拡張） */
 export const customerCreateSchema = z.object({
   name: z.string().min(1),
   name_kana: z.string().nullish(),
   payment_terms: z.string().nullish(),
+  destination_name: z.string().nullish(),
+  packs_per_case: z.number().positive().nullish(),
+  container_type: z.string().nullish(),
+  aliases: z.array(z.string()).nullish(),
+  product_id: z.string().nullish(),
+  ai_rule_text: z.string().nullish(),
 })
 export type CustomerCreateInput = z.infer<typeof customerCreateSchema>
 
