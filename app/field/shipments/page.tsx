@@ -688,7 +688,7 @@ export default async function ShipmentsPage({
         date={date}
       />
 
-      {/* ② パック画面（リアルタイム進捗メーター ＋ クイック完成投入 ＋ 荷姿一覧 ＋ 翌日先行枠） */}
+      {/* ② パック画面（リアルタイム進捗メーター ＋ 荷姿一覧 ＋ 翌日先行枠） */}
       {(shipmentItems.length > 0 || nextShipmentItems.length > 0) && selectedProduct ? (
         <PackingAndShippingViews
           key={`views-${date}-${selectedProductId}`}
@@ -701,6 +701,7 @@ export default async function ShipmentsPage({
           containerBreakdown={containerBreakdown}
           specBreakdown={specBreakdown}
           initialCarryover={chainInventory.todayCarryover ?? 0}
+          isTodayTarget={date === defaultDate || date === jstTodayStr()}
         />
       ) : (
         <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted space-y-3">

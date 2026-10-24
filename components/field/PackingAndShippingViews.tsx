@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X } from 'lucide-react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import {
@@ -16,6 +16,7 @@ import {
   type PackSortMode,
 } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -38,15 +39,16 @@ export interface PackingAndShippingViewsProps {
   containerBreakdown?: ContainerBreakdownItem[]
   specBreakdown?: SpecBreakdownItem[]
   initialCarryover?: number
+  isTodayTarget?: boolean
 }
 
 /**
  * 収穫・袋詰め（パック）専用の明細カード一覧ビュー。
  * - リアルタイム進捗メーター（目標・完成・残り・進捗％）を連動表示。
- * - クイック完成投入（＋10箱・＋5箱・−5箱・↩️戻す）で早い便順にワンタップ充当。
  * - 3つの並び替えモード（早い便順 / 出荷先順 / コンテナ順）をワンタップ切替（localStorage記憶）。
- * - スクロール追従ミニ進捗バーにより、縦スクロール時も現在作業日と進捗を常時把握（UI誤認防止）。
- * - 翌日出荷予定カードは下部に薄グレー背景＋明瞭なバッジで視覚的分離表示。
+ * - スクロール追従ミニ進捗バーにより、縦スクロール時も現在作業日と進捗を常時把握。
+ * - 翌日出荷予定カードは下部に薄グレー背景＋チャコール総パック数で視覚的分離表示。
+ * - 翌日枠へスクロールすると、上部追従バーの色・内容がチャコール（翌日先行表示中）へ即座に連動。
  */
 export function PackingAndShippingViews({
   items: initialItems,
@@ -58,16 +60,17 @@ export function PackingAndShippingViews({
   containerBreakdown,
   specBreakdown,
   initialCarryover = 0,
+  isTodayTarget = true,
 }: PackingAndShippingViewsProps) {
   const [items, setItems] = useState<ShipmentItemData[]>(initialItems)
   const [nextItems, setNextItems] = useState<ShipmentItemData[]>(initialNextDayItems)
   const [busyReorder, setBusyReorder] = useState<boolean>(false)
   const [sortMode, setSortMode] = useState<PackSortMode>('time')
-  const [isBusyQuickBatch, setIsBusyQuickBatch] = useState<boolean>(false)
   const [isReorderModalOpen, setIsReorderModalOpen] = useState<boolean>(false)
-  const [undoStack, setUndoStack] = useState<
-    Array<Array<{ itemId: string; prevStatus: FieldStatus; prevVersion: number }>>
-  >([])
+  const [isViewingNextDay, setIsViewingNextDay] = useState(false)
+  const nextSectionRef = useRef<HTMLDivElement | null>(null)
+
+  const isTodayWork = isTodayTarget && (date === shiftDateStr(jstTodayStr(), 1) || date === jstTodayStr())
 
   // サーバー側や親コンポーネント（日付変更・品目タブ切り替え）から届く最新の明細リストを同期
   useEffect(() => {
@@ -77,6 +80,24 @@ export function PackingAndShippingViews({
   useEffect(() => {
     setNextItems(initialNextDayItems)
   }, [initialNextDayItems])
+
+  // 翌日エリアへのスクロール連動（翌日枠が画面上部に達したらヘッダー色・表記を切り替える）
+  useEffect(() => {
+    if (!nextSectionRef.current || nextItems.length === 0) {
+      setIsViewingNextDay(false)
+      return
+    }
+    const checkScrollPosition = () => {
+      if (!nextSectionRef.current) return
+      const rect = nextSectionRef.current.getBoundingClientRect()
+      // 上部固定バー(約50px)直下に翌日見出しが到達したか
+      setIsViewingNextDay(rect.top <= 90)
+    }
+
+    window.addEventListener('scroll', checkScrollPosition, { passive: true })
+    checkScrollPosition()
+    return () => window.removeEventListener('scroll', checkScrollPosition)
+  }, [nextItems.length])
 
   // クライアント側で localStorage から記憶したソートモードを復元
   useEffect(() => {
@@ -117,14 +138,16 @@ export function PackingAndShippingViews({
       const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
       if (partialPacks > 0) {
         completedPacks += partialPacks
-        completedBoxes += Math.floor(partialPacks / perCase)
+        completedBoxes += Math.round(partialPacks / perCase)
       }
     }
   }
 
+  completedBoxes = Math.min(totalBoxes, completedBoxes)
+  const remainingPacks = Math.max(0, totalPacks - completedPacks)
   const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
   const progressPct =
-    totalBoxes > 0 ? Math.min(100, Math.round((completedBoxes / totalBoxes) * 100)) : 0
+    totalPacks > 0 ? Math.min(100, Math.round((completedPacks / totalPacks) * 100)) : 0
 
   // ステータス即時連動（カードタップ時に即座に親Stateを更新）
   const handleStatusChange = (itemId: string, newStatus: FieldStatus, newVersion: number) => {
@@ -140,148 +163,6 @@ export function PackingAndShippingViews({
     setItems((prev) =>
       prev.map((it) => (it.itemId === itemId ? { ...it, initialShippedQty: newQty } : it)),
     )
-  }
-
-  // クイック完成投入（早い便順の未着手カードから自動で完了充当）
-  const handleQuickBatch = async (deltaBoxes: number) => {
-    if (isBusyQuickBatch) return
-
-    if (deltaBoxes > 0) {
-      // 未完了（not_started / interrupted）のカードをソート順の先頭から抽出
-      const uncompleted = sortedPackItems.filter(
-        (it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped',
-      )
-      if (uncompleted.length === 0) {
-        toast('すべてのカードが既にパック完了しています')
-        return
-      }
-
-      const toUpdate: ShipmentItemData[] = []
-      let accBoxes = 0
-      for (const it of uncompleted) {
-        toUpdate.push(it)
-        const perCase = it.masterPacksPerCase || 20
-        accBoxes += Math.ceil(it.orderedQty / perCase)
-        if (accBoxes >= deltaBoxes) break
-      }
-
-      const undoSnapshot = toUpdate.map((it) => ({
-        itemId: it.itemId,
-        prevStatus: it.initialStatus,
-        prevVersion: it.initialVersion,
-      }))
-      setUndoStack((prev) => [...prev, undoSnapshot])
-
-      // 楽観的UI即時更新
-      const updateIds = new Set(toUpdate.map((u) => u.itemId))
-      setItems((prev) =>
-        prev.map((it) =>
-          updateIds.has(it.itemId) ? { ...it, initialStatus: 'packed' as FieldStatus } : it,
-        ),
-      )
-
-      setIsBusyQuickBatch(true)
-      try {
-        await Promise.all(
-          toUpdate.map((it) =>
-            fetch(`/api/order-items/${it.itemId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ field_status: 'packed', version: it.initialVersion }),
-            }),
-          ),
-        )
-        toast.success(`＋${accBoxes}箱（${toUpdate.length}件）をパック完了にしました`)
-      } catch {
-        toast.error('一部の記録保存に失敗しました')
-      } finally {
-        setIsBusyQuickBatch(false)
-      }
-    } else {
-      // deltaBoxes < 0: 完了済みのカードをソート順の末尾から未着手に戻す
-      const completed = [...sortedPackItems]
-        .reverse()
-        .filter((it) => it.initialStatus === 'packed')
-      if (completed.length === 0) {
-        toast('戻せるパック済みカードがありません')
-        return
-      }
-
-      const toRevert: ShipmentItemData[] = []
-      let accBoxes = 0
-      const targetBoxes = Math.abs(deltaBoxes)
-      for (const it of completed) {
-        toRevert.push(it)
-        const perCase = it.masterPacksPerCase || 20
-        accBoxes += Math.ceil(it.orderedQty / perCase)
-        if (accBoxes >= targetBoxes) break
-      }
-
-      const undoSnapshot = toRevert.map((it) => ({
-        itemId: it.itemId,
-        prevStatus: it.initialStatus,
-        prevVersion: it.initialVersion,
-      }))
-      setUndoStack((prev) => [...prev, undoSnapshot])
-
-      // 楽観的UI即時更新
-      const revertIds = new Set(toRevert.map((u) => u.itemId))
-      setItems((prev) =>
-        prev.map((it) =>
-          revertIds.has(it.itemId) ? { ...it, initialStatus: 'not_started' as FieldStatus } : it,
-        ),
-      )
-
-      setIsBusyQuickBatch(true)
-      try {
-        await Promise.all(
-          toRevert.map((it) =>
-            fetch(`/api/order-items/${it.itemId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ field_status: 'not_started', version: it.initialVersion }),
-            }),
-          ),
-        )
-        toast(`−${accBoxes}箱（${toRevert.length}件）を未着手に戻しました`)
-      } catch {
-        toast.error('一部の記録保存に失敗しました')
-      } finally {
-        setIsBusyQuickBatch(false)
-      }
-    }
-  }
-
-  // 直前のクイック変更を取り消す（Undo）
-  const handleUndoQuickBatch = async () => {
-    if (isBusyQuickBatch || undoStack.length === 0) return
-    const lastAction = undoStack[undoStack.length - 1]!
-    setUndoStack((prev) => prev.slice(0, -1))
-
-    const restoreMap = new Map(lastAction.map((a) => [a.itemId, a.prevStatus]))
-    setItems((prev) =>
-      prev.map((it) =>
-        restoreMap.has(it.itemId) ? { ...it, initialStatus: restoreMap.get(it.itemId)! } : it,
-      ),
-    )
-
-    setIsBusyQuickBatch(true)
-    try {
-      await Promise.all(
-        lastAction.map((a) =>
-          fetch(`/api/order-items/${a.itemId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ field_status: a.prevStatus, version: a.prevVersion }),
-          }),
-        ),
-      )
-      toast('直前のクイック変更を取り消しました')
-    } catch {
-      toast.error('一部の取り消し保存に失敗しました')
-    } finally {
-      setIsBusyQuickBatch(false)
-    }
   }
 
   // 管理者による上下移動（パック作業順）
@@ -377,25 +258,58 @@ export function PackingAndShippingViews({
 
   return (
     <div className="space-y-3.5">
-      {/* スクロール追従ミニ進捗バー（画面最上部に常時固定してUI誤認を完全防止） */}
-      <div className="sticky top-0 z-20 -mx-1 px-3 py-2 bg-slate-900/90 text-white backdrop-blur shadow-md flex items-center justify-between text-xs font-bold rounded-b-xl border-b border-slate-700">
-        <div className="flex items-center gap-1.5 truncate">
-          <span className="text-emerald-400">🔨</span>
-          <span className="text-white font-black">{productName || '品目'}</span>
-          <span className="text-slate-300">({date} 出荷分)</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-emerald-300 font-black">
-            {completedBoxes}/{totalBoxes} 箱
-          </span>
-          <span className="text-[11px] text-slate-300 font-medium">({progressPct}%)</span>
-          <span className="rounded bg-emerald-600/90 px-1.5 py-0.5 text-[10px] text-white font-bold">
-            あと {remainingBoxes}箱
-          </span>
-        </div>
+      {/* スクロール追従ミニ進捗バー（画面最上部に常時固定・翌日エリアに入ると自動でチャコール＆翌日表記へ切り替え） */}
+      <div
+        className={cn(
+          'sticky top-0 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md flex items-center justify-between text-xs font-bold rounded-b-xl border-b transition-colors duration-200',
+          isViewingNextDay
+            ? 'bg-[#0f172a]/95 border-slate-600 shadow-lg text-slate-100'
+            : isTodayWork
+            ? 'bg-slate-900/90 border-slate-700'
+            : 'bg-[#1e293b]/95 border-slate-600',
+        )}
+      >
+        {isViewingNextDay ? (
+          <>
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="text-amber-400">📅</span>
+              <span className="text-white font-black">{productName || '品目'}</span>
+              <span className="rounded bg-slate-700 border border-slate-500 px-2 py-0.5 text-[10px] text-slate-100 font-black shadow-xs">
+                翌日先行分を表示中
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-slate-300 font-bold">
+                翌日分: 全 {nextItems.length} 件
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="text-emerald-400">🥬</span>
+              <span className="text-white font-black">{productName || '品目'}</span>
+              <span className="text-slate-300">
+                ({date === shiftDateStr(jstTodayStr(), 1) ? '明日出荷・本日パック' : `${date}出荷`})
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-emerald-300 font-black tabular-nums">
+                {completedPacks}/{totalPacks} P
+              </span>
+              <span className="text-[11px] text-slate-300 font-medium">({progressPct}%)</span>
+              <span
+                className="rounded bg-emerald-600/90 px-1.5 py-0.5 text-[10px] text-white font-bold"
+                title={`残り約${remainingBoxes}箱`}
+              >
+                あと {remainingPacks}P (約{remainingBoxes}箱)
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* リアルタイム進捗メーター ＆ クイック完成投入 ＆ 内訳アコーディオン */}
+      {/* リアルタイム進捗メーター ＆ 内訳アコーディオン */}
       {productName && productId && (
         <HarvestPulseSummary
           productName={productName}
@@ -408,10 +322,7 @@ export function PackingAndShippingViews({
           containerBreakdown={containerBreakdown ?? []}
           specBreakdown={specBreakdown ?? []}
           initialCarryover={initialCarryover}
-          onQuickBatch={handleQuickBatch}
-          onUndoQuickBatch={handleUndoQuickBatch}
-          canUndoQuickBatch={undoStack.length > 0}
-          isBusyQuickBatch={isBusyQuickBatch}
+          isTodayTarget={isTodayWork}
         />
       )}
 
@@ -544,9 +455,9 @@ export function PackingAndShippingViews({
         })}
       </div>
 
-      {/* 翌日出荷予定カード一覧（先行作業・閲覧用、薄グレー背景で視覚的分離） */}
+      {/* 翌日出荷予定カード一覧（先行作業・閲覧用、薄グレー背景＋チャコール色で視覚的分離） */}
       {nextItems.length > 0 && (
-        <div className="pt-5 space-y-3">
+        <div ref={nextSectionRef} className="pt-5 space-y-3">
           <div className="flex items-center justify-between rounded-xl bg-slate-200/90 px-3.5 py-2.5 text-xs font-black text-slate-700 border border-slate-300 shadow-xs">
             <div className="flex items-center gap-1.5">
               <span className="text-base">📅</span>

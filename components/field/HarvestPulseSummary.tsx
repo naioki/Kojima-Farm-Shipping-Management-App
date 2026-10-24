@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, Box, RotateCcw, CheckCircle2, Clock } from 'lucide-react'
+import { ChevronDown, Box, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -36,10 +36,7 @@ export interface HarvestPulseSummaryProps {
   specBreakdown: SpecBreakdownItem[]
   nextDayTotalBoxes?: number
   nextDayTotalPacks?: number
-  onQuickBatch?: (deltaBoxes: number) => void
-  onUndoQuickBatch?: () => void
-  canUndoQuickBatch?: boolean
-  isBusyQuickBatch?: boolean
+  isTodayTarget?: boolean
 }
 
 export function HarvestPulseSummary({
@@ -54,20 +51,15 @@ export function HarvestPulseSummary({
   interimPackedBoxes = 0,
   containerBreakdown,
   specBreakdown,
-  onQuickBatch,
-  onUndoQuickBatch,
-  canUndoQuickBatch = false,
-  isBusyQuickBatch = false,
+  isTodayTarget = true,
 }: HarvestPulseSummaryProps) {
   const router = useRouter()
   const completedBoxes = propCompletedBoxes ?? interimPackedBoxes
-  const completedPacks =
-    propCompletedPacks ??
-    (totalBoxes > 0 ? Math.round(totalPacks * (completedBoxes / totalBoxes)) : 0)
+  const completedPacks = propCompletedPacks ?? 0
   const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
   const remainingPacks = Math.max(0, totalPacks - completedPacks)
   const progressPct =
-    totalBoxes > 0 ? Math.min(100, Math.round((completedBoxes / totalBoxes) * 100)) : 0
+    totalPacks > 0 ? Math.min(100, Math.round((completedPacks / totalPacks) * 100)) : 0
 
   const [carryover, setCarryover] = useState<number>(initialCarryover)
   const [tempCarryoverStr, setTempCarryoverStr] = useState<string>(String(initialCarryover))
@@ -109,111 +101,107 @@ export function HarvestPulseSummary({
     }
   }
 
+  const isTodayWork = isTodayTarget && (date === shiftDateStr(jstTodayStr(), 1) || date === jstTodayStr())
+
   return (
     <div className="space-y-2">
-      {/* メインリアルタイム進捗メーターカード（ダークグリーン） */}
-      <div className="rounded-2xl bg-[#155c39] p-4 text-white shadow-md space-y-3">
+      {/* メインリアルタイム進捗メーターカード（今日＝深緑 🌲 / 今日以外＝シックなチャコール 🪨） */}
+      <div
+        className={cn(
+          'rounded-2xl p-4 text-white shadow-md space-y-3 transition-colors',
+          isTodayWork ? 'bg-[#155c39]' : 'bg-[#1e293b] border border-slate-700',
+        )}
+      >
         {/* ヘッダー情報 */}
         <div className="flex items-center justify-between pb-2 border-b border-white/20">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🥬</span>
+            <span className="text-xl">{isTodayWork ? '🥬' : '📅'}</span>
             <span className="text-base font-black tracking-wide">{productName} パック進捗</span>
           </div>
-          <span className="text-xs font-bold text-emerald-100 bg-white/10 px-2.5 py-0.5 rounded-md">
+          <span
+            className={cn(
+              'text-xs font-bold px-2.5 py-0.5 rounded-md',
+              isTodayWork ? 'text-emerald-100 bg-white/10' : 'text-slate-300 bg-white/10',
+            )}
+          >
             {date === shiftDateStr(jstTodayStr(), 1)
               ? `明日 ${date} 出荷分（本日パック）`
-              : `${date} 出荷分`}
+              : isTodayWork
+              ? `本日 ${date} 出荷分`
+              : `📅 先行・確認用（${date} 出荷分）`}
           </span>
         </div>
 
-        {/* クイック完成投入バー（手袋でも押しやすいクイックボタン） */}
-        {onQuickBatch && (
-          <div className="flex items-center justify-between gap-1.5 pt-0.5">
-            <span className="text-xs font-bold text-white/80 shrink-0">クイック完成:</span>
-            <div className="flex items-center gap-1.5 flex-wrap justify-end">
-              <button
-                type="button"
-                disabled={isBusyQuickBatch || remainingBoxes <= 0}
-                onClick={() => onQuickBatch(10)}
-                className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 font-black text-white text-xs shadow-xs active:scale-95 transition"
-                title="早い便順の未着手カードを＋10箱分パック済にする"
-              >
-                ＋10箱
-              </button>
-              <button
-                type="button"
-                disabled={isBusyQuickBatch || remainingBoxes <= 0}
-                onClick={() => onQuickBatch(5)}
-                className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 font-black text-white text-xs shadow-xs active:scale-95 transition"
-                title="早い便順の未着手カードを＋5箱分パック済にする"
-              >
-                ＋5箱
-              </button>
-              <button
-                type="button"
-                disabled={isBusyQuickBatch || completedBoxes <= 0}
-                onClick={() => onQuickBatch(-5)}
-                className="h-8 px-2.5 rounded-lg bg-white/20 hover:bg-white/30 disabled:opacity-40 font-bold text-white text-xs active:scale-95 transition"
-                title="パック済みのカードを5箱分未着手に戻す"
-              >
-                −5箱
-              </button>
-              {canUndoQuickBatch && (
-                <button
-                  type="button"
-                  disabled={isBusyQuickBatch}
-                  onClick={onUndoQuickBatch}
-                  className="h-8 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 font-bold text-white text-xs active:scale-95 flex items-center gap-1 shadow-xs transition"
-                  title="直前のクイック変更を取り消す"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  <span>戻す</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 統合進捗ヒーローカード（上：特大 26/40箱 ｜ 下：通常 あと14箱） */}
+        {/* 統合進捗ヒーローカード（上：特大 パック数(P) ｜ 下：通常 箱数・あと残りP/箱） */}
         <div className="rounded-2xl bg-black/25 border border-white/15 p-3.5 sm:p-4 text-center space-y-2.5 shadow-inner">
-          {/* 上段：特大サイズ（完成 / 目標 箱数 ＆ パック数） */}
+          {/* 上段：特大サイズ（完成 / 目標 パック数 ＆ 箱数併記） */}
           <div className="flex flex-col items-center justify-center">
             <div className="flex items-baseline justify-center gap-1.5 font-display">
               <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-sm">
-                {completedBoxes.toLocaleString()}
+                {completedPacks.toLocaleString()}
               </span>
               <span className="text-2xl sm:text-3xl font-bold text-white/50">/</span>
-              <span className="text-3xl sm:text-4xl font-extrabold text-emerald-200/90 tabular-nums">
-                {totalBoxes.toLocaleString()}
+              <span
+                className={cn(
+                  'text-3xl sm:text-4xl font-extrabold tabular-nums',
+                  isTodayWork ? 'text-emerald-200/90' : 'text-slate-200/90',
+                )}
+              >
+                {totalPacks.toLocaleString()}
               </span>
-              <span className="text-sm sm:text-base font-bold text-emerald-200 ml-1">箱</span>
+              <span
+                className={cn(
+                  'text-base sm:text-lg font-black ml-1',
+                  isTodayWork ? 'text-emerald-200' : 'text-slate-200',
+                )}
+              >
+                P
+              </span>
             </div>
-            <div className="text-xs font-bold text-emerald-100/70 tabular-nums mt-0.5">
-              {completedPacks.toLocaleString()} / {totalPacks.toLocaleString()} P
+            <div className="text-xs sm:text-sm font-bold text-white/80 tabular-nums mt-0.5">
+              （約 {completedBoxes.toLocaleString()} / {totalBoxes.toLocaleString()} 箱）
             </div>
           </div>
 
-          {/* 下段：通常サイズ（あと何箱 / 達成バッジ） */}
+          {/* 下段：通常サイズ（あと何P・何箱 / 達成バッジ） */}
           <div className="flex items-center justify-center">
-            {remainingBoxes > 0 ? (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 border border-emerald-300/30 text-emerald-100 text-xs sm:text-sm font-bold shadow-xs">
-                <Clock className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
+            {remainingPacks > 0 ? (
+              <div
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs sm:text-sm font-bold shadow-xs border',
+                  isTodayWork
+                    ? 'bg-emerald-400/20 border-emerald-300/30 text-emerald-100'
+                    : 'bg-slate-700/60 border-slate-600/50 text-slate-200',
+                )}
+              >
+                <Clock
+                  className={cn(
+                    'h-3.5 w-3.5 shrink-0',
+                    isTodayWork ? 'text-emerald-300' : 'text-slate-300',
+                  )}
+                />
                 <span>あと</span>
                 <span className="font-black text-white text-sm sm:text-base tabular-nums">
-                  {remainingBoxes.toLocaleString()}
+                  {remainingPacks.toLocaleString()} P
                 </span>
-                <span>箱</span>
-                <span className="text-[11px] text-emerald-200/80 font-normal">
-                  (残り {remainingPacks.toLocaleString()} P)
+                <span className="text-[11px] text-white/80 font-normal">
+                  (約 {remainingBoxes.toLocaleString()} 箱)
                 </span>
               </div>
-            ) : totalBoxes > 0 ? (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400 text-emerald-950 text-xs sm:text-sm font-black shadow-xs">
+            ) : totalPacks > 0 ? (
+              <div
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs sm:text-sm font-black shadow-xs',
+                  isTodayWork
+                    ? 'bg-emerald-400 text-emerald-950'
+                    : 'bg-slate-200 text-slate-900',
+                )}
+              >
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>🎉 本日の目標達成！（全 {totalBoxes} 箱 パック完了）</span>
+                <span>🎉 パック目標達成！（全 {totalPacks} P 完了）</span>
               </div>
             ) : (
-              <div className="text-xs text-white/60">本日の注文はありません</div>
+              <div className="text-xs text-white/60">この日の注文はありません</div>
             )}
           </div>
         </div>
@@ -221,7 +209,7 @@ export function HarvestPulseSummary({
         {/* 進捗プログレスバー */}
         <div className="space-y-1.5 pt-1">
           <div className="flex items-center justify-between text-xs font-bold">
-            <span className="text-emerald-100">進捗率</span>
+            <span className={isTodayWork ? 'text-emerald-100' : 'text-slate-300'}>進捗率</span>
             <span className="text-white font-black tabular-nums">{progressPct}%</span>
           </div>
           <div className="h-3.5 w-full rounded-full bg-black/30 p-0.5 overflow-hidden shadow-inner">
@@ -230,8 +218,12 @@ export function HarvestPulseSummary({
               className={cn(
                 'h-full rounded-full transition-all duration-300',
                 progressPct >= 100
-                  ? 'bg-gradient-to-r from-emerald-300 to-teal-200 shadow-xs'
-                  : 'bg-gradient-to-r from-emerald-400 to-teal-300',
+                  ? isTodayWork
+                    ? 'bg-gradient-to-r from-emerald-300 to-teal-200 shadow-xs'
+                    : 'bg-gradient-to-r from-slate-200 to-slate-100 shadow-xs'
+                  : isTodayWork
+                  ? 'bg-gradient-to-r from-emerald-400 to-teal-300'
+                  : 'bg-gradient-to-r from-slate-400 to-slate-300',
               )}
             />
           </div>

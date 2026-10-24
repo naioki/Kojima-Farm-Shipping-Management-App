@@ -7,6 +7,7 @@ describe('0-quantity item filtering logic', () => {
       raw_name: 'チンゲン菜 5c',
       product_name: 'チンゲン菜',
       quantity: '100',
+      unit: 'P',
       confidence: 0.95,
       cases: 5,
     }

@@ -734,9 +734,21 @@ export function ShipmentRow({
         </div>
       </div>
 
-      {/* ③ 【最重要】総パック数カード（フォレストグリーンの巨大ハイライトブロック） */}
-      <div className="rounded-xl bg-[#1b5e20] p-3.5 text-white mb-3 shadow-sm">
-        <div className="text-sm font-black text-white/95 tracking-wide">総パック数</div>
+      {/* ③ 【最重要】総パック数カード（今日＝フォレストグリーン / 翌日先行枠＝シックなチャコールグレー） */}
+      <div
+        className={cn(
+          'rounded-xl p-3.5 text-white mb-3 shadow-sm transition-colors',
+          isNextDay ? 'bg-[#334155] border border-slate-500/30' : 'bg-[#1b5e20]',
+        )}
+      >
+        <div className="flex items-center justify-between text-sm font-black text-white/95 tracking-wide">
+          <span>{isNextDay ? '総パック数（翌日先行分）' : '総パック数'}</span>
+          {isNextDay && (
+            <span className="rounded bg-slate-800/80 px-2 py-0.5 text-[10px] font-bold text-slate-300">
+              📅 翌日作業枠
+            </span>
+          )}
+        </div>
         <div className="num mt-0.5 text-3xl font-black tracking-tight text-white tabular-nums">
           {orderedQty} <span className="text-lg font-bold text-white/80">P</span>
         </div>
