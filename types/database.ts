@@ -520,6 +520,8 @@ export const shipmentAddSchema = z.object({
   destination_id: z.string().uuid().nullish(),
   /** 登録モード（新規作成、既存への加算、減量、数量上書き）。既定は create。 */
   mode: z.enum(['create', 'increase', 'decrease', 'set']).optional(),
+  /** 出荷時間帯（am: 朝便・午前, pm: 昼便・午後） */
+  shipping_time: z.enum(['am', 'pm']).optional(),
   /** 現場メモ・備考 */
   note: z.string().optional(),
 })

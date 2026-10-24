@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X } from 'lucide-react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import {
   HarvestPulseSummary,
@@ -63,6 +64,7 @@ export function PackingAndShippingViews({
   const [busyReorder, setBusyReorder] = useState<boolean>(false)
   const [sortMode, setSortMode] = useState<PackSortMode>('time')
   const [isBusyQuickBatch, setIsBusyQuickBatch] = useState<boolean>(false)
+  const [isReorderModalOpen, setIsReorderModalOpen] = useState<boolean>(false)
   const [undoStack, setUndoStack] = useState<
     Array<Array<{ itemId: string; prevStatus: FieldStatus; prevVersion: number }>>
   >([])
@@ -96,7 +98,7 @@ export function PackingAndShippingViews({
   // 選択されたモードによるソート
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
-  // リアルタイム進捗計算（アイテム状態に直結）
+  // リアルタイム進捗計算（アイテム状態 ＋ 途中数に直結）
   let totalPacks = 0
   let totalBoxes = 0
   let completedBoxes = 0
@@ -110,6 +112,13 @@ export function PackingAndShippingViews({
     if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') {
       completedBoxes += boxCount
       completedPacks += it.orderedQty
+    } else {
+      // 途中数（できた数）が入力されている場合は、端数も完成実績として即時算入
+      const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
+      if (partialPacks > 0) {
+        completedPacks += partialPacks
+        completedBoxes += Math.floor(partialPacks / perCase)
+      }
     }
   }
 
@@ -123,6 +132,13 @@ export function PackingAndShippingViews({
       prev.map((it) =>
         it.itemId === itemId ? { ...it, initialStatus: newStatus, initialVersion: newVersion } : it,
       ),
+    )
+  }
+
+  // 途中数即時連動（できた数入力時に即座に上のメーターへ反映）
+  const handleShippedQtyChange = (itemId: string, newQty: number | null) => {
+    setItems((prev) =>
+      prev.map((it) => (it.itemId === itemId ? { ...it, initialShippedQty: newQty } : it)),
     )
   }
 
@@ -315,6 +331,50 @@ export function PackingAndShippingViews({
     }
   }
 
+  // 最上段（最優先）へ一発移動
+  const handleMoveToTop = async (index: number) => {
+    if (!isAdmin || busyReorder || index === 0) return
+    const prevSortMap = new Map(items.map((it) => [it.itemId, it.dailyPackSortOrder]))
+    const newSorted = [...sortedPackItems]
+    const [moved] = newSorted.splice(index, 1)
+    if (!moved) return
+    newSorted.unshift(moved)
+
+    const updates = newSorted.map((it, idx) => ({
+      id: it.itemId,
+      sortOrder: (idx + 1) * 10,
+    }))
+
+    const updatedMap = new Map(updates.map((u) => [u.id, u.sortOrder]))
+    setItems((prev) =>
+      prev.map((it) => ({
+        ...it,
+        dailyPackSortOrder: updatedMap.get(it.itemId) ?? it.dailyPackSortOrder,
+      })),
+    )
+
+    setBusyReorder(true)
+    try {
+      const res = await fetch('/api/order-items/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: updates }),
+      })
+      if (!res.ok) throw new Error('並び順の保存に失敗しました')
+      toast.success(`「${moved.destinationName || moved.customerName}」を最上段（最優先）に移動しました`)
+    } catch {
+      toast.error('並び替えに失敗しました')
+      setItems((prev) =>
+        prev.map((it) => ({
+          ...it,
+          dailyPackSortOrder: prevSortMap.get(it.itemId) ?? it.dailyPackSortOrder,
+        })),
+      )
+    } finally {
+      setBusyReorder(false)
+    }
+  }
+
   return (
     <div className="space-y-3.5">
       {/* スクロール追従ミニ進捗バー（画面最上部に常時固定してUI誤認を完全防止） */}
@@ -358,10 +418,25 @@ export function PackingAndShippingViews({
       {/* 作業順ヘッダー案内 ＆ 3モード切替ボタングループ */}
       <div className="space-y-2 pt-1">
         <div className="flex items-center justify-between px-1">
-          <span className="text-sm font-bold text-ink">
-            📋 作業順（{isAdmin ? '▲▼で並び替え可能' : '上から順番にパック'}）
+          <span className="text-sm font-bold text-ink flex items-center gap-1.5">
+            <span>📋 作業順</span>
+            <span className="text-xs text-emerald-800 bg-emerald-100 font-extrabold px-2 py-0.5 rounded-md">
+              {sortMode === 'time' ? '⏰ 早い便順' : sortMode === 'destination' ? '🏢 出荷先順' : '📦 コンテナ順'}
+            </span>
           </span>
-          <span className="text-sm font-bold text-ink-soft">全 {sortedPackItems.length} 件</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-ink-soft">全 {sortedPackItems.length} 件</span>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsReorderModalOpen(true)}
+                className="inline-flex items-center gap-1 text-xs font-bold text-emerald-900 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 px-2 py-1 rounded-lg shadow-2xs transition active:scale-95"
+              >
+                <SlidersHorizontal className="h-3 w-3" />
+                <span>並び替え</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* 現場用ワンタップ切替スイッチ */}
@@ -462,6 +537,7 @@ export function PackingAndShippingViews({
                     : undefined
                 }
                 onStatusChange={handleStatusChange}
+                onShippedQtyChange={handleShippedQtyChange}
               />
             </div>
           )
@@ -474,12 +550,12 @@ export function PackingAndShippingViews({
           <div className="flex items-center justify-between rounded-xl bg-slate-200/90 px-3.5 py-2.5 text-xs font-black text-slate-700 border border-slate-300 shadow-xs">
             <div className="flex items-center gap-1.5">
               <span className="text-base">📅</span>
-              <span>翌日出荷予定（先行作業・閲覧用）</span>
+              <span>翌日作業予定（先行作業・確認用）</span>
             </div>
             <span className="text-[11px] text-slate-600 font-bold">全 {nextItems.length} 件</span>
           </div>
           <p className="px-1 text-[11px] text-slate-500 font-medium">
-            ※ 翌日分の先行パック作業または確認用です。本日の進捗（目標・完成）には含まれません。
+            ※ 翌日出荷分の先行作業または確認用です。本日の目標・完成には含まれません。
           </p>
           <div className="space-y-3">
             {nextItems.map((item) => (
@@ -498,8 +574,118 @@ export function PackingAndShippingViews({
                     ),
                   )
                 }}
+                onShippedQtyChange={(id, newQty) => {
+                  setNextItems((prev) =>
+                    prev.map((it) =>
+                      it.itemId === id
+                        ? { ...it, initialShippedQty: newQty }
+                        : it,
+                    ),
+                  )
+                }}
               />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* 📋 スマート並び替え・最優先指定モーダル */}
+      {isReorderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
+          <div className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl bg-white shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom duration-200">
+            {/* モーダルヘッダー */}
+            <div className="flex items-center justify-between p-4 border-b border-line shrink-0">
+              <div>
+                <h3 className="text-base font-black text-ink flex items-center gap-1.5">
+                  <SlidersHorizontal className="h-4 w-4 text-emerald-600" />
+                  <span>パック作業順の並び替え</span>
+                </h3>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  急ぎの出荷カードを【🔝 最上段】で一発ピン留めできます。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReorderModalOpen(false)}
+                className="p-1.5 rounded-full text-ink-muted hover:bg-bg-soft"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* モーダルリスト */}
+            <div className="p-3 overflow-y-auto space-y-2 flex-1 divide-y divide-line/60">
+              {sortedPackItems.map((it, idx) => {
+                const perCase = it.masterPacksPerCase || 20
+                const boxCount = Math.ceil(it.orderedQty / perCase)
+                return (
+                  <div key={it.itemId} className="pt-2 first:pt-0 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-extrabold text-sm text-ink truncate">
+                          {idx + 1}. {it.destinationName || it.customerName}
+                        </span>
+                        {it.departureTime && (
+                          <span className="rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.2 text-[10px] font-bold">
+                            {it.departureTime}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-ink-muted flex items-center gap-2 mt-0.5">
+                        <span>{it.customerName}</span>
+                        <span>•</span>
+                        <span className="font-bold text-ink">{it.orderedQty}P ({boxCount}箱)</span>
+                        <span>•</span>
+                        <span>{it.initialSpec || '標準'}</span>
+                      </div>
+                    </div>
+
+                    {/* 操作ボタングループ */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={busyReorder || idx === 0}
+                        onClick={() => handleMoveToTop(idx)}
+                        className="h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white text-xs font-black flex items-center gap-1 shadow-2xs active:scale-95"
+                        title="一番上（最優先）へ移動"
+                      >
+                        <ArrowUpToLine className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">最上段</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyReorder || idx === 0}
+                        onClick={() => handleMove(idx, 'up')}
+                        className="h-8 w-8 rounded-lg border border-line bg-white hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold"
+                        title="1つ上へ"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyReorder || idx === sortedPackItems.length - 1}
+                        onClick={() => handleMove(idx, 'down')}
+                        className="h-8 w-8 rounded-lg border border-line bg-white hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold"
+                        title="1つ下へ"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* モーダルフッター */}
+            <div className="p-3 border-t border-line shrink-0 bg-bg-soft/50">
+              <button
+                type="button"
+                onClick={() => setIsReorderModalOpen(false)}
+                className="w-full py-2.5 rounded-xl bg-forest-700 hover:bg-forest-800 text-white font-bold text-sm shadow-xs active:scale-[0.99]"
+              >
+                並び替えを完了する
+              </button>
+            </div>
           </div>
         </div>
       )}

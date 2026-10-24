@@ -11,6 +11,9 @@ import {
   Sparkles,
   Camera,
   Image as ImageIcon,
+  FileText,
+  Clipboard,
+  X,
   Loader2,
   AlertCircle,
   ArrowLeft,
@@ -97,7 +100,10 @@ export function ShipmentAddForm({
   const [destinationId, setDestinationId] = useState('')
   const [qtyRaw, setQtyRaw] = useState('')
   const [mode, setMode] = useState<'create' | 'increase' | 'decrease' | 'set'>('create')
+  const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('')
   const [note, setNote] = useState('')
+  const [actionSheetOpen, setActionSheetOpen] = useState(false)
+  const fileSelectorRef = useRef<HTMLInputElement | null>(null)
 
   // 自然言語スマート入力 state
   const [naturalText, setNaturalText] = useState('')
@@ -417,9 +423,90 @@ export function ShipmentAddForm({
     })
   }
 
+  function applyParsedOrder(parsedOrder?: {
+    customer_name?: string | null
+    delivery_date?: string | null
+    destination_name?: string | null
+    items?: Array<{
+      product_name?: string | null
+      raw_name?: string | null
+      cases?: number | null
+      quantity?: string | number | null
+    }>
+  } | null) {
+    if (!parsedOrder) {
+      toast('注文を特定できませんでした。下の欄に手動入力してください。', { icon: 'ℹ️' })
+      return
+    }
+
+    const badges: string[] = []
+    // 1. 取引先
+    const cName = parsedOrder.customer_name?.trim() || ''
+    const matchedCust = customers.find((c) => c.name.includes(cName) || cName.includes(c.name))
+    if (matchedCust) {
+      setCustomerId(matchedCust.id)
+      badges.push(`取引先: ${matchedCust.name}`)
+    }
+
+    // 2. 納品日
+    if (parsedOrder.delivery_date) {
+      setTargetDate(parsedOrder.delivery_date)
+      badges.push(`納品日: ${parsedOrder.delivery_date}`)
+    } else {
+      setUncertainItems((prev) => [
+        ...prev,
+        {
+          field: 'delivery_date',
+          question: '納品日が記載されていませんでした。いつの出荷にしますか？',
+          suggestions: [`明日 (${tomorrowStr})`, `今日 (${todayStr})`],
+        },
+      ])
+    }
+
+    // 3. 納入先
+    if (parsedOrder.destination_name) {
+      const dName = parsedOrder.destination_name.trim()
+      const matchedDest = destinations.find(
+        (d) => d.label.includes(dName) || dName.includes(d.label),
+      )
+      if (matchedDest) {
+        setDestinationId(matchedDest.id)
+        badges.push(`納入先: ${matchedDest.label}`)
+      }
+    }
+
+    // 4. 品目・数量
+    const firstItem = parsedOrder.items?.[0]
+    if (firstItem) {
+      const pName = firstItem.product_name || firstItem.raw_name || ''
+      const matchedProd = products.find(
+        (p) =>
+          p.name.includes(pName) ||
+          pName.includes(p.name) ||
+          (pName.includes('チンゲン') && p.name.includes('青梗菜')),
+      )
+      if (matchedProd) {
+        setProductId(matchedProd.id)
+        setSelectedCategory(resolveProductCategory(matchedProd))
+        badges.push(`品目: ${matchedProd.name}`)
+      }
+      if (firstItem.cases != null && firstItem.cases > 0) {
+        setQtyRaw(`${firstItem.cases}c`)
+        badges.push(`数量: ${firstItem.cases}ケース`)
+      } else if (firstItem.quantity) {
+        setQtyRaw(String(firstItem.quantity))
+        badges.push(`数量: ${firstItem.quantity} P`)
+      }
+    }
+
+    setConfirmedBadges(badges)
+    toast.success('注文データを読み取りました！内容を確認してください')
+  }
+
   async function handlePhotoFile(file: File) {
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (galleryInputRef.current) galleryInputRef.current.value = ''
+    if (fileSelectorRef.current) fileSelectorRef.current.value = ''
     setAnalyzingPhoto(true)
 
     try {
@@ -434,63 +521,58 @@ export function ShipmentAddForm({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
 
-      const parsedOrder = data.orders?.[0]
-      if (!parsedOrder) {
-        toast('注文を特定できませんでした。下の欄に手動入力してください。', { icon: 'ℹ️' })
-        return
-      }
-
-      const badges: string[] = []
-      // 1. 取引先
-      const cName = parsedOrder.customer_name?.trim() || ''
-      const matchedCust = customers.find((c) => c.name.includes(cName) || cName.includes(c.name))
-      if (matchedCust) {
-        setCustomerId(matchedCust.id)
-        badges.push(`取引先: ${matchedCust.name}`)
-      }
-
-      // 2. 納品日
-      if (parsedOrder.delivery_date) {
-        setTargetDate(parsedOrder.delivery_date)
-        badges.push(`納品日: ${parsedOrder.delivery_date}`)
-      } else {
-        setUncertainItems((prev) => [
-          ...prev,
-          {
-            field: 'delivery_date',
-            question: '納品日が記載されていませんでした。いつの出荷にしますか？',
-            suggestions: [`明日 (${tomorrowStr})`, `今日 (${todayStr})`],
-          },
-        ])
-      }
-
-      // 3. 品目・数量
-      const firstItem = parsedOrder.items?.[0]
-      if (firstItem) {
-        const pName = firstItem.product_name || firstItem.raw_name || ''
-        const matchedProd = products.find(
-          (p) => p.name.includes(pName) || pName.includes(p.name) || (pName.includes('チンゲン') && p.name.includes('青梗菜')),
-        )
-        if (matchedProd) {
-          setProductId(matchedProd.id)
-          setSelectedCategory(resolveProductCategory(matchedProd))
-          badges.push(`品目: ${matchedProd.name}`)
-        }
-        if (firstItem.cases != null && firstItem.cases > 0) {
-          setQtyRaw(`${firstItem.cases}c`)
-          badges.push(`数量: ${firstItem.cases}ケース`)
-        } else if (firstItem.quantity) {
-          setQtyRaw(String(firstItem.quantity))
-          badges.push(`数量: ${firstItem.quantity} P`)
-        }
-      }
-
-      setConfirmedBadges(badges)
-      toast.success('画像を読み取りました！内容を確認してください')
+      applyParsedOrder(data.orders?.[0])
     } catch (err: unknown) {
       toast.error((err as Error)?.message || '読み取りに失敗しました')
     } finally {
       setAnalyzingPhoto(false)
+    }
+  }
+
+  async function handleGenericFile(file: File) {
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (galleryInputRef.current) galleryInputRef.current.value = ''
+    if (fileSelectorRef.current) fileSelectorRef.current.value = ''
+    setActionSheetOpen(false)
+
+    if (file.type?.startsWith('image/')) {
+      await handlePhotoFile(file)
+      return
+    }
+
+    setAnalyzingPhoto(true)
+    try {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        try {
+          const dataUrl = e.target?.result as string
+          const base64 = dataUrl.split(',')[1] || ''
+          const res = await fetch('/api/ocr/analyze', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              fileBase64: base64,
+              mimeType: file.type || 'application/octet-stream',
+              filename: file.name,
+            }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
+          applyParsedOrder(data.orders?.[0])
+        } catch (err: unknown) {
+          toast.error((err as Error)?.message || 'ファイルの読み取りに失敗しました')
+        } finally {
+          setAnalyzingPhoto(false)
+        }
+      }
+      reader.onerror = () => {
+        setAnalyzingPhoto(false)
+        toast.error('ファイルの読み込みに失敗しました')
+      }
+      reader.readAsDataURL(file)
+    } catch (err: unknown) {
+      setAnalyzingPhoto(false)
+      toast.error((err as Error)?.message || 'ファイルの処理に失敗しました')
     }
   }
 
@@ -577,6 +659,7 @@ export function ShipmentAddForm({
           customer_id: customerId,
           product_id: productId,
           delivery_date: targetDate,
+          shipping_time: shippingTime || undefined,
           quantity_raw: qtyRaw,
           destination_id: destinationId || null,
           mode,
@@ -780,7 +863,7 @@ export function ShipmentAddForm({
           // Step 1: 1画面統合レイアウト（スマートバー ＋ 直接入力）
           // =========================================================
           <div className="space-y-4">
-            {/* 📷 写真隠しInput */}
+            {/* 📷 ファイル・画像隠しInput群 */}
             <input
               ref={fileInputRef}
               type="file"
@@ -788,7 +871,7 @@ export function ShipmentAddForm({
               capture="environment"
               onChange={(e) => {
                 const file = e.target.files?.[0]
-                if (file) handlePhotoFile(file)
+                if (file) handleGenericFile(file)
               }}
               className="hidden"
               id="shipment-camera-input-unified"
@@ -799,42 +882,51 @@ export function ShipmentAddForm({
               accept="image/*"
               onChange={(e) => {
                 const file = e.target.files?.[0]
-                if (file) handlePhotoFile(file)
+                if (file) handleGenericFile(file)
               }}
               className="hidden"
               id="shipment-gallery-input-unified"
             />
+            <input
+              ref={fileSelectorRef}
+              type="file"
+              accept="image/*,application/pdf,.xlsx,.xls,.csv"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleGenericFile(file)
+              }}
+              className="hidden"
+              id="shipment-file-selector-unified"
+            />
 
-            {/* ① スマート入力エリア（自然言語 ＋ 写真） */}
+            {/* ① スマート入力エリア（ボトムアクションシート起動 ＋ 自然言語） */}
             <div className="rounded-2xl border-2 border-forest-200 bg-gradient-to-br from-forest-50/70 to-emerald-50/40 p-4 space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs font-black text-forest-900">
                   <Sparkles className="h-4 w-4 text-forest-600" />
-                  自然言語・メモ・写真からスマート入力
+                  自然言語・ファイル・写真からスマート入力
                 </span>
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="shipment-camera-input-unified"
-                    className="inline-flex items-center gap-1 cursor-pointer rounded-lg border border-forest-300 bg-white px-2 py-1 text-xs font-bold text-forest-800 hover:bg-forest-50 shadow-2xs active:scale-95"
-                    title="カメラで撮影"
-                  >
-                    <Camera className="h-3.5 w-3.5 text-forest-600" />
-                    <span>撮影</span>
-                  </label>
-                  <label
-                    htmlFor="shipment-gallery-input-unified"
-                    className="inline-flex items-center gap-1 cursor-pointer rounded-lg border border-sky-300 bg-white px-2 py-1 text-xs font-bold text-sky-800 hover:bg-sky-50 shadow-2xs active:scale-95"
-                    title="画像から選択"
-                  >
-                    <ImageIcon className="h-3.5 w-3.5 text-sky-600" />
-                    <span>画像</span>
-                  </label>
-                </div>
               </div>
+
+              {/* 1タップで下から開く読み込みアクションボタン */}
+              <button
+                type="button"
+                onClick={() => setActionSheetOpen(true)}
+                className="w-full py-2.5 px-3.5 rounded-xl bg-forest-800 hover:bg-forest-900 text-white font-bold text-xs flex items-center justify-between shadow-2xs active:scale-[0.99] transition"
+              >
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-emerald-300" />
+                  <span>📄 注文書・写真・ファイルから自動読込</span>
+                </span>
+                <span className="text-[11px] font-bold text-emerald-200 bg-white/10 px-2 py-0.5 rounded">
+                  カメラ / 写真 / PDF / Excel ➜
+                </span>
+              </button>
 
               {/* 自然言語入力欄 */}
               <div className="relative">
                 <textarea
+                  id="shipment-natural-text-area"
                   value={naturalText}
                   onChange={(e) => setNaturalText(e.target.value)}
                   onKeyDown={(e) => {
@@ -989,49 +1081,74 @@ export function ShipmentAddForm({
                 </div>
               </div>
 
-              {/* 納品日 */}
+              {/* 納品日 ＆ 時間帯指定 */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-ink">納品日（出荷日）</label>
+                  <label className="text-xs font-black text-ink">納品日 ＆ 出荷時間</label>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setTargetDate(todayStr)}
+                      onClick={() => {
+                        setTargetDate(tomorrowStr)
+                        setShippingTime('am')
+                      }}
+                      className={cn(
+                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
+                        targetDate === tomorrowStr && shippingTime === 'am'
+                          ? 'bg-forest-600 text-white shadow-2xs'
+                          : 'bg-sand-100 text-ink hover:bg-sand-200',
+                      )}
+                    >
+                      🌅 明日朝
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetDate(tomorrowStr)
+                        setShippingTime('pm')
+                      }}
+                      className={cn(
+                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
+                        targetDate === tomorrowStr && shippingTime === 'pm'
+                          ? 'bg-forest-600 text-white shadow-2xs'
+                          : 'bg-sand-100 text-ink hover:bg-sand-200',
+                      )}
+                    >
+                      ☀️ 明日昼
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetDate(todayStr)
+                        setShippingTime('')
+                      }}
                       className={cn(
                         'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
                         targetDate === todayStr ? 'bg-forest-600 text-white' : 'bg-sand-100 text-ink hover:bg-sand-200',
                       )}
                     >
-                      今日
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTargetDate(tomorrowStr)}
-                      className={cn(
-                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
-                        targetDate === tomorrowStr ? 'bg-forest-600 text-white' : 'bg-sand-100 text-ink hover:bg-sand-200',
-                      )}
-                    >
-                      明日
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTargetDate(dayAfterTomorrowStr)}
-                      className={cn(
-                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
-                        targetDate === dayAfterTomorrowStr ? 'bg-forest-600 text-white' : 'bg-sand-100 text-ink hover:bg-sand-200',
-                      )}
-                    >
-                      明後日
+                      🚚 今日
                     </button>
                   </div>
                 </div>
-                <Input
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  className="h-9 text-xs"
-                />
+
+                <div className="grid grid-cols-5 gap-2">
+                  <Input
+                    type="date"
+                    value={targetDate}
+                    onChange={(e) => setTargetDate(e.target.value)}
+                    className="col-span-3 h-9 text-xs"
+                  />
+                  <select
+                    value={shippingTime}
+                    onChange={(e) => setShippingTime(e.target.value as 'am' | 'pm' | '')}
+                    className="col-span-2 h-9 rounded-md border border-line bg-white px-2 text-xs font-bold text-ink"
+                  >
+                    <option value="">指定なし</option>
+                    <option value="am">🌅 朝便 (am)</option>
+                    <option value="pm">☀️ 昼便 (pm)</option>
+                  </select>
+                </div>
               </div>
 
               {/* 取引先セレクト */}
@@ -1182,6 +1299,116 @@ export function ShipmentAddForm({
                   className="mt-1 w-full rounded-xl border border-line bg-white p-2.5 text-xs text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none"
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 📄 下からせり出すアクションシート（カメラ・メディア・ファイル・テキスト） */}
+        {actionSheetOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+            onClick={() => setActionSheetOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-t-3xl bg-white p-5 shadow-2xl space-y-4 animate-in slide-in-from-bottom duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-line">
+                <div>
+                  <h3 className="text-base font-black text-ink">注文の読み込み・取り込み</h3>
+                  <p className="text-xs text-ink-muted">取り込み方法を以下から選択してください</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActionSheetOpen(false)}
+                  className="p-2 rounded-full text-ink-muted hover:bg-bg-soft"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5">
+                {/* ① カメラで撮影 */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionSheetOpen(false)
+                    fileInputRef.current?.click()
+                  }}
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-emerald-50/50 hover:border-emerald-300 transition text-left active:scale-[0.99] shadow-2xs"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                    <Camera className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="font-black text-sm text-ink">📷 カメラで撮影</div>
+                    <div className="text-xs text-ink-muted mt-0.5">FAX用紙や手書き伝票をその場で撮影して即解析</div>
+                  </div>
+                </button>
+
+                {/* ② 写真・メディアライブラリ */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionSheetOpen(false)
+                    galleryInputRef.current?.click()
+                  }}
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-sky-50/50 hover:border-sky-300 transition text-left active:scale-[0.99] shadow-2xs"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-sky-100 text-sky-800 flex items-center justify-center shrink-0">
+                    <ImageIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="font-black text-sm text-ink">🖼 写真・画像ライブラリから選択</div>
+                    <div className="text-xs text-ink-muted mt-0.5">スマホの写真フォルダや撮影済みの画像を選択</div>
+                  </div>
+                </button>
+
+                {/* ③ ファイル選択（PDF・Excel・CSV） */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionSheetOpen(false)
+                    fileSelectorRef.current?.click()
+                  }}
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-purple-50/50 hover:border-purple-300 transition text-left active:scale-[0.99] shadow-2xs"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="font-black text-sm text-ink">📁 ファイルを選択（PDF / Excel / CSV）</div>
+                    <div className="text-xs text-ink-muted mt-0.5">電子FAX（PDF）、発注Excel表（.xlsx / .xls）、CSVデータ</div>
+                  </div>
+                </button>
+
+                {/* ④ メモ・テキスト貼付 */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionSheetOpen(false)
+                    const area = document.getElementById('shipment-natural-text-area')
+                    area?.focus()
+                  }}
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-amber-50/50 hover:border-amber-300 transition text-left active:scale-[0.99] shadow-2xs"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                    <Clipboard className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="font-black text-sm text-ink">📋 テキスト貼付・手入力</div>
+                    <div className="text-xs text-ink-muted mt-0.5">LINEやメールの注文指示文をそのまま貼り付けて解析</div>
+                  </div>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActionSheetOpen(false)}
+                className="w-full py-3 rounded-xl border border-line bg-bg-soft text-ink font-bold text-sm hover:bg-slate-200"
+              >
+                キャンセル
+              </button>
             </div>
           </div>
         )}

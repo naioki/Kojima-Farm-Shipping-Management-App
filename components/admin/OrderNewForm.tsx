@@ -6,7 +6,7 @@ import { Plus, Trash2, AlertTriangle, ShoppingCart, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
 import { cn } from '@/lib/cn'
-import { jstTodayStr, formatJpDateShort } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { groupByCategory } from '@/lib/products/group'
 import { Button } from '@/components/ui/Button'
 import { ColorDot } from '@/components/ui/ColorDot'
@@ -427,9 +427,58 @@ export function OrderNewForm({
 
           {/* 出荷日 */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-ink" htmlFor="order-delivery-date">
-              出荷日 <span className="text-alert">*</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-ink" htmlFor="order-delivery-date">
+                出荷日 <span className="text-alert">*</span>
+              </label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryDate(shiftDateStr(jstTodayStr(), 1))
+                    setShippingTime('am')
+                  }}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
+                    deliveryDate === shiftDateStr(jstTodayStr(), 1) && shippingTime === 'am'
+                      ? 'bg-forest-600 text-white shadow-2xs'
+                      : 'bg-sand-100 text-ink hover:bg-sand-200',
+                  )}
+                >
+                  🌅 明日朝
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryDate(shiftDateStr(jstTodayStr(), 1))
+                    setShippingTime('pm')
+                  }}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
+                    deliveryDate === shiftDateStr(jstTodayStr(), 1) && shippingTime === 'pm'
+                      ? 'bg-forest-600 text-white shadow-2xs'
+                      : 'bg-sand-100 text-ink hover:bg-sand-200',
+                  )}
+                >
+                  ☀️ 明日昼
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryDate(jstTodayStr())
+                    setShippingTime('')
+                  }}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
+                    deliveryDate === jstTodayStr()
+                      ? 'bg-forest-600 text-white shadow-2xs'
+                      : 'bg-sand-100 text-ink hover:bg-sand-200',
+                  )}
+                >
+                  🚚 今日
+                </button>
+              </div>
+            </div>
             <input
               id="order-delivery-date"
               type="date"

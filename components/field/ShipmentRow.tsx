@@ -90,6 +90,8 @@ export interface ShipmentRowProps {
   onStatusSettled?: (itemId: string, status: RowStatusKey) => void
   /** 削除された瞬間に呼ばれる（親が並びから除く） */
   onDeleted?: (itemId: string) => void
+  /** 途中数（できた数）が更新された瞬間に呼ばれる。親のリアルタイム進捗メーターと即時同期する */
+  onShippedQtyChange?: (itemId: string, newQty: number | null) => void
 }
 
 /**
@@ -138,6 +140,7 @@ export function ShipmentRow({
   onStatusChange,
   onStatusSettled,
   onDeleted,
+  onShippedQtyChange,
 }: ShipmentRowProps) {
   const router = useRouter()
   const { enqueue } = useOutbox()
@@ -467,6 +470,7 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
+      onShippedQtyChange?.(itemId, shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null)
       toast.success('記録を保存しました')
       router.refresh()
     } catch (e) {
@@ -526,6 +530,7 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
+      onShippedQtyChange?.(itemId, shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null)
       toast.success('できた数を記録しました')
       setQuickOpen(false)
       router.refresh()
@@ -544,7 +549,7 @@ export function ShipmentRow({
       className={cn(
         'rounded-2xl border bg-bg-card p-3.5 shadow-sm transition-all duration-200',
         isNextDay
-          ? 'border-slate-300 bg-slate-50/90 text-slate-700'
+          ? 'border-slate-300 bg-slate-100/95 text-slate-800 shadow-xs'
           : status === 'shipped'
           ? 'border-sky-300 bg-sky-50/15'
           : status === 'packed'
@@ -555,13 +560,13 @@ export function ShipmentRow({
     >
       {/* 翌日出荷予定バッジ（先行作業・閲覧用） */}
       {isNextDay && (
-        <div className="mb-2.5 flex items-center justify-between rounded-lg bg-slate-200/90 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-slate-200 border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-800 shadow-2xs">
           <span className="flex items-center gap-1.5">
-            <span>📅</span>
-            <span>翌日出荷予定（先行作業・閲覧用）</span>
+            <span className="text-sm">📅</span>
+            <span>翌日作業予定（先行作業・確認用）</span>
           </span>
-          <span className="text-[10px] text-slate-500 font-semibold">
-            {deliveryDate ? `${deliveryDate} 出荷分` : '翌日出荷分'}
+          <span className="rounded bg-slate-700 text-white px-2 py-0.5 text-[10px] font-bold">
+            {deliveryDate ? `${deliveryDate} 出荷` : '翌日出荷分'}
           </span>
         </div>
       )}

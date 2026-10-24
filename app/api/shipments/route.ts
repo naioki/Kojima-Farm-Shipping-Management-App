@@ -97,7 +97,16 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { customer_id, product_id, delivery_date, quantity_raw, destination_id, mode = 'create', note } = parsed.data
+  const {
+    customer_id,
+    product_id,
+    delivery_date,
+    quantity_raw,
+    destination_id,
+    mode = 'create',
+    shipping_time,
+    note,
+  } = parsed.data
   const supabase = createAdminClient()
 
   // 納入先が指定されたら、その取引先の配下（有効）であることを検証
@@ -166,12 +175,16 @@ export async function POST(req: Request) {
         status: 'approved',
         delivery_date,
         delivery_date_source: 'manual',
+        shipping_time: shipping_time ?? null,
         created_by: user.id,
       })
       .select('id')
       .single()
     if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
     orderId = order.id
+  } else if (shipping_time && orderId) {
+    // 既存注文が存在する場合も指定があれば出荷時間帯を更新
+    await supabase.from('orders').update({ shipping_time }).eq('id', orderId)
   }
 
   const deltaQty = result.total.toNumber()

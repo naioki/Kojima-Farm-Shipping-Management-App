@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import {
   Upload,
+  Camera,
   FileText,
   Sparkles,
   CheckCircle2,
@@ -63,6 +64,7 @@ export function OrderSmartResolver({
   onDestinationCreated,
 }: OrderSmartResolverProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const [destinations, setDestinations] = useState(initialDestinations)
   const [isDragging, setIsDragging] = useState(false)
   const [mode, setMode] = useState<'file' | 'text'>('file')
@@ -368,6 +370,17 @@ export function OrderSmartResolver({
             }}
             className="hidden"
           />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void processFile(file)
+            }}
+            className="hidden"
+          />
           {originalFile ? (
             <div className="flex items-center gap-2 text-xs font-bold text-emerald-900 bg-emerald-100/90 px-3 py-1.5 rounded-lg border border-emerald-300">
               <span>📄 {originalFile.fileName}</span>
@@ -386,14 +399,36 @@ export function OrderSmartResolver({
               </button>
             </div>
           ) : (
-            <div className="space-y-1">
-              <div className="flex items-center justify-center gap-1.5 text-xs font-black text-emerald-900">
-                <Upload className="h-4 w-4 text-emerald-600" />
-                <span>ここにFAX・PDF・写真・Excelファイルをドロップ</span>
+            <div className="space-y-2">
+              <div className="space-y-0.5">
+                <div className="flex items-center justify-center gap-1.5 text-xs font-black text-emerald-900">
+                  <Upload className="h-4 w-4 text-emerald-600" />
+                  <span>ここにFAX・PDF・写真・Excelファイルをドロップ</span>
+                </div>
+                <p className="text-[11px] text-emerald-700">
+                  または下のボタンから選択（JPG, PNG, PDF, Excel .xlsx, CSV 対応）
+                </p>
               </div>
-              <p className="text-[11px] text-emerald-700">
-                またはクリックしてファイルを選択（JPG, PNG, PDF, Excel .xlsx, CSV 対応）
-              </p>
+
+              {/* モバイル・現場用クイックボタン */}
+              <div className="flex items-center justify-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs active:scale-95 transition"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  <span>📷 カメラ撮影</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-900 font-bold text-xs shadow-2xs active:scale-95 transition"
+                >
+                  <Upload className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>📁 ファイル・写真選択</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

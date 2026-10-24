@@ -716,8 +716,18 @@ export async function analyzeOrders(
         const resolvedDest = std.destinationName ?? order.destination_name ?? null
 
         const items = order.items
-          // 小島農園の非対象品目（きゅうり・ししとう等）のみ除外。チンゲン菜、トマト、長ネギ、ミニ白菜等は通過させる
+          // 1. 数量が0の品目は転記不要のため自動除外（ユーザー要望）
           .filter((it) => {
+            const qStr = (it.quantity ?? '').trim()
+            const numQ = Number(qStr)
+            const isZeroQty =
+              qStr === '0' ||
+              (Number.isFinite(numQ) && numQ === 0) ||
+              (it.cases === 0 && (qStr === '' || qStr === '0' || numQ === 0)) ||
+              (it.box_count === 0 && (qStr === '' || qStr === '0' || numQ === 0))
+            if (isZeroQty) return false
+
+            // 2. 小島農園の非対象品目（きゅうり・ししとう等）のみ除外。チンゲン菜、トマト、長ネギ、ミニ白菜等は通過させる
             const name = `${it.product_name ?? ''} ${it.raw_name}`.toLowerCase()
             const isExcludedCrop =
               (name.includes('きゅうり') || name.includes('胡瓜') || name.includes('ししとう')) &&
@@ -885,14 +895,24 @@ export async function reviseOrdersWithInstruction(params: {
       ...order,
       customer_name: resolvedCustomer,
       destination_name: resolvedDest,
-      items: order.items.map((it) =>
-        verifyAndNormalizeItem(it, resolvedCustomer, {
-          destinationName: resolvedDest,
-          deliveryDate: order.delivery_date,
-        }),
-      ),
+      items: order.items
+        .filter((it) => {
+          const qStr = (it.quantity ?? '').trim()
+          const numQ = Number(qStr)
+          return !(
+            qStr === '0' ||
+            (Number.isFinite(numQ) && numQ === 0) ||
+            (it.cases === 0 && (qStr === '' || qStr === '0' || numQ === 0))
+          )
+        })
+        .map((it) =>
+          verifyAndNormalizeItem(it, resolvedCustomer, {
+            destinationName: resolvedDest,
+            deliveryDate: order.delivery_date,
+          }),
+        ),
     }
-  })
+  }).filter((o) => o.items.length > 0)
 
   return {
     orders: normalizedOrders,
