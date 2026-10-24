@@ -5,6 +5,7 @@ import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
+import { shiftDateStr } from '@/lib/dates'
 
 export const runtime = 'nodejs'
 
@@ -78,6 +79,7 @@ export async function PUT(req: Request) {
   // 空欄＝削除
   if (result.type === 'delete') {
     if (existingItem) {
+      await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
       const { error: delErr } = await supabase.from('order_items').delete().eq('id', existingItem.id)
       if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
       await writeAudit(supabase, {
@@ -115,6 +117,15 @@ export async function PUT(req: Request) {
       .select()
       .single()
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+    // 収穫タスクの数量も連動同期
+    try {
+      await supabase
+        .from('harvest_tasks')
+        .update({ required_qty: quantity })
+        .eq('order_item_id', existingItem.id)
+    } catch {}
+
     await writeAudit(supabase, {
       entityType: 'order_items',
       entityId: existingItem.id,
@@ -174,6 +185,20 @@ export async function PUT(req: Request) {
     newValues: item,
     userId: user.id,
   })
+
+  // 全品目「出荷日の前日に収穫・パック」原則に従い harvest_tasks を自動生成
+  try {
+    const harvestDate = shiftDateStr(delivery_date, -1)
+    await supabase.from('harvest_tasks').insert({
+      product_id,
+      order_item_id: item.id,
+      required_qty: quantity,
+      task_date: harvestDate,
+      status: 'not_started',
+    })
+  } catch (htErr) {
+    console.warn('[api/shipments/cell] harvest_tasks 生成警告:', htErr)
+  }
 
   return NextResponse.json({ item }, { status: 201 })
 }

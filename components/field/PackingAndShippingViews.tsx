@@ -4,21 +4,22 @@ import { useEffect, useState } from 'react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import toast from 'react-hot-toast'
 import type { FieldStatus } from '@/types/database'
-import { comparePackItems } from '@/lib/field/shipment-sort'
+import {
+  comparePackItems,
+  getPackGroupInfo,
+  type PackSortMode,
+} from '@/lib/field/shipment-sort'
+import { cn } from '@/lib/cn'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
+  orderedQty: number
+  customerId?: string
+  productId?: string
   dailyPackSortOrder?: number | null
-  defaultPackSortOrder?: number
+  defaultPackSortOrder?: number | null
   shippingRouteName?: string | null
   departureTime?: string | null
-  orderedQty: number
-  quantityText: string
-  destinationName: string
-  customerName: string
-  statusText?: string
-  isChanged?: boolean
-  changeText?: string
 }
 
 interface PackingAndShippingViewsProps {
@@ -30,9 +31,8 @@ interface PackingAndShippingViewsProps {
 /**
  * 収穫・袋詰め（パック）専用の明細カード一覧ビュー。
  * - 画面切替は画面最上部のタブ（収穫・袋詰めボード ⇋ 便別積込・配送リスト）に一本化。
- * - 重複していた下部の「袋詰め/出荷」切り替えバーは完全撤去し、作業カードの表示領域を最大化。
  * - 並び替え（▲▼）は管理者（isAdmin）時のみ表示し、現場作業員の通常操作やスクロール時の誤タップ・エラー通知を根絶。
- * - デフォルト作業順: 出発予定時刻（早い便） -> 納品先マスタ順 -> 同一出荷先集約 -> 規格順
+ * - 3つの並び替えモード（早い便順 / 出荷先順 / コンテナ順）をワンタップで切り替え、localStorage に記憶。
  */
 export function PackingAndShippingViews({
   items: initialItems,
@@ -41,14 +41,32 @@ export function PackingAndShippingViews({
 }: PackingAndShippingViewsProps) {
   const [items, setItems] = useState<ShipmentItemData[]>(initialItems)
   const [busyReorder, setBusyReorder] = useState<boolean>(false)
+  const [sortMode, setSortMode] = useState<PackSortMode>('time')
 
   // サーバー側や親コンポーネント（日付変更・品目タブ切り替え）から届く最新の明細リストを確実に同期
   useEffect(() => {
     setItems(initialItems)
   }, [initialItems])
 
-  // パック画面用ソート: 管理者指定順 (dailyPackSortOrder) -> 便順 -> 納品先集約 -> 規格順
-  const sortedPackItems = [...items].sort(comparePackItems)
+  // クライアント側で localStorage から記憶したソートモードを復元
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('kojima_pack_board_sort_mode') as PackSortMode | null
+      if (saved === 'time' || saved === 'destination' || saved === 'container') {
+        setSortMode(saved)
+      }
+    } catch {}
+  }, [])
+
+  const handleSortModeChange = (mode: PackSortMode) => {
+    setSortMode(mode)
+    try {
+      localStorage.setItem('kojima_pack_board_sort_mode', mode)
+    } catch {}
+  }
+
+  // 選択されたモードによるソート
+  const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
   // ステータス即時連動（タップした瞬間に親Stateの initialStatus と initialVersion を即座に更新）
   const handleStatusChange = (itemId: string, newStatus: FieldStatus, newVersion: number) => {
@@ -112,49 +130,100 @@ export function PackingAndShippingViews({
 
   return (
     <div className="space-y-3">
-      {/* 作業順ヘッダー案内 */}
-      <div className="flex items-center justify-between px-1">
-        <span className="text-sm font-bold text-ink">
-          📋 作業順（{isAdmin ? '▲▼で並び替え可能' : '同一出荷先まとめ・上から順にパック'}）
-        </span>
-        <span className="text-sm font-bold text-ink-soft">全 {sortedPackItems.length} 件</span>
+      {/* 作業順ヘッダー案内 ＆ 3モード切替ボタングループ */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-sm font-bold text-ink">
+            📋 作業順（{isAdmin ? '▲▼で並び替え可能' : '上から順番にパック'}）
+          </span>
+          <span className="text-sm font-bold text-ink-soft">全 {sortedPackItems.length} 件</span>
+        </div>
+
+        {/* 現場用ワンタップ切替スイッチ */}
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-line-soft">
+          <button
+            type="button"
+            onClick={() => handleSortModeChange('time')}
+            className={cn(
+              'flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1',
+              sortMode === 'time'
+                ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-600/20'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            <span>⏰</span>
+            <span>早い便順</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSortModeChange('destination')}
+            className={cn(
+              'flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1',
+              sortMode === 'destination'
+                ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-600/20'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            <span>🏢</span>
+            <span>出荷先順</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSortModeChange('container')}
+            className={cn(
+              'flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1',
+              sortMode === 'container'
+                ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-600/20'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            <span>📦</span>
+            <span>コンテナ順</span>
+          </button>
+        </div>
       </div>
 
-      {/* パック作業カード一覧（出荷先グループ境界ヘッダー付き） */}
+      {/* パック作業カード一覧（グループ境界ヘッダー付き） */}
       <div className="space-y-3">
         {sortedPackItems.map((item, idx) => {
-          const currentDestKey = `${item.customerName}__${item.destinationName || ''}`
-          const prevDestKey =
-            idx > 0
-              ? `${sortedPackItems[idx - 1]!.customerName}__${sortedPackItems[idx - 1]!.destinationName || ''}`
-              : null
-          const isNewSection = idx === 0 || currentDestKey !== prevDestKey
+          const groupInfo = getPackGroupInfo(item, sortMode)
+          const prevGroupInfo = idx > 0 ? getPackGroupInfo(sortedPackItems[idx - 1]!, sortMode) : null
+          const isNewSection = idx === 0 || groupInfo.groupKey !== prevGroupInfo?.groupKey
 
           return (
             <div key={item.itemId} className="space-y-2">
               {isNewSection && (
-                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 pb-0.5 px-1 border-b border-line-soft">
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 pb-1 px-1 border-b-2 border-line-soft">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs">🏢</span>
-                    <span className="text-xs font-black text-ink">
-                      {item.customerName}
-                      {item.destinationName ? ` ➜ ${item.destinationName}` : ''}
-                    </span>
-                    {item.shippingRouteName && (
+                    <span className="text-xs">{groupInfo.icon}</span>
+                    <span className="text-xs font-black text-ink">{groupInfo.title}</span>
+                    {groupInfo.badge && (
                       <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.2 text-[10px] font-bold">
-                        {item.shippingRouteName}
+                        {groupInfo.badge}
                       </span>
                     )}
-                    {item.departureTime && (
-                      <span className="rounded bg-amber-100 text-amber-900 px-1.5 py-0.2 text-[10px] font-bold">
-                        ⏰ {item.departureTime}発
+                    {groupInfo.subtitle && (
+                      <span className="text-[11px] font-bold text-ink-muted">
+                        {groupInfo.subtitle}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
-                    <span>{item.initialContainer || 'コンテナ'}</span>
-                    {item.masterPacksPerCase && <span>({item.masterPacksPerCase}入)</span>}
-                  </div>
+                  {sortMode === 'time' && (
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-ink-muted">
+                      <span>納品先別まとめ</span>
+                    </div>
+                  )}
+                  {sortMode === 'destination' && (
+                    <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
+                      <span>{item.initialContainer || 'コンテナ'}</span>
+                      {item.masterPacksPerCase && <span>({item.masterPacksPerCase}入)</span>}
+                    </div>
+                  )}
+                  {sortMode === 'container' && (
+                    <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
+                      <span>納品先順</span>
+                    </div>
+                  )}
                 </div>
               )}
               <ShipmentRow

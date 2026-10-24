@@ -77,23 +77,34 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ destination: updRes.data })
 }
 
-/** 納入先の削除。注文に紐付いている場合もエラーで止めず、参照解除または非表示化を行う。 */
+/** 納入先の削除。過去の注文履歴を壊さず、実績0件なら物理削除、実績ありなら is_active=false（アーカイブ）に更新する。 */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
   const admin = createAdminClient()
-  const { error } = await admin.from('delivery_destinations').delete().eq('id', params.id)
-  if (error) {
-    // 外部キー参照がある場合は destination_id を null に外して再試行、それでも不可なら is_active=false に更新
-    await Promise.allSettled([
-      admin.from('orders').update({ destination_id: null }).eq('destination_id', params.id),
-      admin.from('deliveries').update({ destination_id: null }).eq('destination_id', params.id),
-    ])
-    const retry = await admin.from('delivery_destinations').delete().eq('id', params.id)
-    if (retry.error) {
-      await admin.from('delivery_destinations').update({ is_active: false }).eq('id', params.id)
+
+  // 過去の注文・配送実績を確認（履歴保護）
+  const [ord, del] = await Promise.all([
+    admin.from('orders').select('id', { count: 'exact', head: true }).eq('destination_id', params.id),
+    admin.from('deliveries').select('id', { count: 'exact', head: true }).eq('destination_id', params.id),
+  ])
+
+  if ((ord.count ?? 0) === 0 && (del.count ?? 0) === 0) {
+    // 実績0件なら物理削除を試行
+    const { error: delErr } = await admin.from('delivery_destinations').delete().eq('id', params.id)
+    if (!delErr) {
+      return NextResponse.json({ deleted: true, mode: 'physical', ok: true })
     }
   }
-  return NextResponse.json({ ok: true })
+
+  // 過去実績がある場合（またはFK保護が働いた場合）は、過去注文の destination_id を壊さずに is_active: false に更新して安全にアーカイブ
+  const { error: archErr } = await admin
+    .from('delivery_destinations')
+    .update({ is_active: false })
+    .eq('id', params.id)
+
+  if (archErr) return NextResponse.json({ error: archErr.message }, { status: 500 })
+
+  return NextResponse.json({ deleted: true, mode: 'archived', ok: true })
 }

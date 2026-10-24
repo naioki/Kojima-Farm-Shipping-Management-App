@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
@@ -8,9 +8,6 @@ import { nextFieldStatus } from '@/lib/field/tap-loop'
 export const runtime = 'nodejs'
 
 // quantity/価格変更（admin）と field_status タップ（圃場）を同じ PATCH で受ける。
-// ※ z.union は先頭スキーマが緩い（全項目 optional）と field_status を持つ body も
-//   orderItemPatchSchema 側で成立して field_status が落ちてしまう（タップが永続化されない）。
-//   そのため body.field_status の有無で明示的に振り分ける。
 function parsePatch(body: unknown) {
   const isFieldTap =
     typeof body === 'object' && body !== null && 'field_status' in body
@@ -19,12 +16,22 @@ function parsePatch(body: unknown) {
 
 /**
  * 数量変更・タップ更新（features.md §6/§7）。楽観ロック必須。
- *   WHERE id=$ AND version=$expected で更新。0件＝競合 → 409（UI再読込促す）。
- *   変更は audit_log に記録し version++。
+ * RLSによるスタッフ操作遮断を防ぐため createAdminClient を使用。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
+    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
+  }
 
   const body = await req.json().catch(() => null)
   const parsed = parsePatch(body)
@@ -32,10 +39,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const input = parsed.data
-  const supabase = createClient()
 
   // 現在値を取得（楽観ロックの比較と監査の old_values 用）
-  const { data: current, error: readErr } = await supabase
+  const { data: current, error: readErr } = await admin
     .from('order_items')
     .select('*')
     .eq('id', params.id)
@@ -81,7 +87,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   // 楽観ロック：version 一致時のみ更新。version++ も同時に行う。
-  let { data: updated, error: updErr } = await supabase
+  let { data: updated, error: updErr } = await admin
     .from('order_items')
     .update({ ...updates, version: current.version + 1 })
     .eq('id', params.id)
@@ -91,7 +97,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (updErr && 'is_manual_modified' in updates) {
     const fallbackUpdates = { ...updates }
     delete fallbackUpdates.is_manual_modified
-    const retry = await supabase
+    const retry = await admin
       .from('order_items')
       .update({ ...fallbackUpdates, version: current.version + 1 })
       .eq('id', params.id)
@@ -107,7 +113,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
   }
 
-  await writeAudit(supabase, {
+  // 数量が変更された場合は harvest_tasks の必要数も自動同期
+  if ('quantity' in input && input.quantity != null && input.quantity !== current.quantity) {
+    try {
+      await admin
+        .from('harvest_tasks')
+        .update({ required_qty: input.quantity })
+        .eq('order_item_id', params.id)
+    } catch (htErr) {
+      console.warn('[order-items] harvest_tasks 数量同期警告:', htErr)
+    }
+  }
+
+  await writeAudit(admin, {
     entityType: 'order_items',
     entityId: params.id,
     action: 'UPDATE',
@@ -122,27 +140,29 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 /**
  * 明細の削除（出荷一覧の詳細から・誤追加の取消）。admin/staff 可。
  * 安全ガード：出荷済み・価格確定済み・請求済み注文の明細は削除不可（履歴/税務保護）。
- * 紐づく収穫タスクは FK の ON DELETE CASCADE で消える。変更は audit_log に記録。
+ * 紐づく収穫タスクはクリーンアップまたは FK の ON DELETE CASCADE で安全に連動。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const supabase = createClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/order-items/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+
   if (profile?.role !== 'admin' && profile?.role !== 'staff') {
     return NextResponse.json({ error: '権限がありません' }, { status: 403 })
   }
 
-  const admin = createAdminClient()
   const { data: item, error: itemErr } = await admin
     .from('order_items')
     .select('*, orders!inner(status)')
     .eq('id', params.id)
     .maybeSingle()
-  // DBエラーを not_found（404）に化けさせない。
+
   if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
   if (!item) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
@@ -153,6 +173,9 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (item.price_status === 'confirmed' || orderStatus === 'invoiced') {
     return NextResponse.json({ error: '請求確定済みのため削除できません' }, { status: 409 })
   }
+
+  // 収穫タスクを明示的に事前クリーンアップ
+  await admin.from('harvest_tasks').delete().eq('order_item_id', params.id)
 
   const { error } = await admin.from('order_items').delete().eq('id', params.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

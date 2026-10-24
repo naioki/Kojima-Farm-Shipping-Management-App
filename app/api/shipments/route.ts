@@ -5,6 +5,7 @@ import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
+import { shiftDateStr } from '@/lib/dates'
 
 export const runtime = 'nodejs'
 
@@ -255,6 +256,40 @@ export async function POST(req: Request) {
       newValues: item,
       userId: user.id,
     })
+  }
+
+  // 全品目「出荷日の前日に収穫・パック」原則に従い harvest_tasks を自動同期
+  if (delivery_date && finalItem && finalItem['id'] && product_id) {
+    try {
+      const finalQty = Number(finalItem['quantity']) || 0
+      const harvestDate = shiftDateStr(delivery_date, -1)
+      if (finalQty <= 0) {
+        await supabase.from('harvest_tasks').delete().eq('order_item_id', finalItem['id'] as string)
+      } else {
+        const { data: existingTask } = await supabase
+          .from('harvest_tasks')
+          .select('id')
+          .eq('order_item_id', finalItem['id'] as string)
+          .maybeSingle()
+
+        if (existingTask) {
+          await supabase
+            .from('harvest_tasks')
+            .update({ required_qty: finalQty, task_date: harvestDate })
+            .eq('id', existingTask.id)
+        } else {
+          await supabase.from('harvest_tasks').insert({
+            product_id,
+            order_item_id: finalItem['id'] as string,
+            required_qty: finalQty,
+            task_date: harvestDate,
+            status: 'not_started',
+          })
+        }
+      }
+    } catch (htErr) {
+      console.warn('[api/shipments] harvest_tasks 同期警告:', htErr)
+    }
   }
 
   return NextResponse.json({ item: finalItem, mode }, { status: 201 })

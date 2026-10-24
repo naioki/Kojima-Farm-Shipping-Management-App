@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { rowStatusKey, sortIdsByStatus, statusRank, comparePackItems, type PackSortableItem } from '@/lib/field/shipment-sort'
+import {
+  rowStatusKey,
+  sortIdsByStatus,
+  statusRank,
+  comparePackItems,
+  getPackGroupInfo,
+  type PackSortableItem,
+} from '@/lib/field/shipment-sort'
 
 describe('rowStatusKey（出荷一覧の4区分判定）', () => {
   it('shipped は常に出荷済み（できた数が少なくても中断にしない）', () => {
@@ -42,8 +49,21 @@ describe('sortIdsByStatus（未着手→中断→梱包完了→出荷済み・�
   })
 })
 
-describe('comparePackItems (収穫・パックボード同一出荷先集約＆便順優先ソート)', () => {
-  it('同一出荷先（取引先＋納品先）がバラバラに混ざっていても綺麗にまとまる', () => {
+describe('comparePackItems (3つのソートモードの検証)', () => {
+  it('mode: time（早い便順）: 出発時刻順に並び、時刻未定は一番後ろになる', () => {
+    const items: PackSortableItem[] = [
+      { itemId: '1', customerName: '和郷園', destinationName: '定期便', departureTime: '11:30' },
+      { itemId: '2', customerName: '農業総研', destinationName: '早朝便', departureTime: '06:00' },
+      { itemId: '3', customerName: '勘兵衛', destinationName: '未定便', departureTime: null },
+    ]
+
+    const sorted = [...items].sort((a, b) => comparePackItems(a, b, 'time'))
+    expect(sorted[0]?.destinationName).toBe('早朝便') // 06:00
+    expect(sorted[1]?.destinationName).toBe('定期便') // 11:30
+    expect(sorted[2]?.destinationName).toBe('未定便') // 未定は最後
+  })
+
+  it('mode: destination（出荷先順）: 取引先＋納品先ごとに完全にまとまる', () => {
     const items: PackSortableItem[] = [
       { itemId: '1', customerName: '和郷園', destinationName: '岩槻' },
       { itemId: '2', customerName: '房総食料センター', destinationName: 'BOX用' },
@@ -52,35 +72,64 @@ describe('comparePackItems (収穫・パックボード同一出荷先集約＆�
       { itemId: '5', customerName: '和郷園', destinationName: '戸田' },
     ]
 
-    const sorted = [...items].sort(comparePackItems)
-    const groupedKeys = sorted.map((it) => `${it.customerName}__${it.destinationName}`)
-
-    // 和郷園__岩槻 が2件連続
+    const sorted = [...items].sort((a, b) => comparePackItems(a, b, 'destination'))
+    // 和郷園__岩槻 が連続して並ぶ
     const iwatsukiIndices = sorted.map((it, idx) => (it.destinationName === '岩槻' ? idx : -1)).filter((x) => x >= 0)
     expect(iwatsukiIndices[1]! - iwatsukiIndices[0]!).toBe(1)
   })
 
-  it('早朝便（departureTime）がある出荷先が先に並ぶ', () => {
+  it('mode: container（コンテナ順）: コンテナ種別ごとにまとまり、内部は納品先順に並ぶ', () => {
     const items: PackSortableItem[] = [
-      { itemId: '1', customerName: '和郷園', destinationName: '定期便', departureTime: '11:30' },
-      { itemId: '2', customerName: '農業総研', destinationName: '早朝便', departureTime: '06:00' },
-      { itemId: '3', customerName: '勘兵衛', destinationName: '未定便', departureTime: null },
+      { itemId: '1', customerName: '和郷園', destinationName: '岩槻', initialContainer: '青コン' },
+      { itemId: '2', customerName: '農業総研', destinationName: '4関東', initialContainer: '折コン' },
+      { itemId: '3', customerName: '和郷園', destinationName: '戸田', initialContainer: '茶コン' },
+      { itemId: '4', customerName: '和郷園', destinationName: '川越', initialContainer: '青コン' },
     ]
 
-    const sorted = [...items].sort(comparePackItems)
-    expect(sorted[0]?.destinationName).toBe('早朝便')
-    expect(sorted[1]?.destinationName).toBe('定期便')
-    expect(sorted[2]?.destinationName).toBe('未定便')
+    const sorted = [...items].sort((a, b) => comparePackItems(a, b, 'container'))
+    // 青コンがまとまっているか
+    const blueIndices = sorted.map((it, idx) => (it.initialContainer === '青コン' ? idx : -1)).filter((x) => x >= 0)
+    expect(blueIndices.length).toBe(2)
+    expect(blueIndices[1]! - blueIndices[0]!).toBe(1)
   })
 
-  it('管理者が手動で並び替えた行（dailyPackSortOrder）は最優先される', () => {
+  it('どのモードでも管理者の当日手動ソート（dailyPackSortOrder）は最優先される', () => {
     const items: PackSortableItem[] = [
       { itemId: '1', customerName: '和郷園', destinationName: '定期便', departureTime: '06:00', dailyPackSortOrder: null },
       { itemId: '2', customerName: '勘兵衛', destinationName: '緊急手動先頭', departureTime: '14:00', dailyPackSortOrder: 10 },
     ]
 
-    const sorted = [...items].sort(comparePackItems)
-    expect(sorted[0]?.itemId).toBe('2') // dailyPackSortOrder = 10 が最優先
-    expect(sorted[1]?.itemId).toBe('1')
+    for (const mode of ['time', 'destination', 'container'] as const) {
+      const sorted = [...items].sort((a, b) => comparePackItems(a, b, mode))
+      expect(sorted[0]?.itemId).toBe('2') // dailyPackSortOrder = 10 が最優先
+    }
+  })
+})
+
+describe('getPackGroupInfo (ヘッダー情報の生成)', () => {
+  it('time モード: 便時刻スロットのヘッダーが生成される', () => {
+    const item: PackSortableItem = { itemId: '1', customerName: '和郷園', departureTime: '06:00' }
+    const info = getPackGroupInfo(item, 'time')
+    expect(info.title).toContain('06:00発 便')
+    expect(info.groupKey).toBe('time:06:00')
+
+    const unsetItem: PackSortableItem = { itemId: '2', customerName: '和郷園', departureTime: null }
+    const unsetInfo = getPackGroupInfo(unsetItem, 'time')
+    expect(unsetInfo.title).toContain('便未定')
+    expect(unsetInfo.groupKey).toBe('time:unset')
+  })
+
+  it('container モード: コンテナ名のヘッダーが生成される', () => {
+    const item: PackSortableItem = { itemId: '1', customerName: '和郷園', initialContainer: '青コン' }
+    const info = getPackGroupInfo(item, 'container')
+    expect(info.title).toContain('青コン')
+    expect(info.groupKey).toBe('container:青コン')
+  })
+
+  it('destination モード: 納品先名のヘッダーが生成される', () => {
+    const item: PackSortableItem = { itemId: '1', customerName: '和郷園', destinationName: '岩槻' }
+    const info = getPackGroupInfo(item, 'destination')
+    expect(info.title).toContain('和郷園 ➜ 岩槻')
+    expect(info.groupKey).toBe('dest:和郷園__岩槻')
   })
 })

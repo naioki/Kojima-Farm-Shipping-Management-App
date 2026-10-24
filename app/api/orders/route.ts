@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -40,6 +40,7 @@ const orderSchema = z.object({
  * 手動注文登録（admin バックオフィス）。
  * 手動入力は admin が直接確認している扱いとして status='approved' で登録する。
  * 各明細の数量が過去90日の最大値の2.5倍を超える場合は warnings を返す（保存は通す）。
+ * 全品目「出荷日の前日に収穫・パック」原則に従い harvest_tasks を自動同期。
  */
 export async function POST(req: NextRequest) {
   const user = await getAuthedUser()
@@ -187,7 +188,6 @@ export async function POST(req: NextRequest) {
       .from('order_items')
       .select('product_id, product_name, quantity, unit, unit_price, tax_rate, pack_config_id')
       .eq('order_id', replace_order_id)
-    // 差し替え前スナップショット（監査用）。取得失敗しても処理は続けるが無言にはしない。
     if (oldItemsErr) console.error('[api/orders] 差し替え前明細の取得に失敗（監査）:', oldItemsErr.message)
 
     const { error: delErr } = await admin.from('order_items').delete().eq('order_id', replace_order_id)
@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
 
     await admin.from('audit_log').insert({
       entity_type: 'orders',
-      entity_id: replace_order_id,
+      entityId: replace_order_id,
       action: 'UPDATE',
       changed_fields: ['order_items', 'delivery_date', 'destination_id'],
       old_values: { items: oldItems, delivery_date: existingOrder.delivery_date, destination_id: existingOrder.destination_id },
@@ -289,7 +289,6 @@ export async function POST(req: NextRequest) {
   }
 
   // 入り数(P/C)を規格マスタに保存（未設定のときのみ。既存値は誤上書きしない）。
-  // 注文本体は登録済みなので、ここでの失敗は注文を巻き戻さない（best-effort）。
   const withPacks = items.filter((it) => typeof it.packs_per_case === 'number' && it.packs_per_case > 0)
   if (withPacks.length > 0) {
     const pids = [...new Set(withPacks.map((it) => it.product_id))]
@@ -298,7 +297,6 @@ export async function POST(req: NextRequest) {
       .select('product_id, packs_per_case')
       .eq('customer_id', customer_id)
       .in('product_id', pids)
-    // P/C保存は best-effort（注文本体は登録済み）。失敗しても巻き戻さないが無言にはしない。
     if (existingErr) console.error('[api/orders] P/Cルールの取得に失敗（best-effort保存）:', existingErr.message)
     const ruleByProduct = new Map((existing ?? []).map((r) => [r.product_id as string, r]))
 
@@ -318,10 +316,42 @@ export async function POST(req: NextRequest) {
             .eq('customer_id', customer_id)
             .eq('product_id', it.product_id)
         }
-        // 既に入り数が入っている場合は上書きしない
       } catch (e) {
         console.error('[POST /api/orders] packs_per_case upsert skipped', e)
       }
+    }
+  }
+
+  // 全品目「出荷日の前日に収穫・パック」の原則に従い harvest_tasks を自動同期
+  if (delivery_date && orderId) {
+    try {
+      const { data: dbItems } = await admin
+        .from('order_items')
+        .select('id, product_id, quantity')
+        .eq('order_id', orderId)
+
+      if (dbItems && dbItems.length > 0) {
+        const itemIds = dbItems.map((i) => i.id)
+        await admin.from('harvest_tasks').delete().in('order_item_id', itemIds)
+
+        const harvestTaskDate = shiftDateStr(delivery_date, -1)
+        const taskRows = dbItems
+          .filter((it) => Boolean(it.product_id))
+          .map((it) => ({
+            product_id: it.product_id!,
+            order_item_id: it.id,
+            required_qty: Number(it.quantity),
+            task_date: harvestTaskDate,
+            status: 'not_started' as const,
+          }))
+
+        if (taskRows.length > 0) {
+          const { error: htErr } = await admin.from('harvest_tasks').insert(taskRows)
+          if (htErr) console.error('[POST /api/orders] harvest_tasks 自動生成エラー:', htErr.message)
+        }
+      }
+    } catch (htEx) {
+      console.error('[POST /api/orders] harvest_tasks 生成失敗 (続行):', htEx)
     }
   }
 

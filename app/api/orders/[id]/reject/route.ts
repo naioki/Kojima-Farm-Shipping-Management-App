@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -14,6 +14,7 @@ const rejectSchema = z.object({
  * 承認待ち注文の「承認しない（却下・キャンセル）」API。
  * 受信ボックスで不要な注文や誤判定、重複FAXを承認せずに却下する。
  * orders.status を 'cancelled' に更新し、紐づく order_receipts を 'dismissed' に更新する。
+ * 紐づく harvest_tasks（収穫タスク）もクリーンアップして現場のゴースト作業を防止する。
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
@@ -23,8 +24,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
 
-  const supabase = createClient()
-  const { data: profile } = await supabase
+  const admin = createAdminClient()
+  const { data: profile } = await admin
     .from('users')
     .select('role')
     .eq('id', user.id)
@@ -38,7 +39,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const parsed = rejectSchema.safeParse(body)
   const reasonText = parsed.success && parsed.data.reason ? parsed.data.reason : '未指定（手動却下）'
 
-  const admin = createAdminClient()
   const { data: order, error: readErr } = await admin
     .from('orders')
     .select('id, status, customer_id, note')
@@ -67,13 +67,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   if (orderUpdateErr) return NextResponse.json({ error: orderUpdateErr.message }, { status: 500 })
 
-  // 2. 紐づく order_receipts を dismissed に更新（受信ボックスに残らないようにする）
+  // 2. 収穫タスクのクリーンアップ（現場のゴースト収穫作業を防止）
+  try {
+    const { data: cancelledItems } = await admin
+      .from('order_items')
+      .select('id')
+      .eq('order_id', params.id)
+    if (cancelledItems && cancelledItems.length > 0) {
+      await admin
+        .from('harvest_tasks')
+        .delete()
+        .in('order_item_id', cancelledItems.map((i) => i.id))
+    }
+  } catch (cleanErr) {
+    console.warn('[reject] harvest_tasks cleanup warning:', cleanErr)
+  }
+
+  // 3. 紐づく order_receipts を dismissed に更新（受信ボックスに残らないようにする）
   await admin
     .from('order_receipts')
     .update({ status: 'dismissed' })
     .eq('order_id', params.id)
 
-  // 3. 監査ログ
+  // 4. 監査ログ
   await writeAudit(admin, {
     entityType: 'orders',
     entityId: params.id,

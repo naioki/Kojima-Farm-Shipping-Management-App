@@ -65,7 +65,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
       admin.from('deliveries').delete().eq('customer_id', id),
       admin.from('delivery_destinations').delete().eq('customer_id', id),
       admin.from('ai_learning_examples').update({ customer_id: null }).eq('customer_id', id),
-      admin.from('order_receipts').update({ matched_customer_id: null }).eq('matched_customer_id', id),
+      admin.from('order_receipts').update({ customer_id: null }).eq('customer_id', id),
     ])
 
     const { data, error } = await admin.from('customers').delete().eq('id', id).select('id').maybeSingle()
