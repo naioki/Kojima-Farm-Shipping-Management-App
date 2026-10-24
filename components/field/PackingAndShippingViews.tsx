@@ -200,6 +200,21 @@ export function PackingAndShippingViews({
     setItems((prev) => prev.filter((it) => it.itemId !== itemId))
   }
 
+  // 規格・荷姿即時連動
+  const handleDetailsChange = (
+    itemId: string,
+    newSpec: string | null,
+    newContainer: string | null,
+  ) => {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.itemId === itemId
+          ? { ...it, initialSpec: newSpec, initialContainer: newContainer }
+          : it,
+      ),
+    )
+  }
+
   // 管理者による上下移動（パック作業順）
   const handleMove = async (index: number, direction: 'up' | 'down') => {
     if (!isAdmin || busyReorder) return
@@ -529,6 +544,7 @@ export function PackingAndShippingViews({
                   }
                   onStatusChange={handleStatusChange}
                   onShippedQtyChange={handleShippedQtyChange}
+                  onDetailsChange={handleDetailsChange}
                   onDeleted={handleDeleted}
                 />
               </div>

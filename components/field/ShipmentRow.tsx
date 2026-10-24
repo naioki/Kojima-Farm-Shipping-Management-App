@@ -90,6 +90,8 @@ export interface ShipmentRowProps {
   onDeleted?: (itemId: string) => void
   /** 途中数（できた数）が更新された瞬間に呼ばれる。親のリアルタイム進捗メーターと即時同期する */
   onShippedQtyChange?: (itemId: string, newQty: number | null) => void
+  /** 規格・荷姿が更新された瞬間に呼ばれる。親の内訳メーターと即時同期する */
+  onDetailsChange?: (itemId: string, newSpec: string | null, newContainer: string | null) => void
 }
 
 /**
@@ -134,6 +136,7 @@ export function ShipmentRow({
   onStatusSettled,
   onDeleted,
   onShippedQtyChange,
+  onDetailsChange,
 }: ShipmentRowProps) {
   const router = useRouter()
   const { enqueue } = useOutbox()
@@ -398,7 +401,12 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       onShippedQtyChange?.(itemId, shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null)
-      toast.success('記録を保存しました')
+      onDetailsChange?.(itemId, spec || null, container || null)
+      if ((spec && spec !== initialSpec) || (container && container !== initialContainer)) {
+        toast.success('記録を保存し、規格・荷姿を自動学習ループへ蓄積しました 💡')
+      } else {
+        toast.success('記録を保存しました')
+      }
       router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))

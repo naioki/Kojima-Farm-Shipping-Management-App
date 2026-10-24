@@ -144,6 +144,26 @@ export function ShipmentAddForm({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [analyzingPhoto, setAnalyzingPhoto] = useState(false)
 
+  // 📄 1枚の伝票に複数明細・複数店舗がある場合の候補リスト
+  interface ParsedCandidateEntry {
+    customer_name?: string | null
+    delivery_date?: string | null
+    destination_name?: string | null
+    product_name?: string | null
+    raw_name?: string | null
+    cases?: number | null
+    quantity?: string | number | null
+    packs_per_case?: number | null
+    registered?: boolean
+  }
+  const [parsedCandidates, setParsedCandidates] = useState<ParsedCandidateEntry[]>([])
+  const [activeCandidateIdx, setActiveCandidateIdx] = useState<number>(0)
+
+  // 📍 既存取引先への新規納入先クイック追加 state
+  const [showNewDestForExisting, setShowNewDestForExisting] = useState(false)
+  const [newDestForExistingName, setNewDestForExistingName] = useState('')
+  const [creatingDestForExisting, setCreatingDestForExisting] = useState(false)
+
   // 🏢 新規取引先ワンストップ一括作成 state
   const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState('')
@@ -236,9 +256,11 @@ export function ShipmentAddForm({
   )
 
   useEffect(() => {
-    if (customerDestinations.length === 1) setDestinationId(customerDestinations[0]!.id)
-    else if (!customerDestinations.some((d) => d.id === destinationId)) setDestinationId('')
-  }, [customerId, customerDestinations, destinationId])
+    if (!customerId) return
+    const destsForCust = allDestinations.filter((d) => d.customerId === customerId)
+    if (destsForCust.length === 1 && !showNewDestForExisting) setDestinationId(destsForCust[0]!.id)
+    else if (!destsForCust.some((d) => d.id === destinationId)) setDestinationId('')
+  }, [customerId, allDestinations, destinationId, showNewDestForExisting])
 
   const selectedProduct = products.find((p) => p.id === productId)
   const unit = selectedProduct?.unit ?? 'P'
@@ -504,6 +526,87 @@ export function ShipmentAddForm({
     })
   }
 
+  function applyAllParsedOrders(
+    orders?: Array<{
+      customer_name?: string | null
+      delivery_date?: string | null
+      destination_name?: string | null
+      items?: Array<{
+        product_name?: string | null
+        raw_name?: string | null
+        cases?: number | null
+        quantity?: string | number | null
+        packs_per_case?: number | null
+      }>
+    }> | null,
+    clarifications?: Array<{
+      targetField: string
+      title: string
+      reason: string
+      options: Array<{ label: string; value: string }>
+    }> | null,
+  ) {
+    const entries: ParsedCandidateEntry[] = []
+    for (const ord of orders ?? []) {
+      const items = ord.items ?? []
+      if (items.length === 0) {
+        entries.push({
+          customer_name: ord.customer_name,
+          delivery_date: ord.delivery_date,
+          destination_name: ord.destination_name,
+          registered: false,
+        })
+      } else {
+        for (const it of items) {
+          entries.push({
+            customer_name: ord.customer_name,
+            delivery_date: ord.delivery_date,
+            destination_name: ord.destination_name,
+            product_name: it.product_name,
+            raw_name: it.raw_name,
+            cases: it.cases,
+            quantity: it.quantity,
+            packs_per_case: it.packs_per_case,
+            registered: false,
+          })
+        }
+      }
+    }
+
+    setParsedCandidates(entries)
+    setActiveCandidateIdx(0)
+    if (entries.length === 0) {
+      applyParsedOrder(null, clarifications)
+      return
+    }
+    const first = entries[0]!
+    applyParsedOrder(
+      {
+        customer_name: first.customer_name,
+        delivery_date: first.delivery_date,
+        destination_name: first.destination_name,
+        items: [first],
+      },
+      clarifications,
+    )
+  }
+
+  function selectParsedCandidate(idx: number, candidatesList = parsedCandidates) {
+    const target = candidatesList[idx]
+    if (!target) return
+    setActiveCandidateIdx(idx)
+    setUncertainItems([])
+    applyParsedOrder(
+      {
+        customer_name: target.customer_name,
+        delivery_date: target.delivery_date,
+        destination_name: target.destination_name,
+        items: [target],
+      },
+      null,
+    )
+  }
+
   function applyParsedOrder(
     parsedOrder?: {
       customer_name?: string | null
@@ -559,6 +662,7 @@ export function ShipmentAddForm({
 
     if (matchedCust) {
       setCustomerId(matchedCust.id)
+      setShowNewCustomer(false)
       badges.push(`取引先: ${matchedCust.name}`)
     } else if (detectedCustName) {
       // 未知の取引先が検出された場合：ワンストップ新規登録を開き、AI抽出値を初期セット！
@@ -599,19 +703,31 @@ export function ShipmentAddForm({
       ])
     }
 
-    // 3. 納入先
+    // 3. 納入先（取引先が確定している場合はその取引先の納入先プール内で照合し、他社への誤マッチを完全防止）
     if (parsedOrder.destination_name) {
       const dName = parsedOrder.destination_name.trim()
-      const matchedDest = allDestinations.find(
+      const destPool = matchedCust
+        ? allDestinations.filter((d) => d.customerId === matchedCust.id)
+        : allDestinations
+      const matchedDest = destPool.find(
         (d) => d.label.includes(dName) || dName.includes(d.label),
       )
       if (matchedDest) {
         setDestinationId(matchedDest.id)
+        setShowNewDestForExisting(false)
         badges.push(`納入先: ${matchedDest.label}`)
+      } else if (matchedCust) {
+        // 既存取引先の未登録納入先・運送便が検出された場合は自動で「＋新規納入先」枠を展開！
+        setDestinationId('')
+        setNewDestForExistingName(dName)
+        setShowNewDestForExisting(true)
+        badges.push(`未登録の納入先・運送: ${dName} (登録枠を開きました)`)
       } else {
         setNewDestinationName(dName)
         badges.push(`納入先候補: ${dName}`)
       }
+    } else {
+      setShowNewDestForExisting(false)
     }
 
     // 4. 品目・数量・入数
@@ -689,7 +805,7 @@ export function ShipmentAddForm({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
 
-      applyParsedOrder(data.orders?.[0], data.clarifications)
+      applyAllParsedOrders(data.orders, data.clarifications)
     } catch (err: unknown) {
       toast.error((err as Error)?.message || '読み取りに失敗しました')
     } finally {
@@ -726,7 +842,7 @@ export function ShipmentAddForm({
           })
           const data = await res.json()
           if (!res.ok) throw new Error(data.error ?? 'AI解析に失敗しました')
-          applyParsedOrder(data.orders?.[0], data.clarifications)
+          applyAllParsedOrders(data.orders, data.clarifications)
         } catch (err: unknown) {
           toast.error((err as Error)?.message || 'ファイルの読み取りに失敗しました')
         } finally {
@@ -741,6 +857,61 @@ export function ShipmentAddForm({
     } catch (err: unknown) {
       setAnalyzingPhoto(false)
       toast.error((err as Error)?.message || 'ファイルの処理に失敗しました')
+    }
+  }
+
+  // 📍 既存取引先への新規納入先クイック追加
+  async function handleCreateDestinationForExisting() {
+    const dName = newDestForExistingName.trim()
+    if (!customerId) {
+      toast.error('先に取引先を選択してください')
+      return
+    }
+    if (!dName) {
+      toast.error('納入先・運送便名を入力してください')
+      return
+    }
+    setCreatingDestForExisting(true)
+    try {
+      const res = await fetch('/api/destinations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customerId,
+          code: dName,
+          full_name: dName,
+        }),
+      })
+      const json = await res.json()
+      if (res.status === 409 && json.existing) {
+        const ex = json.existing
+        const label = ex.code || ex.full_name || dName
+        setAllDestinations((prev) =>
+          prev.some((d) => d.id === ex.id) ? prev : [...prev, { id: ex.id, customerId, label }],
+        )
+        setDestinationId(ex.id)
+        setShowNewDestForExisting(false)
+        setNewDestForExistingName('')
+        toast.success(`登録済みの納入先「${label}」を選択しました`)
+        return
+      }
+      if (!res.ok || !json.destination?.id) {
+        throw new Error(json.error ?? '納入先の作成に失敗しました')
+      }
+      const created = json.destination
+      const label = created.code || created.full_name || dName
+      setAllDestinations((prev) => [
+        ...prev.filter((d) => d.id !== created.id),
+        { id: created.id, customerId, label },
+      ])
+      setDestinationId(created.id)
+      setShowNewDestForExisting(false)
+      setNewDestForExistingName('')
+      toast.success(`納入先「${label}」を追加し、選択しました！`)
+    } catch (e: unknown) {
+      toast.error(fieldErrorMessage(e, '納入先の追加に失敗しました'))
+    } finally {
+      setCreatingDestForExisting(false)
     }
   }
 
@@ -904,7 +1075,28 @@ export function ShipmentAddForm({
         })
       }
 
-      // リセット
+      // 複数明細候補がある場合は、現在の候補を登録済みにし、次の未登録候補へ自動遷移
+      if (parsedCandidates.length > 1) {
+        const updatedCandidates = parsedCandidates.map((c, idx) =>
+          idx === activeCandidateIdx ? { ...c, registered: true } : c,
+        )
+        const nextUnregisteredIdx = updatedCandidates.findIndex((c) => !c.registered)
+        setParsedCandidates(updatedCandidates)
+        router.refresh()
+
+        if (nextUnregisteredIdx !== -1) {
+          const remainingCount = updatedCandidates.filter((c) => !c.registered).length
+          toast.success(
+            `続けて次の明細（残り ${remainingCount} 件）を入力欄にセットしました！`,
+            { duration: 4000 },
+          )
+          setStep('input')
+          selectParsedCandidate(nextUnregisteredIdx, updatedCandidates)
+          return
+        }
+      }
+
+      // すべて完了時のリセット
       setIsOpen(false)
       setStep('input')
       setQtyRaw('')
@@ -912,6 +1104,8 @@ export function ShipmentAddForm({
       setPhotoPreview(null)
       setConfirmedBadges([])
       setUncertainItems([])
+      setParsedCandidates([])
+      setActiveCandidateIdx(0)
       aiOriginalParsedRef.current = null
       router.refresh()
     } catch (e: unknown) {
@@ -1233,6 +1427,57 @@ export function ShipmentAddForm({
                 </div>
               )}
 
+              {/* 📄 1枚の伝票に複数明細・複数店舗が検出された場合の切替セレクタ */}
+              {parsedCandidates.length > 1 && !analyzingNatural && !analyzingPhoto && (
+                <div className="rounded-xl border-2 border-forest-300 bg-white p-3 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-forest-900 flex items-center gap-1.5">
+                      <span>📄 伝票から {parsedCandidates.length} 件の明細を検出（順番にすべて登録できます）</span>
+                    </span>
+                    <span className="rounded-full bg-forest-100 px-2 py-0.5 text-[10px] font-black text-forest-800">
+                      完了 {parsedCandidates.filter((c) => c.registered).length} / {parsedCandidates.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parsedCandidates.map((cand, cIdx) => {
+                      const labelDest = cand.destination_name || cand.customer_name || `明細${cIdx + 1}`
+                      const labelProd = cand.product_name || cand.raw_name || '品目'
+                      const labelQty =
+                        cand.cases != null && cand.cases > 0
+                          ? `${cand.cases}箱`
+                          : cand.quantity
+                          ? `${cand.quantity}P`
+                          : ''
+                      const isCurrent = cIdx === activeCandidateIdx
+                      return (
+                        <button
+                          key={cIdx}
+                          type="button"
+                          onClick={() => selectParsedCandidate(cIdx)}
+                          className={cn(
+                            'rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5',
+                            cand.registered
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-800 opacity-75'
+                              : isCurrent
+                              ? 'border-forest-700 bg-forest-700 text-white shadow-xs ring-2 ring-forest-300'
+                              : 'border-line bg-bg-soft/70 text-ink hover:bg-bg-soft',
+                          )}
+                        >
+                          <span>
+                            {cIdx + 1}. {labelDest} / {labelProd} {labelQty}
+                          </span>
+                          {cand.registered && (
+                            <span className="rounded bg-emerald-600 text-white px-1 py-0.2 text-[10px] font-black">
+                              ✓済
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* 🟢 【確定事項】バッジ表示 */}
               {confirmedBadges.length > 0 && !analyzingNatural && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 space-y-1.5">
@@ -1536,15 +1781,64 @@ export function ShipmentAddForm({
                 </div>
               )}
 
-              {/* 納入先セレクト */}
-              {customerDestinations.length > 0 && (
-                <Select
-                  label={`納入先${destinationRequired ? '（必須）' : '（任意）'}`}
-                  placeholder="納入先を選択..."
-                  value={destinationId}
-                  onChange={(e) => setDestinationId(e.target.value)}
-                  options={customerDestinations.map((d) => ({ value: d.id, label: d.label }))}
-                />
+              {/* 納入先セレクト ＆ 既存取引先への新規納入先クイック追加 */}
+              {customerId && !showNewCustomer && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-ink">
+                      納入先・運送便{destinationRequired ? '（必須）' : '（任意）'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewDestForExisting(!showNewDestForExisting)}
+                      className="text-xs font-bold text-forest-700 hover:text-forest-800 flex items-center gap-0.5"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {showNewDestForExisting ? '閉じる' : '新しい納入先・運送便を追加'}
+                    </button>
+                  </div>
+
+                  {customerDestinations.length > 0 ? (
+                    <Select
+                      placeholder="納入先を選択..."
+                      value={destinationId}
+                      onChange={(e) => setDestinationId(e.target.value)}
+                      options={customerDestinations.map((d) => ({ value: d.id, label: d.label }))}
+                    />
+                  ) : (
+                    !showNewDestForExisting && (
+                      <p className="text-xs text-ink-muted bg-bg-soft/60 rounded-lg px-3 py-2 border border-line">
+                        登録済みの納入先はありません（直接納品、または右上の「＋新しい納入先・運送便を追加」から小松運輸などを登録できます）
+                      </p>
+                    )
+                  )}
+
+                  {showNewDestForExisting && (
+                    <div className="rounded-xl border-2 border-forest-300 bg-forest-50/60 p-3 space-y-2 shadow-2xs">
+                      <p className="text-xs font-black text-forest-900">
+                        📍 選択中の取引先に新しい納入先・運送便を追加
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="例: 小松運輸 / 船橋センター / 柏店"
+                          value={newDestForExistingName}
+                          onChange={(e) => setNewDestForExistingName(e.target.value)}
+                          className="bg-white flex-1"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleCreateDestinationForExisting}
+                          isLoading={creatingDestForExisting}
+                          disabled={!newDestForExistingName.trim()}
+                          className="bg-forest-700 hover:bg-forest-800 text-white font-bold h-10 px-3.5 shrink-0"
+                        >
+                          追加して選択
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* 品目選択（カテゴリ別） */}

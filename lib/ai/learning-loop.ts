@@ -5,7 +5,15 @@ import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
 export interface MistakeFeedbackInput {
   clientName: string
   rawInput?: string | null
-  correctedField: 'customer' | 'destination' | 'quantity' | 'packs_per_case' | 'product' | 'general'
+  correctedField:
+    | 'customer'
+    | 'destination'
+    | 'quantity'
+    | 'packs_per_case'
+    | 'product'
+    | 'spec'
+    | 'container'
+    | 'general'
   correctedValue: string
   originalAiValue?: string | null
   note?: string | null
@@ -30,30 +38,53 @@ export async function recordMistakeFeedback(
 
     // ルール文の自動合成（省トークン・高精度ルール形式）
     let ruleText = ''
+    let prefixKey = ''
     if (input.correctedField === 'customer' && raw) {
-      ruleText = `【自動学習・取引先判定】伝票表記『${raw}』は取引先『${input.correctedValue}』として処理。宛名『アイプラス』『小島農園』は当農園(受託側)のため取引先トリガーとしない。`
+      prefixKey = `【自動学習・取引先判定】伝票表記『${raw}』`
+      ruleText = `${prefixKey}は取引先『${input.correctedValue}』として処理。宛名『アイプラス』『小島農園』は当農園(受託側)のため取引先トリガーとしない。`
     } else if (input.correctedField === 'destination') {
-      ruleText = `【自動学習・納入先】取引先『${client}』の納入先・運送『${raw || input.correctedValue}』は『${input.correctedValue}』に紐付ける。`
+      prefixKey = `【自動学習・納入先】取引先『${client}』の納入先・運送『${raw || input.correctedValue}』`
+      ruleText = `${prefixKey}は『${input.correctedValue}』に紐付ける。`
     } else if (input.correctedField === 'packs_per_case') {
-      ruleText = `【自動学習・入数】取引先『${client}』の入数は1箱${input.correctedValue}P（総パック数 ＝ ケース数 × ${input.correctedValue}）。`
+      prefixKey = `【自動学習・入数】取引先『${client}』`
+      ruleText = `${prefixKey}の入数は1箱${input.correctedValue}P（総パック数 ＝ ケース数 × ${input.correctedValue}）。`
     } else if (input.correctedField === 'product' && raw) {
-      ruleText = `【自動学習・品目名寄せ】伝票上の品目表記『${raw}』は品目『${input.correctedValue}』に正規化する。`
+      prefixKey = `【自動学習・品目名寄せ】伝票上の品目表記『${raw}』`
+      ruleText = `${prefixKey}は品目『${input.correctedValue}』に正規化する。`
+    } else if (input.correctedField === 'spec') {
+      prefixKey = `【自動学習・規格設定】取引先『${client}』${input.note ? `（${input.note}）` : ''}`
+      ruleText = `${prefixKey}の規格は『${input.correctedValue}』を標準適用する。`
+    } else if (input.correctedField === 'container') {
+      prefixKey = `【自動学習・コンテナ設定】取引先『${client}』${input.note ? `（${input.note}）` : ''}`
+      ruleText = `${prefixKey}のコンテナは『${input.correctedValue}』を標準適用する。`
     } else if (input.correctedField === 'quantity') {
       ruleText = `【自動学習・数量補正】取引先『${client}』: ${raw ? `AI読取『${raw}』ではなく` : ''}『${input.correctedValue}』として処理。`
     } else {
       ruleText = `【自動学習・改善】取引先『${client}』: ${input.note || `${input.correctedField}を『${input.correctedValue}』として処理`}`
     }
 
-    // 同一ルールの重複確認
-    const { data: existing } = await admin
+    // 同一ルールの重複確認・または同一プレフィックスの自動学習ルール上書き（トークン肥大化防止）
+    const { data: existingList } = await admin
       .from('ai_rules')
-      .select('id, rule_text')
+      .select('id, rule_text, source')
       .eq('client_name', client)
-      .eq('rule_text', ruleText)
-      .maybeSingle()
 
-    if (existing) {
-      return { success: true, ruleId: existing.id, isNew: false }
+    const exactMatch = (existingList ?? []).find((r) => r.rule_text === ruleText)
+    if (exactMatch) {
+      return { success: true, ruleId: exactMatch.id, isNew: false }
+    }
+
+    const prefixMatch = prefixKey
+      ? (existingList ?? []).find((r) => r.source === 'auto_loop' && r.rule_text.startsWith(prefixKey))
+      : undefined
+
+    if (prefixMatch) {
+      await admin
+        .from('ai_rules')
+        .update({ rule_text: ruleText, is_active: true })
+        .eq('id', prefixMatch.id)
+      invalidateAiRulesCache()
+      return { success: true, ruleId: prefixMatch.id, isNew: false }
     }
 
     const { data: inserted, error } = await admin

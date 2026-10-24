@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
+import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 
 export const runtime = 'nodejs'
 
@@ -122,6 +123,76 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         .eq('order_item_id', params.id)
     } catch (htErr) {
       console.warn('[order-items] harvest_tasks 数量同期警告:', htErr)
+    }
+  }
+
+  // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」手動修正を自動学習ループ & 取引先×品目ルールへ自動蓄積
+  if (
+    !('field_status' in input) &&
+    ((input.spec !== undefined && input.spec !== current.spec && input.spec) ||
+      (input.container_type !== undefined && input.container_type !== current.container_type && input.container_type))
+  ) {
+    try {
+      const { data: ord } = await admin
+        .from('orders')
+        .select('customer_id')
+        .eq('id', current.order_id)
+        .maybeSingle()
+      if (ord?.customer_id) {
+        const { data: cust } = await admin
+          .from('customers')
+          .select('name')
+          .eq('id', ord.customer_id)
+          .maybeSingle()
+        const clientName = cust?.name || '共通'
+
+        // 1. 取引先×品目マスタ（customer_product_rules）へも自動反映して次回以降のデフォルト化
+        const rulePatch: Record<string, unknown> = {}
+        if (input.spec && input.spec !== current.spec) {
+          rulePatch.label_spec = input.spec
+          const m = input.spec.normalize('NFKC').match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+          if (m) {
+            const pNum = Number(m[1] || m[2])
+            if (pNum > 0 && pNum <= 200) rulePatch.packs_per_case = pNum
+          }
+        }
+        if (input.container_type && input.container_type !== current.container_type) {
+          rulePatch.default_container_type = input.container_type
+        }
+        if (Object.keys(rulePatch).length > 0 && current.product_id) {
+          const { data: existingRule } = await admin
+            .from('customer_product_rules')
+            .select('id')
+            .eq('customer_id', ord.customer_id)
+            .eq('product_id', current.product_id)
+            .maybeSingle()
+          if (existingRule) {
+            await admin.from('customer_product_rules').update(rulePatch).eq('id', existingRule.id)
+          }
+        }
+
+        // 2. AI自動学習ループ（ai_rules）へ蓄積
+        if (input.spec && input.spec !== current.spec) {
+          await recordMistakeFeedback({
+            clientName,
+            correctedField: 'spec',
+            correctedValue: input.spec,
+            originalAiValue: current.spec,
+            note: current.product_name,
+          })
+        }
+        if (input.container_type && input.container_type !== current.container_type) {
+          await recordMistakeFeedback({
+            clientName,
+            correctedField: 'container',
+            correctedValue: input.container_type,
+            originalAiValue: current.container_type,
+            note: current.product_name,
+          })
+        }
+      }
+    } catch (learnErr) {
+      console.warn('[order-items] 現場修正からの自動学習ループ同期警告:', learnErr)
     }
   }
 
