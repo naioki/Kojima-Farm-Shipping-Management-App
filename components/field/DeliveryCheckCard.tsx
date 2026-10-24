@@ -200,7 +200,9 @@ export function DeliveryCheckCard({
 
       {/* ① 画面表示用：高視認性カードチェックリスト（モバイル最適化） */}
       <div className="space-y-2.5 print:hidden">
-        {items.map((it) => {
+        {items
+          .filter((it) => (Number(it.quantity) || 0) > 0)
+          .map((it) => {
           const isChecked = status !== 'planned' || checked.has(it.id)
           return (
             <div
@@ -292,7 +294,9 @@ export function DeliveryCheckCard({
           </tr>
         </thead>
         <tbody>
-          {items.map((it) => (
+          {items
+            .filter((it) => (Number(it.quantity) || 0) > 0)
+            .map((it) => (
             <tr key={it.id} className="border-b border-line last:border-0 print:border-black">
               <td className="py-2.5 pr-2 font-medium text-ink">{it.productName}</td>
               <td className="num py-2.5 pr-2 tabular-nums text-ink">

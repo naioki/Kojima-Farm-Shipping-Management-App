@@ -55,7 +55,8 @@ export default async function DeliveriesPage({
     : null
   if (itemsRes?.error)
     return <ErrorState message="配送明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
-  const items = itemsRes?.data ?? []
+  // 数量が0の品目は非表示
+  const items = (itemsRes?.data ?? []).filter((i) => (Number(i.quantity) || 0) > 0)
 
   // 表示用マスタ＋その日の配送チェック状態
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
@@ -320,7 +321,10 @@ export default async function DeliveriesPage({
   })[] = []
 
   for (const cEntry of customerGroupMap.values()) {
-    const destinationsList = Array.from(cEntry.destinationsMap.values())
+    const destinationsList = Array.from(cEntry.destinationsMap.values()).filter(
+      (d) => d.totalQty > 0 || d.items.length > 0,
+    )
+    if (destinationsList.length === 0) continue
 
     let totalCases = 0
     let totalFractionBoxes = 0

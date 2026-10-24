@@ -524,6 +524,17 @@ export const shipmentAddSchema = z.object({
   shipping_time: z.enum(['am', 'pm']).optional(),
   /** 現場メモ・備考 */
   note: z.string().optional(),
+  /** AI解析時の初回読取結果（ユーザー修正との差分を学習ループへ蓄積用） */
+  ai_original: z
+    .object({
+      customer_name: z.string().nullish(),
+      destination_name: z.string().nullish(),
+      cases: z.number().nullish(),
+      packs_per_case: z.number().nullish(),
+      quantity: z.union([z.string(), z.number()]).nullish(),
+      product_name: z.string().nullish(),
+    })
+    .optional(),
 })
 export type ShipmentAddInput = z.infer<typeof shipmentAddSchema>
 

@@ -6,6 +6,7 @@ import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
 import { shiftDateStr } from '@/lib/dates'
+import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 
 export const runtime = 'nodejs'
 
@@ -305,5 +306,62 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ item: finalItem, mode }, { status: 201 })
+  // ⚡ AI読取誤読・修正差分を検知し自律学習ループ（ai_rules）へ自動蓄積
+  let learnedMistake = false
+  if (parsed.data.ai_original && customer_id) {
+    try {
+      const { data: custObj } = await supabase
+        .from('customers')
+        .select('name')
+        .eq('id', customer_id)
+        .maybeSingle()
+      const confirmedCustName = custObj?.name || ''
+      const orig = parsed.data.ai_original
+
+      // 1. 取引先の誤読修正
+      if (orig.customer_name && orig.customer_name.trim() !== confirmedCustName) {
+        await recordMistakeFeedback({
+          clientName: confirmedCustName,
+          rawInput: orig.customer_name,
+          correctedField: 'customer',
+          correctedValue: confirmedCustName,
+        })
+        learnedMistake = true
+      }
+
+      // 2. 納入先の誤読修正
+      if (destination_id && orig.destination_name) {
+        const { data: destObj } = await supabase
+          .from('delivery_destinations')
+          .select('full_name, code')
+          .eq('id', destination_id)
+          .maybeSingle()
+        const confirmedDestName = destObj?.full_name || destObj?.code || ''
+        if (confirmedDestName && orig.destination_name.trim() !== confirmedDestName) {
+          await recordMistakeFeedback({
+            clientName: confirmedCustName,
+            rawInput: orig.destination_name,
+            correctedField: 'destination',
+            correctedValue: confirmedDestName,
+          })
+          learnedMistake = true
+        }
+      }
+
+      // 3. 入数の修正
+      if (rule?.packs_per_case && orig.packs_per_case && orig.packs_per_case !== rule.packs_per_case) {
+        await recordMistakeFeedback({
+          clientName: confirmedCustName,
+          rawInput: String(orig.packs_per_case),
+          correctedField: 'packs_per_case',
+          correctedValue: String(rule.packs_per_case),
+        })
+        learnedMistake = true
+      }
+    } catch (err) {
+      console.warn('[api/shipments] AI学習ループ蓄積警告:', err)
+    }
+  }
+
+  return NextResponse.json({ item: finalItem, mode, learnedMistake }, { status: 201 })
 }

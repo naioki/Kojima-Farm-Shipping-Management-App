@@ -273,49 +273,53 @@ export function HarvestPulseSummary({
         </summary>
 
         <div className="border-t border-line/60 px-3.5 py-3 space-y-3 text-xs bg-bg-soft/20">
-          {/* コンテナ別箱数 */}
-          {containerBreakdown.length > 0 && (
+          {/* コンテナ別箱数（数量0は非表示） */}
+          {containerBreakdown.filter((cb) => cb.boxes > 0).length > 0 && (
             <div>
               <div className="font-extrabold text-ink mb-1.5 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                 <span>コンテナ種別内訳</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {containerBreakdown.map((cb) => (
-                  <div
-                    key={cb.type}
-                    className="rounded-lg border border-line bg-white p-2 text-center"
-                  >
-                    <span className="block text-xs font-bold text-ink">{cb.type}</span>
-                    <span className="text-base font-black text-ink tabular-nums">
-                      {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
-                    </span>
-                  </div>
-                ))}
+                {containerBreakdown
+                  .filter((cb) => cb.boxes > 0)
+                  .map((cb) => (
+                    <div
+                      key={cb.type}
+                      className="rounded-lg border border-line bg-white p-2 text-center"
+                    >
+                      <span className="block text-xs font-bold text-ink">{cb.type}</span>
+                      <span className="text-base font-black text-ink tabular-nums">
+                        {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           )}
 
-          {/* 規格別内訳 */}
-          {specBreakdown.length > 0 && (
+          {/* 規格別内訳（数量0は非表示） */}
+          {specBreakdown.filter((sb) => sb.packs > 0 || sb.boxes > 0).length > 0 && (
             <div>
               <div className="font-extrabold text-ink mb-1.5 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                 <span>規格別内訳（畑への収穫指示用）</span>
               </div>
               <div className="space-y-1">
-                {specBreakdown.map((sb) => (
-                  <div
-                    key={sb.spec}
-                    className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line"
-                  >
-                    <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
-                    <span className="font-black text-ink tabular-nums">
-                      {sb.packs.toLocaleString()} P{' '}
-                      <span className="text-ink-soft text-xs font-bold">({sb.boxes} 箱)</span>
-                    </span>
-                  </div>
-                ))}
+                {specBreakdown
+                  .filter((sb) => sb.packs > 0 || sb.boxes > 0)
+                  .map((sb) => (
+                    <div
+                      key={sb.spec}
+                      className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line"
+                    >
+                      <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
+                      <span className="font-black text-ink tabular-nums">
+                        {sb.packs.toLocaleString()} P{' '}
+                        <span className="text-ink-soft text-xs font-bold">({sb.boxes} 箱)</span>
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

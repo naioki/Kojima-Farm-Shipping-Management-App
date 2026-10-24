@@ -128,6 +128,16 @@ export function ShipmentAddForm({
     delivery_date: string
   } | null>(null)
 
+  // ⚡ AI初回読取の記録（ユーザー修正差分を学習ループへ蓄積用）
+  const aiOriginalParsedRef = useRef<{
+    customer_name?: string | null
+    destination_name?: string | null
+    cases?: number | null
+    packs_per_case?: number | null
+    quantity?: string | number | null
+    product_name?: string | null
+  } | null>(null)
+
   // 画像・カメラ
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
@@ -516,6 +526,17 @@ export function ShipmentAddForm({
       return
     }
 
+    const firstItem = parsedOrder.items?.[0]
+    // ⚡ 初回AI解析結果を記録（ユーザーが下で修正・確定した差分を自動学習ループに送るため）
+    aiOriginalParsedRef.current = {
+      customer_name: parsedOrder.customer_name ?? null,
+      destination_name: parsedOrder.destination_name ?? null,
+      cases: firstItem?.cases ?? null,
+      packs_per_case: firstItem?.packs_per_case ?? null,
+      quantity: firstItem?.quantity ?? null,
+      product_name: firstItem?.product_name || firstItem?.raw_name || null,
+    }
+
     const badges: string[] = []
     let detectedCustName = parsedOrder.customer_name?.trim() || ''
 
@@ -591,7 +612,6 @@ export function ShipmentAddForm({
     }
 
     // 4. 品目・数量・入数
-    const firstItem = parsedOrder.items?.[0]
     if (firstItem) {
       const pName = firstItem.product_name || firstItem.raw_name || ''
       const matchedProd = products.find(
@@ -858,6 +878,7 @@ export function ShipmentAddForm({
           destination_id: destinationId || null,
           mode,
           note: note.trim() || undefined,
+          ai_original: aiOriginalParsedRef.current || undefined,
         }),
       })
       const json = await res.json()
@@ -873,6 +894,13 @@ export function ShipmentAddForm({
           : '出荷を登録・更新しました！',
       )
 
+      if (json.learnedMistake) {
+        toast('💡 修正内容をAI自動学習ループに蓄積しました（次回から自動補正されます）', {
+          icon: '⚡',
+          duration: 4000,
+        })
+      }
+
       // リセット
       setIsOpen(false)
       setStep('input')
@@ -881,6 +909,7 @@ export function ShipmentAddForm({
       setPhotoPreview(null)
       setConfirmedBadges([])
       setUncertainItems([])
+      aiOriginalParsedRef.current = null
       router.refresh()
     } catch (e: unknown) {
       toast.error(fieldErrorMessage(e, '登録に失敗しました'))

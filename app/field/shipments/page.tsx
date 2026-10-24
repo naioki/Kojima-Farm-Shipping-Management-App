@@ -132,15 +132,17 @@ export default async function ShipmentsPage({
     }
   }
 
-  // ④ 品目ごとの件数集計＆タブ一覧生成
+  // ④ 品目ごとの件数集計＆タブ一覧生成（数量0の品目は除外）
   const countByProduct = new Map<string, number>()
   for (const it of allItems) {
-    countByProduct.set(it.product_id, (countByProduct.get(it.product_id) ?? 0) + 1)
+    if ((Number(it.quantity) || 0) > 0) {
+      countByProduct.set(it.product_id, (countByProduct.get(it.product_id) ?? 0) + 1)
+    }
   }
 
-  // 注文がある品目を優先して並べ、残りの品目を後ろに配置（資材等は0件なら非表示）
-  const productTabs: ProductTabItem[] = (allProducts ?? [])
-    .filter((p) => !(p.category === '資材' && (countByProduct.get(p.id) ?? 0) === 0))
+  // ゼロ件の品目タブは非表示（全品目0件の場合は先頭品目1件のみ表示して空案内を表示）
+  const nonMaterialProducts = (allProducts ?? []).filter((p) => p.category !== '資材')
+  const rawTabs: ProductTabItem[] = nonMaterialProducts
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -148,14 +150,17 @@ export default async function ShipmentsPage({
     }))
     .sort((a, b) => b.count - a.count)
 
+  const activeTabs = rawTabs.filter((p) => p.count > 0)
+  const productTabs: ProductTabItem[] = activeTabs.length > 0 ? activeTabs : rawTabs.slice(0, 1)
+
   // 選択された品目（クエリ指定がなければ注文数が最大の品目、それもなければ先頭品目）
   const selectedProductId = searchParams.product && allProducts?.some((p) => p.id === searchParams.product)
     ? searchParams.product
     : productTabs[0]?.id || ''
   const selectedProduct = allProducts?.find((p) => p.id === selectedProductId)
 
-  // ⑤ 選択された1品目の明細行に絞り込み（単一品目フォーカス）
-  const items = allItems.filter((i) => i.product_id === selectedProductId)
+  // ⑤ 選択された1品目の明細行に絞り込み（単一品目フォーカス・数量0は非表示）
+  const items = allItems.filter((i) => i.product_id === selectedProductId && (Number(i.quantity) || 0) > 0)
 
   // ⑥ 納入先（出発便・時間・デフォルト作業順・コンテナ）取得（0026フォールバック付き）
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
@@ -508,7 +513,8 @@ export default async function ShipmentsPage({
           perCase = (cName.includes('農業総合研究所') || cName.includes('NSK') || (ni.spec ?? '').includes('24') ? 24 : 20)
         }
 
-        const qty = ni.quantity
+        const qty = Number(ni.quantity) || 0
+        if (qty <= 0) continue
 
         const contType = ni.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
 

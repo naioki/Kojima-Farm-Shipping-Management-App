@@ -34,8 +34,11 @@ const STANDARD_CLIENTS = [
 
 const SOURCE_LABEL: Record<string, string> = {
   'seed_v2.3': '標準v2.3シード',
-  admin_gui: '管理画面追加',
+  admin_gui: '管理画面手動追加',
   hitl_approval: '承認画面から学習',
+  learned_from_correction: '修正指示から学習',
+  quick_customer: '取引先一括登録',
+  auto_loop: '⚡ 自動学習ループ（誤読・修正から自動蓄積）',
 }
 
 const DRY_RUN_SAMPLES = [
@@ -146,9 +149,18 @@ export function AiRulesManager({
     return Array.from(set)
   }, [customers, rules])
 
+  const autoLoopCount = useMemo(
+    () => rules.filter((r) => r.source === 'auto_loop' || r.category === 'mistake_correction').length,
+    [rules],
+  )
+
   const filteredRules = useMemo(() => {
     return rules.filter((r) => {
-      if (selectedClient !== 'ALL' && r.client_name !== selectedClient) return false
+      if (selectedClient === 'AUTO_LOOP') {
+        if (r.source !== 'auto_loop' && r.category !== 'mistake_correction') return false
+      } else if (selectedClient !== 'ALL' && r.client_name !== selectedClient) {
+        return false
+      }
       if (showActiveOnly && !r.is_active) return false
       return true
     })
@@ -515,6 +527,18 @@ export function AiRulesManager({
           >
             すべて ({rules.length})
           </button>
+          <button
+            type="button"
+            onClick={() => setSelectedClient('AUTO_LOOP')}
+            className={cn(
+              'rounded-full border px-3 py-1.5 text-xs font-bold transition-all shadow-2xs',
+              selectedClient === 'AUTO_LOOP'
+                ? 'border-amber-600 bg-amber-600 text-white'
+                : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100',
+            )}
+          >
+            ⚡ 自動学習ループ ({autoLoopCount})
+          </button>
           {clientOptions.map((c) => {
             const count = rules.filter((r) => r.client_name === c).length
             if (count === 0 && !STANDARD_CLIENTS.includes(c)) return null
@@ -589,6 +613,11 @@ export function AiRulesManager({
                       <span className="num rounded border border-line px-2 py-0.5 font-mono text-xs tabular-nums text-ink-soft">
                         優先度: {rule.priority}
                       </span>
+                      {(rule.source === 'auto_loop' || rule.category === 'mistake_correction') && (
+                        <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 text-xs font-black shadow-2xs">
+                          ⚡ 誤読・修正から自動蓄積
+                        </span>
+                      )}
                       <span className="rounded bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
                         {SOURCE_LABEL[rule.source] ?? rule.source}
                       </span>

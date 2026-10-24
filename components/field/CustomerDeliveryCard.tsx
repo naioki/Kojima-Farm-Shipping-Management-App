@@ -499,29 +499,33 @@ export function CustomerDeliveryCard({
                     </button>
                   </div>
 
-                  {/* 明細品目リスト */}
-                  <div className="space-y-1 border-t border-line/40 pt-2 text-xs">
-                    {dest.items.map((it) => (
-                      <div
-                        key={it.id}
-                        className="flex items-center justify-between text-ink-soft py-0.5"
-                      >
-                        <span className="font-bold text-ink truncate pr-2">
-                          {it.productName}
-                        </span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {it.noteText !== '—' && (
-                            <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
-                              {it.noteText}
+                  {/* 明細品目リスト（数量0の品目は非表示） */}
+                  {dest.items.filter((it) => (Number(it.quantity) || 0) > 0).length > 0 && (
+                    <div className="space-y-1 border-t border-line/40 pt-2 text-xs">
+                      {dest.items
+                        .filter((it) => (Number(it.quantity) || 0) > 0)
+                        .map((it) => (
+                          <div
+                            key={it.id}
+                            className="flex items-center justify-between text-ink-soft py-0.5"
+                          >
+                            <span className="font-bold text-ink truncate pr-2">
+                              {it.productName}
                             </span>
-                          )}
-                          <span className="num font-black text-ink tabular-nums">
-                            {it.quantityText}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {it.noteText !== '—' && (
+                                <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
+                                  {it.noteText}
+                                </span>
+                              )}
+                              <span className="num font-black text-ink tabular-nums">
+                                {it.quantityText}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
               )
             })}
