@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, Box, RotateCcw, Target, CheckCircle2, Clock } from 'lucide-react'
+import { ChevronDown, Box, RotateCcw, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -174,64 +174,47 @@ export function HarvestPulseSummary({
           </div>
         )}
 
-        {/* 3指標リアルタイムグリッド（目標・完成・残り） */}
-        <div className="grid grid-cols-3 gap-2 text-center pt-1">
-          {/* ① 目標箱数 */}
-          <div className="rounded-xl bg-white/10 p-2.5 flex flex-col justify-between">
-            <div className="flex items-center justify-center gap-1 text-xs font-bold text-white/80">
-              <Target className="h-3.5 w-3.5" />
-              <span>目標</span>
-            </div>
-            <div className="my-1">
-              <span className="font-display text-2xl sm:text-3xl font-black text-white tabular-nums">
-                {totalBoxes.toLocaleString()}
-              </span>
-              <span className="text-xs font-bold text-white/80 ml-0.5">箱</span>
-            </div>
-            <span className="text-[11px] font-bold text-emerald-200/90 tabular-nums">
-              {totalPacks.toLocaleString()} P
-            </span>
-          </div>
-
-          {/* ② 完成箱数 */}
-          <div className="rounded-xl bg-emerald-400/25 border border-emerald-300/40 p-2.5 flex flex-col justify-between shadow-xs">
-            <div className="flex items-center justify-center gap-1 text-xs font-bold text-emerald-200">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>完成</span>
-            </div>
-            <div className="my-1">
-              <span className="font-display text-2xl sm:text-3xl font-black text-emerald-100 tabular-nums">
+        {/* 統合進捗ヒーローカード（上：特大 26/40箱 ｜ 下：通常 あと14箱） */}
+        <div className="rounded-2xl bg-black/25 border border-white/15 p-3.5 sm:p-4 text-center space-y-2.5 shadow-inner">
+          {/* 上段：特大サイズ（完成 / 目標 箱数 ＆ パック数） */}
+          <div className="flex flex-col items-center justify-center">
+            <div className="flex items-baseline justify-center gap-1.5 font-display">
+              <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-sm">
                 {completedBoxes.toLocaleString()}
               </span>
-              <span className="text-xs font-bold text-emerald-200 ml-0.5">箱</span>
+              <span className="text-2xl sm:text-3xl font-bold text-white/50">/</span>
+              <span className="text-3xl sm:text-4xl font-extrabold text-emerald-200/90 tabular-nums">
+                {totalBoxes.toLocaleString()}
+              </span>
+              <span className="text-sm sm:text-base font-bold text-emerald-200 ml-1">箱</span>
             </div>
-            <span className="text-[11px] font-bold text-emerald-200/90 tabular-nums">
-              {completedPacks.toLocaleString()} P
-            </span>
+            <div className="text-xs font-bold text-emerald-100/70 tabular-nums mt-0.5">
+              {completedPacks.toLocaleString()} / {totalPacks.toLocaleString()} P
+            </div>
           </div>
 
-          {/* ③ 残り箱数 */}
-          <div
-            className={cn(
-              'rounded-xl p-2.5 flex flex-col justify-between transition-colors',
-              remainingBoxes === 0 && totalBoxes > 0
-                ? 'bg-emerald-500/40 border border-emerald-300'
-                : 'bg-white/10',
+          {/* 下段：通常サイズ（あと何箱 / 達成バッジ） */}
+          <div className="flex items-center justify-center">
+            {remainingBoxes > 0 ? (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 border border-emerald-300/30 text-emerald-100 text-xs sm:text-sm font-bold shadow-xs">
+                <Clock className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
+                <span>あと</span>
+                <span className="font-black text-white text-sm sm:text-base tabular-nums">
+                  {remainingBoxes.toLocaleString()}
+                </span>
+                <span>箱</span>
+                <span className="text-[11px] text-emerald-200/80 font-normal">
+                  (残り {remainingPacks.toLocaleString()} P)
+                </span>
+              </div>
+            ) : totalBoxes > 0 ? (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400 text-emerald-950 text-xs sm:text-sm font-black shadow-xs">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>🎉 本日の目標達成！（全 {totalBoxes} 箱 パック完了）</span>
+              </div>
+            ) : (
+              <div className="text-xs text-white/60">本日の注文はありません</div>
             )}
-          >
-            <div className="flex items-center justify-center gap-1 text-xs font-bold text-white/80">
-              <Clock className="h-3.5 w-3.5" />
-              <span>残り</span>
-            </div>
-            <div className="my-1">
-              <span className="font-display text-2xl sm:text-3xl font-black text-white tabular-nums">
-                {remainingBoxes.toLocaleString()}
-              </span>
-              <span className="text-xs font-bold text-white/80 ml-0.5">箱</span>
-            </div>
-            <span className="text-[11px] font-bold text-emerald-200/90 tabular-nums">
-              {remainingPacks.toLocaleString()} P
-            </span>
           </div>
         </div>
 
@@ -252,11 +235,6 @@ export function HarvestPulseSummary({
               )}
             />
           </div>
-          {progressPct >= 100 && totalBoxes > 0 && (
-            <div className="mt-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-400 text-emerald-950 px-2.5 py-1 text-xs font-black shadow-xs">
-              <span>🎉 本日の目標達成！全 {totalBoxes} 箱 パック完了</span>
-            </div>
-          )}
         </div>
       </div>
 
