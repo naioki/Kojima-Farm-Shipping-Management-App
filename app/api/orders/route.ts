@@ -33,6 +33,14 @@ const orderSchema = z.object({
   replace_order_id: z.string().uuid().optional(),
   /** 置換時の楽観ロック。取得時の orders.updated_at と一致しないと409（他の人が触った）。 */
   expected_updated_at: z.string().optional(),
+  /** アップロードされた原本ファイル情報（FAX/PDF/写真/Excel）。order_receipts に自動アーカイブする。 */
+  original_file: z
+    .object({
+      base64: z.string(),
+      mimeType: z.string(),
+      fileName: z.string(),
+    })
+    .optional(),
 })
 
 /**
@@ -76,6 +84,7 @@ export async function POST(req: NextRequest) {
     confirm_duplicate,
     replace_order_id,
     expected_updated_at,
+    original_file,
   } = parsed.data
   const admin = createAdminClient()
 
@@ -319,6 +328,27 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.error('[POST /api/orders] packs_per_case upsert skipped', e)
       }
+    }
+  }
+
+  // アップロードされた原本ファイルがある場合、order_receipts にアーカイブして現場FAX原本と紐付ける
+  if (original_file && orderId) {
+    try {
+      await admin.from('order_receipts').insert({
+        order_id: orderId,
+        customer_id: customer_id,
+        delivery_date: delivery_date,
+        channel: 'manual',
+        status: 'approved',
+        received_at: new Date().toISOString(),
+        raw_payload: {
+          filename: original_file.fileName,
+          content_type: original_file.mimeType,
+          file_base64: original_file.base64,
+        },
+      })
+    } catch (e) {
+      console.error('[POST /api/orders] original_file receipt insert error', e)
     }
   }
 

@@ -11,8 +11,10 @@ export const dynamic = 'force-dynamic'
 
 /**
  * 注文新規入力画面（画面B）。
- * 取引先選択 → いつものセット展開 → 数量入力 → 確認 → 保存。
- * 手動入力は OCR を通さず直接 status='approved' で登録する。
+ * - 上部に【AIスマート注文読取】ドロップ枠を新設（FAX画像・PDF・写真・Excel・テキスト貼付対応）。
+ * - AIが迷った箇所のみ【AI質問カード】で解決し、即座に下部フォームに自動反映。
+ * - 取引先選択 → いつものセット展開 → 数量入力 → 確認 → 保存。
+ * - 手動入力・AI読取入力のどちらも直接 status='approved' で登録する。
  */
 export default async function OrderNewPage() {
   const guard = await requireAdmin('注文入力は管理者のみアクセスできます。')
@@ -24,8 +26,8 @@ export default async function OrderNewPage() {
   const qtyModeSetting = await getSetting('QTY_INPUT_MODE')
   const qtyInputMode = qtyModeSetting === 'cases' ? 'cases' : 'total'
 
-  // 取引先・商品・デフォルトセットを並列取得
-  const [customersRes, productsRes, defaultRulesRes] = await Promise.all([
+  // 取引先・商品・デフォルトセット・納入先を並列取得
+  const [customersRes, productsRes, defaultRulesRes, destinationsRes] = await Promise.all([
     supabase
       .from('customers')
       .select('id, name, display_color')
@@ -40,6 +42,11 @@ export default async function OrderNewPage() {
     supabase
       .from('customer_product_rules')
       .select('customer_id, product_id, packs_per_case, container_type, label_spec, is_default_set, default_quantity'),
+    supabase
+      .from('delivery_destinations')
+      .select('id, customer_id, code, full_name')
+      .eq('is_active', true)
+      .order('sort_order'),
   ])
 
   // マスタ取得の失敗を「空」に化けさせない（migration 未適用の顕在化・CLAUDE.md）。
@@ -55,6 +62,7 @@ export default async function OrderNewPage() {
   const customers = customersRes.data
   const products = productsRes.data
   const defaultRules = defaultRulesRes.data
+  const destinations = destinationsRes.data ?? []
 
   // 商品ごとの荷姿（共通＝customer_id null）を構築。注文入力の単位選択に使う。
   const { data: packRows, error: packErr } = await supabase
@@ -62,7 +70,6 @@ export default async function OrderNewPage() {
     .select('id, product_id, label, selling_unit_label, base_per_selling')
     .is('customer_id', null)
     .eq('is_active', true)
-  // 単位選択の補助。失敗しても既定単位で入力は続けられるので本体は殺さない。
   if (packErr) console.error('[orders/new] 荷姿マスタの取得に失敗:', packErr.message)
   const packsByProduct: Record<string, { id: string; label: string; selling_unit_label: string; base_per_selling: number }[]> = {}
   for (const p of packRows ?? []) {
@@ -113,7 +120,7 @@ export default async function OrderNewPage() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">注文を新規入力</h1>
         <p className="text-sm text-ink-soft">
-          手動・電話注文など。入力した内容は即時「承認済み」として登録されます。
+          FAX画像・PDF・写真・Excelを置いてAI読取するか、手動入力できます。入力した内容は即時「承認済み」として登録されます。
         </p>
       </div>
       <Card>
@@ -122,6 +129,12 @@ export default async function OrderNewPage() {
             id: c.id,
             name: c.name,
             display_color: c.display_color,
+          }))}
+          destinations={destinations.map((d) => ({
+            id: d.id,
+            customer_id: d.customer_id,
+            code: d.code,
+            full_name: d.full_name,
           }))}
           products={(products ?? []).map((p) => ({
             id: p.id,

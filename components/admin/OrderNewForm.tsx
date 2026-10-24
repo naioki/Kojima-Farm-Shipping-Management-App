@@ -10,11 +10,19 @@ import { jstTodayStr, formatJpDateShort } from '@/lib/dates'
 import { groupByCategory } from '@/lib/products/group'
 import { Button } from '@/components/ui/Button'
 import { ColorDot } from '@/components/ui/ColorDot'
+import { OrderSmartResolver, type ResolvedOrderData } from '@/components/admin/OrderSmartResolver'
 
 export interface CustomerOption {
   id: string
   name: string
   display_color: string | null
+}
+
+export interface DestinationOption {
+  id: string
+  customer_id?: string
+  code?: string | null
+  full_name: string
 }
 
 export interface ProductOption {
@@ -45,6 +53,7 @@ export interface PackOption {
 
 export interface OrderNewFormProps {
   customers: CustomerOption[]
+  destinations?: DestinationOption[]
   products: ProductOption[]
   /** 取引先ごとのデフォルトセット { [customer_id]: DefaultSetItem[] } */
   defaultSets: Record<string, DefaultSetItem[]>
@@ -94,14 +103,23 @@ function AnomalyBadge({ qty, stats }: { qty: number; stats: ProductStats }) {
 
 /**
  * 注文新規入力フォーム（画面B）。
- * 1. 取引先を選ぶ → 「いつものセット」が自動展開
- * 2. 商品ごとに数量を入力（ケース入力モード対応）
+ * 1. AIスマート読取: FAX画像・PDF・写真・Excelファイルをドロップすると、AIが自動解析して入力欄を展開。
+ *    疑問点（かすれ、未登録納入先、単位曖昧など）はAI質問カードで提示され、ワンタップ解消または自由入力可能。
+ * 2. 手動入力: 取引先を選ぶ → 「いつものセット」が自動展開
  * 3. 過去90日の数量と比較して異常値を警告（保存は通す）
- * 4. 確認画面 → 保存
+ * 4. 確認画面 → 保存（アップロード原本も自動アーカイブ）
  */
-export function OrderNewForm({ customers, products, defaultSets, packsByProduct }: OrderNewFormProps) {
+export function OrderNewForm({
+  customers,
+  destinations = [],
+  products,
+  defaultSets,
+  packsByProduct,
+}: OrderNewFormProps) {
   const router = useRouter()
   const [customerId, setCustomerId] = useState('')
+  const [destinationId, setDestinationId] = useState('')
+  const [destinationsList, setDestinationsList] = useState<DestinationOption[]>(destinations)
   const [deliveryDate, setDeliveryDate] = useState(todayStr())
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('')
   const [note, setNote] = useState('')
@@ -111,19 +129,41 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
   const [saving, setSaving] = useState(false)
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [addProductId, setAddProductId] = useState('')
+  const [originalFile, setOriginalFile] = useState<{
+    base64: string
+    mimeType: string
+    fileName: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (destinations) setDestinationsList(destinations)
+  }, [destinations])
 
   const selectedCustomer = customers.find((c) => c.id === customerId)
+  const selectedDestination = destinationsList.find((d) => d.id === destinationId)
   const productById = new Map(products.map((p) => [p.id, p]))
+
+  // 選択中取引先の納入先一覧
+  const customerDestinations = customerId
+    ? destinationsList.filter((d) => d.customer_id === customerId)
+    : destinationsList
 
   // 取引先変更時: デフォルトセットを展開 + 過去統計をフェッチ
   useEffect(() => {
     if (!customerId) {
       setItems([])
       setStats({})
+      setDestinationId('')
       return
     }
+    // 取引先が変わったら納入先のリセット確認（現在の納入先が新しい取引先に属さない場合）
+    if (destinationId) {
+      const belongs = destinationsList.some((d) => d.id === destinationId && d.customer_id === customerId)
+      if (!belongs) setDestinationId('')
+    }
+
     const defaults = defaultSets[customerId] ?? []
-    if (defaults.length > 0) {
+    if (defaults.length > 0 && items.length === 0) {
       setItems(
         defaults.map((d) => {
           const p = productById.get(d.product_id)
@@ -140,16 +180,27 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
           }
         }),
       )
-    } else {
-      setItems([])
     }
+
     // 過去統計を非同期取得
     void fetch(`/api/orders/stats?customer_id=${customerId}`)
       .then((r) => r.json())
       .then((j: { stats: Record<string, ProductStats> }) => setStats(j.stats ?? {}))
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
+
+  // AIスマート読取からの反映ハンドラ
+  const handleOrderResolved = useCallback((data: ResolvedOrderData) => {
+    if (data.customerId) setCustomerId(data.customerId)
+    if (data.destinationId) setDestinationId(data.destinationId)
+    if (data.deliveryDate) setDeliveryDate(data.deliveryDate)
+    if (data.shippingTime) setShippingTime(data.shippingTime)
+    if (data.note) setNote(data.note)
+    if (data.items.length > 0) setItems(data.items)
+    if (data.originalFile) setOriginalFile(data.originalFile)
+    toast.success('AI読取内容を注文フォームに自動反映しました')
+  }, [])
 
   const updateItem = useCallback((idx: number, field: keyof FormItem, value: string | number) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
@@ -198,14 +249,18 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
         if (i !== idx) return it
         if (!packId) return { ...it, pack_config_id: null, base_per_selling: null }
         const opt = (packsByProduct[it.product_id] ?? []).find((o) => o.id === packId)
-        return { ...it, pack_config_id: packId, base_per_selling: opt?.base_per_selling ?? null }
+        return {
+          ...it,
+          pack_config_id: packId,
+          base_per_selling: opt?.base_per_selling ?? null,
+        }
       }),
     )
   }
 
   const canProceed =
-    customerId &&
-    deliveryDate &&
+    Boolean(customerId) &&
+    Boolean(deliveryDate) &&
     items.length > 0 &&
     items.every((it) => resolveQuantity(it) > 0)
 
@@ -217,6 +272,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           customer_id: customerId,
+          destination_id: destinationId || undefined,
           delivery_date: deliveryDate,
           shipping_time: shippingTime || undefined,
           note: note || undefined,
@@ -229,6 +285,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
             tax_rate: it.tax_rate,
             pack_config_id: it.pack_config_id ?? undefined,
           })),
+          original_file: originalFile ?? undefined,
         }),
       })
       const json = (await res.json()) as { orderId?: string; error?: string; warnings?: Record<string, unknown> }
@@ -237,7 +294,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
       if (warnCount > 0) {
         toast(`登録しました（数量に${warnCount}件の注意あり）`, { icon: '⚠️' })
       } else {
-        toast.success('注文を登録しました')
+        toast.success('注文を登録しました（収穫タスクを自動作成しました）')
       }
       router.push('/admin')
       router.refresh()
@@ -255,17 +312,36 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
   if (step === 'confirm') {
     return (
       <div className="space-y-4">
-        <h2 className="font-display text-lg font-bold text-ink">確認</h2>
-        <div className="rounded-lg border border-line bg-bg-soft p-4 space-y-3">
+        <h2 className="font-display text-lg font-bold text-ink">登録内容の最終確認</h2>
+        <div className="rounded-xl border border-line bg-bg-soft p-4 space-y-3 shadow-xs">
           <div className="flex items-center gap-2">
             <ColorDot color={selectedCustomer?.display_color ?? null} name={selectedCustomer?.name ?? ''} size="md" />
-            <span className="font-medium text-ink">{selectedCustomer?.name}</span>
+            <span className="font-bold text-ink text-base">{selectedCustomer?.name}</span>
           </div>
+
+          {selectedDestination && (
+            <p className="text-sm text-ink font-bold flex items-center gap-1.5">
+              <span>📍 納入先:</span>
+              <span className="text-emerald-800">{selectedDestination.full_name}</span>
+              {selectedDestination.code && <span className="text-xs text-ink-muted">({selectedDestination.code})</span>}
+            </p>
+          )}
+
           <p className="text-sm text-ink-soft">
-            出荷日: <span className="font-medium text-ink">{formatJpDateShort(deliveryDate)}</span>
-            {shippingTime && <span className="ml-2 text-ink-soft">({shippingTime === 'am' ? '午前' : '午後'})</span>}
+            出荷日: <span className="font-bold text-ink">{formatJpDateShort(deliveryDate)}</span>
+            {shippingTime && <span className="ml-2 font-medium text-ink-soft">({shippingTime === 'am' ? '午前' : '午後'})</span>}
           </p>
-          <div className="divide-y divide-line">
+
+          {originalFile && (
+            <div className="rounded-lg bg-emerald-100/90 border border-emerald-300 px-3 py-1.5 text-xs font-bold text-emerald-950 flex items-center gap-2">
+              <span>📎 添付原本: {originalFile.fileName}</span>
+              <span className="text-[10px] text-emerald-700 bg-white/70 px-1.5 py-0.2 rounded font-semibold">
+                現場ボード「FAX原本」で閲覧可能
+              </span>
+            </div>
+          )}
+
+          <div className="divide-y divide-line border-t border-line pt-2">
             {items.map((it) => {
               const qty = resolveQuantity(it)
               const st = stats[it.product_id]
@@ -275,10 +351,10 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
                     <Image src={it.photo_url} alt="" width={40} height={40} className="h-10 w-10 rounded object-cover shrink-0" />
                   )}
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-ink">{it.product_name}</p>
+                    <p className="text-sm font-bold text-ink">{it.product_name}</p>
                     {st && <AnomalyBadge qty={qty} stats={st} />}
                   </div>
-                  <span className="num text-lg font-bold tabular-nums text-ink shrink-0">
+                  <span className="num text-lg font-black tabular-nums text-ink shrink-0">
                     {qty} {it.unit}
                   </span>
                 </div>
@@ -287,13 +363,13 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
           </div>
           {note && <p className="text-xs text-ink-soft border-t border-line pt-2">備考: {note}</p>}
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 justify-end">
           <Button variant="secondary" onClick={() => setStep('entry')}>
             戻って修正
           </Button>
           <Button variant="primary" onClick={handleSave} isLoading={saving}>
             <Check className="h-4 w-4" aria-hidden />
-            この内容で登録
+            この内容で登録して収穫タスク同期
           </Button>
         </div>
       </div>
@@ -303,62 +379,103 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
   // ───── 入力画面 ─────
   return (
     <div className="space-y-5">
-      {/* 取引先・出荷日 */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-ink" htmlFor="order-customer">
-            取引先 <span className="text-alert">*</span>
-          </label>
-          <div className="relative">
+      {/* AIスマート注文読取 ＆ AI質問カード（上部に常時配置） */}
+      <OrderSmartResolver
+        customers={customers}
+        destinations={destinationsList}
+        products={products}
+        onOrderResolved={handleOrderResolved}
+        onDestinationCreated={(newDest) => {
+          setDestinationsList((prev) => [...prev, { ...newDest, code: newDest.code ?? null }])
+          setDestinationId(newDest.id)
+        }}
+      />
+
+      <div className="pt-2 border-t border-line/60">
+        <h3 className="text-xs font-black text-ink-muted uppercase tracking-wider mb-3">
+          📝 注文内容の確認・手動調整
+        </h3>
+
+        {/* 取引先・納入先・出荷日 */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* 取引先 */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-ink" htmlFor="order-customer">
+              取引先 <span className="text-alert">*</span>
+            </label>
+            <div className="relative">
+              <select
+                id="order-customer"
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                className={cn(inputCls, customerId ? 'pl-8' : '')}
+              >
+                <option value="">取引先を選択…</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {selectedCustomer && (
+                <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
+                  <ColorDot color={selectedCustomer.display_color} name={selectedCustomer.name} />
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 出荷日 */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-ink" htmlFor="order-delivery-date">
+              出荷日 <span className="text-alert">*</span>
+            </label>
+            <input
+              id="order-delivery-date"
+              type="date"
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        {/* 納入先（届け先） ＆ 出荷時間帯 */}
+        <div className="grid gap-4 sm:grid-cols-2 mt-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-ink" htmlFor="order-destination">
+              納入先（店舗・センター）
+            </label>
             <select
-              id="order-customer"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              className={cn(inputCls, customerId ? 'pl-8' : '')}
+              id="order-destination"
+              value={destinationId}
+              onChange={(e) => setDestinationId(e.target.value)}
+              className={inputCls}
             >
-              <option value="">取引先を選択…</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              <option value="">指定なし（取引先標準）</option>
+              {customerDestinations.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.full_name} {d.code ? `(${d.code})` : ''}
                 </option>
               ))}
             </select>
-            {selectedCustomer && (
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2">
-                <ColorDot color={selectedCustomer.display_color} name={selectedCustomer.name} />
-              </span>
-            )}
           </div>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-ink" htmlFor="order-delivery-date">
-            出荷日 <span className="text-alert">*</span>
-          </label>
-          <input
-            id="order-delivery-date"
-            type="date"
-            value={deliveryDate}
-            onChange={(e) => setDeliveryDate(e.target.value)}
-            className={inputCls}
-          />
-        </div>
-      </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-ink" htmlFor="order-shipping-time">
-            出荷時間帯
-          </label>
-          <select
-            id="order-shipping-time"
-            value={shippingTime}
-            onChange={(e) => setShippingTime(e.target.value as 'am' | 'pm' | '')}
-            className={cn(inputCls, 'w-40')}
-          >
-            <option value="">指定なし</option>
-            <option value="am">午前</option>
-            <option value="pm">午後</option>
-          </select>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-ink" htmlFor="order-shipping-time">
+              出荷時間帯
+            </label>
+            <select
+              id="order-shipping-time"
+              value={shippingTime}
+              onChange={(e) => setShippingTime(e.target.value as 'am' | 'pm' | '')}
+              className={cn(inputCls, 'w-40')}
+            >
+              <option value="">指定なし</option>
+              <option value="am">午前便</option>
+              <option value="pm">午後便</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -366,8 +483,8 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
       {customerId ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-ink">
-              商品
+            <h2 className="text-sm font-bold text-ink">
+              品目・数量明細
               {items.length > 0 && (
                 <span className="ml-1.5 text-ink-soft font-normal">{items.length}件</span>
               )}
@@ -376,7 +493,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
 
           {items.length === 0 && (
             <p className="py-4 text-center text-sm text-ink-soft">
-              このお客様のデフォルトセットはありません。下から商品を追加してください。
+              このお客様のデフォルトセットはありません。ファイル読込または下から商品を追加してください。
             </p>
           )}
 
@@ -385,7 +502,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
               const qty = resolveQuantity(it)
               const st = stats[it.product_id]
               return (
-                <div key={`${it.product_id}-${idx}`} className="rounded-lg border border-line bg-bg-card p-3">
+                <div key={`${it.product_id}-${idx}`} className="rounded-xl border border-line bg-bg-card p-3 shadow-xs">
                   <div className="flex items-center gap-3">
                     {/* サムネイル（40×40） */}
                     {it.photo_url ? (
@@ -404,7 +521,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
 
                     {/* 商品名＋荷姿選択 */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-ink truncate">{it.product_name}</p>
+                      <p className="text-sm font-bold text-ink truncate">{it.product_name}</p>
                       {(packsByProduct[it.product_id]?.length ?? 0) > 0 && (
                         <select
                           value={it.pack_config_id ?? ''}
@@ -430,10 +547,10 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
                         min={0}
                         value={it.quantity}
                         onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
-                        className="num h-11 w-20 rounded border border-line-strong bg-bg-card px-2 text-center text-xl font-bold tabular-nums text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100"
+                        className="num h-11 w-24 rounded-lg border border-line-strong bg-bg-card px-2 text-center text-xl font-black tabular-nums text-ink focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                         aria-label={`${it.product_name}の数量`}
                       />
-                      <span className="text-sm text-ink-soft shrink-0">
+                      <span className="text-sm font-bold text-ink-soft shrink-0">
                         {it.pack_config_id
                           ? (packsByProduct[it.product_id] ?? []).find((o) => o.id === it.pack_config_id)?.selling_unit_label ?? it.unit
                           : it.unit}
@@ -502,17 +619,17 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
               <button
                 type="button"
                 onClick={() => setShowAddProduct(true)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-2 text-sm text-ink-soft hover:border-earth-400 hover:text-ink transition-colors"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-2 text-sm font-bold text-ink-soft hover:border-emerald-500 hover:text-emerald-700 transition-colors"
               >
                 <Plus className="h-4 w-4" aria-hidden />
-                商品を追加
+                品目を手動追加
               </button>
             )}
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-dashed border-line py-10 text-center text-sm text-ink-faint">
-          取引先を選ぶと「いつものセット」が表示されます
+        <div className="rounded-xl border border-dashed border-line py-8 text-center text-sm text-ink-faint">
+          ファイル読み取りを実行するか、取引先を選ぶと明細入力欄が表示されます
         </div>
       )}
 
@@ -532,7 +649,7 @@ export function OrderNewForm({ customers, products, defaultSets, packsByProduct 
       </div>
 
       {/* 次へ */}
-      <div className="flex justify-end">
+      <div className="flex justify-end pt-2">
         <Button
           variant="primary"
           size="lg"
