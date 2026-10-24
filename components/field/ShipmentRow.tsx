@@ -76,6 +76,8 @@ export interface ShipmentRowProps {
   hasSeal?: boolean | null
   deliveryDate?: string
   isAdmin?: boolean
+  /** 翌日以降の先行予定カード（薄グレー背景＋視覚的分離表示） */
+  isNextDay?: boolean
   onMoveUp?: () => void
   onMoveDown?: () => void
   /** 出荷済ボタンを表示するかどうか（出荷専用画面でのみ true、パック画面では非表示にしてパック済ボタンを大きく配置） */
@@ -131,6 +133,7 @@ export function ShipmentRow({
   onMoveUp,
   onMoveDown,
   showShippingButton = false,
+  isNextDay = false,
   receipt,
   onStatusChange,
   onStatusSettled,
@@ -540,7 +543,9 @@ export function ShipmentRow({
     <div
       className={cn(
         'rounded-2xl border bg-bg-card p-3.5 shadow-sm transition-all duration-200',
-        status === 'shipped'
+        isNextDay
+          ? 'border-slate-300 bg-slate-50/90 text-slate-700'
+          : status === 'shipped'
           ? 'border-sky-300 bg-sky-50/15'
           : status === 'packed'
           ? 'border-emerald-300 bg-emerald-50/15'
@@ -548,6 +553,19 @@ export function ShipmentRow({
         conflict ? 'animate-pulse-alert border-alert ring-2 ring-alert/20' : '',
       )}
     >
+      {/* 翌日出荷予定バッジ（先行作業・閲覧用） */}
+      {isNextDay && (
+        <div className="mb-2.5 flex items-center justify-between rounded-lg bg-slate-200/90 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+          <span className="flex items-center gap-1.5">
+            <span>📅</span>
+            <span>翌日出荷予定（先行作業・閲覧用）</span>
+          </span>
+          <span className="text-[10px] text-slate-500 font-semibold">
+            {deliveryDate ? `${deliveryDate} 出荷分` : '翌日出荷分'}
+          </span>
+        </div>
+      )}
+
       {/* 競合・更新アラート（ワンタップ自己修復） */}
       {conflict && (
         <div className="mb-2.5 flex items-center justify-between rounded-xl bg-alert/10 border border-alert/30 p-2.5 text-xs font-bold text-alert">

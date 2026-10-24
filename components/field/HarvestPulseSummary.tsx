@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, PackageCheck, Tractor, Box, RefreshCw } from 'lucide-react'
+import { ChevronDown, Box, RotateCcw, Target, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -19,14 +19,16 @@ export interface SpecBreakdownItem {
   boxes: number
 }
 
-interface HarvestPulseSummaryProps {
+export interface HarvestPulseSummaryProps {
   productName: string
   productId: string
   date: string
   totalPacks: number
   totalBoxes: number
-  initialStock: number
-  prevCarryover: number
+  completedBoxes?: number
+  completedPacks?: number
+  initialStock?: number
+  prevCarryover?: number
   initialCarryover?: number
   interimPackedBoxes?: number
   hasManualStock?: boolean
@@ -34,6 +36,10 @@ interface HarvestPulseSummaryProps {
   specBreakdown: SpecBreakdownItem[]
   nextDayTotalBoxes?: number
   nextDayTotalPacks?: number
+  onQuickBatch?: (deltaBoxes: number) => void
+  onUndoQuickBatch?: () => void
+  canUndoQuickBatch?: boolean
+  isBusyQuickBatch?: boolean
 }
 
 export function HarvestPulseSummary({
@@ -42,93 +48,37 @@ export function HarvestPulseSummary({
   date,
   totalPacks,
   totalBoxes,
-  initialStock,
-  prevCarryover,
+  completedBoxes: propCompletedBoxes,
+  completedPacks: propCompletedPacks,
   initialCarryover = 0,
   interimPackedBoxes = 0,
-  hasManualStock = false,
   containerBreakdown,
   specBreakdown,
-  nextDayTotalBoxes = 0,
-  nextDayTotalPacks = 0,
+  onQuickBatch,
+  onUndoQuickBatch,
+  canUndoQuickBatch = false,
+  isBusyQuickBatch = false,
 }: HarvestPulseSummaryProps) {
   const router = useRouter()
-  // 手動入力値がない場合は「前日繰越 + 本日途中仕上がり」で自動計算（手入力不要）
-  const autoStock = prevCarryover + interimPackedBoxes
-  const defaultStock = hasManualStock ? initialStock : autoStock
+  const completedBoxes = propCompletedBoxes ?? interimPackedBoxes
+  const completedPacks =
+    propCompletedPacks ??
+    (totalBoxes > 0 ? Math.round(totalPacks * (completedBoxes / totalBoxes)) : 0)
+  const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
+  const remainingPacks = Math.max(0, totalPacks - completedPacks)
+  const progressPct =
+    totalBoxes > 0 ? Math.min(100, Math.round((completedBoxes / totalBoxes) * 100)) : 0
 
-  const [stock, setStock] = useState<number>(defaultStock)
-  const [tempStockStr, setTempStockStr] = useState<string>(String(defaultStock))
-  const [isManualOverride, setIsManualOverride] = useState<boolean>(hasManualStock)
   const [carryover, setCarryover] = useState<number>(initialCarryover)
-  const [tempCarryover, setTempCarryover] = useState<number>(initialCarryover)
   const [tempCarryoverStr, setTempCarryoverStr] = useState<string>(String(initialCarryover))
-  const [isEditingStock, setIsEditingStock] = useState<boolean>(false)
   const [isEditingCarryover, setIsEditingCarryover] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
 
-  // 品目タブ切り替え・日付変更時に最新の集計値と状態を確実に同期
   useEffect(() => {
-    setStock(defaultStock)
-    setTempStockStr(String(defaultStock))
-    setIsManualOverride(hasManualStock)
     setCarryover(initialCarryover)
-    setTempCarryover(initialCarryover)
     setTempCarryoverStr(String(initialCarryover))
-    setIsEditingStock(false)
     setIsEditingCarryover(false)
-  }, [productId, date, defaultStock, hasManualStock, initialCarryover])
-
-  // 今日畑で採るべき箱数 = max(0, 注文合計箱数 - 在庫箱数)
-  const harvestNeededBoxes = Math.max(0, totalBoxes - stock)
-  // 余分分（手元余剰箱数） = max(0, 在庫箱数 - 注文合計箱数)
-  const surplusBoxes = Math.max(0, stock - totalBoxes)
-  const surplusPacks = stock > totalBoxes ? Math.round(totalPacks * (surplusBoxes / (totalBoxes || 1))) : 0
-
-  // 必要パック数（在庫0なら注文総数そのもの。在庫がある場合は箱数比率で正確に逆算）
-  const harvestNeededPacks =
-    stock === 0
-      ? totalPacks
-      : totalBoxes > 0
-        ? Math.max(0, Math.round(totalPacks * (harvestNeededBoxes / totalBoxes)))
-        : 0
-
-  const saveStock = async (newStock: number | null) => {
-    const validStock = newStock === null ? null : Math.max(0, Number(newStock) || 0)
-    setBusy(true)
-    try {
-      const res = await fetch('/api/inventory/container', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date,
-          productId,
-          stockContainers: validStock,
-        }),
-      })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j.error ?? '在庫の保存に失敗しました')
-      }
-      if (validStock === null) {
-        setStock(autoStock)
-        setTempStockStr(String(autoStock))
-        setIsManualOverride(false)
-        toast.success('自動計算（前日繰越＋途中仕上がり）に戻しました')
-      } else {
-        setStock(validStock)
-        setTempStockStr(String(validStock))
-        setIsManualOverride(true)
-        toast.success('在庫を更新しました')
-      }
-      setIsEditingStock(false)
-      router.refresh()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '更新に失敗しました')
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [productId, date, initialCarryover])
 
   const saveCarryover = async (newCarryover: number) => {
     const validCarryover = Math.max(0, Number(newCarryover) || 0)
@@ -161,193 +111,153 @@ export function HarvestPulseSummary({
 
   return (
     <div className="space-y-2">
-      {/* メインサマリーカード（ダークグリーン） */}
-      <div className="rounded-2xl bg-[#155c39] p-4 text-white shadow-md">
+      {/* メインリアルタイム進捗メーターカード（ダークグリーン） */}
+      <div className="rounded-2xl bg-[#155c39] p-4 text-white shadow-md space-y-3">
+        {/* ヘッダー情報 */}
         <div className="flex items-center justify-between pb-2 border-b border-white/20">
           <div className="flex items-center gap-2">
             <span className="text-xl">🥬</span>
-            <span className="text-base font-black tracking-wide">{productName} 収穫・在庫サマリー</span>
+            <span className="text-base font-black tracking-wide">{productName} パック進捗</span>
           </div>
-          <span className="text-xs font-bold text-white/80">
-            {date === shiftDateStr(jstTodayStr(), 1) ? `翌日 ${date} 出荷分（本日収穫・パック）` : `${date} 出荷分`}
+          <span className="text-xs font-bold text-emerald-100 bg-white/10 px-2.5 py-0.5 rounded-md">
+            {date === shiftDateStr(jstTodayStr(), 1)
+              ? `明日 ${date} 出荷分（本日パック）`
+              : `${date} 出荷分`}
           </span>
         </div>
 
-        {/* 収穫箱数（最重要ヘッダー：注文合計 − 在庫） */}
-        <div className="pt-3 pb-2 text-center">
-          <div className="inline-flex items-center gap-2 text-sm font-black text-emerald-100">
-            <Tractor className="h-4 w-4" />
-            <span>収穫箱数</span>
-          </div>
-          <div className="mt-1 flex items-baseline justify-center gap-2">
-            <span className="font-display text-5xl font-black tracking-tight text-white tabular-nums sm:text-6xl">
-              {harvestNeededBoxes.toLocaleString()}
-            </span>
-            <span className="text-2xl font-black text-white/90">箱</span>
-            <span className="ml-2 text-sm font-bold text-emerald-200/90">
-              ({stock > 0 ? '約 ' : ''}{harvestNeededPacks.toLocaleString()} P)
-            </span>
-          </div>
-
-          {/* 余分分（手元余剰）の特大ハイライト表示 */}
-          {surplusBoxes > 0 && (
-            <div className="mt-2.5 inline-flex items-center gap-2 rounded-xl bg-emerald-400 text-emerald-950 px-4 py-1.5 shadow-md">
-              <span className="text-sm sm:text-base font-black">
-                ✨ 手元余剰 ＋{surplusBoxes.toLocaleString()} 箱
-              </span>
-              <span className="text-xs font-bold text-emerald-900 border-l border-emerald-600/30 pl-2">
-                本日収穫不要・翌日充当
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* 注文合計 − 在庫 ＝ 収穫箱数の対比グリッド */}
-        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-3 border-t border-white/15">
-          {/* ① 今日の注文合計 */}
-          <div className="rounded-xl bg-white/10 p-2.5 text-center">
-            <span className="block text-xs sm:text-sm font-black text-white/95">
-              {date === shiftDateStr(jstTodayStr(), 1) ? '📦 明日出荷の注文合計' : '📦 注文合計'}
-            </span>
-            <span className="num mt-0.5 block text-xl font-black text-white tabular-nums">
-              {totalBoxes.toLocaleString()} <small className="text-xs font-bold text-white/80">箱</small>
-            </span>
-            <span className="text-xs sm:text-sm font-bold text-emerald-100">({totalPacks.toLocaleString()} P)</span>
-          </div>
-
-          {/* 演算記号 − */}
-          <div className="text-xl font-black text-white/70 text-center select-none">−</div>
-
-          {/* ② 在庫（タップして変更可能） */}
-          <div className="rounded-xl bg-white/10 p-2.5 text-center relative">
-            <div className="flex items-center justify-center gap-1">
-              <span className="text-xs sm:text-sm font-black text-white/95">在庫</span>
+        {/* クイック完成投入バー（手袋でも押しやすいクイックボタン） */}
+        {onQuickBatch && (
+          <div className="flex items-center justify-between gap-1.5 pt-0.5">
+            <span className="text-xs font-bold text-white/80 shrink-0">クイック完成:</span>
+            <div className="flex items-center gap-1.5 flex-wrap justify-end">
               <button
                 type="button"
-                onClick={() => {
-                  setTempStockStr(String(stock))
-                  setIsEditingStock(!isEditingStock)
-                }}
-                className="text-xs text-emerald-200 underline font-bold px-1"
+                disabled={isBusyQuickBatch || remainingBoxes <= 0}
+                onClick={() => onQuickBatch(10)}
+                className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 font-black text-white text-xs shadow-xs active:scale-95 transition"
+                title="早い便順の未着手カードを＋10箱分パック済にする"
               >
-                {isEditingStock ? '閉じる' : '修正'}
+                ＋10箱
               </button>
-            </div>
-
-            {isEditingStock ? (
-              <div className="mt-2 space-y-2">
-                {/* 手袋でも押しやすいクイック増減ステッパー */}
-                <div className="grid grid-cols-4 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
-                      const next = Math.max(0, cur - 5)
-                      setTempStockStr(String(next))
-                    }}
-                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
-                  >
-                    -5
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
-                      const next = Math.max(0, cur - 1)
-                      setTempStockStr(String(next))
-                    }}
-                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
-                  >
-                    -1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
-                      const next = cur + 1
-                      setTempStockStr(String(next))
-                    }}
-                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
-                  >
-                    +1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempStockStr, 10) || 0)
-                      const next = cur + 5
-                      setTempStockStr(String(next))
-                    }}
-                    className="h-8 rounded bg-white/20 text-xs font-black text-white hover:bg-white/30 active:scale-95"
-                  >
-                    +5
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-center gap-1.5">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={tempStockStr}
-                    onChange={(e) => setTempStockStr(e.target.value)}
-                    className="h-9 w-20 rounded bg-white px-2 py-1 text-center font-bold text-ink text-base outline-none shadow-inner"
-                  />
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => saveStock(Math.max(0, parseInt(tempStockStr, 10) || 0))}
-                    className="h-9 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50 active:scale-95 shadow-xs"
-                  >
-                    {busy ? '保存中...' : '確定'}
-                  </button>
-                  {isManualOverride && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void saveStock(null)}
-                      className="h-9 rounded-lg bg-white/20 px-2.5 text-xs font-bold text-white hover:bg-white/30"
-                      title="前日繰越と途中仕上がりからの自動計算に戻す"
-                    >
-                      自動計算に戻す
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <>
-                <span className="num mt-0.5 block text-xl font-black text-white tabular-nums">
-                  {stock.toLocaleString()} <small className="text-xs font-bold text-white/80">箱</small>
-                </span>
-                <span className="text-xs text-emerald-100 font-medium">
-                  {isManualOverride
-                    ? '※手動指定値'
-                    : `自動反映（前日 ${prevCarryover}箱 ＋ 途中 ${interimPackedBoxes}箱）`}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* 翌日出荷分（本日収穫・パック対象）の先回り連動見通し */}
-        {nextDayTotalBoxes > 0 && (
-          <div className="mt-3 rounded-xl bg-black/20 p-2.5 text-xs sm:text-sm border border-white/10 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 font-bold text-emerald-100">
-              <span>📅 翌日出荷分（本日収穫・パック）:</span>
-              <span className="text-white font-black text-sm sm:text-base">{nextDayTotalBoxes} 箱</span>
-              <span className="text-white/70">({nextDayTotalPacks} P)</span>
-            </div>
-            <div className="text-white/90 font-bold text-xs sm:text-sm">
-              {surplusBoxes > 0 ? (
-                <span>
-                  手元余剰 <span className="text-emerald-300 font-black">{surplusBoxes}箱</span> 充当後 → 本日採る翌日出荷分: <span className="text-white font-black underline">{Math.max(0, nextDayTotalBoxes - surplusBoxes)} 箱</span>
-                </span>
-              ) : (
-                <span>本日採る翌日出荷分: {nextDayTotalBoxes} 箱</span>
+              <button
+                type="button"
+                disabled={isBusyQuickBatch || remainingBoxes <= 0}
+                onClick={() => onQuickBatch(5)}
+                className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 font-black text-white text-xs shadow-xs active:scale-95 transition"
+                title="早い便順の未着手カードを＋5箱分パック済にする"
+              >
+                ＋5箱
+              </button>
+              <button
+                type="button"
+                disabled={isBusyQuickBatch || completedBoxes <= 0}
+                onClick={() => onQuickBatch(-5)}
+                className="h-8 px-2.5 rounded-lg bg-white/20 hover:bg-white/30 disabled:opacity-40 font-bold text-white text-xs active:scale-95 transition"
+                title="パック済みのカードを5箱分未着手に戻す"
+              >
+                −5箱
+              </button>
+              {canUndoQuickBatch && (
+                <button
+                  type="button"
+                  disabled={isBusyQuickBatch}
+                  onClick={onUndoQuickBatch}
+                  className="h-8 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 font-bold text-white text-xs active:scale-95 flex items-center gap-1 shadow-xs transition"
+                  title="直前のクイック変更を取り消す"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>戻す</span>
+                </button>
               )}
             </div>
           </div>
         )}
+
+        {/* 3指標リアルタイムグリッド（目標・完成・残り） */}
+        <div className="grid grid-cols-3 gap-2 text-center pt-1">
+          {/* ① 目標箱数 */}
+          <div className="rounded-xl bg-white/10 p-2.5 flex flex-col justify-between">
+            <div className="flex items-center justify-center gap-1 text-xs font-bold text-white/80">
+              <Target className="h-3.5 w-3.5" />
+              <span>目標</span>
+            </div>
+            <div className="my-1">
+              <span className="font-display text-2xl sm:text-3xl font-black text-white tabular-nums">
+                {totalBoxes.toLocaleString()}
+              </span>
+              <span className="text-xs font-bold text-white/80 ml-0.5">箱</span>
+            </div>
+            <span className="text-[11px] font-bold text-emerald-200/90 tabular-nums">
+              {totalPacks.toLocaleString()} P
+            </span>
+          </div>
+
+          {/* ② 完成箱数 */}
+          <div className="rounded-xl bg-emerald-400/25 border border-emerald-300/40 p-2.5 flex flex-col justify-between shadow-xs">
+            <div className="flex items-center justify-center gap-1 text-xs font-bold text-emerald-200">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>完成</span>
+            </div>
+            <div className="my-1">
+              <span className="font-display text-2xl sm:text-3xl font-black text-emerald-100 tabular-nums">
+                {completedBoxes.toLocaleString()}
+              </span>
+              <span className="text-xs font-bold text-emerald-200 ml-0.5">箱</span>
+            </div>
+            <span className="text-[11px] font-bold text-emerald-200/90 tabular-nums">
+              {completedPacks.toLocaleString()} P
+            </span>
+          </div>
+
+          {/* ③ 残り箱数 */}
+          <div
+            className={cn(
+              'rounded-xl p-2.5 flex flex-col justify-between transition-colors',
+              remainingBoxes === 0 && totalBoxes > 0
+                ? 'bg-emerald-500/40 border border-emerald-300'
+                : 'bg-white/10',
+            )}
+          >
+            <div className="flex items-center justify-center gap-1 text-xs font-bold text-white/80">
+              <Clock className="h-3.5 w-3.5" />
+              <span>残り</span>
+            </div>
+            <div className="my-1">
+              <span className="font-display text-2xl sm:text-3xl font-black text-white tabular-nums">
+                {remainingBoxes.toLocaleString()}
+              </span>
+              <span className="text-xs font-bold text-white/80 ml-0.5">箱</span>
+            </div>
+            <span className="text-[11px] font-bold text-emerald-200/90 tabular-nums">
+              {remainingPacks.toLocaleString()} P
+            </span>
+          </div>
+        </div>
+
+        {/* 進捗プログレスバー */}
+        <div className="space-y-1.5 pt-1">
+          <div className="flex items-center justify-between text-xs font-bold">
+            <span className="text-emerald-100">進捗率</span>
+            <span className="text-white font-black tabular-nums">{progressPct}%</span>
+          </div>
+          <div className="h-3.5 w-full rounded-full bg-black/30 p-0.5 overflow-hidden shadow-inner">
+            <div
+              style={{ width: `${progressPct}%` }}
+              className={cn(
+                'h-full rounded-full transition-all duration-300',
+                progressPct >= 100
+                  ? 'bg-gradient-to-r from-emerald-300 to-teal-200 shadow-xs'
+                  : 'bg-gradient-to-r from-emerald-400 to-teal-300',
+              )}
+            />
+          </div>
+          {progressPct >= 100 && totalBoxes > 0 && (
+            <div className="mt-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-400 text-emerald-950 px-2.5 py-1 text-xs font-black shadow-xs">
+              <span>🎉 本日の目標達成！全 {totalBoxes} 箱 パック完了</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 折りたたみ内訳アコーディオン（普段は閉じて画面スッキリ） */}
@@ -370,7 +280,10 @@ export function HarvestPulseSummary({
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {containerBreakdown.map((cb) => (
-                  <div key={cb.type} className="rounded-lg border border-line bg-white p-2 text-center">
+                  <div
+                    key={cb.type}
+                    className="rounded-lg border border-line bg-white p-2 text-center"
+                  >
                     <span className="block text-xs font-bold text-ink">{cb.type}</span>
                     <span className="text-base font-black text-ink tabular-nums">
                       {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
@@ -390,7 +303,10 @@ export function HarvestPulseSummary({
               </div>
               <div className="space-y-1">
                 {specBreakdown.map((sb) => (
-                  <div key={sb.spec} className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line">
+                  <div
+                    key={sb.spec}
+                    className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line"
+                  >
                     <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
                     <span className="font-black text-ink tabular-nums">
                       {sb.packs.toLocaleString()} P{' '}
@@ -405,17 +321,22 @@ export function HarvestPulseSummary({
           {/* 夕方の持ち越し入力 */}
           <div className="pt-2 border-t border-line/60">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs sm:text-sm font-bold text-ink">夕方の翌朝持ち越し登録:</span>
+              <span className="text-xs sm:text-sm font-bold text-ink">
+                夕方の翌朝持ち越し登録:
+              </span>
               <button
                 type="button"
                 onClick={() => {
-                  setTempCarryover(carryover)
                   setTempCarryoverStr(String(carryover))
                   setIsEditingCarryover(!isEditingCarryover)
                 }}
                 className="text-xs font-bold text-emerald-700 underline"
               >
-                {isEditingCarryover ? '閉じる' : carryover > 0 ? `${carryover}箱を引継設定中 (変更)` : '＋ 今日の余り箱数を登録'}
+                {isEditingCarryover
+                  ? '閉じる'
+                  : carryover > 0
+                  ? `${carryover}箱を引継設定中 (変更)`
+                  : '＋ 今日の余り箱数を登録'}
               </button>
             </div>
 
@@ -427,7 +348,6 @@ export function HarvestPulseSummary({
                     onClick={() => {
                       const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
                       const next = Math.max(0, cur - 5)
-                      setTempCarryover(next)
                       setTempCarryoverStr(String(next))
                     }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
@@ -439,7 +359,6 @@ export function HarvestPulseSummary({
                     onClick={() => {
                       const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
                       const next = Math.max(0, cur - 1)
-                      setTempCarryover(next)
                       setTempCarryoverStr(String(next))
                     }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
@@ -451,7 +370,6 @@ export function HarvestPulseSummary({
                     onClick={() => {
                       const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
                       const next = cur + 1
-                      setTempCarryover(next)
                       setTempCarryoverStr(String(next))
                     }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
@@ -463,7 +381,6 @@ export function HarvestPulseSummary({
                     onClick={() => {
                       const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
                       const next = cur + 5
-                      setTempCarryover(next)
                       setTempCarryoverStr(String(next))
                     }}
                     className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
@@ -478,10 +395,7 @@ export function HarvestPulseSummary({
                     inputMode="numeric"
                     min={0}
                     value={tempCarryoverStr}
-                    onChange={(e) => {
-                      setTempCarryoverStr(e.target.value)
-                      setTempCarryover(Math.max(0, parseInt(e.target.value, 10) || 0))
-                    }}
+                    onChange={(e) => setTempCarryoverStr(e.target.value)}
                     className="h-9 w-20 rounded border border-line bg-white px-2 py-1 text-center font-bold text-base shadow-inner outline-none"
                   />
                   <button

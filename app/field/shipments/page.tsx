@@ -1,6 +1,4 @@
 import Link from 'next/link'
-import { CheckCircle2 } from 'lucide-react'
-import { cn } from '@/lib/cn'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
@@ -12,14 +10,13 @@ import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
 import { SHIPMENTS_TOUR } from '@/lib/guide/tours'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
-import { getSetting } from '@/lib/settings'
 import { ProductSelectorTabs, type ProductTabItem } from '@/components/field/ProductSelectorTabs'
-import { HarvestPulseSummary, type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
+import { type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
 import { calculateChainInventory } from '@/lib/inventory/chain'
 import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
-import type { SpecWarning, PackPhotoKind, FieldStatus } from '@/types/database'
-import type { PackInstructionValues, PackInstructionPhoto } from '@/components/admin/PackInstructions'
+import type { SpecWarning, FieldStatus } from '@/types/database'
+import type { PackInstructionValues } from '@/components/admin/PackInstructions'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 
 type PackInstructionRow = {
@@ -161,7 +158,6 @@ export default async function ShipmentsPage({
   const items = allItems.filter((i) => i.product_id === selectedProductId)
 
   // ⑥ 納入先（出発便・時間・デフォルト作業順・コンテナ）取得（0026フォールバック付き）
-  const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
   const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
   const productIds = [...new Set(items.map((i) => i.product_id))]
 
@@ -345,19 +341,12 @@ export default async function ShipmentsPage({
     }
   }
 
-  // ⑦ 在庫（コンテナ）の連鎖キャリーオーバー取得（過去14日間の日跨ぎ累積繰越＋手動アンカー）
+  // ⑦ 在庫（コンテナ）の連鎖キャリーオーバー取得
   const chainInventory = selectedProductId
     ? await calculateChainInventory(admin, selectedProductId, date, 14)
-    : { effectiveStock: 0, inheritedCarryover: 0, hasManualStock: false, manualStock: null }
+    : { effectiveStock: 0, inheritedCarryover: 0, hasManualStock: false, manualStock: null, todayCarryover: 0 }
 
-  const prevCarryover = chainInventory.inheritedCarryover
-  const hasManualStock = chainInventory.hasManualStock
-
-  // ⑧ 選択中品目の集計（注文総箱数・総パック数・コンテナ内訳・規格内訳・袋詰め進捗箱数）
-  let totalPacks = 0
-  let totalBoxes = 0
-  let packedBoxes = 0
-  let shippedBoxes = 0
+  // ⑧ 選択中品目の集計（コンテナ内訳・規格内訳）
   const containerCounts = new Map<string, number>()
   const specCounts = new Map<string, { packs: number; boxes: number }>()
 
@@ -386,19 +375,11 @@ export default async function ShipmentsPage({
       : (cName.includes('農業総合研究所') || cName.includes('NSK') || (it.spec ?? '').includes('24') ? 24 : 20)
 
     const qty = it.quantity
-    totalPacks += qty
 
     // 箱数計算: ケース数 + (端数 > 0 ? 1 : 0)
     const cases = Math.floor(qty / perCase)
     const rem = qty % perCase
     const boxCount = cases + (rem > 0 ? 1 : 0)
-    totalBoxes += boxCount
-
-    if (it.field_status === 'packed') {
-      packedBoxes += boxCount
-    } else if (it.field_status === 'shipped') {
-      shippedBoxes += boxCount
-    }
 
     // コンテナ集計
     const contType = it.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
@@ -476,46 +457,112 @@ export default async function ShipmentsPage({
     boxes: data.boxes,
   }))
 
-  // 在庫の初期値（手動設定値があればそれ、なければ「前日繰越 + 本日途中仕上がり」）
-  const initialStock = hasManualStock ? (chainInventory.manualStock ?? 0) : (prevCarryover + packedBoxes)
-
-  // 翌日の注文合計箱数・パック数を取得（余剰在庫の引き当て・翌日の収穫見通し用）
+  // 翌日の注文明細（翌日先行枠・閲覧用）
   const nextDateStr = shiftDateStr(date, 1)
-  let nextDayTotalBoxes = 0
-  let nextDayTotalPacks = 0
+  const nextShipmentItems: ShipmentItemData[] = []
 
   if (selectedProductId) {
     const { data: nextOrders } = await supabase
       .from('orders')
-      .select('id, customer_id')
+      .select('id, customer_id, destination_id')
       .eq('delivery_date', nextDateStr)
       .neq('status', 'cancelled')
 
     const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
     const nextOrderCustMap = new Map((nextOrders ?? []).map((o) => [o.id, o.customer_id]))
+    const nextOrderDestMap = new Map((nextOrders ?? []).map((o) => [o.id, o.destination_id]))
 
     if (nextOrderIds.length > 0) {
       const { data: nextItems } = await supabase
         .from('order_items')
-        .select('order_id, quantity, pack_config_id, spec')
+        .select(`
+          id, order_id, product_id, product_name, quantity, unit, field_status, version,
+          spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings,
+          pack_config_id, rule_id, is_flagged, bag_type, seal_text, has_seal, daily_pack_sort_order,
+          snap_total_packs, is_manual_modified, is_new_addition
+        `)
         .eq('product_id', selectedProductId)
         .in('order_id', nextOrderIds)
 
       const defCapacity = capacityById.get(selectedProductId) ?? 20
       for (const ni of nextItems ?? []) {
         const custId = nextOrderCustMap.get(ni.order_id)
-        const pack = ni.pack_config_id ? packById.get(ni.pack_config_id) : null
-        const rule = custId ? ruleByPair.get(`${custId}:${selectedProductId}`) : null
-        const rulePacks = typeof rule?.packs_per_case === 'number' ? rule.packs_per_case : null
-        const cName = custId ? customerName.get(custId) ?? '' : ''
+        const destId = nextOrderDestMap.get(ni.order_id)
+        const dest = destId ? destinationMap.get(destId) : null
+        const cName = custId ? customerName.get(custId) ?? '—' : '—'
+        const dName = dest?.code?.trim() || dest?.full_name || cName
+        const color = custId ? customerColor.get(custId) ?? null : null
 
-        let perCase = pack?.base || rulePacks || defCapacity
+        const pack = ni.pack_config_id ? packById.get(ni.pack_config_id) : null
+        const rule = (ni.rule_id ? ruleById.get(ni.rule_id) : null) ?? (custId ? ruleByPair.get(`${custId}:${ni.product_id}`) : null)
+        const rulePacksPerCase = typeof rule?.packs_per_case === 'number' ? rule.packs_per_case : null
+        const ruleLabelSpec = typeof rule?.label_spec === 'string' ? rule.label_spec : null
+        const ruleTapeColor = typeof rule?.tape_color === 'string' ? rule.tape_color : null
+        const rulePackingNotes = typeof rule?.packing_notes === 'string' ? rule.packing_notes : null
+        const ruleBagType = typeof rule?.bag_type === 'string' ? rule.bag_type : null
+        const ruleSealText = typeof rule?.seal_text === 'string' ? rule.seal_text : null
+        const ruleHasSeal = typeof rule?.has_seal === 'boolean' ? rule.has_seal : null
+
+        let perCase = pack?.base || rulePacksPerCase || defCapacity
         if (!perCase || perCase <= 0) {
           perCase = (cName.includes('農業総合研究所') || cName.includes('NSK') || (ni.spec ?? '').includes('24') ? 24 : 20)
         }
 
-        nextDayTotalPacks += ni.quantity
-        nextDayTotalBoxes += Math.ceil(ni.quantity / perCase)
+        const qty = ni.quantity
+
+        const contType = ni.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
+
+        const override = (destId ? routeOverrides['dest:' + destId] : null)
+          || (dName ? routeOverrides['cust:' + custId + ':' + dName] : null)
+          || (custId ? routeOverrides['cust:' + custId + ':default'] : null)
+          || null
+
+        const resolvedShippingRoute = override?.shippingRouteName !== undefined
+          ? override.shippingRouteName
+          : dest?.shipping_route_name
+
+        const resolvedDepartureTime = override?.departureTime !== undefined
+          ? override.departureTime
+          : dest?.departure_time
+
+        nextShipmentItems.push({
+          itemId: ni.id,
+          customerName: cName,
+          customerColor: color,
+          destinationName: dName,
+          quantityText: formatQty(qty, capacityById.get(ni.product_id) ?? null, pack),
+          orderedQty: qty,
+          initialStatus: ni.field_status,
+          initialVersion: ni.version,
+          initialSpec: ni.spec,
+          initialContainer: contType,
+          initialHasCard: ni.has_card,
+          initialLineNote: ni.line_note,
+          initialShippedQty: ni.shipped_qty,
+          initialFieldNote: ni.field_note,
+          specWarnings: ni.spec_warnings,
+          masterLabelSpec: ruleLabelSpec,
+          masterTapeColor: ruleTapeColor,
+          masterPackingNotes: rulePackingNotes,
+          masterPacksPerCase: perCase,
+          needsManualConfirm: Boolean(ni.is_flagged) || (ni.pack_config_id ? Boolean(needsConfirmByPack.get(ni.pack_config_id)) : false),
+          packInstructions: ni.pack_config_id ? packInstructionsById.get(ni.pack_config_id) : null,
+          customerId: custId,
+          productId: ni.product_id,
+          canEditRulesDirectly: isAdmin,
+          canReportSpec,
+          bagType: ni.bag_type ?? ruleBagType,
+          sealText: ni.seal_text ?? ruleSealText,
+          hasSeal: ni.has_seal ?? ruleHasSeal,
+          dailyPackSortOrder: ni.daily_pack_sort_order ?? (ni.id ? packSortMap[ni.id] : null) ?? null,
+          defaultPackSortOrder: dest?.pack_sort_order ?? 100,
+          shippingRouteName: resolvedShippingRoute,
+          departureTime: resolvedDepartureTime,
+          deliveryDate: nextDateStr,
+          showShippingButton: false,
+          isNextDay: true,
+          receipt: receiptByOrder.get(ni.order_id) ?? null,
+        })
       }
     }
   }
@@ -641,34 +688,19 @@ export default async function ShipmentsPage({
         date={date}
       />
 
-      {/* ② 収穫自動逆算サマリー（コンテナ在庫差引＋折りたたみ内訳） */}
-      {selectedProduct && (
-        <HarvestPulseSummary
-          key={`pulse-${date}-${selectedProductId}`}
-          productName={selectedProduct.name}
-          productId={selectedProductId}
-          date={date}
-          totalPacks={totalPacks}
-          totalBoxes={totalBoxes}
-          initialStock={initialStock}
-          prevCarryover={prevCarryover}
-          initialCarryover={chainInventory.todayCarryover ?? 0}
-          interimPackedBoxes={packedBoxes}
-          hasManualStock={hasManualStock}
-          containerBreakdown={containerBreakdown}
-          specBreakdown={specBreakdown}
-          nextDayTotalBoxes={nextDayTotalBoxes}
-          nextDayTotalPacks={nextDayTotalPacks}
-        />
-      )}
-
-      {/* ③ パック画面 / 出荷画面（切替表示） */}
-      {shipmentItems.length > 0 ? (
+      {/* ② パック画面（リアルタイム進捗メーター ＋ クイック完成投入 ＋ 荷姿一覧 ＋ 翌日先行枠） */}
+      {(shipmentItems.length > 0 || nextShipmentItems.length > 0) && selectedProduct ? (
         <PackingAndShippingViews
           key={`views-${date}-${selectedProductId}`}
           items={shipmentItems}
+          nextDayItems={nextShipmentItems}
           date={date}
           isAdmin={isAdmin}
+          productName={selectedProduct.name}
+          productId={selectedProductId}
+          containerBreakdown={containerBreakdown}
+          specBreakdown={specBreakdown}
+          initialCarryover={chainInventory.todayCarryover ?? 0}
         />
       ) : (
         <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted space-y-3">

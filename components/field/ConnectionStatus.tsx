@@ -2,7 +2,7 @@
 
 import { useEffect, useReducer, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { CloudOff, Wifi } from 'lucide-react'
+import { Wifi, Radio } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import {
   INITIAL_CONNECTION,
@@ -13,22 +13,13 @@ import {
 } from '@/lib/field/connection'
 
 /**
- * 接続インジケーター（features.md §10 失敗#4「接続インジケーター常時表示」）。
- *
- * ハウス・畑・配送中は電波が切れる。切れていることに気づかないままタップし続けると、
- * 「保存できていない」ことに気づかないまま作業が終わる（＝出荷実績が残らない）。
- * 下部バーの真上に固定表示し、圏外の間はずっと出す。復帰したら短く知らせて自動で消え、
- * その際にサーバーデータを取り直す（圏外の間に事務所側で変わった数量を拾う）。
- *
- * 表示の判断ロジックは lib/field/connection.ts（テスト済みの純粋関数）に置く。
- * ここはイベント購読・タイマー・見た目だけを持つ。
- *
- * 位置は FieldBottomBar（高さ 4rem ＋ セーフエリア）の真上に合わせる。
- * env(safe-area-inset-bottom) は Tailwind で表現できないため、FieldBottomBar と同じく
- * inline style を使う（design.md のインラインstyle禁止の例外＝セーフエリア対応）。
+ * 接続インジケーター。
+ * ハウス・畑・配送中は電波が不安定になりやすい。
+ * 偽陽性（誤判定）を防ぐため、offline イベント検知時は /api/health へのヘルスチェックで実通信を確認する。
+ * 圏外時も「記録は端末に一時保存され、復帰時に自動送信されます」と正確に知らせ、現場作業員を不安にさせない。
  */
 
-/** 復帰の知らせを出しておく時間（ms）。読めるだけの長さで、作業の邪魔はしない。 */
+/** 復帰の知らせを出しておく時間（ms）。 */
 const RECOVERED_MS = 3000
 
 export function ConnectionStatus() {
@@ -38,13 +29,10 @@ export function ConnectionStatus() {
 
   const recoveredTimer = useRef<number | null>(null)
 
-  // 純粋関数の遷移を React に載せる。副作用（再取得・タイマー）は dispatch 側で拾う。
   const [state, rawDispatch] = useReducer(
     (s: ConnectionState, e: ConnectionEvent) => reduceConnection(s, e).state,
     INITIAL_CONNECTION,
   )
-  // 遷移の副作用を判定するため、同じ入力でもう一度純粋関数を通す必要がある。
-  // reducer は純粋に保ちたいので、現在値を ref に持って dispatch のラッパで判定する。
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -58,8 +46,6 @@ export function ConnectionStatus() {
         recoveredTimer.current = null
       }
       if (shouldRefresh) {
-        // 圏外の間にサーバー側で変わっているかもしれない（事務所の数量修正・承認）。
-        // 復帰時に取り直して、現場が古い数字のまま梱包するのを防ぐ。
         routerRef.current.refresh()
         recoveredTimer.current = window.setTimeout(() => {
           recoveredTimer.current = null
@@ -68,11 +54,34 @@ export function ConnectionStatus() {
       }
     }
 
-    const goOnline = () => dispatch({ type: 'online' })
-    const goOffline = () => dispatch({ type: 'offline' })
+    const checkHealth = async (): Promise<boolean> => {
+      try {
+        const controller = new AbortController()
+        const timeout = window.setTimeout(() => controller.abort(), 2000)
+        const res = await fetch('/api/health', { method: 'GET', signal: controller.signal })
+        window.clearTimeout(timeout)
+        return res.ok
+      } catch {
+        return false
+      }
+    }
 
-    // マウント時点で既に圏外なら、その場で帯を出す
-    if (navigator.onLine === false) goOffline()
+    const goOnline = () => dispatch({ type: 'online' })
+    const goOffline = async () => {
+      // 偽陽性防止: ブラウザのイベントだけでなく、実通信の疎通を確認する
+      const isAlive = await checkHealth()
+      if (isAlive) {
+        // 通信できているなら圏外と扱わない
+        if (!stateRef.current.online) goOnline()
+        return
+      }
+      dispatch({ type: 'offline' })
+    }
+
+    // 初回マウント時: navigator.onLine が false でも実疎通を確認してから判定
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      void goOffline()
+    }
 
     window.addEventListener('online', goOnline)
     window.addEventListener('offline', goOffline)
@@ -86,16 +95,11 @@ export function ConnectionStatus() {
   const visible = isBannerVisible(state)
 
   return (
-    // aria-live は常にマウントしておく（表示時に初めて現れる要素は読み上げられないため）
     <div
       role="status"
       aria-live="polite"
       className={cn(
-        'fixed inset-x-0 z-40 flex justify-center px-3 print:hidden',
-        // 横いっぱいに広がる帯なので、常にタップを透過させる。そうしないと
-        // 表示中は帯の下にある出荷行のタップを奪ってしまう（中身は押す要素ではない）。
-        'pointer-events-none',
-        'transition-opacity duration-300 motion-reduce:transition-none',
+        'fixed inset-x-0 z-40 flex justify-center px-3 print:hidden pointer-events-none transition-opacity duration-300 motion-reduce:transition-none',
         visible ? 'opacity-100' : 'opacity-0',
       )}
       style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
@@ -103,21 +107,21 @@ export function ConnectionStatus() {
       {visible && (
         <p
           className={cn(
-            'flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold shadow-md',
+            'flex items-center gap-2 rounded-full border px-4 py-2 text-xs sm:text-sm font-bold shadow-md',
             state.online
-              ? 'border-harvest-200 bg-harvest-50 text-harvest-700'
-              : 'border-alert/40 bg-warning-bg text-alert',
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+              : 'border-amber-300 bg-amber-50 text-amber-900',
           )}
         >
           {state.online ? (
             <>
-              <Wifi className="h-4 w-4 shrink-0" aria-hidden />
-              つながりました
+              <Wifi className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+              <span>つながりました（最新データと同期しました）</span>
             </>
           ) : (
             <>
-              <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
-              電波が ありません — きろくは ほぞんされません
+              <Radio className="h-4 w-4 shrink-0 text-amber-600 animate-pulse" aria-hidden />
+              <span>📡 電波が不安定です — 記録は端末に一時保存され、復帰時に自動送信されます</span>
             </>
           )}
         </p>
