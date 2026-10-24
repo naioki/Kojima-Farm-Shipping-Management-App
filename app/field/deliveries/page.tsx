@@ -1,18 +1,17 @@
 import Link from 'next/link'
-import { Truck, Clock, CheckCircle2 } from 'lucide-react'
-import { cn } from '@/lib/cn'
+import { Truck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
 import {
-  CustomerDeliveryCard,
   type CustomerDeliveryCardProps,
   type DestinationDetail,
 } from '@/components/field/CustomerDeliveryCard'
+import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { formatQty } from '@/lib/calculations/format-qty'
-import { jstTodayStr, formatJpDate } from '@/lib/dates'
+import { jstTodayStr } from '@/lib/dates'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -71,9 +70,17 @@ export default async function DeliveriesPage({
     shipping_route_name?: string | null
     departure_time?: string | null
     pack_sort_order?: number | null
+    default_container_type?: string | null
   }
 
-  const [custRes, destRes, prodRes, packRes, deliveryRes, routeOverrides] = await Promise.all([
+  type RuleRow = {
+    customer_id: string
+    product_id: string
+    packs_per_case?: number | null
+    default_container_type?: string | null
+  }
+
+  const [custRes, destRes, prodRes, packRes, deliveryRes, rulesRes, routeOverrides] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
@@ -81,7 +88,7 @@ export default async function DeliveriesPage({
       if (!destinationIds.length) return { data: [], error: null }
       const r1 = await supabase
         .from('delivery_destinations')
-        .select('id, code, full_name, shipping_route_name, departure_time, pack_sort_order')
+        .select('id, code, full_name, shipping_route_name, departure_time, pack_sort_order, default_container_type')
         .in('id', destinationIds)
       if (!r1.error) return { data: (r1.data ?? []) as DestRow[], error: null }
       const r2 = await supabase
@@ -98,6 +105,9 @@ export default async function DeliveriesPage({
       ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
       : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
     supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
+    customerIds.length
+      ? supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case, default_container_type').in('customer_id', customerIds)
+      : Promise.resolve({ data: [] as RuleRow[], error: null }),
     getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
   ])
 
@@ -112,6 +122,9 @@ export default async function DeliveriesPage({
   const capacityById = new Map((prodRes.data ?? []).map((p) => [p.id, p.container_capacity]))
   const packById = new Map(
     (packRes.data ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
+  )
+  const ruleByPair = new Map(
+    ((rulesRes.data ?? []) as RuleRow[]).map((r) => [`${r.customer_id}:${r.product_id}`, r]),
   )
   const deliveryByKey = new Map(
     (deliveryRes.data ?? []).map((d) => [
@@ -135,6 +148,10 @@ export default async function DeliveriesPage({
     return null
   }
 
+  function isClockTime(t?: string | null): t is string {
+    return Boolean(t && /^\d{1,2}:\d{2}/.test(t))
+  }
+
   // 便（ルート・出発時刻）の自動解決ヘルパー
   function resolveRouteInfo(
     destName: string | null,
@@ -144,7 +161,7 @@ export default async function DeliveriesPage({
     override?: { departureTime: string | null; shippingRouteName: string | null } | null,
   ): { title: string; departureTime: string | null } {
     if (override) {
-      const effectiveTime = override.departureTime
+      const effectiveTime = isClockTime(override.departureTime) ? override.departureTime : null
       const routeName = override.shippingRouteName || dest?.shipping_route_name || null
       if (routeName || effectiveTime) {
         const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
@@ -155,7 +172,7 @@ export default async function DeliveriesPage({
         }
       }
     }
-    const effectiveTime = orderShippingTime || dest?.departure_time || null
+    const effectiveTime = isClockTime(dest?.departure_time) ? dest!.departure_time! : isClockTime(orderShippingTime) ? orderShippingTime : null
     if (dest?.shipping_route_name || effectiveTime) {
       const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
       const routeSuffix = dest?.shipping_route_name ? ` ${dest.shipping_route_name}` : ''
@@ -177,6 +194,12 @@ export default async function DeliveriesPage({
     }
     if (c.includes('直売') || d.includes('直売')) {
       return { title: '直売所便', departureTime: null }
+    }
+    if (orderShippingTime === 'am') {
+      return { title: '午前便', departureTime: '11:30' }
+    }
+    if (orderShippingTime === 'pm') {
+      return { title: '午後便', departureTime: '14:00' }
     }
     return { title: '一般配送・時間未指定', departureTime: null }
   }
@@ -247,16 +270,20 @@ export default async function DeliveriesPage({
     }
 
     // 納品先マップへの追加（同一納品先が便やメモ違いで分裂しないよう、納品先IDまたは正規化名で1本化）
-    const effectiveDepTime = override?.departureTime !== undefined
+    const effectiveDepTime = override?.departureTime !== undefined && isClockTime(override.departureTime)
       ? override.departureTime
-      : (order.shipping_time || dest?.departure_time || routeInfo.departureTime)
+      : (isClockTime(dest?.departure_time) ? dest!.departure_time! : routeInfo.departureTime)
 
     const effectiveRouteName = override?.shippingRouteName !== undefined
       ? override.shippingRouteName
       : (dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null))
 
+    const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`)
+    const resolvedContainer =
+      it.container_type || dest?.default_container_type || rule?.default_container_type || null
+
     const destKey = order.destination_id || `name:${destName}`
-    let dEntry = cEntry.destinationsMap.get(destKey)
+    let dEntry = cEntry.destinationsMap.get(destKey) as (DestinationDetail & { _perCase?: number }) | undefined
     if (!dEntry) {
       const delStatus =
         deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.status ??
@@ -267,7 +294,7 @@ export default async function DeliveriesPage({
         destinationName: destName,
         shippingRouteName: effectiveRouteName,
         departureTime: effectiveDepTime,
-        containerType: it.container_type || null,
+        containerType: resolvedContainer,
         cases: 0,
         loose: 0,
         fractionBoxes: 0,
@@ -278,10 +305,10 @@ export default async function DeliveriesPage({
       }
       cEntry.destinationsMap.set(destKey, dEntry)
     } else {
-      if (!dEntry.containerType && it.container_type) {
-        dEntry.containerType = it.container_type
+      if (!dEntry.containerType && resolvedContainer) {
+        dEntry.containerType = resolvedContainer
       }
-      if (override?.departureTime !== undefined) {
+      if (override?.departureTime !== undefined && isClockTime(override.departureTime)) {
         dEntry.departureTime = override.departureTime
       } else if (!dEntry.departureTime && effectiveDepTime) {
         dEntry.departureTime = effectiveDepTime
@@ -293,10 +320,32 @@ export default async function DeliveriesPage({
       }
     }
 
-    // ケース数・端数換算
-    const perCase: number = (it.pack_config_id ? packById.get(it.pack_config_id)?.base : null) || (capacityById.get(it.product_id) ?? 20) || 20
-    const itemCases = Math.floor(it.quantity / perCase)
-    const itemLoose = it.quantity % perCase
+    // ケース数・端数換算（取引先別ルール ＞ 荷姿マスタ ＞ 規格文字列 ＞ NSK判定 ＞ 商品標準入数20）
+    let perCase: number | null =
+      rule?.packs_per_case ??
+      (it.pack_config_id ? packById.get(it.pack_config_id)?.base ?? null : null)
+    if (!perCase || perCase <= 0) {
+      const combinedSpec = `${customerName} ${it.spec || ''}`.normalize('NFKC')
+      const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+      if (match) {
+        const parsedNum = Number(match[1] || match[2])
+        if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+          perCase = parsedNum
+        }
+      }
+      if (!perCase || perCase <= 0) {
+        if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
+          perCase = 24
+        } else {
+          perCase = capacityById.get(it.product_id) ?? 20
+        }
+      }
+    }
+    const safePerCase = perCase && perCase > 0 ? perCase : 20
+    dEntry._perCase = safePerCase
+
+    const itemCases = Math.floor(it.quantity / safePerCase)
+    const itemLoose = it.quantity % safePerCase
 
     dEntry.cases += itemCases
     dEntry.loose += itemLoose
@@ -306,12 +355,12 @@ export default async function DeliveriesPage({
       productName: it.product_name,
       quantityText: formatQty(
         it.quantity,
-        capacityById.get(it.product_id) ?? null,
+        safePerCase,
         it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
       ),
       unit: it.unit,
       quantity: it.quantity,
-      noteText: [it.spec, it.container_type, it.has_card ? 'カード有' : null, it.line_note].filter(Boolean).join('・') || '—',
+      noteText: [it.spec, resolvedContainer, it.has_card ? 'カード有' : null, it.line_note].filter(Boolean).join('・') || '—',
     })
   }
 
@@ -323,7 +372,7 @@ export default async function DeliveriesPage({
   for (const cEntry of customerGroupMap.values()) {
     const destinationsList = Array.from(cEntry.destinationsMap.values()).filter(
       (d) => d.totalQty > 0 || d.items.length > 0,
-    )
+    ) as Array<DestinationDetail & { _perCase?: number }>
     if (destinationsList.length === 0) continue
 
     let totalCases = 0
@@ -333,9 +382,10 @@ export default async function DeliveriesPage({
     let grandTotalContainers = 0
 
     for (const d of destinationsList) {
-      if (d.loose >= 20) {
-        d.cases += Math.floor(d.loose / 20)
-        d.loose %= 20
+      const foldPerCase = d._perCase && d._perCase > 0 ? d._perCase : 20
+      if (d.loose >= foldPerCase) {
+        d.cases += Math.floor(d.loose / foldPerCase)
+        d.loose %= foldPerCase
       }
       d.fractionBoxes = d.loose > 0 ? 1 : 0
       d.totalBoxes = d.cases + d.fractionBoxes
@@ -399,8 +449,6 @@ export default async function DeliveriesPage({
   })
 
   const globalTotalCustomers = customerCards.length
-  const globalCompletedCustomers = customerCards.filter((c) => c.isCompleted).length
-  const globalRemaining = globalTotalCustomers - globalCompletedCustomers
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -434,38 +482,7 @@ export default async function DeliveriesPage({
           description="承認済み注文の出荷日がこの日になると表示されます。"
         />
       ) : (
-        <>
-          {/* 進捗表示（取引先集約進捗） */}
-          <div className="flex items-center justify-between rounded-xl border border-earth-200 bg-earth-50 px-4 py-3 print:hidden">
-            <span className="text-xs sm:text-sm font-bold text-ink-soft">
-              本日の積込進捗（取引先集約）
-            </span>
-            <span className="text-ink-soft font-medium text-xs sm:text-sm flex items-center">
-              完了 <span className="num text-2xl font-black tabular-nums text-earth-700 mx-1">{globalCompletedCustomers}</span>
-              <span className="mx-1">/</span>
-              {globalTotalCustomers} 取引先
-              {globalRemaining > 0 ? (
-                <span className="ml-2 rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 text-xs font-black">
-                  残り {globalRemaining}
-                </span>
-              ) : (
-                <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 text-xs font-black inline-flex items-center gap-0.5">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> 全積込完了
-                </span>
-              )}
-            </span>
-          </div>
-
-          {/* 取引先ワンボックス集約カード一覧（和郷園等の同一取引先が1つのカードに集約） */}
-          <div className="space-y-3.5">
-            {customerCards.map((c) => (
-              <CustomerDeliveryCard
-                key={c.customerId}
-                {...c}
-              />
-            ))}
-          </div>
-        </>
+        <DeliveriesBoardView initialCards={customerCards} />
       )}
     </div>
   )

@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, ChevronDown, Circle, Check, Truck, IdCard, PauseCircle, StickyNote, AlertTriangle, ShieldCheck, Trash2, Settings, Camera, Undo2 } from 'lucide-react'
+import { ChevronDown, Check, AlertTriangle, ShieldCheck, Trash2, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus, SpecWarning } from '@/types/database'
 import { ColorDot } from '@/components/ui/ColorDot'
-import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
+import { FIELD_STATUS_META } from '@/lib/field/tap-loop'
 import { rowStatusKey, type RowStatusKey } from '@/lib/field/shipment-sort'
-import { FIELD_STATUS_STYLE, fieldStatusStyle } from '@/lib/field/status-style'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto } from '@/components/admin/PackInstructions'
@@ -18,8 +17,6 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-
-const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
 /**
  * ステータス別の配色は lib/field/status-style.ts（単一の正）から取る。
@@ -124,15 +121,10 @@ export function ShipmentRow({
   needsManualConfirm,
   packInstructions,
   packPhotos,
-  customerId,
-  productId,
-  canEditRulesDirectly,
-  canReportSpec,
   bagType,
   sealText,
   hasSeal,
   deliveryDate,
-  isAdmin,
   onMoveUp,
   onMoveDown,
   showShippingButton = false,
@@ -177,14 +169,9 @@ export function ShipmentRow({
   const [savingNote, setSavingNote] = useState(false)
 
   const meta = FIELD_STATUS_META[status]
-  const Icon = ICONS[meta.icon]
-  const hasDetails = spec || container || hasCard || lineNote || masterLabelSpec || masterTapeColor || masterPackingNotes
   // 「途中で止まった」= できた数が受注総数に満たない。出荷前でも記録できる。
   const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
   const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
-  // 中断＝できた数が受注未満で、まだ出荷していない。梱包完了（全量）と明確に区別する。
-  const interrupted = isPartial && status !== 'shipped'
-  const statusKey = rowStatusKey(status, isPartial ? shippedNum : null, orderedQty)
 
   // ケース数・端数パックの計算（GAS版UI用）:
   // 1. masterPacksPerCase があれば最優先
@@ -284,67 +271,6 @@ export function ShipmentRow({
       setConflict(false)
       setOfflinePending(false)
       onStatusChange?.(itemId, target, json.item.version)
-      startUndoGrace(prev, target)
-    } catch (e: unknown) {
-      clearTimeout(timer)
-      const err = e as { name?: string } | null
-      const isNetworkOrAbort = (typeof navigator !== 'undefined' && !navigator.onLine) || err?.name === 'AbortError' || e instanceof TypeError
-      if (isNetworkOrAbort) {
-        try {
-          await enqueue({
-            itemId,
-            fieldStatus: target,
-            version,
-            ts: Date.now(),
-          })
-          setOfflinePending(true)
-          toast('圏外のため一時保存しました（電波復帰時に自動送信）', { icon: '📡' })
-          onStatusChange?.(itemId, target, version)
-          startUndoGrace(prev, target)
-          return
-        } catch (enqueueErr) {
-          console.error('Failed to enqueue outbox', enqueueErr)
-        }
-      }
-      setStatus(prev)
-      toast.error(fieldErrorMessage(e, '更新に失敗しました'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function advance() {
-    if (!canAdvance(status) || busy) return
-    const target = nextFieldStatus(status)
-    const prev = status
-    setStatus(target)
-    setBusy(true)
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 8000)
-    try {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        throw new TypeError('Failed to fetch (offline)')
-      }
-      const res = await fetch(`/api/order-items/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ field_status: target, version }),
-        signal: controller.signal,
-      })
-      clearTimeout(timer)
-      if (res.status === 409) {
-        setStatus(prev)
-        setConflict(true)
-        toast.error('競合しました。画面を更新してください')
-        return
-      }
-      if (!res.ok) throw new Error(`更新失敗 (${res.status})`)
-      const json = (await res.json()) as { item: { version: number } }
-      setVersion(json.item.version)
-      setConflict(false)
-      setOfflinePending(false)
-      onStatusChange?.(itemId, target, json.item.version)
-      // すぐには並べ替えず、猶予中は「元に戻す」を出す（誤タップ対策・Issue#5）
       startUndoGrace(prev, target)
     } catch (e: unknown) {
       clearTimeout(timer)

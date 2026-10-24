@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronDown,
   AlertTriangle,
-  Clock,
   Edit3,
   Check,
   Loader2,
@@ -63,6 +62,7 @@ export interface CustomerDeliveryCardProps {
   shippingRouteName?: string | null
   departureTime?: string | null
   earliestDepartureTime?: string | null
+  onCompletionChange?: (customerId: string, isCompleted: boolean) => void
 }
 
 /**
@@ -83,14 +83,14 @@ export function CustomerDeliveryCard({
   totalQty,
   notes: initialNotes,
   isCompleted: initialIsCompleted,
-  destinations,
+  destinations: initialDestinations,
   routeSummaries = [],
-  shippingRouteName,
-  departureTime,
   earliestDepartureTime,
+  onCompletionChange,
 }: CustomerDeliveryCardProps) {
   const router = useRouter()
   const [isCompleted, setIsCompleted] = useState<boolean>(initialIsCompleted)
+  const [destinations, setDestinations] = useState<DestinationDetail[]>(initialDestinations)
   const [open, setOpen] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
 
@@ -98,6 +98,10 @@ export function CustomerDeliveryCard({
   useEffect(() => {
     setIsCompleted(initialIsCompleted)
   }, [initialIsCompleted])
+
+  useEffect(() => {
+    setDestinations(initialDestinations)
+  }, [initialDestinations])
 
   // メモ編集用の State
   const [notes, setNotes] = useState<string[]>(initialNotes)
@@ -130,7 +134,15 @@ export function CustomerDeliveryCard({
   // 取引先単位の一括ワンタップ積込OKトグル
   async function toggleLoaded() {
     if (busy) return
+    const nextCompleted = !isCompleted
     const nextAction = isCompleted ? 'revert' : 'loaded'
+    const prevCompleted = isCompleted
+    const prevDestinations = destinations
+    setIsCompleted(nextCompleted)
+    setDestinations((prev) =>
+      prev.map((d) => ({ ...d, status: nextCompleted ? 'loaded' : 'planned' })),
+    )
+    onCompletionChange?.(customerId, nextCompleted)
     setBusy(true)
     try {
       const res = await fetch('/api/deliveries/confirm-customer', {
@@ -146,10 +158,12 @@ export function CustomerDeliveryCard({
       if (!res.ok) {
         throw new Error('積込ステータスの更新に失敗しました')
       }
-      setIsCompleted(!isCompleted)
-      toast.success(isCompleted ? '未積込に戻しました' : '🚚 積込チェックを完了しました')
+      toast.success(prevCompleted ? '未積込に戻しました' : '🚚 積込チェックを完了しました')
       router.refresh()
     } catch (e) {
+      setIsCompleted(prevCompleted)
+      setDestinations(prevDestinations)
+      onCompletionChange?.(customerId, prevCompleted)
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {
       setBusy(false)
@@ -160,6 +174,19 @@ export function CustomerDeliveryCard({
   async function toggleDestination(destId: string | null, currentStatus: string) {
     if (busy) return
     const nextAction = currentStatus === 'loaded' || currentStatus === 'delivered' ? 'revert' : 'loaded'
+    const nextStatus: DestinationDetail['status'] = nextAction === 'loaded' ? 'loaded' : 'planned'
+    const prevDestinations = destinations
+    const prevCompleted = isCompleted
+    const updatedDestinations = destinations.map((d) =>
+      d.destinationId === destId ? { ...d, status: nextStatus } : d,
+    )
+    const nextAllCompleted =
+      updatedDestinations.length > 0 &&
+      updatedDestinations.every((d) => d.status === 'loaded' || d.status === 'delivered')
+
+    setDestinations(updatedDestinations)
+    setIsCompleted(nextAllCompleted)
+    onCompletionChange?.(customerId, nextAllCompleted)
     setBusy(true)
     try {
       const res = await fetch('/api/deliveries/confirm-customer', {
@@ -178,6 +205,9 @@ export function CustomerDeliveryCard({
       toast.success(nextAction === 'loaded' ? '納品先の積込をOKにしました' : '未積込に戻しました')
       router.refresh()
     } catch (e) {
+      setDestinations(prevDestinations)
+      setIsCompleted(prevCompleted)
+      onCompletionChange?.(customerId, prevCompleted)
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {
       setBusy(false)

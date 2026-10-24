@@ -66,6 +66,7 @@ export function PackingAndShippingViews({
   const [nextItems, setNextItems] = useState<ShipmentItemData[]>(initialNextDayItems)
   const [busyReorder, setBusyReorder] = useState<boolean>(false)
   const [sortMode, setSortMode] = useState<PackSortMode>('time')
+  const [filterMode, setFilterMode] = useState<'all' | 'incomplete'>('all')
   const [isReorderModalOpen, setIsReorderModalOpen] = useState<boolean>(false)
   const [isViewingNextDay, setIsViewingNextDay] = useState(false)
   const nextSectionRef = useRef<HTMLDivElement | null>(null)
@@ -119,11 +120,13 @@ export function PackingAndShippingViews({
   // 選択されたモードによるソート
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
-  // リアルタイム進捗計算（アイテム状態 ＋ 途中数に直結）
+  // リアルタイム進捗計算（アイテム状態 ＋ 途中数に直結）＆ コンテナ・規格内訳のライブ集計
   let totalPacks = 0
   let totalBoxes = 0
   let completedBoxes = 0
   let completedPacks = 0
+  const liveContainerMap = new Map<string, number>()
+  const liveSpecMap = new Map<string, { packs: number; boxes: number }>()
 
   for (const it of items) {
     const perCase = it.masterPacksPerCase || 20
@@ -141,13 +144,40 @@ export function PackingAndShippingViews({
         completedBoxes += Math.round(partialPacks / perCase)
       }
     }
+
+    const cType = it.initialContainer || '通常コンテナ'
+    liveContainerMap.set(cType, (liveContainerMap.get(cType) ?? 0) + boxCount)
+
+    const sKey = it.initialSpec || it.masterLabelSpec || '標準規格'
+    const curSpec = liveSpecMap.get(sKey) ?? { packs: 0, boxes: 0 }
+    curSpec.packs += it.orderedQty
+    curSpec.boxes += boxCount
+    liveSpecMap.set(sKey, curSpec)
   }
+
+  const liveContainerBreakdown: ContainerBreakdownItem[] =
+    items.length > 0
+      ? Array.from(liveContainerMap.entries()).map(([type, boxes]) => ({ type, boxes }))
+      : (containerBreakdown ?? [])
+
+  const liveSpecBreakdown: SpecBreakdownItem[] =
+    items.length > 0
+      ? Array.from(liveSpecMap.entries()).map(([spec, d]) => ({ spec, packs: d.packs, boxes: d.boxes }))
+      : (specBreakdown ?? [])
 
   completedBoxes = Math.min(totalBoxes, completedBoxes)
   const remainingPacks = Math.max(0, totalPacks - completedPacks)
   const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
   const progressPct =
     totalPacks > 0 ? Math.min(100, Math.round((completedPacks / totalPacks) * 100)) : 0
+
+  const incompleteCount = sortedPackItems.filter(
+    (it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped',
+  ).length
+  const visiblePackItems =
+    filterMode === 'incomplete'
+      ? sortedPackItems.filter((it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped')
+      : sortedPackItems
 
   // ステータス即時連動（カードタップ時に即座に親Stateを更新）
   const handleStatusChange = (itemId: string, newStatus: FieldStatus, newVersion: number) => {
@@ -163,6 +193,11 @@ export function PackingAndShippingViews({
     setItems((prev) =>
       prev.map((it) => (it.itemId === itemId ? { ...it, initialShippedQty: newQty } : it)),
     )
+  }
+
+  // 削除即時連動（カード削除時に即座にリストと進捗メーターから除外）
+  const handleDeleted = (itemId: string) => {
+    setItems((prev) => prev.filter((it) => it.itemId !== itemId))
   }
 
   // 管理者による上下移動（パック作業順）
@@ -319,8 +354,8 @@ export function PackingAndShippingViews({
           totalBoxes={totalBoxes}
           completedBoxes={completedBoxes}
           completedPacks={completedPacks}
-          containerBreakdown={containerBreakdown ?? []}
-          specBreakdown={specBreakdown ?? []}
+          containerBreakdown={liveContainerBreakdown}
+          specBreakdown={liveSpecBreakdown}
           initialCarryover={initialCarryover}
           isTodayTarget={isTodayWork}
         />
@@ -328,15 +363,41 @@ export function PackingAndShippingViews({
 
       {/* 作業順ヘッダー案内 ＆ 3モード切替ボタングループ */}
       <div className="space-y-2 pt-1">
-        <div className="flex items-center justify-between px-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
           <span className="text-sm font-bold text-ink flex items-center gap-1.5">
             <span>📋 作業順</span>
             <span className="text-xs text-emerald-800 bg-emerald-100 font-extrabold px-2 py-0.5 rounded-md">
               {sortMode === 'time' ? '⏰ 早い便順' : sortMode === 'destination' ? '🏢 出荷先順' : '📦 コンテナ順'}
             </span>
           </span>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-ink-soft">全 {sortedPackItems.length} 件</span>
+          <div className="flex items-center gap-1.5">
+            {/* ワンタップ絞り込み（すべて / 未完了のみ） */}
+            <div className="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-line text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setFilterMode('all')}
+                className={cn(
+                  'px-2 py-1 rounded-md transition',
+                  filterMode === 'all'
+                    ? 'bg-white text-ink shadow-2xs'
+                    : 'text-ink-muted hover:text-ink',
+                )}
+              >
+                すべて ({sortedPackItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('incomplete')}
+                className={cn(
+                  'px-2 py-1 rounded-md transition',
+                  filterMode === 'incomplete'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-ink-muted hover:text-ink',
+                )}
+              >
+                未完了 ({incompleteCount})
+              </button>
+            </div>
             {isAdmin && (
               <button
                 type="button"
@@ -395,65 +456,86 @@ export function PackingAndShippingViews({
       </div>
 
       {/* 当日出荷分のパック作業カード一覧（グループ境界ヘッダー付き） */}
-      <div className="space-y-3">
-        {sortedPackItems.map((item, idx) => {
-          const groupInfo = getPackGroupInfo(item, sortMode)
-          const prevGroupInfo = idx > 0 ? getPackGroupInfo(sortedPackItems[idx - 1]!, sortMode) : null
-          const isNewSection = idx === 0 || groupInfo.groupKey !== prevGroupInfo?.groupKey
+      {visiblePackItems.length === 0 && filterMode === 'incomplete' && sortedPackItems.length > 0 ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center space-y-2">
+          <p className="text-base font-black text-emerald-900">
+            🎉 この品目のパック作業はすべて完了しています！
+          </p>
+          <button
+            type="button"
+            onClick={() => setFilterMode('all')}
+            className="inline-flex items-center rounded-lg bg-white border border-emerald-300 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition"
+          >
+            完了済みのカードを表示する
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {visiblePackItems.map((item, idx) => {
+            const fullIdx = sortedPackItems.findIndex((s) => s.itemId === item.itemId)
+            const groupInfo = getPackGroupInfo(item, sortMode)
+            const prevGroupInfo = idx > 0 ? getPackGroupInfo(visiblePackItems[idx - 1]!, sortMode) : null
+            const isNewSection = idx === 0 || groupInfo.groupKey !== prevGroupInfo?.groupKey
 
-          return (
-            <div key={item.itemId} className="space-y-2">
-              {isNewSection && (
-                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 pb-1 px-1 border-b-2 border-line-soft">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs">{groupInfo.icon}</span>
-                    <span className="text-xs font-black text-ink">{groupInfo.title}</span>
-                    {groupInfo.badge && (
-                      <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.2 text-[10px] font-bold">
-                        {groupInfo.badge}
-                      </span>
+            return (
+              <div key={item.itemId} className="space-y-2">
+                {isNewSection && (
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 pb-1 px-1 border-b-2 border-line-soft">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs">{groupInfo.icon}</span>
+                      <span className="text-xs font-black text-ink">{groupInfo.title}</span>
+                      {groupInfo.badge && (
+                        <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.2 text-[10px] font-bold">
+                          {groupInfo.badge}
+                        </span>
+                      )}
+                      {groupInfo.subtitle && (
+                        <span className="text-[11px] font-bold text-ink-muted">
+                          {groupInfo.subtitle}
+                        </span>
+                      )}
+                    </div>
+                    {sortMode === 'time' && (
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-ink-muted">
+                        <span>納品先別まとめ</span>
+                      </div>
                     )}
-                    {groupInfo.subtitle && (
-                      <span className="text-[11px] font-bold text-ink-muted">
-                        {groupInfo.subtitle}
-                      </span>
+                    {sortMode === 'destination' && (
+                      <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
+                        <span>{item.initialContainer || 'コンテナ'}</span>
+                        {item.masterPacksPerCase && <span>({item.masterPacksPerCase}入)</span>}
+                      </div>
+                    )}
+                    {sortMode === 'container' && (
+                      <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
+                        <span>納品先順</span>
+                      </div>
                     )}
                   </div>
-                  {sortMode === 'time' && (
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-ink-muted">
-                      <span>納品先別まとめ</span>
-                    </div>
-                  )}
-                  {sortMode === 'destination' && (
-                    <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
-                      <span>{item.initialContainer || 'コンテナ'}</span>
-                      {item.masterPacksPerCase && <span>({item.masterPacksPerCase}入)</span>}
-                    </div>
-                  )}
-                  {sortMode === 'container' && (
-                    <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
-                      <span>納品先順</span>
-                    </div>
-                  )}
-                </div>
-              )}
-              <ShipmentRow
-                {...item}
-                deliveryDate={date}
-                isAdmin={isAdmin}
-                onMoveUp={isAdmin && !busyReorder && idx > 0 ? () => handleMove(idx, 'up') : undefined}
-                onMoveDown={
-                  isAdmin && !busyReorder && idx < sortedPackItems.length - 1
-                    ? () => handleMove(idx, 'down')
-                    : undefined
-                }
-                onStatusChange={handleStatusChange}
-                onShippedQtyChange={handleShippedQtyChange}
-              />
-            </div>
-          )
-        })}
-      </div>
+                )}
+                <ShipmentRow
+                  {...item}
+                  deliveryDate={date}
+                  isAdmin={isAdmin}
+                  onMoveUp={
+                    isAdmin && !busyReorder && fullIdx > 0
+                      ? () => handleMove(fullIdx, 'up')
+                      : undefined
+                  }
+                  onMoveDown={
+                    isAdmin && !busyReorder && fullIdx >= 0 && fullIdx < sortedPackItems.length - 1
+                      ? () => handleMove(fullIdx, 'down')
+                      : undefined
+                  }
+                  onStatusChange={handleStatusChange}
+                  onShippedQtyChange={handleShippedQtyChange}
+                  onDeleted={handleDeleted}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* 翌日出荷予定カード一覧（先行作業・閲覧用、薄グレー背景＋チャコール色で視覚的分離） */}
       {nextItems.length > 0 && (
@@ -493,6 +575,9 @@ export function PackingAndShippingViews({
                         : it,
                     ),
                   )
+                }}
+                onDeleted={(id) => {
+                  setNextItems((prev) => prev.filter((it) => it.itemId !== id))
                 }}
               />
             ))}

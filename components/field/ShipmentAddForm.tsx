@@ -250,11 +250,14 @@ export function ShipmentAddForm({
       const p = localPacksByPair[`${customerId}:${productId}`]
       if (p != null && p > 0) {
         setInputPacksPerCase(p)
-        if (inputCases && Number(inputCases) > 0) {
-          const tot = Math.round(Number(inputCases) * p)
-          setInputTotalPacks(String(tot))
-          setQtyRaw(`${inputCases}c`)
-        }
+        setInputCases((curCases) => {
+          if (curCases && Number(curCases) > 0) {
+            const tot = Math.round(Number(curCases) * p)
+            setInputTotalPacks(String(tot))
+            setQtyRaw(`${curCases}c`)
+          }
+          return curCases
+        })
       }
     }
   }, [customerId, productId, localPacksByPair])

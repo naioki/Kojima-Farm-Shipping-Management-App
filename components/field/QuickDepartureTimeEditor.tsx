@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Clock, Check, X, Truck } from 'lucide-react'
+import { Clock, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 

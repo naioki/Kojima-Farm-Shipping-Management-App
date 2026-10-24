@@ -9,15 +9,8 @@ import {
   Carrot,
   Settings,
   ClipboardList,
-  Camera,
-  Tag,
-  Coins,
-  Images,
   Truck,
-  BarChart3,
-  Tags,
   Sparkles,
-  Columns,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
