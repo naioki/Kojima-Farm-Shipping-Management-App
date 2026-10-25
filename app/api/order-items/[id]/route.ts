@@ -67,9 +67,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.quantity != null) {
       updates.quantity = input.quantity
       // 数量変更時: GAS版二重ガードに従い、誤出荷防止のためステータスを未着手に自動リセット
+      // ただし既にパック済・出荷済だったものが数量増加した場合は、作成済みの数量を shipped_qty（途中数）として引き継ぎ「あと+〇〇P追加必要」を明示する
       if (input.quantity !== current.quantity) {
+        const oldQ = Number(current.quantity)
+        const newQ = Number(input.quantity)
+        const wasPacked = current.field_status === 'packed' || current.field_status === 'shipped'
         updates.field_status = 'not_started'
-        updates.shipped_qty = null
+        updates.shipped_qty = wasPacked && newQ > oldQ ? oldQ : null
+        if (wasPacked && newQ > oldQ) {
+          const addP = newQ - oldQ
+          const alertMemo = `🚨パック済(${oldQ}P)→${newQ}P(+${addP}P追加必要)`
+          const prevNote = typeof current.line_note === 'string' ? current.line_note : ''
+          if (input.line_note === undefined) {
+            updates.line_note = prevNote ? `${prevNote} / ${alertMemo}` : alertMemo
+          }
+        }
       }
     }
     if (input.unit_price != null) updates.unit_price = input.unit_price

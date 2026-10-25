@@ -292,6 +292,7 @@ export function normalizeCustomerAndDestination(params: {
   customerName?: string | null
   destinationName?: string | null
   spec?: string | null
+  packsPerCase?: number | null
   isSample?: boolean
 }): {
   customerName: string | null
@@ -319,15 +320,29 @@ export function normalizeCustomerAndDestination(params: {
     if (!spec) spec = '200gUP (入数24)'
   } else if (normClient.includes('房総食料')) {
     customerName = '農事組合法人 房総食料センター'
+    // FAX記載の packsPerCase または spec 内の入数指定があれば尊重し、未指定時のみ入数20とする（ちばセット用も入数変更20に対応）
+    const explicitUnit =
+      params.packsPerCase && params.packsPerCase > 0
+        ? params.packsPerCase
+        : (() => {
+            const m = (spec ?? '').match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入/)
+            return m ? Number(m[1] || m[2]) : 20
+          })()
     if (normDest.includes('ちばセット') || normDest.includes('千葉セット')) {
       destinationName = 'ちばセット用'
-      if (!spec || spec.includes('250g') || spec.includes('200g')) spec = '200g (入数30)'
+      if (!spec || spec.includes('250g') || spec.includes('200g')) {
+        spec = `200g (入数${explicitUnit})`
+      }
     } else if (normDest.includes('box') || normDest.includes('ボックス')) {
       destinationName = 'BOX用'
-      if (!spec || spec.includes('250g') || spec.includes('200g')) spec = '200g (入数20)'
+      if (!spec || spec.includes('250g') || spec.includes('200g')) {
+        spec = `200g (入数${explicitUnit})`
+      }
     } else if (!destinationName) {
       destinationName = 'BOX用'
-      if (!spec || spec.includes('250g')) spec = '200g (入数20)'
+      if (!spec || spec.includes('250g')) {
+        spec = `200g (入数${explicitUnit})`
+      }
     }
   } else if (normClient.includes('和郷園')) {
     customerName = '農事組合法人 和郷園'
@@ -375,6 +390,7 @@ export function verifyAndNormalizeItem(
     customerName,
     destinationName: context?.destinationName,
     spec: item.spec,
+    packsPerCase: item.packs_per_case,
   })
   const cust = (std.customerName ?? customerName ?? '').toLowerCase()
   const isKanbei = cust.includes('勘兵衛')
@@ -779,10 +795,16 @@ export async function analyzeOrders(
       })
       .filter((o) => o.items.length > 0)
 
+    // ── 決定論的「同一セル二重線訂正の2列分裂（Ghost Order）」検出・統合フィルタ ──
+    // 1つのセル内で「~~約165~~ → 150」「~~約170~~ → 157」「~~約204~~ → 201」のように訂正されている際、
+    // 万一AIが「消された旧数値（約表記）」を隣の空欄列に出力し、「手書き確定値」をもう一方の列に出力した場合、
+    // 自動的に旧数値側のゴースト注文を除去し、手書き確定値側に「手書き修正（旧165→150P）」の履歴を引き継ぐ。
+    const deduplicatedOrders = collapseStrikethroughSplitOrders(normalizedOrders)
+
     // ── 重要箇所（低確信・手書き修正・入数検算不一致・日付/取引先不明）のみ高精度モデル(GEMINI_MODEL_HIGH: gemini-3.8-flash等)で自動再検証 ──
     const needsEscalation =
       !modelOverride &&
-      normalizedOrders.some(
+      deduplicatedOrders.some(
         (o) =>
           !o.customer_name ||
           !o.delivery_date ||
@@ -817,7 +839,7 @@ export async function analyzeOrders(
       }
     }
 
-    if (normalizedOrders.length === 0) {
+    if (deduplicatedOrders.length === 0) {
       return {
         is_order: false,
         skip_reason: '出荷対象品目（チンゲン菜・トマト・長ネギ・ミニ白菜等）の有効な明細行が0件のためスキップ',
@@ -829,17 +851,20 @@ export async function analyzeOrders(
       }
     }
 
-    const isWagoenMatrix =
+    const isMatrixSlip =
       Boolean(parsed.is_full_resending_matrix) ||
-      (normalizedOrders.some((o) => (o.customer_name ?? '').includes('和郷園')) &&
-        normalizedOrders.length >= 2)
+      Boolean(parsed.valid_header_dates && parsed.valid_header_dates.length >= 2) ||
+      ((deduplicatedOrders.some(
+        (o) => (o.customer_name ?? '').includes('和郷園') || (o.customer_name ?? '').includes('房総食料'),
+      ) &&
+        deduplicatedOrders.length >= 2))
 
     return {
       is_order: true,
       skip_reason: null,
-      slip_no: parsed.slip_no ?? normalizedOrders[0]?.slip_no ?? null,
-      is_full_resending_matrix: isWagoenMatrix,
-      orders: normalizedOrders,
+      slip_no: parsed.slip_no ?? deduplicatedOrders[0]?.slip_no ?? null,
+      is_full_resending_matrix: isMatrixSlip,
+      orders: deduplicatedOrders,
       used_model: finalUsedModel,
       applied_rules_count: activeRules.length,
     }
@@ -930,4 +955,81 @@ function extractJson(text: string): unknown {
   const end = raw.lastIndexOf('}')
   if (start === -1 || end === -1) throw new Error('Gemini 応答に JSON が見つかりません')
   return JSON.parse(raw.slice(start, end + 1))
+}
+
+/**
+ * 同一取引先・同一出荷日で、1つのセル内の「二重線取消された印字概算値（例: ~~約165~~, ~~約170~~, ~~約204~~）」と
+ * 「手書き確定値（例: 150, 157, 201）」をAIが誤って2つの出荷先列（BOX用とちばセット用など）に分裂出力した場合に、
+ * 消された旧数値側のゴースト注文を決定論的に除外し、手書き確定値1件に統合する。
+ */
+export function collapseStrikethroughSplitOrders(orders: ParsedOrder[]): ParsedOrder[] {
+  if (orders.length <= 1) return orders
+
+  // (customer_name || '') + '|' + (delivery_date || '') ごとにグループ化
+  const byDateAndCustomer = new Map<string, number[]>()
+  orders.forEach((o, idx) => {
+    if (!o.delivery_date) return
+    const key = `${o.customer_name ?? ''}|${o.delivery_date}`
+    const list = byDateAndCustomer.get(key) ?? []
+    list.push(idx)
+    byDateAndCustomer.set(key, list)
+  })
+
+  const indicesToRemove = new Set<number>()
+
+  for (const [, indices] of byDateAndCustomer.entries()) {
+    if (indices.length !== 2) continue
+    const idxA = indices[0]!
+    const idxB = indices[1]!
+    const ordA = orders[idxA]!
+    const ordB = orders[idxB]!
+    if (ordA.items.length !== 1 || ordB.items.length !== 1) continue
+
+    const itemA = ordA.items[0]!
+    const itemB = ordB.items[0]!
+    const qtyA = Number(itemA.quantity)
+    const qtyB = Number(itemB.quantity)
+    if (!Number.isFinite(qtyA) || !Number.isFinite(qtyB) || qtyA <= 0 || qtyB <= 0) continue
+
+    const isApproxOrCancel = (it: ParsedItem, ordNote?: string | null) => {
+      const combined = `${it.note ?? ''} ${it.needs_review_reason ?? ''} ${ordNote ?? ''}`
+      return (
+        Boolean(it.is_approximate) ||
+        Boolean(it.explicit_cancel_in_slip) ||
+        combined.includes('約表記') ||
+        combined.includes('暫定') ||
+        combined.includes('取消線') ||
+        combined.includes('二重線')
+      )
+    }
+
+    const isHandwrittenFinal = (it: ParsedItem, ordNote?: string | null) => {
+      const combined = `${it.note ?? ''} ${ordNote ?? ''}`
+      return Boolean(it.is_handwritten_modified) || combined.includes('手書き')
+    }
+
+    // 同一セル内の訂正は通常 ±25% 以内の近接値（165→150: 9%, 170→157: 8%, 204→201: 1.5%）
+    const diffRatio = Math.abs(qtyA - qtyB) / Math.max(qtyA, qtyB)
+    if (diffRatio > 0.25) continue
+
+    const aIsGhost = isApproxOrCancel(itemA, ordA.note) && !isHandwrittenFinal(itemA, ordA.note) && isHandwrittenFinal(itemB, ordB.note)
+    const bIsGhost = isApproxOrCancel(itemB, ordB.note) && !isHandwrittenFinal(itemB, ordB.note) && isHandwrittenFinal(itemA, ordA.note)
+
+    if (aIsGhost && !bIsGhost) {
+      indicesToRemove.add(idxA)
+      const diffLabel = `手書き修正（${qtyA}→${qtyB}P）`
+      itemB.note = itemB.note
+        ? itemB.note.replace(/手書き修正[（(]\d+点[）)]/, diffLabel)
+        : diffLabel
+    } else if (bIsGhost && !aIsGhost) {
+      indicesToRemove.add(idxB)
+      const diffLabel = `手書き修正（${qtyB}→${qtyA}P）`
+      itemA.note = itemA.note
+        ? itemA.note.replace(/手書き修正[（(]\d+点[）)]/, diffLabel)
+        : diffLabel
+    }
+  }
+
+  if (indicesToRemove.size === 0) return orders
+  return orders.filter((_, idx) => !indicesToRemove.has(idx))
 }

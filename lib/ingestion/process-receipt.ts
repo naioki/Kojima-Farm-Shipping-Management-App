@@ -765,12 +765,23 @@ export async function processReceipt(
           existingOrder = candidateOrders.find((ord) => {
             const hasSameSlip = (ord.note || '').includes(`伝票No: ${effectiveSlip}`)
             const isSample = Boolean((ord.note || '').includes('サンプル'))
-            return hasSameSlip && (isIncomingSample ? isSample : !isSample)
+            return (
+              hasSameSlip &&
+              !createdOrderIds.includes(ord.id) &&
+              (isIncomingSample ? isSample : !isSample)
+            )
           }) as ExistingOrderRow | undefined
         }
 
-        // 3. 単一注文フォールバック: その出荷日に1件しかなく、納入先未指定の場合
-        if (!existingOrder && candidateOrders.length === 1 && !destinationId && candidateOrders[0]) {
+        // 3. 単一注文フォールバック: その出荷日に1件しかなく、今回の新FAXでもその出荷日の注文が1件のみの場合（BOX用↔ちばセット用の列修正等も引き継ぐ）
+        const sameDateParsedCount = parsedOrders.filter((p) => p.delivery_date === po.delivery_date).length
+        if (
+          !existingOrder &&
+          candidateOrders.length === 1 &&
+          sameDateParsedCount === 1 &&
+          candidateOrders[0] &&
+          !createdOrderIds.includes(candidateOrders[0].id)
+        ) {
           const onlyOne = candidateOrders[0]
           const isSample = Boolean((onlyOne.note || '').includes('サンプル'))
           if (isIncomingSample ? isSample : !isSample) {
@@ -811,7 +822,11 @@ export async function processReceipt(
             } else {
               const oldP = Number(prev.quantity)
               const newP = eItem.resolvedQty
-              const memo = `${formatJstShortTimestamp()} ${oldP}→${newP}P`
+              const wasPacked = prev.field_status === 'packed' || prev.field_status === 'shipped'
+              const delta = newP - oldP
+              const memo = wasPacked
+                ? `${formatJstShortTimestamp()} 🚨パック済(${oldP}P)→${newP}P(${delta > 0 ? `+${delta}P追加必要` : `${delta}P減`})`
+                : `${formatJstShortTimestamp()} ${oldP}→${newP}P`
               eItem.quantityChangeMemo = memo
               eItem.isFlagged = true
               eItem.lineNote = [eItem.lineNote, `数量変更:${memo}`].filter(Boolean).join(' / ')
@@ -819,7 +834,7 @@ export async function processReceipt(
                 alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
                 created_at: formatJstShortTimestamp(),
                 alert_type: '数量変更',
-                message: `${po.customer_name ?? '取引先'} (${po.delivery_date} ${po.destination_name ?? ''}): ${oldP}P → ${newP}P`,
+                message: `${po.customer_name ?? '取引先'} (${po.delivery_date} ${po.destination_name ?? ''}): ${oldP}P → ${newP}P${wasPacked ? `（パック済のため${delta > 0 ? `+${delta}P追加` : `${delta}P調整`}が必要）` : ''}`,
                 resolved: false,
               })
             }
@@ -937,7 +952,18 @@ export async function processReceipt(
           }
 
           const newQty = e.resolvedQty ?? 1
-          const qtyChanged = Number(prev.quantity) !== newQty
+          const oldQty = Number(prev.quantity)
+          const qtyChanged = oldQty !== newQty
+          const wasPackedAndIncreased =
+            qtyChanged &&
+            newQty > oldQty &&
+            (prev.field_status === 'packed' || prev.field_status === 'shipped')
+          const preservedPartialQty = wasPackedAndIncreased
+            ? oldQty
+            : prev.shipped_qty && prev.shipped_qty > 0 && prev.shipped_qty < newQty
+            ? prev.shipped_qty
+            : null
+
           const baseUpdatePayload: Record<string, unknown> = {
             product_id: e.matchedProduct?.id ?? null,
             product_name: targetName,
@@ -956,11 +982,11 @@ export async function processReceipt(
                 : null,
             confidence: e.effectiveConfidence,
             is_flagged: e.isFlagged,
-            // Case C (数量変更): 現場進捗をリセットして事故を防ぐ / Case B (同数再送): 現場進捗を完全保護
+            // Case C (数量変更): 現場進捗を未完了に戻して欠品を防ぎつつ、既にパック済だった分は途中数(shipped_qty)として保持し「あと+〇〇P」を明確化
             ...(qtyChanged
               ? {
                   field_status: 'not_started',
-                  shipped_qty: null,
+                  shipped_qty: preservedPartialQty,
                 }
               : {}),
           }
@@ -1148,38 +1174,83 @@ export async function processReceipt(
     }
   }
 
-  // E. 週間マトリクス・同一伝票Noの消滅・空欄注文の自動整理＆防護（全取引先共通・再発防止エンジン）
-  // 複数日付にまたがる伝票、または伝票No（slipNo）を持つ伝票の再読取時、
-  // 最新FAXに記載のない（空欄・注文消滅した）過去の同一伝票の注文を検知・処理する。
+  // E. 最新FAX完全同期（スナップショット上書き）・空欄/旧伝票の自動整理エンジン（「新しくきたFAXが基本一番正しい」原則）
+  // 週間マトリクス表・複数日付伝票・または伝票Noを持つ再送FAXを受信した際、
+  // 対象日付範囲（matrixDates）および同一伝票No（effectiveSlipNo）の両方を網羅して照合し、
+  // 最新FAXに記載のない古い未出荷注文（旧伝票Noの注文や前回誤読で別列に作られた不要行）を自動的にクリーンアップする。
   const matrixDates = [...new Set(parsedOrders.map((o) => o.delivery_date).filter(Boolean))] as string[]
   const effectiveSlipNo = slipNo || parsedOrders.find((o) => o.slip_no)?.slip_no || null
+  const isIncomingSampleSlip = parsedOrders.some((o) =>
+    Boolean((o.note || '').includes('サンプル') || (o.destination_name || '').includes('サンプル')),
+  )
 
-  if (firstResolvedCustomerId && (isFullResendingMatrix || effectiveSlipNo || matrixDates.length > 1)) {
-    let oldOrdersQuery = admin
-      .from('orders')
-      .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity)')
-      .eq('customer_id', firstResolvedCustomerId)
-      .neq('status', 'cancelled')
+  if (firstResolvedCustomerId && (isFullResendingMatrix || effectiveSlipNo || matrixDates.length >= 1)) {
+    const candidateOldOrdersMap = new Map<
+      string,
+      {
+        id: string
+        delivery_date: string | null
+        destination_id: string | null
+        note: string | null
+        status: string
+        order_items: {
+          id: string
+          field_status?: string
+          shipped_qty?: number | null
+          quantity?: number
+          is_manual_modified?: boolean
+        }[]
+      }
+    >()
 
     if (effectiveSlipNo) {
-      oldOrdersQuery = oldOrdersQuery.ilike('note', `%伝票No: ${effectiveSlipNo}%`)
-    } else if (matrixDates.length > 0) {
-      oldOrdersQuery = oldOrdersQuery.in('delivery_date', matrixDates)
+      const { data: slipOrders } = await admin
+        .from('orders')
+        .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
+        .eq('customer_id', firstResolvedCustomerId)
+        .neq('status', 'cancelled')
+        .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
+      for (const row of slipOrders ?? []) {
+        candidateOldOrdersMap.set(row.id as string, row as never)
+      }
     }
 
-    const { data: existingOldOrders } = await oldOrdersQuery
-    for (const ex of existingOldOrders ?? []) {
-      if (createdOrderIds.includes(ex.id as string)) continue
+    if (matrixDates.length > 0 && (isFullResendingMatrix || matrixDates.length >= 2 || effectiveSlipNo)) {
+      const { data: dateOrders } = await admin
+        .from('orders')
+        .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
+        .eq('customer_id', firstResolvedCustomerId)
+        .neq('status', 'cancelled')
+        .in('delivery_date', matrixDates)
+      for (const row of dateOrders ?? []) {
+        candidateOldOrdersMap.set(row.id as string, row as never)
+      }
+    }
 
-      // 最新FAXに記載のない（または空欄になった）既存注文
-      const items = (ex.order_items ?? []) as { id: string; field_status?: string; shipped_qty?: number | null; quantity?: number }[]
-      const isUnstarted = items.length === 0 || items.every(
-        (it) => (!it.field_status || it.field_status === 'not_started') && (!it.shipped_qty || it.shipped_qty === 0)
-      )
+    for (const ex of candidateOldOrdersMap.values()) {
+      if (createdOrderIds.includes(ex.id)) continue
+
+      // 通常注文FAXでサンプル注文を消さない（逆も同様）安全保護
+      const isExSample = Boolean((ex.note || '').includes('サンプル'))
+      if (isIncomingSampleSlip !== isExSample) continue
+
+      const items = ex.order_items ?? []
+      const hasManualModified = items.some((it) => Boolean(it.is_manual_modified))
+      if (hasManualModified) continue
+
+      const isUnstarted =
+        items.length === 0 ||
+        items.every(
+          (it) =>
+            (!it.field_status || it.field_status === 'not_started') &&
+            (!it.shipped_qty || it.shipped_qty === 0),
+        )
 
       if (isUnstarted) {
-        // 未着手注文は「基本FAXは最新が正しい」の原則に従い、自動的にクリーンアップ（削除）
-        console.log(`[process-receipt] 最新FAXで空欄・消滅した未着手注文を自動整理: order_id=${ex.id}, date=${ex.delivery_date}`)
+        // 未着手注文は「新しくきたFAXが基本一番正しい」の原則に従い、自動的にクリーンアップ（削除）
+        console.log(
+          `[process-receipt] 最新FAX完全同期により不要・消滅した未着手注文を自動整理: order_id=${ex.id}, date=${ex.delivery_date}`,
+        )
         const itemIds = items.map((it) => it.id)
         if (itemIds.length > 0) {
           await admin.from('harvest_tasks').delete().in('order_item_id', itemIds)
@@ -1188,18 +1259,18 @@ export async function processReceipt(
         await admin.from('orders').delete().eq('id', ex.id)
       } else {
         // 現場で作業中または完了済みの場合は、データ保護のため自動削除せず警告バッジを付与
-        const guardNote = `【要確認】最新FAX(${effectiveSlipNo || '再送'})に記載なし（現場作業中のため維持）`
-        const prevNote = (ex as { note?: string | null }).note
-        const updatedNote = prevNote ? `${prevNote}\n${guardNote}` : guardNote
+        const guardNote = `【要確認】最新FAX(${effectiveSlipNo || '再送'})に記載なし（現場作業済のため保護）`
+        const prevNote = ex.note
+        const updatedNote = prevNote && !prevNote.includes(guardNote) ? `${prevNote}\n${guardNote}` : guardNote
         await admin
           .from('orders')
-          .update({ status: 'pending_review', note: updatedNote })
+          .update({ note: updatedNote })
           .eq('id', ex.id)
         changeAlerts.push({
           alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
           created_at: formatJstShortTimestamp(),
           alert_type: '要確認',
-          message: `${ex.delivery_date}の注文: 最新FAXに記載がありません（現場作業中）`,
+          message: `${ex.delivery_date}の注文: 最新FAXに記載がありません（現場作業済のため保護）`,
           resolved: false,
         })
       }

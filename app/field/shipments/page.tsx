@@ -170,21 +170,46 @@ export default async function ShipmentsPage({
     }
   }
 
-  // ④ 品目ごとの件数集計＆タブ一覧生成（数量0の品目は除外）
+  // ④ 品目ごとの件数・未完了件数集計＆タブ一覧生成（数量0の品目は除外、product_id欠落行も品目名から自動救済）
+  const nonMaterialProducts = allProducts.filter((p) => p.category !== '資材')
+  const defaultProductId = nonMaterialProducts[0]?.id ?? allProducts[0]?.id ?? ''
+
+  function resolveEffectiveProductId(item: { product_id: string | null; product_name: string }): string {
+    if (item.product_id && allProducts.some((p) => p.id === item.product_id)) {
+      return item.product_id
+    }
+    const normName = (item.product_name || '').normalize('NFKC').trim()
+    const matched = nonMaterialProducts.find(
+      (p) =>
+        p.name.normalize('NFKC') === normName ||
+        (normName.includes('チンゲン') && p.name.includes('青梗菜')) ||
+        (normName.includes('青梗菜') && p.name.includes('チンゲン')) ||
+        p.name.includes(normName) ||
+        normName.includes(p.name),
+    )
+    return matched?.id ?? defaultProductId
+  }
+
   const countByProduct = new Map<string, number>()
+  const incompleteByProduct = new Map<string, number>()
   for (const it of allItems) {
     if ((Number(it.quantity) || 0) > 0) {
-      countByProduct.set(it.product_id, (countByProduct.get(it.product_id) ?? 0) + 1)
+      const effPid = resolveEffectiveProductId(it)
+      it.product_id = effPid
+      countByProduct.set(effPid, (countByProduct.get(effPid) ?? 0) + 1)
+      if (it.field_status !== 'packed' && it.field_status !== 'shipped') {
+        incompleteByProduct.set(effPid, (incompleteByProduct.get(effPid) ?? 0) + 1)
+      }
     }
   }
 
   // ゼロ件の品目タブは非表示（全品目0件の場合は先頭品目1件のみ表示して空案内を表示）
-  const nonMaterialProducts = allProducts.filter((p) => p.category !== '資材')
   const rawTabs: ProductTabItem[] = nonMaterialProducts
     .map((p) => ({
       id: p.id,
       name: p.name,
       count: countByProduct.get(p.id) ?? 0,
+      incompleteCount: incompleteByProduct.get(p.id) ?? 0,
     }))
     .sort((a, b) => b.count - a.count)
 

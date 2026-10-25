@@ -203,13 +203,14 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     expect(validOrders[0]?.items[0]?.quantity).toBe('59')
   })
 
-  it('コンテナ・納品先ごとの動的入数カスケード (小コン30 / 大コン20 / ちばセット30 / NSK24 / 標準20)', () => {
+  it('コンテナ・納品先ごとの動的入数カスケード (小コン30 / 大コン20 / ちばセット入数変更20 / NSK24 / 標準20)', () => {
     // 1. 小コン 30
     expect(determineUnitCount('房総食料センター', '小コン 30')).toBe(30)
     // 2. 大コン 20
     expect(determineUnitCount('房総食料センター', '大コン: 20')).toBe(20)
-    // 3. ちばセットキーワード
-    expect(determineUnitCount('房総食料センター', 'ちばセット用')).toBe(30)
+    // 3. ちばセット（入数変更によりデフォルト20、明示30指定時は30）
+    expect(determineUnitCount('房総食料センター', 'ちばセット用')).toBe(20)
+    expect(determineUnitCount('房総食料センター', 'ちばセット用 (入数30)')).toBe(30)
     // 4. NSK
     expect(determineUnitCount('株式会社農業総合研究所（NSK）', null)).toBe(24)
     // 5. デフォルトチンゲン菜

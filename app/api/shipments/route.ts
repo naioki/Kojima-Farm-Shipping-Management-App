@@ -7,6 +7,7 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
 import { shiftDateStr } from '@/lib/dates'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
+import { determineContainerType } from '@/lib/pipeline/schemas'
 
 export const runtime = 'nodejs'
 
@@ -103,6 +104,10 @@ export async function POST(req: Request) {
     product_id,
     delivery_date,
     quantity_raw,
+    packs_per_case: clientPacksPerCase,
+    spec: clientSpec,
+    container_type: clientContainerType,
+    has_card: clientHasCard,
     destination_id,
     mode = 'create',
     shipping_time,
@@ -111,38 +116,78 @@ export async function POST(req: Request) {
   const supabase = createAdminClient()
 
   // 納入先が指定されたら、その取引先の配下（有効）であることを検証
+  let destRow: { id: string; code?: string | null; full_name?: string | null } | null = null
   if (destination_id) {
     const { data: dest, error: destErr } = await supabase
       .from('delivery_destinations')
-      .select('id')
+      .select('id, code, full_name')
       .eq('id', destination_id)
       .eq('customer_id', customer_id)
       .eq('is_active', true)
       .maybeSingle()
     if (destErr) return NextResponse.json({ error: destErr.message }, { status: 500 })
     if (!dest) return NextResponse.json({ error: 'invalid_destination' }, { status: 400 })
+    destRow = dest
   }
 
   // 商品マスタ（単価・税率・名称・単位）
   const { data: product, error: prodErr } = await supabase
     .from('products')
-    .select('id, name, unit, default_unit_price, default_tax_rate')
+    .select('id, name, unit, default_unit_price, default_tax_rate, container_capacity')
     .eq('id', product_id)
     .maybeSingle()
   if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 })
   if (!product) return NextResponse.json({ error: 'unknown_product' }, { status: 400 })
 
+  // 取引先名を取得（コンテナ種別・規格の決定論的推論およびAI学習フィードバック用）
+  const { data: custObj } = await supabase
+    .from('customers')
+    .select('name')
+    .eq('id', customer_id)
+    .maybeSingle()
+  const confirmedCustName = custObj?.name || ''
+  const confirmedDestName = destRow?.full_name || destRow?.code || ''
+
   // 取引先×商品ルール（P/C＝c記法換算の基準値）
   const { data: rule, error: ruleErr } = await supabase
     .from('customer_product_rules')
-    .select('id, packs_per_case, spec, container_type, has_card')
+    .select('id, packs_per_case, spec, label_spec, container_type, default_container_type, has_card')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
   if (ruleErr) console.error('[api/shipments] P/Cルールの取得に失敗:', ruleErr.message)
 
+  // 入数の決定：クライアント指定値 → 取引ルール → 商品既定容量 → 20（絶対に packs_per_case_required で失敗させない）
+  const effectivePacksPerCase =
+    (clientPacksPerCase && clientPacksPerCase > 0 ? clientPacksPerCase : null) ??
+    (rule?.packs_per_case && rule.packs_per_case > 0 ? rule.packs_per_case : null) ??
+    (product.container_capacity && product.container_capacity > 0 ? product.container_capacity : null) ??
+    20
+
+  // 規格（spec）・コンテナ種別（container_type）・カード有無（has_card）の決定論的フォールバック
+  const baseSpec =
+    clientSpec?.trim() ||
+    rule?.spec ||
+    rule?.label_spec ||
+    (product.name.includes('小松菜') ? '200g' : product.name.includes('青梗菜') ? '2〜3株' : '')
+  const effectiveSpec =
+    baseSpec && !baseSpec.includes('入数')
+      ? `${baseSpec} (入数${effectivePacksPerCase})`
+      : baseSpec || `入数${effectivePacksPerCase}`
+
+  const effectiveContainerType =
+    clientContainerType?.trim() ||
+    rule?.container_type ||
+    rule?.default_container_type ||
+    determineContainerType(confirmedCustName, confirmedDestName)
+
+  const effectiveHasCard =
+    clientHasCard !== undefined && clientHasCard !== null
+      ? clientHasCard
+      : rule?.has_card ?? true
+
   // スマートパース（誤解釈防止のため lib に集約・Decimal.js）
-  const result = parseQuantity(quantity_raw, { packsPerCase: rule?.packs_per_case ?? null })
+  const result = parseQuantity(quantity_raw, { packsPerCase: effectivePacksPerCase })
   if (result.type === 'delete') {
     return NextResponse.json({ error: 'empty_quantity' }, { status: 400 })
   }
@@ -194,7 +239,12 @@ export async function POST(req: Request) {
   type OrderItemRow = {
     id: string
     quantity: number
+    shipped_qty?: number | null
+    field_status?: string | null
     line_note: string | null
+    spec?: string | null
+    container_type?: string | null
+    has_card?: boolean | null
     [key: string]: unknown
   }
   let existingItem: OrderItemRow | null = null
@@ -211,16 +261,56 @@ export async function POST(req: Request) {
 
   let finalItem: Record<string, unknown>
   if (existingItem) {
-    let newQty = Number(existingItem.quantity) || 0
+    const oldQty = Number(existingItem.quantity) || 0
+    let newQty = oldQty
     if (mode === 'increase' || mode === 'create') newQty += deltaQty
     else if (mode === 'decrease') newQty = Math.max(0, newQty - deltaQty)
     else if (mode === 'set') newQty = deltaQty
+
+    const qtyChanged = newQty !== oldQty
+    const wasPackedAndIncreased =
+      qtyChanged &&
+      newQty > oldQty &&
+      (existingItem.field_status === 'packed' || existingItem.field_status === 'shipped')
+
+    const preservedPartialQty = wasPackedAndIncreased
+      ? oldQty
+      : existingItem.shipped_qty && existingItem.shipped_qty > 0 && existingItem.shipped_qty < newQty
+      ? existingItem.shipped_qty
+      : null
+
+    const changeNote = qtyChanged
+      ? wasPackedAndIncreased
+        ? `🚨パック済(${oldQty}P)→${newQty}P(+${newQty - oldQty}P追加必要)`
+        : `数量変更:${oldQty}→${newQty}P`
+      : null
+
+    const combinedNote = [existingItem.line_note, changeNote, note]
+      .filter((s): s is string => Boolean(s && s.trim()))
+      .join(' / ') || null
+
+    const updateCases = Math.floor(newQty / effectivePacksPerCase)
+    const updateRem = newQty % effectivePacksPerCase
+    const updatedQuantityRaw =
+      updateRem > 0 ? `${updateCases}c+${updateRem}P` : `${updateCases}c`
 
     const { data: updatedItem, error: upErr } = await supabase
       .from('order_items')
       .update({
         quantity: newQty,
-        line_note: note ? [existingItem.line_note, note].filter(Boolean).join(' / ') : existingItem.line_note,
+        quantity_raw: updatedQuantityRaw,
+        fraction_note: updateRem > 0 ? `端数${updateRem}P` : null,
+        spec: clientSpec?.trim() || existingItem.spec || effectiveSpec,
+        container_type: clientContainerType?.trim() || existingItem.container_type || effectiveContainerType,
+        has_card: clientHasCard ?? existingItem.has_card ?? effectiveHasCard,
+        line_note: combinedNote,
+        is_manual_modified: true,
+        ...(qtyChanged
+          ? {
+              field_status: 'not_started',
+              shipped_qty: preservedPartialQty,
+            }
+          : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', existingItem.id)
@@ -239,6 +329,11 @@ export async function POST(req: Request) {
     })
   } else {
     // 新規明細作成（単価・税率は商品マスタから）
+    const initCases = Math.floor(deltaQty / effectivePacksPerCase)
+    const initRem = deltaQty % effectivePacksPerCase
+    const initQuantityRaw =
+      initRem > 0 ? `${initCases}c+${initRem}P` : `${initCases}c`
+
     const { data: item, error: itemErr } = await supabase
       .from('order_items')
       .insert({
@@ -246,6 +341,8 @@ export async function POST(req: Request) {
         product_id,
         product_name: product.name,
         quantity: deltaQty,
+        quantity_raw: initQuantityRaw,
+        fraction_note: initRem > 0 ? `端数${initRem}P` : null,
         unit: product.unit,
         unit_price: product.default_unit_price ?? 0,
         tax_rate: product.default_tax_rate,
@@ -253,9 +350,10 @@ export async function POST(req: Request) {
         confidence: 1.0,
         field_status: 'not_started',
         line_note: note ?? null,
-        spec: rule?.spec ?? null,
-        container_type: rule?.container_type ?? null,
-        has_card: rule?.has_card ?? null,
+        spec: effectiveSpec,
+        container_type: effectiveContainerType,
+        has_card: effectiveHasCard,
+        is_manual_modified: true,
       })
       .select()
       .single()
@@ -310,16 +408,10 @@ export async function POST(req: Request) {
   let learnedMistake = false
   if (parsed.data.ai_original && customer_id) {
     try {
-      const { data: custObj } = await supabase
-        .from('customers')
-        .select('name')
-        .eq('id', customer_id)
-        .maybeSingle()
-      const confirmedCustName = custObj?.name || ''
       const orig = parsed.data.ai_original
 
       // 1. 取引先の誤読修正
-      if (orig.customer_name && orig.customer_name.trim() !== confirmedCustName) {
+      if (orig.customer_name && confirmedCustName && orig.customer_name.trim() !== confirmedCustName) {
         await recordMistakeFeedback({
           clientName: confirmedCustName,
           rawInput: orig.customer_name,
@@ -330,14 +422,8 @@ export async function POST(req: Request) {
       }
 
       // 2. 納入先の誤読修正
-      if (destination_id && orig.destination_name) {
-        const { data: destObj } = await supabase
-          .from('delivery_destinations')
-          .select('full_name, code')
-          .eq('id', destination_id)
-          .maybeSingle()
-        const confirmedDestName = destObj?.full_name || destObj?.code || ''
-        if (confirmedDestName && orig.destination_name.trim() !== confirmedDestName) {
+      if (destination_id && orig.destination_name && confirmedDestName) {
+        if (orig.destination_name.trim() !== confirmedDestName) {
           await recordMistakeFeedback({
             clientName: confirmedCustName,
             rawInput: orig.destination_name,
@@ -349,12 +435,12 @@ export async function POST(req: Request) {
       }
 
       // 3. 入数の修正
-      if (rule?.packs_per_case && orig.packs_per_case && orig.packs_per_case !== rule.packs_per_case) {
+      if (effectivePacksPerCase && orig.packs_per_case && orig.packs_per_case !== effectivePacksPerCase) {
         await recordMistakeFeedback({
           clientName: confirmedCustName,
           rawInput: String(orig.packs_per_case),
           correctedField: 'packs_per_case',
-          correctedValue: String(rule.packs_per_case),
+          correctedValue: String(effectivePacksPerCase),
         })
         learnedMistake = true
       }

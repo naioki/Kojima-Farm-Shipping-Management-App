@@ -85,14 +85,59 @@ export function PackingAndShippingViews({
     }, 600)
   }
 
-  // サーバー側や親コンポーネント（日付変更・品目タブ切り替え）から届く最新の明細リストを同期
+  // サーバー側や親コンポーネント（日付変更・品目タブ切り替え・自動ポーリング）から届く最新の明細リストを同期
+  // 新規注文の追加や数量変更を検知した場合は、現場スタッフが見落とさないようトースト通知を出す
+  const prevSnapshotRef = useRef<Map<string, number> | null>(null)
   useEffect(() => {
+    const nextMap = new Map(initialItems.map((it) => [it.itemId, it.orderedQty]))
+    if (prevSnapshotRef.current) {
+      let addedCount = 0
+      let changedCount = 0
+      for (const it of initialItems) {
+        const prevQty = prevSnapshotRef.current.get(it.itemId)
+        if (prevQty === undefined) {
+          addedCount++
+        } else if (prevQty !== it.orderedQty) {
+          changedCount++
+        }
+      }
+      if (addedCount > 0 || changedCount > 0) {
+        const parts: string[] = []
+        if (addedCount > 0) parts.push(`新規 ${addedCount}件`)
+        if (changedCount > 0) parts.push(`数量変更 ${changedCount}件`)
+        toast(`🔔 注文データが更新されました（${parts.join('・')}）`, {
+          id: 'live-order-update',
+          duration: 6000,
+        })
+      }
+    }
+    prevSnapshotRef.current = nextMap
     setItems(initialItems)
   }, [initialItems])
 
   useEffect(() => {
     setNextItems(initialNextDayItems)
   }, [initialNextDayItems])
+
+  // タブレット放置によるFAX追加・数量変更の見落としを防ぐため、30秒ごとの自動バックグラウンド同期 ＋ 画面復帰時即時リフレッシュ
+  useEffect(() => {
+    const syncLatest = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+      router.refresh()
+    }
+    const intervalId = window.setInterval(syncLatest, 30_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncLatest()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', syncLatest)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', syncLatest)
+    }
+  }, [router])
 
   // 翌日エリアへのスクロール連動（翌日枠が画面上部に達したらヘッダー色・表記を切り替える）
   useEffect(() => {

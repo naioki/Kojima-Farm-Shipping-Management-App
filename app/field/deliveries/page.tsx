@@ -62,7 +62,7 @@ export default async function DeliveriesPage({
   const itemsRes = orderIds.length
     ? await admin
         .from('order_items')
-        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id')
+        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id, field_status')
         .in('order_id', orderIds)
         .order('product_name')
     : null
@@ -370,6 +370,7 @@ export default async function DeliveriesPage({
       ),
       unit: it.unit,
       quantity: it.quantity,
+      fieldStatus: (it as { field_status?: string }).field_status ?? 'not_started',
       noteText: [it.spec, resolvedContainer, it.has_card ? 'カード有' : null, cleanLineNote || null].filter(Boolean).join('・') || '—',
     })
   }

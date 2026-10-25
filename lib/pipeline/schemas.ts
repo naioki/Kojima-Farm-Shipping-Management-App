@@ -191,13 +191,6 @@ export function determineUnitCount(
   }
 
   if (
-    combined.includes('ちばセット') ||
-    combined.includes('千葉セット')
-  ) {
-    return 30
-  }
-
-  if (
     combined.includes('農業総合研究所') ||
     combined.includes('NSK') ||
     combined.includes('入数24') ||

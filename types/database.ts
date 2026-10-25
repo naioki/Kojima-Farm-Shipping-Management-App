@@ -516,6 +516,14 @@ export const shipmentAddSchema = z.object({
   product_id: z.string().uuid(),
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   quantity_raw: z.string().min(1),
+  /** クライアント側の3連動数量エディタで指定された1箱あたりの入数（未指定時はマスタまたは20） */
+  packs_per_case: z.number().int().positive().nullish(),
+  /** 規格（例: "2〜3株 (入数20)"、"200g (入数20)"） */
+  spec: z.string().nullish(),
+  /** コンテナ・荷姿（例: "青コン", "茶コン", "房総青コン", "段ボール", "通常コンテナ"） */
+  container_type: z.string().nullish(),
+  /** 生産者カード有無 */
+  has_card: z.boolean().nullish(),
   /** 納入先（届け先）。複数納入先を持つ取引先で確定させる。単一/無しの取引先は null。 */
   destination_id: z.string().uuid().nullish(),
   /** 登録モード（新規作成、既存への加算、減量、数量上書き）。既定は create。 */

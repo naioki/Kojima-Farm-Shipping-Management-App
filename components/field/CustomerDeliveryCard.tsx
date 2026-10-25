@@ -16,6 +16,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { Button } from '@/components/ui/Button'
+import { ConfirmModal } from '@/components/ui/Modal'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { getContainerColorStyle } from '@/lib/field/container-style'
 import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
@@ -38,6 +39,7 @@ export interface DestinationDetail {
     unit: string
     noteText: string
     quantity: number
+    fieldStatus?: string
   }>
   status: 'planned' | 'loaded' | 'delivered'
 }
@@ -93,6 +95,14 @@ export function CustomerDeliveryCard({
   const [destinations, setDestinations] = useState<DestinationDetail[]>(initialDestinations)
   const [open, setOpen] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
+  const [unpackedConfirmOpen, setUnpackedConfirmOpen] = useState<boolean>(false)
+
+  // パック進捗連動（全明細のうち何件が packed / shipped か）
+  const allDeliveryItems = destinations.flatMap((d) => d.items).filter((it) => (Number(it.quantity) || 0) > 0)
+  const packedItemCount = allDeliveryItems.filter(
+    (it) => it.fieldStatus === 'packed' || it.fieldStatus === 'shipped',
+  ).length
+  const unpackedItemCount = Math.max(0, allDeliveryItems.length - packedItemCount)
 
   // 親からの Props 更新を同期
   useEffect(() => {
@@ -295,6 +305,19 @@ export function CustomerDeliveryCard({
                   (全{destinations.length}納品先)
                 </span>
               )}
+
+              {/* パック作業の完了連動バッジ（未作成のまま誤って積込完了にする事故を防止） */}
+              {allDeliveryItems.length > 0 && (
+                unpackedItemCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-950 shadow-2xs">
+                    <span>⚠️ パック未完了 {unpackedItemCount}件</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-800">
+                    <span>✓ 全パック済</span>
+                  </span>
+                )
+              )}
             </div>
           </div>
 
@@ -404,11 +427,19 @@ export function CustomerDeliveryCard({
           <button
             type="button"
             disabled={busy}
-            onClick={toggleLoaded}
+            onClick={() => {
+              if (!isCompleted && unpackedItemCount > 0) {
+                setUnpackedConfirmOpen(true)
+                return
+              }
+              toggleLoaded()
+            }}
             className={cn(
               'h-12 px-5 sm:px-7 rounded-xl font-black text-sm sm:text-base transition-all active:scale-97 shadow-sm flex items-center justify-center gap-2 shrink-0',
               isCompleted
                 ? 'border-2 border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                : unpackedItemCount > 0
+                ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500 ring-offset-1 shadow-amber-600/20'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-600 ring-offset-1 shadow-emerald-600/20',
             )}
           >
@@ -422,7 +453,7 @@ export function CustomerDeliveryCard({
             ) : (
               <>
                 <Truck className="h-5 w-5" />
-                <span>🚚 積込 OK</span>
+                <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
               </>
             )}
           </button>
@@ -562,6 +593,19 @@ export function CustomerDeliveryCard({
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={unpackedConfirmOpen}
+        onClose={() => setUnpackedConfirmOpen(false)}
+        onConfirm={async () => {
+          setUnpackedConfirmOpen(false)
+          await toggleLoaded()
+        }}
+        title="⚠️ パック未完了の品目があります。積込OKにしますか？"
+        message={`「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。`}
+        confirmLabel="実物確認済・積込OKにする"
+        isLoading={busy}
+      />
     </div>
   )
 }

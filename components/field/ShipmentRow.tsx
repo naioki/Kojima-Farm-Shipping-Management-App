@@ -17,7 +17,7 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-import { extractActionableNote } from '@/lib/field/clean-note'
+import { extractActionableNote, extractChangeDiffBadge } from '@/lib/field/clean-note'
 
 /**
  * ステータス別の配色は lib/field/status-style.ts（単一の正）から取る。
@@ -148,6 +148,8 @@ export function ShipmentRow({
   const [offlinePending, setOfflinePending] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [specConfirmOpen, setSpecConfirmOpen] = useState(false)
+  const [partialPackConfirmOpen, setPartialPackConfirmOpen] = useState(false)
+  const [nextDayPackConfirmOpen, setNextDayPackConfirmOpen] = useState(false)
   // ステータス変更直後の「元に戻す」猶予（誤タップ対策・Issue#5）。猶予中は並べ替えない。
   const [undoGrace, setUndoGrace] = useState<FieldStatus | null>(null)
   const undoTimerRef = useRef<number | null>(null)
@@ -177,6 +179,7 @@ export function ShipmentRow({
   const meta = FIELD_STATUS_META[status]
   const isDone = status === 'packed' || status === 'shipped'
   const actionableLineNote = extractActionableNote(lineNote)
+  const changeDiffBadge = extractChangeDiffBadge(lineNote)
   // 「途中で止まった」= できた数が受注総数に満たない。出荷前でも記録できる。
   const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
   const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
@@ -638,12 +641,19 @@ export function ShipmentRow({
                     新規 ★
                   </span>
                 )}
-                {(actionableLineNote.includes('手書き修正') || actionableLineNote.includes('数量変更:')) && (
+                {changeDiffBadge ? (
                   <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
-                    📝 修正あり
+                    🔄 {changeDiffBadge}
                   </span>
+                ) : (
+                  (actionableLineNote.includes('手書き修正') || actionableLineNote.includes('数量変更:')) && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
+                      📝 修正あり
+                    </span>
+                  )
                 )}
                 {(needsManualConfirm || actionableLineNote.includes('⚠')) &&
+                  !changeDiffBadge &&
                   !actionableLineNote.includes('手書き修正') &&
                   !actionableLineNote.includes('数量変更:') && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900 shadow-xs">
@@ -794,6 +804,14 @@ export function ShipmentRow({
               disabled={busy}
               onClick={() => {
                 if (status === 'not_started') {
+                  if (isPartial) {
+                    setPartialPackConfirmOpen(true)
+                    return
+                  }
+                  if (isFutureOrNextDay) {
+                    setNextDayPackConfirmOpen(true)
+                    return
+                  }
                   advanceTo('packed')
                 } else if (status === 'packed') {
                   setConfirmOpen(true)
@@ -805,10 +823,16 @@ export function ShipmentRow({
                   ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 ring-offset-1'
                   : status === 'shipped'
                   ? 'border border-line bg-bg-soft/70 text-ink-muted'
+                  : isFutureOrNextDay
+                  ? 'border-2 border-slate-500 bg-white text-slate-800 hover:bg-slate-100'
                   : 'border-2 border-emerald-600 bg-white text-emerald-800 hover:bg-emerald-50',
               )}
             >
-              {status === 'packed' ? '✓ パック済' : '✓ パック済にする'}
+              {status === 'packed'
+                ? '✓ パック済'
+                : isFutureOrNextDay
+                ? '📅 先行分をパック済にする'
+                : '✓ パック済にする'}
             </button>
 
             {showShippingButton && (
@@ -1169,6 +1193,32 @@ export function ShipmentRow({
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={partialPackConfirmOpen}
+        onClose={() => setPartialPackConfirmOpen(false)}
+        onConfirm={async () => {
+          setPartialPackConfirmOpen(false)
+          await advanceTo('packed')
+        }}
+        title="⚠️ 途中数（不足）のままパック済にしますか？"
+        message={`受注数 ${orderedQty}P に対し、途中数が ${shippedNum ?? 0}P（残り ${Math.max(0, orderedQty - (shippedNum ?? 0))}P 不足）として記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`}
+        confirmLabel={`全${orderedQty}P完了としてパック済にする`}
+        isLoading={busy}
+      />
+
+      <ConfirmModal
+        open={nextDayPackConfirmOpen}
+        onClose={() => setNextDayPackConfirmOpen(false)}
+        onConfirm={async () => {
+          setNextDayPackConfirmOpen(false)
+          await advanceTo('packed')
+        }}
+        title="📅 先行作業分（翌々日以降出荷）をパック済にしますか？"
+        message={`このカードは「${deliveryDate ?? '翌日以降'} 出荷分」の先行枠です。本日の出荷分と間違えていないか確認のうえ確定してください。`}
+        confirmLabel="先行分をパック済にする"
+        isLoading={busy}
+      />
 
       <ConfirmModal
         open={specConfirmOpen}
