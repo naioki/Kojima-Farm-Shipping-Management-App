@@ -512,39 +512,6 @@ export function ShipmentRow({
         conflict ? 'animate-pulse-alert border-alert ring-2 ring-alert/20' : '',
       )}
     >
-      {/* 日付識別ヘッダーバッジ（今日＝スカイブルー 🚚 / 明日＝エメラルド 🥬 / 翌日先行＝スレートチャコール 📅） */}
-      {isFutureOrNextDay ? (
-        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-slate-200 border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-800 shadow-2xs">
-          <span className="flex items-center gap-1.5">
-            <span className="text-sm">📅</span>
-            <span>翌日作業予定（先行作業・確認用）</span>
-          </span>
-          <span className="rounded bg-slate-700 text-white px-2 py-0.5 text-[10px] font-bold">
-            {deliveryDate ? `${deliveryDate} 出荷` : '翌日出荷分'}
-          </span>
-        </div>
-      ) : isTodayOrder ? (
-        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-sky-100 border border-sky-300 px-3 py-1.5 text-xs font-black text-sky-950 shadow-2xs">
-          <span className="flex items-center gap-1.5">
-            <span className="text-sm">🚚</span>
-            <span>当日出荷分（本日便）</span>
-          </span>
-          <span className="rounded bg-sky-700 text-white px-2 py-0.5 text-[10px] font-bold">
-            {deliveryDate} 出荷
-          </span>
-        </div>
-      ) : isTomorrowOrder ? (
-        <div className="mb-2.5 flex items-center justify-between rounded-xl bg-emerald-100/90 border border-emerald-300 px-3 py-1.5 text-xs font-black text-emerald-950 shadow-2xs">
-          <span className="flex items-center gap-1.5">
-            <span className="text-sm">🥬</span>
-            <span>明日出荷分（本日パック作業対象）</span>
-          </span>
-          <span className="rounded bg-emerald-700 text-white px-2 py-0.5 text-[10px] font-bold">
-            {deliveryDate} 出荷
-          </span>
-        </div>
-      ) : null}
-
       {/* 競合・更新アラート（ワンタップ自己修復） */}
       {conflict && (
         <div className="mb-2.5 flex items-center justify-between rounded-xl bg-alert/10 border border-alert/30 p-2.5 text-xs font-bold text-alert">

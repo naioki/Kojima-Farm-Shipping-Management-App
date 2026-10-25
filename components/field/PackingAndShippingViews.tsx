@@ -16,7 +16,7 @@ import {
   type PackSortMode,
 } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
-import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -308,55 +308,83 @@ export function PackingAndShippingViews({
 
   return (
     <div className="space-y-3.5">
-      {/* スクロール追従ミニ進捗バー（画面最上部に常時固定・翌日エリアに入ると自動でチャコール＆翌日表記へ切り替え） */}
+      {/* スクロール追従スティッキーヘッダー（画面最上部に常時固定・日付/作業区分とリアルタイム進捗を統合表示） */}
       <div
         className={cn(
-          'sticky top-0 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md flex items-center justify-between text-xs font-bold rounded-b-xl border-b transition-colors duration-200',
+          'sticky top-0 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md rounded-b-xl border-b transition-colors duration-200',
           isViewingNextDay
-            ? 'bg-[#0f172a]/95 border-slate-600 shadow-lg text-slate-100'
-            : isTodayWork
-            ? 'bg-slate-900/90 border-slate-700'
+            ? 'bg-[#0f172a]/95 border-slate-500 shadow-lg text-slate-100'
+            : date === shiftDateStr(jstTodayStr(), 1)
+            ? 'bg-[#0f2e1e]/95 border-emerald-600/80 shadow-md'
+            : date === jstTodayStr()
+            ? 'bg-[#0c2e4e]/95 border-sky-600/80 shadow-md'
             : 'bg-[#1e293b]/95 border-slate-600',
         )}
       >
-        {isViewingNextDay ? (
-          <>
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-amber-400">📅</span>
-              <span className="text-white font-black">{productName || '品目'}</span>
-              <span className="rounded bg-slate-700 border border-slate-500 px-2 py-0.5 text-[10px] text-slate-100 font-black shadow-xs">
-                翌日先行分を表示中
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+          {/* 左側: 日付・曜日・作業対象バッジ + 品目名 */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black shadow-2xs shrink-0',
+                isViewingNextDay
+                  ? 'bg-slate-700 text-amber-300 border border-slate-500'
+                  : date === shiftDateStr(jstTodayStr(), 1)
+                  ? 'bg-emerald-400 text-emerald-950'
+                  : date === jstTodayStr()
+                  ? 'bg-sky-400 text-sky-950'
+                  : 'bg-slate-700 text-slate-100 border border-slate-500',
+              )}
+            >
+              <span>
+                {isViewingNextDay
+                  ? '📅'
+                  : date === shiftDateStr(jstTodayStr(), 1)
+                  ? '🥬'
+                  : date === jstTodayStr()
+                  ? '🚚'
+                  : '📅'}
               </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-slate-300 font-bold">
-                翌日分: 全 {nextItems.length} 件
+              <span>
+                {isViewingNextDay
+                  ? `翌々日 ${formatJpDateShort(shiftDateStr(date, 1))} 出荷分（翌日先行枠）`
+                  : date === shiftDateStr(jstTodayStr(), 1)
+                  ? `明日 ${formatJpDateShort(date)} 出荷分（本日パック作業）`
+                  : date === jstTodayStr()
+                  ? `本日 ${formatJpDateShort(date)} 出荷分（当日便）`
+                  : `${formatJpDateShort(date)} 出荷分`}
               </span>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-emerald-400">🥬</span>
-              <span className="text-white font-black">{productName || '品目'}</span>
-              <span className="text-slate-300">
-                ({date === shiftDateStr(jstTodayStr(), 1) ? '明日出荷・本日パック' : `${date}出荷`})
+            </span>
+            <span className="text-white font-black text-xs sm:text-sm truncate">
+              {productName || '品目'}
+            </span>
+          </div>
+
+          {/* 右側: リアルタイム進捗（完成/目標・残りP/箱数） */}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {isViewingNextDay ? (
+              <span className="text-slate-200 font-black tabular-nums">
+                翌日分: 全 {nextItems.length} 件（計{' '}
+                {nextItems.reduce((acc, it) => acc + it.orderedQty, 0).toLocaleString()} P）
               </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-emerald-300 font-black tabular-nums">
-                {completedPacks}/{totalPacks} P
-              </span>
-              <span className="text-[11px] text-slate-300 font-medium">({progressPct}%)</span>
-              <span
-                className="rounded bg-emerald-600/90 px-1.5 py-0.5 text-[10px] text-white font-bold"
-                title={`残り約${remainingBoxes}箱`}
-              >
-                あと {remainingPacks}P (約{remainingBoxes}箱)
-              </span>
-            </div>
-          </>
-        )}
+            ) : (
+              <>
+                <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm">
+                  {completedPacks.toLocaleString()}/{totalPacks.toLocaleString()} P
+                </span>
+                <span className="text-[11px] text-slate-300 font-bold tabular-nums">
+                  ({progressPct}%)
+                </span>
+                <span
+                  className="rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
+                  title={`残り約${remainingBoxes}箱`}
+                >
+                  あと {remainingPacks.toLocaleString()}P (約{remainingBoxes}箱)
+                </span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* リアルタイム進捗メーター ＆ 内訳アコーディオン */}
