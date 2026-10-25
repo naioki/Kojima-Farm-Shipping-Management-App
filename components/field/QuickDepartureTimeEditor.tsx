@@ -23,24 +23,29 @@ interface Props {
 
 const FARM_PRESETS = [
   {
-    label: '🔥 16:00（NSK・当日16時迄）',
+    label: '🔥 当日 16:00迄（NSK）',
     time: '16:00',
-    route: 'NSK便（当日16時迄）',
+    route: 'NSK便',
   },
   {
-    label: '🚚 18:00（和郷園・当日18時迄）',
+    label: '🚚 当日 18:00迄（和郷園）',
     time: '18:00',
-    route: '和郷園便（当日18時迄）',
+    route: '和郷園便',
   },
   {
-    label: '🌅 翌午前（農業総研・翌午前中迄）',
+    label: '🌅 翌午前迄（農業総研）',
     time: '翌午前',
-    route: '農総研便（翌午前中迄）',
+    route: '農業総研便',
+  },
+  {
+    label: '📦 時間指定なし（一般便）',
+    time: '',
+    route: '',
   },
 ]
 
 const COMMON_TIMES = ['16:00', '18:00', '翌午前', '翌09:00', '翌11:00', '11:30', '14:00']
-const COMMON_ROUTES = ['NSK便（当日16時迄）', '和郷園便（当日18時迄）', '農総研便（翌午前中迄）', '岩槻便', '戸田便', '直売所便']
+const COMMON_ROUTES = ['NSK便', '和郷園便', '農業総研便', '岩槻便', '戸田便', '直売所便']
 
 export function QuickDepartureTimeEditor({
   deliveryDate,
@@ -106,20 +111,20 @@ export function QuickDepartureTimeEditor({
     }
   }
 
-  // チップ表示ラベルの組み立て（時刻と便名の重複を防止しつつ両方表示）
+  // チップ表示ラベルの組み立て（時刻と便名の重複を防止しつつ分かりやすく表示）
   const chipLabel = (() => {
     const cleanRoute = cleanShippingRouteName(currentShippingRouteName)
     const isNextDayTime = currentDepartureTime?.startsWith('翌')
     if (currentDepartureTime && cleanRoute) {
-      return isNextDayTime ? `${currentDepartureTime} ${cleanRoute}` : `${currentDepartureTime}発 ${cleanRoute}`
+      return isNextDayTime ? `${currentDepartureTime}迄・${cleanRoute}` : `当日${currentDepartureTime}迄・${cleanRoute}`
     }
     if (currentDepartureTime) {
-      return isNextDayTime ? `${currentDepartureTime}出荷` : `${currentDepartureTime}発`
+      return isNextDayTime ? `${currentDepartureTime}迄に出荷` : `当日${currentDepartureTime}迄に出荷`
     }
     if (cleanRoute) {
       return cleanRoute
     }
-    return '時間未設定（マスタ設定可）'
+    return '時間指定なし（設定可）'
   })()
 
   const thaiTime = isThaiMode ? getThaiDepartureTime(currentDepartureTime) : null

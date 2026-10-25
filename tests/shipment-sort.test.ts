@@ -115,12 +115,12 @@ describe('getPackGroupInfo (ヘッダー情報の生成)', () => {
   it('time モード: 便時刻スロットのヘッダーが生成される', () => {
     const item: PackSortableItem = { itemId: '1', customerName: '和郷園', departureTime: '06:00' }
     const info = getPackGroupInfo(item, 'time')
-    expect(info.title).toContain('06:00発 便')
+    expect(info.title).toContain('06:00迄に出荷')
     expect(info.groupKey).toBe('time:06:00')
 
     const unsetItem: PackSortableItem = { itemId: '2', customerName: '和郷園', departureTime: null }
     const unsetInfo = getPackGroupInfo(unsetItem, 'time')
-    expect(unsetInfo.title).toContain('便未定')
+    expect(unsetInfo.title).toContain('時間指定なし')
     expect(unsetInfo.groupKey).toBe('time:unset')
   })
 

@@ -127,11 +127,11 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
       const rawTitle = primaryRoute?.title || '一般配送・時間未指定'
       const isUnassigned = !depTime && (rawTitle === '一般配送・時間未指定' || !rawTitle)
       const groupTitle = isUnassigned
-        ? '時間未設定（マスタ設定で次回から不要）'
+        ? '時間指定なし（一般便）'
         : depTime && !rawTitle.includes(depTime)
         ? depTime.startsWith('翌')
-          ? `${depTime} ${rawTitle}`
-          : `${depTime}発 ${rawTitle}`
+          ? `🌅 ${depTime}迄 ${rawTitle}`
+          : `⏰ 当日${depTime}迄 ${rawTitle}`
         : rawTitle
       const groupKey = isUnassigned ? '__unassigned__' : `${depTime ?? '99:99'}:${groupTitle}`
 

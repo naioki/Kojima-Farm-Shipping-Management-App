@@ -81,7 +81,7 @@ export default async function ShipmentsPage({
   const staffFeatures = await getStaffFeatures()
   const canReportSpec = canStaffUse('reportSpec', role, staffFeatures)
 
-  // ① 全商品一覧 ＆ ② 当日の承認済み注文（未承認pending_reviewは別カウント）を並列取得
+  // ① 全商品一覧 ＆ ② 当日の承認済み注文（未承認pending_reviewは有効な明細(quantity > 0)がある注文のみカウント）を並列取得
   const [prodListRes, ordersRes, pendingRes] = await Promise.all([
     admin
       .from('products')
@@ -96,7 +96,7 @@ export default async function ShipmentsPage({
       .in('status', ['approved', 'shipped', 'invoiced']),
     admin
       .from('orders')
-      .select('id', { count: 'exact', head: true })
+      .select('id, order_items(quantity)')
       .eq('delivery_date', date)
       .eq('status', 'pending_review'),
   ])
@@ -106,7 +106,10 @@ export default async function ShipmentsPage({
 
   const allProducts = prodListRes.data ?? []
   const orders = ordersRes.data ?? []
-  const pendingReviewCount = pendingRes.count ?? 0
+  const pendingReviewCount = (pendingRes.data ?? []).filter((po) => {
+    const rawItems = Array.isArray(po.order_items) ? po.order_items : []
+    return rawItems.some((it: { quantity?: number | null }) => (Number(it.quantity) || 0) > 0)
+  }).length
 
   const orderIds = orders.map((o) => o.id)
   const orderToCustomer = new Map(orders.map((o) => [o.id, o.customer_id]))

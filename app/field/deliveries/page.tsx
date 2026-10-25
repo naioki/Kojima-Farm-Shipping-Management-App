@@ -43,7 +43,7 @@ export default async function DeliveriesPage({
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const admin = createAdminClient()
 
-  // その日の出荷対象注文（承認済み・出荷済み・請求済みのみ表示、未承認pending_reviewは別カウント）
+  // その日の出荷対象注文（承認済み・出荷済み・請求済みのみ表示、未承認pending_reviewは有効な明細(quantity > 0)がある注文のみカウント）
   const [ordersRes, pendingRes] = await Promise.all([
     admin
       .from('orders')
@@ -52,14 +52,17 @@ export default async function DeliveriesPage({
       .in('status', ['approved', 'shipped', 'invoiced']),
     admin
       .from('orders')
-      .select('id', { count: 'exact', head: true })
+      .select('id, order_items(quantity)')
       .eq('delivery_date', date)
       .eq('status', 'pending_review'),
   ])
 
   if (ordersRes.error) return <ErrorState message={ordersRes.error.message} />
   const orders = ordersRes.data ?? []
-  const pendingReviewCount = pendingRes.count ?? 0
+  const pendingReviewCount = (pendingRes.data ?? []).filter((po) => {
+    const rawItems = Array.isArray(po.order_items) ? po.order_items : []
+    return rawItems.some((it: { quantity?: number | null }) => (Number(it.quantity) || 0) > 0)
+  }).length
 
   const orderIds = orders.map((o) => o.id)
   const itemsRes = orderIds.length

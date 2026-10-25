@@ -105,7 +105,7 @@ export function parseDeparturePriority(departureTime: string | null | undefined)
 export function cleanShippingRouteName(routeName: string | null | undefined): string | null {
   if (!routeName) return null
   const cleaned = routeName
-    .replace(/^(?:(?:翌(?:日)?午前|翌?\d{1,2}:\d{2})発?\s*)+/, '')
+    .replace(/^(?:(?:翌(?:日)?(?:午前|\d{1,2}:\d{2}|\d{1,2}時)|当日|\d{1,2}:\d{2}|\d{1,2}時)(?:発|出荷|迄|まで)?\s*)+/, '')
     .replace(/^一般配送・時間未指定$/, '')
     .trim()
   return cleaned || null
@@ -136,10 +136,10 @@ export function resolveDefaultRouteInfo(params: {
   const formatTitle = (time: string | null, route: string | null): string => {
     const cleanRoute = cleanShippingRouteName(route)
     if (time && cleanRoute) {
-      return time.startsWith('翌') ? `${time} ${cleanRoute}` : `${time}発 ${cleanRoute}`
+      return time.startsWith('翌') ? `🌅 ${time}迄 ${cleanRoute}` : `⏰ 当日${time}迄 ${cleanRoute}`
     }
     if (time) {
-      return time.startsWith('翌') ? `${time}出荷` : `${time}発`
+      return time.startsWith('翌') ? `🌅 ${time}迄に出荷` : `⏰ 当日${time}迄に出荷`
     }
     if (cleanRoute) return cleanRoute
     return '一般配送・時間未指定'
@@ -181,9 +181,9 @@ export function resolveDefaultRouteInfo(params: {
     d.includes('ちばコープ')
   ) {
     const subRoute =
-      d && d !== c && d !== '直接納品' && d !== '標準納入先' ? `${d}便（当日18時迄）` : '和郷園便（当日18時迄）'
+      d && d !== c && d !== '直接納品' && d !== '標準納入先' ? `${d}便` : '和郷園便'
     return {
-      title: `18:00発 ${subRoute}`,
+      title: formatTitle('18:00', subRoute),
       departureTime: '18:00',
       shippingRouteName: subRoute,
     }
@@ -198,17 +198,17 @@ export function resolveDefaultRouteInfo(params: {
       d.includes('16:00') ||
       (c.toUpperCase().includes('NSK') && !c.includes('農業総'))
     ) {
-      const subRoute = 'NSK便（当日16時迄）'
+      const subRoute = 'NSK便'
       return {
-        title: `16:00発 ${subRoute}`,
+        title: formatTitle('16:00', subRoute),
         departureTime: '16:00',
         shippingRouteName: subRoute,
       }
     }
     // 農業総研（パック翌日の午前中までに出荷）
-    const subRoute = '農総研便（翌午前中迄）'
+    const subRoute = '農業総研便'
     return {
-      title: `翌午前 ${subRoute}`,
+      title: formatTitle('翌午前', subRoute),
       departureTime: '翌午前',
       shippingRouteName: subRoute,
     }
@@ -218,10 +218,10 @@ export function resolveDefaultRouteInfo(params: {
     return { title: '直売所便', departureTime: null, shippingRouteName: '直売所便' }
   }
   if (orderShippingTime === 'am') {
-    return { title: '11:30発 午前便', departureTime: '11:30', shippingRouteName: '午前便' }
+    return { title: formatTitle('11:30', '午前便'), departureTime: '11:30', shippingRouteName: '午前便' }
   }
   if (orderShippingTime === 'pm') {
-    return { title: '14:00発 午後便', departureTime: '14:00', shippingRouteName: '午後便' }
+    return { title: formatTitle('14:00', '午後便'), departureTime: '14:00', shippingRouteName: '午後便' }
   }
 
   return { title: '一般配送・時間未指定', departureTime: null, shippingRouteName: null }
@@ -239,11 +239,11 @@ export function getPackGroupInfo(item: PackSortableItem, mode: PackSortMode = 't
       groupKey: `time:${time || 'unset'}`,
       title: time
         ? isNextDayTime
-          ? `🌅 ${time} 出荷便（翌日午前中迄）`
-          : `⏰ ${time}発 便`
-        : '⏳ 便未定 / 午後',
-      subtitle: route ? `ルート: ${route}` : undefined,
-      badge: time ? (isNextDayTime ? '翌日午前' : '当日便') : '未定',
+          ? `🌅 ${time}迄に出荷（翌日午前中迄）`
+          : `⏰ 当日 ${time}迄に出荷`
+        : '⏳ 時間指定なし（一般便）',
+      subtitle: route ? `便: ${route}` : undefined,
+      badge: time ? (isNextDayTime ? '翌日午前迄' : `当日${time}迄`) : '時間未指定',
       icon: time ? (isNextDayTime ? '🌅' : '⏰') : '⏳',
     }
   }

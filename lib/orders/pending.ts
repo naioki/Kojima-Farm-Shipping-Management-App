@@ -145,7 +145,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
 
   return orders
     .map((o): PendingOrder | null => {
-      const rawItems = itemsByOrder.get(o.id) ?? []
+      const rawItems = (itemsByOrder.get(o.id) ?? []).filter((it) => (Number(it.quantity) || 0) > 0)
       if (rawItems.length === 0) return null
       const orderItems: PendingOrderItem[] = rawItems.map((it) => ({
         id: it.id,
