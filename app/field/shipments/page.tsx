@@ -27,6 +27,8 @@ type PackInstructionRow = {
 } & PackInstructionValues
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
 
 const PATH = '/field/shipments'
 
@@ -592,87 +594,22 @@ export default async function ShipmentsPage({
           <FieldViewSwitch active="day" date={date} />
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
-        <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日出荷（本日パック）" />
+        <div className="flex items-center gap-2">
+          {uniqueReceipts.length > 0 && firstReceiptId && (
+            <Link
+              href={`/field/viewer/${firstReceiptId}?date=${date}`}
+              className="inline-flex items-center gap-1 rounded-lg bg-forest-800 text-white hover:bg-forest-900 px-2.5 py-1.5 text-xs font-black shadow-xs transition active:scale-95"
+              title="該当FAX原本を表示"
+            >
+              <span>📄 FAX原本</span>
+              <span className="rounded-full bg-forest-950/70 px-1.5 py-0.2 text-[10px] text-forest-200">
+                {uniqueReceipts.length}件
+              </span>
+            </Link>
+          )}
+          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日出荷（本日パック）" />
+        </div>
       </div>
-
-      {/* 出荷日 ＆ 作業日 ガイダンスバッジ（＋コンパクトな当日FAX原本ボタン） */}
-      {date === defaultDate ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 border border-emerald-300 px-3.5 py-2 text-xs sm:text-sm font-black text-emerald-950 shadow-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-base">🥬</span>
-            <span>本日パック作業対象（明日 {date} 出荷分）</span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {uniqueReceipts.length > 0 && firstReceiptId && (
-              <Link
-                href={`/field/viewer/${firstReceiptId}?date=${date}`}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-800 text-white hover:bg-emerald-900 px-2.5 py-1 text-xs font-black shadow-xs transition active:scale-95"
-                title="該当FAX原本を表示"
-              >
-                <span>📄 FAX原本</span>
-                <span className="rounded-full bg-emerald-950/70 px-1.5 py-0.2 text-[10px] text-emerald-200">
-                  {uniqueReceipts.length}件
-                </span>
-              </Link>
-            )}
-            <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-xs text-white font-bold">作業中</span>
-          </div>
-        </div>
-      ) : date === jstTodayStr() ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 border border-sky-300 px-3.5 py-2 text-xs sm:text-sm font-black text-sky-950 shadow-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-base">🚚</span>
-            <span>当日出荷分（{date} 出荷）</span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {uniqueReceipts.length > 0 && firstReceiptId && (
-              <Link
-                href={`/field/viewer/${firstReceiptId}?date=${date}`}
-                className="inline-flex items-center gap-1 rounded-lg bg-sky-800 text-white hover:bg-sky-900 px-2.5 py-1 text-xs font-black shadow-xs transition active:scale-95"
-                title="該当FAX原本を表示"
-              >
-                <span>📄 FAX原本</span>
-                <span className="rounded-full bg-sky-950/70 px-1.5 py-0.2 text-[10px] text-sky-200">
-                  {uniqueReceipts.length}件
-                </span>
-              </Link>
-            )}
-            <Link
-              href={`/field/shipments?date=${defaultDate}`}
-              className="rounded-md bg-emerald-700 px-2.5 py-1 text-xs text-white font-bold hover:bg-emerald-800 transition"
-            >
-              本日パック（明日出荷）へ ➜
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-300 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-800 shadow-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-base">📅</span>
-            <span>{date} 出荷分</span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {uniqueReceipts.length > 0 && firstReceiptId && (
-              <Link
-                href={`/field/viewer/${firstReceiptId}?date=${date}`}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-700 text-white hover:bg-slate-800 px-2.5 py-1 text-xs font-black shadow-xs transition active:scale-95"
-                title="該当FAX原本を表示"
-              >
-                <span>📄 FAX原本</span>
-                <span className="rounded-full bg-slate-900/70 px-1.5 py-0.2 text-[10px] text-slate-200">
-                  {uniqueReceipts.length}件
-                </span>
-              </Link>
-            )}
-            <Link
-              href={`/field/shipments?date=${defaultDate}`}
-              className="rounded-md bg-forest-700 px-2.5 py-1 text-xs text-white font-bold hover:bg-forest-800 transition"
-            >
-              本日パック（明日出荷）へ ➜
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs">

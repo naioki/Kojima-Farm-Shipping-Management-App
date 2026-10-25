@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, RotateCw } from 'lucide-react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import {
   HarvestPulseSummary,
@@ -62,6 +63,7 @@ export function PackingAndShippingViews({
   initialCarryover = 0,
   isTodayTarget = true,
 }: PackingAndShippingViewsProps) {
+  const router = useRouter()
   const [items, setItems] = useState<ShipmentItemData[]>(initialItems)
   const [nextItems, setNextItems] = useState<ShipmentItemData[]>(initialNextDayItems)
   const [busyReorder, setBusyReorder] = useState<boolean>(false)
@@ -69,9 +71,19 @@ export function PackingAndShippingViews({
   const [filterMode, setFilterMode] = useState<'all' | 'incomplete'>('all')
   const [isReorderModalOpen, setIsReorderModalOpen] = useState<boolean>(false)
   const [isViewingNextDay, setIsViewingNextDay] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const nextSectionRef = useRef<HTMLDivElement | null>(null)
 
   const isTodayWork = isTodayTarget && (date === shiftDateStr(jstTodayStr(), 1) || date === jstTodayStr())
+
+  const handleRefresh = () => {
+    setIsRefreshing(true)
+    router.refresh()
+    setTimeout(() => {
+      setIsRefreshing(false)
+      toast.success('最新データを取得しました', { id: 'pack-refresh' })
+    }, 600)
+  }
 
   // サーバー側や親コンポーネント（日付変更・品目タブ切り替え）から届く最新の明細リストを同期
   useEffect(() => {
@@ -91,8 +103,8 @@ export function PackingAndShippingViews({
     const checkScrollPosition = () => {
       if (!nextSectionRef.current) return
       const rect = nextSectionRef.current.getBoundingClientRect()
-      // 上部固定バー(約50px)直下に翌日見出しが到達したか
-      setIsViewingNextDay(rect.top <= 90)
+      // 上部固定バー(約56px)直下に翌日見出しが到達したか
+      setIsViewingNextDay(rect.top <= 110)
     }
 
     window.addEventListener('scroll', checkScrollPosition, { passive: true })
@@ -311,7 +323,7 @@ export function PackingAndShippingViews({
       {/* スクロール追従スティッキーヘッダー（画面最上部に常時固定・日付/作業区分とリアルタイム進捗を統合表示） */}
       <div
         className={cn(
-          'sticky top-0 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md rounded-b-xl border-b transition-colors duration-200',
+          'sticky top-14 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md rounded-b-xl border-b transition-colors duration-200',
           isViewingNextDay
             ? 'bg-[#0f172a]/95 border-slate-500 shadow-lg text-slate-100'
             : date === shiftDateStr(jstTodayStr(), 1)
@@ -360,8 +372,8 @@ export function PackingAndShippingViews({
             </span>
           </div>
 
-          {/* 右側: リアルタイム進捗（完成/目標・残りP/箱数） */}
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
+          {/* 右側: リアルタイム進捗（完成/目標・残りP/箱数） ＆ ワンタップ更新 */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
             {isViewingNextDay ? (
               <span className="text-slate-200 font-black tabular-nums">
                 翌日分: 全 {nextItems.length} 件（計{' '}
@@ -376,13 +388,24 @@ export function PackingAndShippingViews({
                   ({progressPct}%)
                 </span>
                 <span
-                  className="rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
+                  className="hidden xs:inline-block rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
                   title={`残り約${remainingBoxes}箱`}
                 >
                   あと {remainingPacks.toLocaleString()}P (約{remainingBoxes}箱)
                 </span>
               </>
             )}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="最新データを再取得"
+              aria-label="最新データを再取得"
+              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-0.5 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
+            >
+              <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+              <span className="hidden sm:inline text-[11px] font-bold">更新</span>
+            </button>
           </div>
         </div>
       </div>
