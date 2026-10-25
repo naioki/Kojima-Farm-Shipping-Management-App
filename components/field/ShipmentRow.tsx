@@ -550,10 +550,10 @@ export function ShipmentRow({
                 {customerName}
               </span>
 
-              {/* 納品先名（取引先の後に続く・大きく見やすいフォント） */}
+              {/* 納品先名（別納入先であることが一目で分かる視覚的バッジ） */}
               {destinationName && customerName !== destinationName && (
-                <span className="font-extrabold text-forest-800 text-lg sm:text-xl tracking-tight flex items-center gap-1">
-                  <span className="text-ink-muted text-base font-normal">▶</span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-base sm:text-lg tracking-tight shadow-xs">
+                  <span className="text-emerald-700 text-sm">▶</span>
                   {destinationName}
                 </span>
               )}
@@ -565,7 +565,12 @@ export function ShipmentRow({
                 新規 ★
               </span>
             )}
-            {(needsManualConfirm || lineNote?.includes('⚠') || lineNote?.includes('数量変更:')) && (
+            {(lineNote?.includes('手書き修正') || lineNote?.includes('数量変更:')) && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
+                📝 修正あり
+              </span>
+            )}
+            {(needsManualConfirm || lineNote?.includes('⚠')) && !lineNote?.includes('手書き修正') && !lineNote?.includes('数量変更:') && (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900 shadow-xs">
                 ⚠️ 注意（要確認）
               </span>
@@ -610,10 +615,11 @@ export function ShipmentRow({
           )}
         </div>
 
-        {/* GAS版準拠：数量変更・要確認のオレンジ警告バー（常時露出） */}
-        {lineNote && (lineNote.includes('数量変更:') || lineNote.includes('⚠')) && (
-          <div className="mt-1.5 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-950">
-            ⚠️ 注意: {lineNote}
+        {/* GAS版準拠：数量変更・手書き修正・要確認のオレンジ警告バー（常時露出） */}
+        {lineNote && (lineNote.includes('数量変更:') || lineNote.includes('⚠') || lineNote.includes('手書き修正') || lineNote.includes('入数変更')) && (
+          <div className="mt-1.5 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-950 flex items-center gap-1.5">
+            <span>{lineNote.includes('手書き修正') || lineNote.includes('数量変更') || lineNote.includes('入数変更') ? '📝' : '⚠️'}</span>
+            <span>注意: {lineNote}</span>
           </div>
         )}
 
