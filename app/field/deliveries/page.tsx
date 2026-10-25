@@ -13,7 +13,9 @@ import {
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { formatQty } from '@/lib/calculations/format-qty'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { determineContainerType } from '@/lib/pipeline/schemas'
+import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -238,10 +240,14 @@ export default async function DeliveriesPage({
     const dest = order.destination_id ? destById.get(order.destination_id) : null
     const destName = dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note) || '直接納品'
 
-    const override = (order.destination_id && routeOverrides[`dest:${order.destination_id}`])
-      || (destName ? routeOverrides[`cust:${order.customer_id}:${destName}`] : null)
-      || routeOverrides[`cust:${order.customer_id}:default`]
-      || null
+    const override =
+      (order.destination_id && routeOverrides[`date:${date}:dest:${order.destination_id}`]) ||
+      (destName ? routeOverrides[`date:${date}:cust:${order.customer_id}:${destName}`] : null) ||
+      (!order.destination_id ? routeOverrides[`date:${date}:cust:${order.customer_id}:default`] : null) ||
+      (order.destination_id && routeOverrides[`dest:${order.destination_id}`]) ||
+      (destName ? routeOverrides[`cust:${order.customer_id}:${destName}`] : null) ||
+      (!order.destination_id ? routeOverrides[`cust:${order.customer_id}:default`] : null) ||
+      null
 
     const routeInfo = resolveRouteInfo(destName, customerName, dest, order.shipping_time, override)
 
@@ -288,7 +294,10 @@ export default async function DeliveriesPage({
 
     const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`)
     const resolvedContainer =
-      it.container_type || dest?.default_container_type || rule?.default_container_type || null
+      it.container_type ||
+      dest?.default_container_type ||
+      rule?.default_container_type ||
+      determineContainerType(customerName, destName)
 
     const destKey = order.destination_id || `name:${destName}`
     let dEntry = cEntry.destinationsMap.get(destKey)
@@ -452,6 +461,8 @@ export default async function DeliveriesPage({
   })
 
   const globalTotalCustomers = customerCards.length
+  const todayStr = jstTodayStr()
+  const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
@@ -462,14 +473,14 @@ export default async function DeliveriesPage({
           <FieldViewSwitch active="day" date={date} />
         </div>
         <div className="flex items-center gap-2">
-          <DateNav date={date} basePath={PATH} />
+          <DateNav date={date} basePath={PATH} defaultDate={todayStr} defaultLabel="本日積込・出荷" />
         </div>
       </div>
 
-      {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
+      {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード［本日パック＝明日出荷］ ⇋ 🚚 便別積込・配送リスト［本日積込・出荷］） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs print:hidden">
         <Link
-          href={`/field/shipments?date=${date}`}
+          href={`/field/shipments?date=${date === todayStr ? tomorrowStr : date}`}
           className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
           🥬 収穫・袋詰めボード
@@ -477,6 +488,32 @@ export default async function DeliveriesPage({
         <span className="flex items-center justify-center gap-1.5 rounded-lg bg-forest-700 py-2 text-white shadow-xs">
           🚚 便別積込・配送リスト
         </span>
+      </div>
+
+      {/* ③ 「🚚 今日積込・出荷分」と「📅 明日積込分（本日パック中）」のワンタップ切替バー */}
+      <div className="grid grid-cols-2 gap-2 print:hidden">
+        <Link
+          href={`/field/deliveries?date=${todayStr}`}
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs sm:text-sm font-black border-2 transition shadow-2xs',
+            date === todayStr
+              ? 'border-sky-600 bg-sky-600 text-white shadow-sm'
+              : 'border-line bg-white text-ink hover:bg-sky-50 hover:border-sky-300',
+          )}
+        >
+          <span>🚚 今日積込・出荷 ({formatJpDateShort(todayStr)})</span>
+        </Link>
+        <Link
+          href={`/field/deliveries?date=${tomorrowStr}`}
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs sm:text-sm font-black border-2 transition shadow-2xs',
+            date === tomorrowStr
+              ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+              : 'border-line bg-white text-ink hover:bg-emerald-50 hover:border-emerald-300',
+          )}
+        >
+          <span>📅 明日積込・出荷 ({formatJpDateShort(tomorrowStr)})</span>
+        </Link>
       </div>
 
       {/* 未承認データがある場合の控えめな通知バー */}

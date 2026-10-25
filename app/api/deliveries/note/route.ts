@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isStaffUser } from '@/lib/auth/is-staff-user'
 
 export const runtime = 'nodejs'
 
@@ -18,6 +19,9 @@ const schema = z.object({
 export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!(await isStaffUser(user.id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const body = await req.json().catch(() => null)
   const parsed = schema.safeParse(body)

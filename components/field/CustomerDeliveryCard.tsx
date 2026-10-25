@@ -96,6 +96,12 @@ export function CustomerDeliveryCard({
   const [open, setOpen] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
   const [unpackedConfirmOpen, setUnpackedConfirmOpen] = useState<boolean>(false)
+  const [pendingDestConfirm, setPendingDestConfirm] = useState<{
+    destId: string | null
+    currentStatus: string
+    destName: string
+    unpackedCount: number
+  } | null>(null)
 
   // パック進捗連動（全明細のうち何件が packed / shipped か）
   const allDeliveryItems = destinations.flatMap((d) => d.items).filter((it) => (Number(it.quantity) || 0) > 0)
@@ -103,6 +109,27 @@ export function CustomerDeliveryCard({
     (it) => it.fieldStatus === 'packed' || it.fieldStatus === 'shipped',
   ).length
   const unpackedItemCount = Math.max(0, allDeliveryItems.length - packedItemCount)
+
+  // カードを閉じていても一目で荷姿・品目がわかるよう、コンテナ別箱数と品目サマリを集計
+  const containerSummary = (() => {
+    const map = new Map<string, number>()
+    for (const d of destinations) {
+      if (d.totalBoxes <= 0) continue
+      const cType = d.containerType || '通常コンテナ'
+      map.set(cType, (map.get(cType) ?? 0) + d.totalBoxes)
+    }
+    return Array.from(map.entries()).map(([type, boxes]) => ({ type, boxes }))
+  })()
+
+  const productSummary = (() => {
+    const map = new Map<string, { qty: number; unit: string }>()
+    for (const it of allDeliveryItems) {
+      const cur = map.get(it.productName) ?? { qty: 0, unit: it.unit || 'P' }
+      cur.qty += Number(it.quantity) || 0
+      map.set(it.productName, cur)
+    }
+    return Array.from(map.entries()).map(([name, v]) => ({ name, qty: v.qty, unit: v.unit }))
+  })()
 
   // 親からの Props 更新を同期
   useEffect(() => {
@@ -319,6 +346,36 @@ export function CustomerDeliveryCard({
                 )
               )}
             </div>
+
+            {/* アコーディオンを閉じていても一目で分かる【コンテナ種別箱数 ＋ 品目内訳】サマリ帯 */}
+            {(containerSummary.length > 0 || productSummary.length > 0) && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {containerSummary.map((cs) => {
+                  const style = getContainerColorStyle(cs.type)
+                  return (
+                    <span
+                      key={cs.type}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-lg px-2.5 py-0.5 text-xs font-black shadow-2xs',
+                        style.badgeClass,
+                      )}
+                    >
+                      <span>📦 {style.label}</span>
+                      <span className="num underline decoration-2">{cs.boxes}箱</span>
+                    </span>
+                  )
+                })}
+                {productSummary.map((ps) => (
+                  <span
+                    key={ps.name}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-black text-ink"
+                  >
+                    <span>🥬 {ps.name}</span>
+                    <span className="num text-forest-800">{ps.qty}{ps.unit}</span>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 最重要位置: 特大フォントの総積込数（案1: 物理箱数最優先型 28〜32px） */}
@@ -460,9 +517,13 @@ export function CustomerDeliveryCard({
         </div>
       </div>
 
-      {/* ④ アコーディオン展開時（納品先・便ごとの個別内訳：2段構造＆コンテナカラー化） */}
-      {open && (
-        <div className="bg-bg-soft/50 border-t border-line/60 p-3 space-y-3 animate-fadeIn">
+      {/* ④ アコーディオン展開時（納品先・便ごとの個別内訳：2段構造＆コンテナカラー化、印刷時は常時展開） */}
+      <div
+        className={cn(
+          'bg-bg-soft/50 border-t border-line/60 p-3 space-y-3 animate-fadeIn',
+          open ? 'block' : 'hidden print:block',
+        )}
+      >
           <div className="text-xs font-bold text-ink-muted uppercase tracking-wider">
             ▼ 納品先・便別 内訳一覧（全 {destinations.length} 件）
           </div>
@@ -537,13 +598,30 @@ export function CustomerDeliveryCard({
                       </span>
                     </div>
 
-                    {/* 個別積込ボタン */}
+                    {/* 個別積込ボタン（未パック品目がある場合は確認モーダルを挟む） */}
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => toggleDestination(dest.destinationId, dest.status)}
+                      onClick={() => {
+                        const destUnpacked = dest.items.filter(
+                          (it) =>
+                            (Number(it.quantity) || 0) > 0 &&
+                            it.fieldStatus !== 'packed' &&
+                            it.fieldStatus !== 'shipped',
+                        ).length
+                        if (!isDestLoaded && destUnpacked > 0) {
+                          setPendingDestConfirm({
+                            destId: dest.destinationId,
+                            currentStatus: dest.status,
+                            destName: dest.destinationName,
+                            unpackedCount: destUnpacked,
+                          })
+                          return
+                        }
+                        toggleDestination(dest.destinationId, dest.status)
+                      }}
                       className={cn(
-                        'h-10 px-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1.5',
+                        'h-10 px-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1.5 print:hidden',
                         isDestLoaded
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
                           : 'border-2 border-emerald-600 bg-white text-emerald-700 hover:bg-emerald-50',
@@ -592,7 +670,6 @@ export function CustomerDeliveryCard({
             })}
           </div>
         </div>
-      )}
 
       <ConfirmModal
         open={unpackedConfirmOpen}
@@ -604,6 +681,26 @@ export function CustomerDeliveryCard({
         title="⚠️ パック未完了の品目があります。積込OKにしますか？"
         message={`「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。`}
         confirmLabel="実物確認済・積込OKにする"
+        isLoading={busy}
+      />
+
+      <ConfirmModal
+        open={Boolean(pendingDestConfirm)}
+        onClose={() => setPendingDestConfirm(null)}
+        onConfirm={async () => {
+          const target = pendingDestConfirm
+          setPendingDestConfirm(null)
+          if (target) {
+            await toggleDestination(target.destId, target.currentStatus)
+          }
+        }}
+        title="⚠️ この納品先にパック未完了の品目があります"
+        message={
+          pendingDestConfirm
+            ? `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。`
+            : ''
+        }
+        confirmLabel="実物確認済・個別積込OKにする"
         isLoading={busy}
       />
     </div>

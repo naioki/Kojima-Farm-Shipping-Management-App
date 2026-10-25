@@ -37,10 +37,12 @@ export function QuickDepartureTimeEditor({
 
   const [time, setTime] = useState(currentDepartureTime ?? '')
   const [route, setRoute] = useState(currentShippingRouteName ?? '')
+  const [scope, setScope] = useState<'master' | 'date_only'>('master')
 
   function handleOpen() {
     setTime(currentDepartureTime ?? '')
     setRoute(currentShippingRouteName ?? '')
+    setScope('master')
     setOpen(true)
   }
 
@@ -57,6 +59,7 @@ export function QuickDepartureTimeEditor({
           destinationName,
           departureTime: time.trim() || null,
           shippingRouteName: route.trim() || null,
+          scope,
         }),
       })
 
@@ -66,9 +69,11 @@ export function QuickDepartureTimeEditor({
       }
 
       toast.success(
-        time.trim()
-          ? `出荷時間を ${time} に設定しました`
-          : '出荷時間・便名を更新しました',
+        scope === 'master'
+          ? time.trim()
+            ? `出荷時間を ${time}（今後ずっと共通）に設定しました`
+            : '出荷時間・便名（今後ずっと共通）を更新しました'
+          : `${deliveryDate} 当日限定で出荷時間・便名を更新しました`,
       )
       setOpen(false)
       router.refresh()
@@ -79,24 +84,47 @@ export function QuickDepartureTimeEditor({
     }
   }
 
+  // チップ表示ラベルの組み立て（時刻と便名の重複を防止しつつ両方表示）
+  const chipLabel = (() => {
+    const cleanRoute = currentShippingRouteName
+      ?.replace(/^\d{1,2}:\d{2}発\s*/, '')
+      .replace(/^一般配送・時間未指定$/, '')
+      .trim()
+    if (currentDepartureTime && cleanRoute) {
+      return `${currentDepartureTime}発 ${cleanRoute}`
+    }
+    if (currentDepartureTime) {
+      return `${currentDepartureTime}発`
+    }
+    if (cleanRoute) {
+      return cleanRoute
+    }
+    return '時間未設定（マスタ設定可）'
+  })()
+
   return (
     <>
       {variant === 'chip' ? (
         <button
           type="button"
           onClick={handleOpen}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-earth-100 hover:bg-earth-200 border border-earth-300 px-2.5 py-1 text-xs font-bold text-earth-900 transition active:scale-95"
-          title="出荷時間・便名を変更"
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition active:scale-95 print:border-slate-400 print:bg-white',
+            currentDepartureTime || currentShippingRouteName
+              ? 'bg-earth-100 hover:bg-earth-200 border-earth-300 text-earth-900'
+              : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700',
+          )}
+          title="出荷時間・便名を変更（一度設定すれば次回以降も自動引き継ぎ）"
         >
-          <Clock className="h-3.5 w-3.5 text-earth-700" />
-          <span>{currentDepartureTime ? `${currentDepartureTime}発` : '時間未設定'}</span>
-          <span className="text-[10px] text-earth-700 underline ml-0.5">変更</span>
+          <Clock className="h-3.5 w-3.5 text-earth-700 shrink-0" />
+          <span>{chipLabel}</span>
+          <span className="text-[10px] text-earth-700 underline ml-0.5 print:hidden">変更</span>
         </button>
       ) : (
         <button
           type="button"
           onClick={handleOpen}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-bg-card hover:bg-bg-soft px-2.5 py-1 text-xs font-bold text-ink-soft transition active:scale-95"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-bg-card hover:bg-bg-soft px-2.5 py-1 text-xs font-bold text-ink-soft transition active:scale-95 print:hidden"
         >
           <Clock className="h-3.5 w-3.5 text-earth-600" />
           <span>出荷時間</span>
@@ -105,7 +133,7 @@ export function QuickDepartureTimeEditor({
 
       {/* モーダルダイアログ */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden">
           <div
             className="w-full max-w-sm rounded-2xl bg-bg-card p-5 shadow-2xl border border-line space-y-4 animate-scale-in"
             role="dialog"
@@ -127,6 +155,44 @@ export function QuickDepartureTimeEditor({
               >
                 <X className="h-5 w-5" />
               </button>
+            </div>
+
+            {/* 保存範囲（今後ずっと共通 vs この日だけ） */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-black text-ink">
+                📌 適用範囲（毎回入力しなくてOK）
+              </label>
+              <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-bg-soft p-1 border border-line">
+                <button
+                  type="button"
+                  onClick={() => setScope('master')}
+                  className={cn(
+                    'rounded-lg py-1.5 px-2 text-xs font-black transition',
+                    scope === 'master'
+                      ? 'bg-forest-700 text-white shadow-2xs'
+                      : 'text-ink-soft hover:text-ink',
+                  )}
+                >
+                  🔁 今後ずっと共通
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope('date_only')}
+                  className={cn(
+                    'rounded-lg py-1.5 px-2 text-xs font-black transition',
+                    scope === 'date_only'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'text-ink-soft hover:text-ink',
+                  )}
+                >
+                  📅 この日({deliveryDate.slice(5)})だけ
+                </button>
+              </div>
+              <p className="text-[11px] text-ink-muted">
+                {scope === 'master'
+                  ? '💡 一度設定すれば、明日以降も自動で同じ時刻・便名が引き継がれます。'
+                  : '💡 今日・この日だけの臨時変更として保存します（翌日以降は元に戻ります）。'}
+              </p>
             </div>
 
             {/* 出荷時間（出発時刻） */}

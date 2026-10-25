@@ -456,10 +456,14 @@ export default async function ShipmentsPage({
     curSpec.boxes += boxCount
     specCounts.set(specLabel, curSpec)
 
-    const override = (destId ? routeOverrides['dest:' + destId] : null)
-      || (dName ? routeOverrides['cust:' + custId + ':' + dName] : null)
-      || (custId ? routeOverrides['cust:' + custId + ':default'] : null)
-      || null
+    const override =
+      (destId ? routeOverrides[`date:${date}:dest:${destId}`] : null) ||
+      (dName && custId ? routeOverrides[`date:${date}:cust:${custId}:${dName}`] : null) ||
+      (!destId && custId ? routeOverrides[`date:${date}:cust:${custId}:default`] : null) ||
+      (destId ? routeOverrides['dest:' + destId] : null) ||
+      (dName ? routeOverrides['cust:' + custId + ':' + dName] : null) ||
+      (!destId && custId ? routeOverrides['cust:' + custId + ':default'] : null) ||
+      null
 
     const resolvedShippingRoute = override?.shippingRouteName !== undefined
       ? override.shippingRouteName
@@ -580,10 +584,14 @@ export default async function ShipmentsPage({
 
         const contType = ni.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
 
-        const override = (destId ? routeOverrides['dest:' + destId] : null)
-          || (dName ? routeOverrides['cust:' + custId + ':' + dName] : null)
-          || (custId ? routeOverrides['cust:' + custId + ':default'] : null)
-          || null
+        const override =
+          (destId ? routeOverrides[`date:${nextDateStr}:dest:${destId}`] : null) ||
+          (dName && custId ? routeOverrides[`date:${nextDateStr}:cust:${custId}:${dName}`] : null) ||
+          (!destId && custId ? routeOverrides[`date:${nextDateStr}:cust:${custId}:default`] : null) ||
+          (destId ? routeOverrides['dest:' + destId] : null) ||
+          (dName ? routeOverrides['cust:' + custId + ':' + dName] : null) ||
+          (!destId && custId ? routeOverrides['cust:' + custId + ':default'] : null) ||
+          null
 
         const resolvedShippingRoute = override?.shippingRouteName !== undefined
           ? override.shippingRouteName
@@ -649,13 +657,13 @@ export default async function ShipmentsPage({
         </div>
       </div>
 
-      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
+      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード［本日パック＝明日出荷］ ⇋ 🚚 便別積込・配送リスト［本日積込・出荷］） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs">
         <span className="flex items-center justify-center gap-1.5 rounded-lg bg-forest-700 py-2 text-white shadow-xs">
           🥬 収穫・袋詰めボード
         </span>
         <Link
-          href={`/field/deliveries?date=${date}`}
+          href={`/field/deliveries?date=${date === defaultDate ? jstTodayStr() : date}`}
           className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
           🚚 便別積込・配送リスト
