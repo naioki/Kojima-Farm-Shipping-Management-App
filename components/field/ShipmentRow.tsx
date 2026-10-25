@@ -18,6 +18,14 @@ import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { extractActionableNote, extractChangeDiffBadge } from '@/lib/field/clean-note'
+import { useFieldLang } from '@/lib/field/lang-context'
+import {
+  getThaiContainer,
+  getThaiBag,
+  getThaiTape,
+  getThaiSpec,
+  THAI_LABELS,
+} from '@/lib/field/thai-dict'
 
 /**
  * ステータス別の配色は lib/field/status-style.ts（単一の正）から取る。
@@ -141,6 +149,7 @@ export function ShipmentRow({
 }: ShipmentRowProps) {
   const router = useRouter()
   const { enqueue } = useOutbox()
+  const { isThaiMode } = useFieldLang()
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
   const [busy, setBusy] = useState(false)
@@ -597,7 +606,8 @@ export function ShipmentRow({
               className="h-8 rounded-lg border border-line-strong bg-white px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
               title="未完了に戻す"
             >
-              戻す
+              <span>戻す</span>
+              {isThaiMode && <span className="ml-1 text-[10px]">({THAI_LABELS.undo})</span>}
             </button>
             <button
               type="button"
@@ -643,12 +653,14 @@ export function ShipmentRow({
                 )}
                 {changeDiffBadge ? (
                   <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
-                    🔄 {changeDiffBadge}
+                    <span>🔄 {changeDiffBadge}</span>
+                    {isThaiMode && <span className="text-[10px] text-amber-100 font-bold">({THAI_LABELS.quantityChanged})</span>}
                   </span>
                 ) : (
                   (actionableLineNote.includes('手書き修正') || actionableLineNote.includes('数量変更:')) && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
-                      📝 修正あり
+                      <span>📝 修正あり</span>
+                      {isThaiMode && <span className="text-[10px] text-amber-100 font-bold">({THAI_LABELS.quantityChanged})</span>}
                     </span>
                   )
                 )}
@@ -673,8 +685,13 @@ export function ShipmentRow({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm sm:text-base font-extrabold text-ink-soft leading-tight">
-                {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'}
+              <div className="text-sm sm:text-base font-extrabold text-ink-soft leading-tight flex items-center gap-2 flex-wrap">
+                <span>{spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'}</span>
+                {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) && (
+                  <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    {getThaiSpec(spec || masterLabelSpec, masterPacksPerCase)}
+                  </span>
+                )}
               </div>
               {(onMoveUp || onMoveDown) && (
                 <div className="flex items-center gap-1 shrink-0">
@@ -712,15 +729,22 @@ export function ShipmentRow({
 
             {/* 本当の現場伝達事項（数量変更・手書き修正・入数変更・空コンテナ等）がある場合のみオレンジ注意バーを表示 */}
             {actionableLineNote && (
-              <div className="mt-1 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-950 flex items-center gap-1.5">
-                <span>
-                  {actionableLineNote.includes('手書き修正') ||
-                  actionableLineNote.includes('数量変更') ||
-                  actionableLineNote.includes('入数変更')
-                    ? '📝'
-                    : '⚠️'}
-                </span>
-                <span>注意: {actionableLineNote}</span>
+              <div className="mt-1 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-950 flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span>
+                    {actionableLineNote.includes('手書き修正') ||
+                    actionableLineNote.includes('数量変更') ||
+                    actionableLineNote.includes('入数変更')
+                      ? '📝'
+                      : '⚠️'}
+                  </span>
+                  <span>注意: {actionableLineNote}</span>
+                </div>
+                {isThaiMode && (
+                  <div className="text-[11px] text-orange-800 pl-5 font-medium">
+                    ⚠️ มีข้อความระบุพิเศษ (สอบถามหัวหน้าหากไม่แน่ใจ)
+                  </div>
+                )}
               </div>
             )}
 
@@ -728,27 +752,42 @@ export function ShipmentRow({
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               {container && (
                 <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-900 border border-sky-200">
-                  📦 {container}
+                  <span>📦 {container}</span>
+                  {isThaiMode && getThaiContainer(container) && (
+                    <span className="text-[11px] font-extrabold text-sky-700">({getThaiContainer(container)})</span>
+                  )}
                 </span>
               )}
               {hasCard && (
-                <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
-                  🃏 カード有
+                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
+                  <span>🃏 カード有</span>
+                  {isThaiMode && (
+                    <span className="text-[11px] font-extrabold text-indigo-700">({THAI_LABELS.cardYes})</span>
+                  )}
                 </span>
               )}
               {bagType && (
-                <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
-                  🛍️ {bagType}
+                <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
+                  <span>🛍️ {bagType}</span>
+                  {isThaiMode && getThaiBag(bagType) && (
+                    <span className="text-[11px] font-extrabold text-amber-700">({getThaiBag(bagType)})</span>
+                  )}
                 </span>
               )}
               {(hasSeal || sealText) && (
-                <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-800 border border-rose-200">
-                  🏷️ {sealText || 'シール有'}
+                <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-800 border border-rose-200">
+                  <span>🏷️ {sealText || 'シール有'}</span>
+                  {isThaiMode && (
+                    <span className="text-[11px] font-extrabold text-rose-700">({THAI_LABELS.sealYes})</span>
+                  )}
                 </span>
               )}
               {masterTapeColor && (
-                <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
-                  テープ: {masterTapeColor}
+                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+                  <span>テープ: {masterTapeColor}</span>
+                  {isThaiMode && getThaiTape(masterTapeColor) && (
+                    <span className="text-[11px] font-extrabold text-emerald-700">({getThaiTape(masterTapeColor)})</span>
+                  )}
                 </span>
               )}
               {masterPackingNotes && (
@@ -828,11 +867,22 @@ export function ShipmentRow({
                   : 'border-2 border-emerald-600 bg-white text-emerald-800 hover:bg-emerald-50',
               )}
             >
-              {status === 'packed'
-                ? '✓ パック済'
-                : isFutureOrNextDay
-                ? '📅 先行分をパック済にする'
-                : '✓ パック済にする'}
+              {status === 'packed' ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>✓ パック済</span>
+                  {isThaiMode && <span className="text-[10px] font-bold text-white/90">({THAI_LABELS.packDone})</span>}
+                </span>
+              ) : isFutureOrNextDay ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>📅 先行分をパック済にする</span>
+                  {isThaiMode && <span className="text-[10px] font-bold text-slate-600">({THAI_LABELS.packDoneAction})</span>}
+                </span>
+              ) : (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>✓ パック済にする</span>
+                  {isThaiMode && <span className="text-[10px] font-bold text-emerald-700">({THAI_LABELS.packDoneAction})</span>}
+                </span>
+              )}
             </button>
 
             {showShippingButton && (
@@ -855,7 +905,17 @@ export function ShipmentRow({
                     : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
                 )}
               >
-                {status === 'shipped' ? '✓ 出荷済' : '出荷済'}
+                {status === 'shipped' ? (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>✓ 出荷済</span>
+                    {isThaiMode && <span className="text-[9px] text-white/90">({THAI_LABELS.loadDone})</span>}
+                  </span>
+                ) : (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>出荷済</span>
+                    {isThaiMode && <span className="text-[9px] text-sky-700">({THAI_LABELS.loadDone})</span>}
+                  </span>
+                )}
               </button>
             )}
 
@@ -872,7 +932,17 @@ export function ShipmentRow({
                   : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
               )}
             >
-              {isPartial ? `途中(${shippedNum}P)` : '途中数'}
+              {isPartial ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>途中({shippedNum}P)</span>
+                  {isThaiMode && <span className="text-[9px] text-amber-900 font-normal">({shippedNum} ถุง)</span>}
+                </span>
+              ) : (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>途中数</span>
+                  {isThaiMode && <span className="text-[9px] text-ink-muted font-normal">(ทำได้)</span>}
+                </span>
+              )}
             </button>
 
             <button
@@ -996,8 +1066,11 @@ export function ShipmentRow({
 
       {/* クイック途中数入力 */}
       {quickOpen && (
-        <div className="mt-2 flex items-center gap-2 rounded-xl border border-harvest-200 bg-harvest-50/60 p-2.5">
-          <span className="shrink-0 text-xs font-bold text-earth-800">できた数:</span>
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-harvest-200 bg-harvest-50/60 p-2.5">
+          <span className="shrink-0 text-xs font-bold text-earth-800">
+            できた数:
+            {isThaiMode && <span className="text-[11px] text-forest-700 ml-1 font-semibold">({THAI_LABELS.partialQty})</span>}
+          </span>
           <input
             type="number"
             inputMode="numeric"
@@ -1014,19 +1087,31 @@ export function ShipmentRow({
             }}
             placeholder="例: 20"
           />
+          {isThaiMode && (
+            <button
+              type="button"
+              onClick={() => {
+                const cur = parseInt(shippedQty, 10) || 0
+                setShippedQty(String(cur + 20))
+              }}
+              className="h-9 px-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 text-xs font-black active:scale-95 transition"
+            >
+              {THAI_LABELS.partialAdd20}
+            </button>
+          )}
           <span className="shrink-0 text-xs text-ink-muted">／ 受注 {orderedQty}</span>
           <div className="ml-auto flex items-center gap-1.5">
             {shippedQty !== '' && (
               <button
                 type="button"
                 onClick={() => setShippedQty('')}
-                className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft"
+                className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft font-bold"
               >
-                クリア
+                {isThaiMode ? 'クリア (ล้าง)' : 'クリア'}
               </button>
             )}
             <Button size="sm" onClick={saveQuick} isLoading={savingQuick}>
-              保存
+              {isThaiMode ? '保存 (บันทึก)' : '保存'}
             </Button>
           </div>
         </div>
@@ -1178,16 +1263,18 @@ export function ShipmentRow({
               />
             </div>
             <div className="flex items-center justify-between gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setDeleteOpen(true)}
-                className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-alert hover:bg-alert/5"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                この明細を削除
-              </button>
+              {!isThaiMode ? (
+                <button
+                  type="button"
+                  onClick={() => setDeleteOpen(true)}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-alert hover:bg-alert/5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  この明細を削除
+                </button>
+              ) : <div />}
               <Button size="sm" onClick={handleSaveDetails} isLoading={savingDetails}>
-                保存
+                {isThaiMode ? '保存 (บันทึก)' : '保存'}
               </Button>
             </div>
           </div>
@@ -1201,9 +1288,13 @@ export function ShipmentRow({
           setPartialPackConfirmOpen(false)
           await advanceTo('packed')
         }}
-        title="⚠️ 途中数（不足）のままパック済にしますか？"
-        message={`受注数 ${orderedQty}P に対し、途中数が ${shippedNum ?? 0}P（残り ${Math.max(0, orderedQty - (shippedNum ?? 0))}P 不足）として記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`}
-        confirmLabel={`全${orderedQty}P完了としてパック済にする`}
+        title={isThaiMode ? `⚠️ 途中数（不足）のままパック済にしますか？ (${THAI_LABELS.quantityMismatchWarn})` : "⚠️ 途中数（不足）のままパック済にしますか？"}
+        message={
+          isThaiMode
+            ? `受注数 ${orderedQty}P に対し、途中数が ${shippedNum ?? 0}P（残り ${Math.max(0, orderedQty - (shippedNum ?? 0))}P 不足）として記録されています。\n\n【タイ語注意】${THAI_LABELS.quantityMismatchWarn}: เป้าหมาย ${orderedQty} แต่ทำได้ ${shippedNum ?? 0} ถุง กรุณายืนยันว่าแพ็คครบ ${orderedQty} ถุงแล้วจริง`
+            : `受注数 ${orderedQty}P に対し、途中数が ${shippedNum ?? 0}P（残り ${Math.max(0, orderedQty - (shippedNum ?? 0))}P 不足）として記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`
+        }
+        confirmLabel={isThaiMode ? `全${orderedQty}P完了としてパック済にする (${THAI_LABELS.confirmRealCheckDone})` : `全${orderedQty}P完了としてパック済にする`}
         isLoading={busy}
       />
 

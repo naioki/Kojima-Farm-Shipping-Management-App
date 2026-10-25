@@ -4,6 +4,8 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, RotateCw } from 'lucide-react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
+import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
+import { useFieldLang } from '@/lib/field/lang-context'
 import {
   HarvestPulseSummary,
   type ContainerBreakdownItem,
@@ -75,6 +77,7 @@ export function PackingAndShippingViews({
   const nextSectionRef = useRef<HTMLDivElement | null>(null)
 
   const isTodayWork = isTodayTarget && (date === shiftDateStr(jstTodayStr(), 1) || date === jstTodayStr())
+  const { isThaiMode } = useFieldLang()
 
   const handleRefresh = () => {
     setIsRefreshing(true)
@@ -457,6 +460,7 @@ export function PackingAndShippingViews({
                 </span>
               </>
             )}
+            <FieldLangSwitch />
             <button
               type="button"
               onClick={handleRefresh}
@@ -495,7 +499,11 @@ export function PackingAndShippingViews({
           <span className="text-sm font-bold text-ink flex items-center gap-1.5">
             <span>📋 作業順</span>
             <span className="text-xs text-emerald-800 bg-emerald-100 font-extrabold px-2 py-0.5 rounded-md">
-              {sortMode === 'time' ? '⏰ 早い便順' : sortMode === 'destination' ? '🏢 出荷先順' : '📦 コンテナ順'}
+              {sortMode === 'time'
+                ? `⏰ 早い便順${isThaiMode ? ' (เวลาออก)' : ''}`
+                : sortMode === 'destination'
+                ? `🏢 出荷先順${isThaiMode ? ' (ลูกค้า)' : ''}`
+                : `📦 コンテナ順${isThaiMode ? ' (ประเภทลัง)' : ''}`}
             </span>
           </span>
           <div className="flex items-center gap-1.5">
@@ -511,7 +519,7 @@ export function PackingAndShippingViews({
                     : 'text-ink-muted hover:text-ink',
                 )}
               >
-                すべて ({sortedPackItems.length})
+                {isThaiMode ? 'すべて(ทั้งหมด)' : 'すべて'} ({sortedPackItems.length})
               </button>
               <button
                 type="button"
@@ -523,7 +531,7 @@ export function PackingAndShippingViews({
                     : 'text-ink-muted hover:text-ink',
                 )}
               >
-                未完了 ({incompleteCount})
+                {isThaiMode ? '未完了(ยังไม่เสร็จ)' : '未完了'} ({incompleteCount})
               </button>
             </div>
             {isAdmin && (

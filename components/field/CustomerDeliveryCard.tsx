@@ -20,6 +20,8 @@ import { ConfirmModal } from '@/components/ui/Modal'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { getContainerColorStyle } from '@/lib/field/container-style'
 import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
+import { useFieldLang } from '@/lib/field/lang-context'
+import { getThaiContainer, THAI_LABELS } from '@/lib/field/thai-dict'
 
 export interface DestinationDetail {
   destinationId: string | null
@@ -91,6 +93,7 @@ export function CustomerDeliveryCard({
   onCompletionChange,
 }: CustomerDeliveryCardProps) {
   const router = useRouter()
+  const { isThaiMode } = useFieldLang()
   const [isCompleted, setIsCompleted] = useState<boolean>(initialIsCompleted)
   const [destinations, setDestinations] = useState<DestinationDetail[]>(initialDestinations)
   const [open, setOpen] = useState<boolean>(false)
@@ -352,6 +355,7 @@ export function CustomerDeliveryCard({
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 {containerSummary.map((cs) => {
                   const style = getContainerColorStyle(cs.type)
+                  const thaiContainer = isThaiMode ? getThaiContainer(style.label) : null
                   return (
                     <span
                       key={cs.type}
@@ -360,7 +364,10 @@ export function CustomerDeliveryCard({
                         style.badgeClass,
                       )}
                     >
-                      <span>📦 {style.label}</span>
+                      <span>
+                        📦 {style.label}
+                        {thaiContainer ? ` (${thaiContainer})` : ''}
+                      </span>
                       <span className="num underline decoration-2">{cs.boxes}箱</span>
                     </span>
                   )
@@ -503,15 +510,21 @@ export function CustomerDeliveryCard({
             {busy ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : isCompleted ? (
-              <>
-                <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
-                <span>✓ 積込済 (戻す)</span>
-              </>
+              <div className="flex flex-col items-center leading-tight">
+                <div className="flex items-center gap-1.5">
+                  <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
+                  <span>✓ 積込済 (戻す)</span>
+                </div>
+                {isThaiMode && <span className="text-[10px] font-bold text-slate-500">({THAI_LABELS.loadRevert})</span>}
+              </div>
             ) : (
-              <>
-                <Truck className="h-5 w-5" />
-                <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
-              </>
+              <div className="flex flex-col items-center leading-tight">
+                <div className="flex items-center gap-1.5">
+                  <Truck className="h-5 w-5" />
+                  <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
+                </div>
+                {isThaiMode && <span className="text-[10px] font-bold text-white/90">({THAI_LABELS.loadDone})</span>}
+              </div>
             )}
           </button>
         </div>
@@ -586,7 +599,12 @@ export function CustomerDeliveryCard({
                           colorStyle.badgeClass,
                         )}
                       >
-                        📦 {colorStyle.label}
+                        <span>
+                          📦 {colorStyle.label}
+                          {isThaiMode && getThaiContainer(colorStyle.label) && (
+                            <span className="font-extrabold text-xs"> ({getThaiContainer(colorStyle.label)})</span>
+                          )}
+                        </span>
                       </span>
 
                       {/* 数量・荷姿（16px 太字） */}
@@ -628,12 +646,18 @@ export function CustomerDeliveryCard({
                       )}
                     >
                       {isDestLoaded ? (
-                        <>
-                          <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
-                          <span>積込済</span>
-                        </>
+                        <div className="flex flex-col items-center leading-tight">
+                          <div className="flex items-center gap-1">
+                            <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
+                            <span>積込済</span>
+                          </div>
+                          {isThaiMode && <span className="text-[9px] text-emerald-700">({THAI_LABELS.undo})</span>}
+                        </div>
                       ) : (
-                        <span>個別積込</span>
+                        <div className="flex flex-col items-center leading-tight">
+                          <span>個別積込</span>
+                          {isThaiMode && <span className="text-[9px] text-emerald-700">({THAI_LABELS.loadIndividual})</span>}
+                        </div>
                       )}
                     </button>
                   </div>
@@ -678,9 +702,13 @@ export function CustomerDeliveryCard({
           setUnpackedConfirmOpen(false)
           await toggleLoaded()
         }}
-        title="⚠️ パック未完了の品目があります。積込OKにしますか？"
-        message={`「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。`}
-        confirmLabel="実物確認済・積込OKにする"
+        title={isThaiMode ? `⚠️ パック未完了の品目があります (${THAI_LABELS.notCompletedWarn})` : "⚠️ パック未完了の品目があります。積込OKにしますか？"}
+        message={
+          isThaiMode
+            ? `「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。\n\n【タイ語注意】${THAI_LABELS.notCompletedWarn}: ยังมีรายการที่แพ็คไม่เสร็จ ${unpackedItemCount} รายการ กรุณาตรวจสอบของจริงก่อนกดยืนยัน`
+            : `「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。`
+        }
+        confirmLabel={isThaiMode ? `実物確認済・積込OKにする (${THAI_LABELS.confirmLoadCheckDone})` : "実物確認済・積込OKにする"}
         isLoading={busy}
       />
 
@@ -694,13 +722,15 @@ export function CustomerDeliveryCard({
             await toggleDestination(target.destId, target.currentStatus)
           }
         }}
-        title="⚠️ この納品先にパック未完了の品目があります"
+        title={isThaiMode ? `⚠️ この納品先にパック未完了の品目があります (${THAI_LABELS.notCompletedWarn})` : "⚠️ この納品先にパック未完了の品目があります"}
         message={
           pendingDestConfirm
-            ? `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。`
+            ? isThaiMode
+              ? `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。\n\n【タイ語注意】${THAI_LABELS.notCompletedWarn}: ในจุดส่งนี้ยังมี ${pendingDestConfirm.unpackedCount} รายการที่ยังไม่เสร็จ กรุณาตรวจสอบของจริง`
+              : `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。`
             : ''
         }
-        confirmLabel="実物確認済・個別積込OKにする"
+        confirmLabel={isThaiMode ? `実物確認済・個別積込OKにする (${THAI_LABELS.confirmLoadCheckDone})` : "実物確認済・個別積込OKにする"}
         isLoading={busy}
       />
     </div>

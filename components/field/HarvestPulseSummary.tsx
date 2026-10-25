@@ -6,6 +6,8 @@ import { ChevronDown, Box, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { useFieldLang } from '@/lib/field/lang-context'
+import { getThaiContainer } from '@/lib/field/thai-dict'
 
 export interface ContainerBreakdownItem {
   type: string
@@ -54,6 +56,7 @@ export function HarvestPulseSummary({
   isTodayTarget = true,
 }: HarvestPulseSummaryProps) {
   const router = useRouter()
+  const { isThaiMode } = useFieldLang()
   const completedBoxes = propCompletedBoxes ?? interimPackedBoxes
   const completedPacks = propCompletedPacks ?? 0
   const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
@@ -138,6 +141,7 @@ export function HarvestPulseSummary({
           <div className="flex flex-col items-center justify-center">
             <span className="text-xs font-black tracking-wider text-white/75 mb-0.5">
               パック数 (P)
+              {isThaiMode && <span className="ml-1 text-[11px] text-emerald-300 font-normal">(จำนวนถุง)</span>}
             </span>
             <div className="flex items-baseline justify-center gap-2 font-display">
               <span className="text-5xl sm:text-6xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
@@ -170,6 +174,7 @@ export function HarvestPulseSummary({
           <div className="flex flex-col items-center justify-center">
             <span className="text-xs font-black tracking-wider text-white/75 mb-0.5">
               箱数 (ケース)
+              {isThaiMode && <span className="ml-1 text-[11px] text-emerald-300 font-normal">(จำนวนลัง)</span>}
             </span>
             <div className="flex items-baseline justify-center gap-2 font-display">
               <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
@@ -212,7 +217,7 @@ export function HarvestPulseSummary({
                     isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                   )}
                 />
-                <span>あと</span>
+                <span>{isThaiMode ? 'あと (เหลือ)' : 'あと'}</span>
                 <span className="font-black text-white text-sm sm:text-base tabular-nums">
                   {remainingPacks.toLocaleString()} P
                 </span>
@@ -288,7 +293,14 @@ export function HarvestPulseSummary({
                       key={cb.type}
                       className="rounded-lg border border-line bg-white p-2 text-center"
                     >
-                      <span className="block text-xs font-bold text-ink">{cb.type}</span>
+                      <span className="block text-xs font-bold text-ink">
+                        {cb.type}
+                        {isThaiMode && getThaiContainer(cb.type) && (
+                          <span className="block text-[11px] text-ink-muted font-normal">
+                            ({getThaiContainer(cb.type)})
+                          </span>
+                        )}
+                      </span>
                       <span className="text-base font-black text-ink tabular-nums">
                         {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
                       </span>
@@ -329,6 +341,7 @@ export function HarvestPulseSummary({
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs sm:text-sm font-bold text-ink">
                 夕方の翌朝持ち越し登録:
+                {isThaiMode && <span className="text-xs text-ink-muted ml-1">(คงเหลือยกไปพรุ่งนี้)</span>}
               </span>
               <button
                 type="button"
@@ -339,10 +352,10 @@ export function HarvestPulseSummary({
                 className="text-xs font-bold text-emerald-700 underline"
               >
                 {isEditingCarryover
-                  ? '閉じる'
+                  ? isThaiMode ? '閉じる (ปิด)' : '閉じる'
                   : carryover > 0
-                  ? `${carryover}箱を引継設定中 (変更)`
-                  : '＋ 今日の余り箱数を登録'}
+                  ? isThaiMode ? `${carryover}箱を引継中 (${carryover}ลัง)` : `${carryover}箱を引継設定中 (変更)`
+                  : isThaiMode ? '＋ 今日の余り箱数を登録 (ลงทะเบียนลังคงเหลือ)' : '＋ 今日の余り箱数を登録'}
               </button>
             </div>
 
@@ -410,7 +423,7 @@ export function HarvestPulseSummary({
                     onClick={() => saveCarryover(Math.max(0, parseInt(tempCarryoverStr, 10) || 0))}
                     className="h-9 rounded-lg bg-[#155c39] px-3 text-xs font-bold text-white hover:bg-[#10482c] disabled:opacity-50 active:scale-95 shadow-xs"
                   >
-                    {busy ? '保存中...' : '確定'}
+                    {busy ? '保存中...' : isThaiMode ? '確定 (บันทึก)' : '確定'}
                   </button>
                 </div>
               </div>

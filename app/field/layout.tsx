@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient, getAuthedUser } from '@/lib/supabase/server'
 import { MobileNav } from '@/components/layouts/MobileNav'
 import { ConnectionStatus } from '@/components/field/ConnectionStatus'
+import { FieldLangProvider } from '@/lib/field/lang-context'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,7 @@ export const dynamic = 'force-dynamic'
  * - 下部バー（その他・下部選択項目）を全撤去し、画面を広く使えるようにシンプル化。
  * - 全画面ナビは上部メニュー（MobileNav）に集約。
  * - 現場向け認証チェック: 未ログインは /login へ。
+ * - FieldLangProvider により、パック画面・配送画面間で言語モード（🇯🇵/🇹🇭）を完全同期。
  */
 export default async function FieldLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthedUser()
@@ -29,11 +31,13 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <MobileNav role={role} persistent user={{ name, roleLabel }} />
-      <main className="flex-1 p-4 pb-4 lg:p-8">{children}</main>
-      {/* 圏外インジケーター（features.md §10 失敗#4） */}
-      <ConnectionStatus />
-    </div>
+    <FieldLangProvider>
+      <div className="flex min-h-screen flex-col">
+        <MobileNav role={role} persistent user={{ name, roleLabel }} />
+        <main className="flex-1 p-4 pb-4 lg:p-8">{children}</main>
+        {/* 圏外インジケーター（features.md §10 失敗#4） */}
+        <ConnectionStatus />
+      </div>
+    </FieldLangProvider>
   )
 }

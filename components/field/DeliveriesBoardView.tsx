@@ -6,6 +6,8 @@ import { CheckCircle2, RotateCw, Printer, Clock, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
+import { useFieldLang } from '@/lib/field/lang-context'
 import {
   CustomerDeliveryCard,
   type CustomerDeliveryCardProps,
@@ -20,6 +22,7 @@ export interface DeliveriesBoardViewProps {
 
 export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewProps) {
   const router = useRouter()
+  const { isThaiMode } = useFieldLang()
   const [cards, setCards] = useState(initialCards)
   const [filterMode, setFilterMode] = useState<'all' | 'incomplete'>('all')
   const [groupMode, setGroupMode] = useState<'route' | 'customer'>('route')
@@ -226,6 +229,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                 ? `あと ${remainingCustomers}社 (計${remainingContainers}箱)`
                 : `全${totalContainers}箱 積込完了`}
             </span>
+            <FieldLangSwitch />
             <button
               type="button"
               onClick={() => window.print()}
@@ -290,7 +294,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               )}
             >
               <Clock className="h-3 w-3" />
-              <span>便・時間順</span>
+              <span>便・時間順{isThaiMode ? ' (เวลา)' : ''}</span>
             </button>
             <button
               type="button"
@@ -303,7 +307,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               )}
             >
               <Building2 className="h-3 w-3" />
-              <span>取引先順</span>
+              <span>取引先順{isThaiMode ? ' (ลูกค้า)' : ''}</span>
             </button>
           </div>
 
@@ -319,7 +323,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                   : 'text-ink-soft hover:text-ink',
               )}
             >
-              すべて ({totalCustomers})
+              {isThaiMode ? 'すべて(ทั้งหมด)' : 'すべて'} ({totalCustomers})
             </button>
             <button
               type="button"
@@ -331,7 +335,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                   : 'text-ink-soft hover:text-ink',
               )}
             >
-              未積込のみ ({remainingCustomers})
+              {isThaiMode ? '未積込(ยังไม่ขึ้น)' : '未積込のみ'} ({remainingCustomers})
             </button>
           </div>
         </div>
