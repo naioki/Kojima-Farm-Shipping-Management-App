@@ -40,7 +40,9 @@ export default async function DeliveriesPage({
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
+  // 収穫・パックボードと同じく「本日パックして当日夕方（16:00 NSK / 18:00 和郷園）〜翌午前（農業総研）に出荷する注文グループ（＝翌日納品分）」をデフォルト表示
+  const defaultDate = shiftDateStr(jstTodayStr(), 1)
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : defaultDate
   const admin = createAdminClient()
 
   // その日の出荷対象注文（承認済み・出荷済み・請求済みのみ表示、未承認pending_reviewは有効な明細(quantity > 0)がある注文のみカウント）
@@ -418,14 +420,14 @@ export default async function DeliveriesPage({
           <FieldViewSwitch active="day" date={date} />
         </div>
         <div className="flex items-center gap-2">
-          <DateNav date={date} basePath={PATH} defaultDate={todayStr} defaultLabel="本日積込・出荷" />
+          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="本日パック・積込対象" />
         </div>
       </div>
 
-      {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード［本日パック＝明日出荷］ ⇋ 🚚 便別積込・配送リスト［本日積込・出荷］） */}
+      {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト：同じ対象日のまま1タップで行き来） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs print:hidden">
         <Link
-          href={`/field/shipments?date=${date === todayStr ? tomorrowStr : date}`}
+          href={`/field/shipments?date=${date}`}
           className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
           🥬 収穫・袋詰めボード
@@ -435,19 +437,8 @@ export default async function DeliveriesPage({
         </span>
       </div>
 
-      {/* ③ 「🚚 今日積込・出荷分」と「📅 明日積込分（本日パック中）」のワンタップ切替バー */}
+      {/* ③ 「🚚 本日パック・夕方〜翌朝積込分」と「📅 前日パック分」のワンタップ切替バー */}
       <div className="grid grid-cols-2 gap-2 print:hidden">
-        <Link
-          href={`/field/deliveries?date=${todayStr}`}
-          className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs sm:text-sm font-black border-2 transition shadow-2xs',
-            date === todayStr
-              ? 'border-sky-600 bg-sky-600 text-white shadow-sm'
-              : 'border-line bg-white text-ink hover:bg-sky-50 hover:border-sky-300',
-          )}
-        >
-          <span>🚚 今日積込・出荷 ({formatJpDateShort(todayStr)})</span>
-        </Link>
         <Link
           href={`/field/deliveries?date=${tomorrowStr}`}
           className={cn(
@@ -457,7 +448,18 @@ export default async function DeliveriesPage({
               : 'border-line bg-white text-ink hover:bg-emerald-50 hover:border-emerald-300',
           )}
         >
-          <span>📅 明日積込・出荷 ({formatJpDateShort(tomorrowStr)})</span>
+          <span>🚚 本日パック・積込分 ({formatJpDateShort(tomorrowStr)}納品)</span>
+        </Link>
+        <Link
+          href={`/field/deliveries?date=${todayStr}`}
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs sm:text-sm font-black border-2 transition shadow-2xs',
+            date === todayStr
+              ? 'border-sky-600 bg-sky-600 text-white shadow-sm'
+              : 'border-line bg-white text-ink hover:bg-sky-50 hover:border-sky-300',
+          )}
+        >
+          <span>📅 昨日パック分 ({formatJpDateShort(todayStr)}納品)</span>
         </Link>
       </div>
 

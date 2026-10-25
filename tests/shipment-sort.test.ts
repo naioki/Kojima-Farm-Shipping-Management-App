@@ -8,6 +8,7 @@ import {
   parseDeparturePriority,
   cleanShippingRouteName,
   resolveDefaultRouteInfo,
+  normalizeDestinationGroupName,
   type PackSortableItem,
 } from '@/lib/field/shipment-sort'
 
@@ -154,5 +155,8 @@ describe('getPackGroupInfo (ヘッダー情報の生成)', () => {
 
     const nosoken = resolveDefaultRouteInfo({ customerName: '株式会社農業総合研究所（NSK）', destName: '4関東' })
     expect(nosoken.departureTime).toBe('翌午前')
+
+    expect(normalizeDestinationGroupName('和郷園', 'パルシステム 岩槻')).toBe('岩槻')
+    expect(normalizeDestinationGroupName('和郷園', 'ちばコープ グリーンボックス(戸田)')).toBe('戸田')
   })
 })

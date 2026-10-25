@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/cn'
+import { useFieldLang } from '@/lib/field/lang-context'
+import { getThaiProduct } from '@/lib/field/thai-dict'
 
 export interface ProductTabItem {
   id: string
@@ -23,6 +25,7 @@ export function ProductSelectorTabs({
 }: ProductSelectorTabsProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { isThaiMode } = useFieldLang()
 
   const handleSelect = (productId: string) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -59,7 +62,16 @@ export function ProductSelectorTabs({
                   : 'border border-line bg-white text-ink-soft hover:bg-bg-soft hover:text-ink',
               )}
             >
-              <span>{p.name}</span>
+              <span>
+                {isThaiMode && getThaiProduct(p.name) ? (
+                  <>
+                    <span>{getThaiProduct(p.name)}</span>
+                    <span className="ml-1 text-xs opacity-85">({p.name})</span>
+                  </>
+                ) : (
+                  p.name
+                )}
+              </span>
               <span
                 className={cn(
                   'rounded-full px-2 py-0.5 text-xs font-black tabular-nums',

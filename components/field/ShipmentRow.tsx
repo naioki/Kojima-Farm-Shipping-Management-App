@@ -18,7 +18,6 @@ import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { extractActionableNote, extractChangeDiffBadge } from '@/lib/field/clean-note'
-import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
 import { useFieldLang } from '@/lib/field/lang-context'
 import {
   getThaiContainer,
@@ -95,6 +94,8 @@ export interface ShipmentRowProps {
   isAdmin?: boolean
   /** 翌日以降の先行予定カード（薄グレー背景＋視覚的分離表示） */
   isNextDay?: boolean
+  /** 未完了カードの先頭1枚目（NEXT UP スポットライト表示） */
+  isNextUp?: boolean
   onMoveUp?: () => void
   onMoveDown?: () => void
   /** 出荷済ボタンを表示するかどうか（出荷専用画面でのみ true、パック画面では非表示にしてパック済ボタンを大きく配置） */
@@ -121,13 +122,9 @@ export interface ShipmentRowProps {
  */
 export function ShipmentRow({
   itemId,
-  customerId,
   customerName,
   customerColor,
-  destinationId,
   destinationName,
-  departureTime,
-  shippingRouteName,
   quantityText,
   orderedQty,
   initialStatus,
@@ -154,6 +151,7 @@ export function ShipmentRow({
   onMoveDown,
   showShippingButton = false,
   isNextDay = false,
+  isNextUp = false,
   receipt,
   onStatusChange,
   onStatusSettled,
@@ -544,9 +542,26 @@ export function ShipmentRow({
           : status === 'packed'
           ? 'border-emerald-300 bg-emerald-50/30'
           : 'border-line bg-white shadow-xs',
+        isNextUp && !isDone && !isFutureOrNextDay
+          ? 'ring-2 ring-emerald-600 border-emerald-600 bg-white shadow-md'
+          : '',
         conflict ? 'animate-pulse-alert border-alert ring-2 ring-alert/20' : '',
       )}
     >
+      {/* 🔥 NEXT UP（いま作業すべき最優先1枚目）スポットライトバー */}
+      {isNextUp && !isDone && !isFutureOrNextDay && (
+        <div className="mb-2 -mt-1 -mx-1 flex items-center justify-between rounded-xl bg-emerald-700 px-3 py-1 text-xs font-black text-white shadow-2xs">
+          <span className="flex items-center gap-1.5">
+            <span>🔥</span>
+            <span>
+              {isThaiMode
+                ? `▶ ${THAI_LABELS.nextUpSpotlight} (いま作業するカード・最優先)`
+                : '▶ いま作業するカード（最優先 1枚目）'}
+            </span>
+          </span>
+          <span className="text-[11px] font-bold text-emerald-100">NEXT UP</span>
+        </div>
+      )}
       {/* 競合・更新アラート（ワンタップ自己修復） */}
       {conflict && (
         <div className="mb-2.5 flex items-center justify-between rounded-xl bg-alert/10 border border-alert/30 p-2.5 text-xs font-bold text-alert">
@@ -768,20 +783,8 @@ export function ShipmentRow({
               </div>
             )}
 
-            {/* 資材・便時刻タグバー（実際に指定・存在する項目のみ表示 ＋ 1タップで便時刻変更可） */}
+            {/* 資材レシピタグバー（袋・コンテナ・テープ・カード・シールのみに集中、時刻変更チップはカードから撤去） */}
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              {customerId && deliveryDate && (
-                <QuickDepartureTimeEditor
-                  deliveryDate={deliveryDate}
-                  customerId={customerId}
-                  destinationId={destinationId ?? null}
-                  customerName={customerName}
-                  destinationName={destinationName ?? null}
-                  currentDepartureTime={departureTime ?? null}
-                  currentShippingRouteName={shippingRouteName ?? null}
-                  variant="chip"
-                />
-              )}
               {container && (
                 <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2.5 py-1 text-xs sm:text-sm font-black text-sky-950 border border-sky-300 shadow-2xs">
                   {isThaiMode && getThaiContainer(container) ? (
@@ -1185,12 +1188,18 @@ export function ShipmentRow({
         </div>
       )}
 
-      {/* クイック途中数入力 */}
+      {/* クイック途中数入力（軍手のままキーボードレスで1箱ずつ加減算できるボタン付き） */}
       {quickOpen && (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-harvest-200 bg-harvest-50/60 p-2.5">
           <span className="shrink-0 text-xs font-bold text-earth-800">
-            できた数:
-            {isThaiMode && <span className="text-[11px] text-forest-700 ml-1 font-semibold">({THAI_LABELS.partialQty})</span>}
+            {isThaiMode ? (
+              <>
+                <span className="text-forest-800 font-black">{THAI_LABELS.partialQty}</span>
+                <span className="text-[11px] text-ink-soft ml-1">(できた数):</span>
+              </>
+            ) : (
+              'できた数:'
+            )}
           </span>
           <input
             type="number"
@@ -1206,21 +1215,33 @@ export function ShipmentRow({
                 saveQuick()
               }
             }}
-            placeholder="例: 20"
+            placeholder={`例: ${packsPerCase}`}
           />
-          {isThaiMode && (
-            <button
-              type="button"
-              onClick={() => {
-                const cur = parseInt(shippedQty, 10) || 0
-                setShippedQty(String(cur + 20))
-              }}
-              className="h-9 px-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 text-xs font-black active:scale-95 transition"
-            >
-              {THAI_LABELS.partialAdd20}
-            </button>
-          )}
-          <span className="shrink-0 text-xs text-ink-muted">／ 受注 {orderedQty}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const cur = parseInt(shippedQty, 10) || 0
+              const step = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
+              setShippedQty(String(Math.min(orderedQty, cur + step)))
+            }}
+            className="h-9 px-2.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 text-xs font-black active:scale-95 transition shadow-2xs"
+          >
+            {isThaiMode
+              ? `+1ลัง (+${packsPerCase || 20}ถุง)`
+              : `+1箱 (+${packsPerCase || 20}P)`}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const cur = parseInt(shippedQty, 10) || 0
+              const step = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
+              setShippedQty(String(Math.max(0, cur - step)))
+            }}
+            className="h-9 px-2 rounded-lg bg-white hover:bg-slate-100 text-ink border border-line-strong text-xs font-bold active:scale-95 transition"
+          >
+            -1箱
+          </button>
+          <span className="shrink-0 text-xs text-ink-muted">／ 受注 {orderedQty}P</span>
           <div className="ml-auto flex items-center gap-1.5">
             {shippedQty !== '' && (
               <button
@@ -1228,11 +1249,11 @@ export function ShipmentRow({
                 onClick={() => setShippedQty('')}
                 className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft font-bold"
               >
-                {isThaiMode ? 'クリア (ล้าง)' : 'クリア'}
+                {isThaiMode ? 'ล้าง (クリア)' : 'クリア'}
               </button>
             )}
             <Button size="sm" onClick={saveQuick} isLoading={savingQuick}>
-              {isThaiMode ? '保存 (บันทึก)' : '保存'}
+              {isThaiMode ? 'บันทึก (保存)' : '保存'}
             </Button>
           </div>
         </div>

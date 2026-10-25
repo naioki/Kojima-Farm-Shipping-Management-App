@@ -42,6 +42,7 @@ export interface PackingAndShippingViewsProps {
   productId?: string
   containerBreakdown?: ContainerBreakdownItem[]
   specBreakdown?: SpecBreakdownItem[]
+  prevCarryover?: number
   initialCarryover?: number
   isTodayTarget?: boolean
 }
@@ -63,6 +64,7 @@ export function PackingAndShippingViews({
   productId,
   containerBreakdown,
   specBreakdown,
+  prevCarryover = 0,
   initialCarryover = 0,
   isTodayTarget = true,
 }: PackingAndShippingViewsProps) {
@@ -75,6 +77,7 @@ export function PackingAndShippingViews({
   const [isReorderModalOpen, setIsReorderModalOpen] = useState<boolean>(false)
   const [isViewingNextDay, setIsViewingNextDay] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [nextDayExpanded, setNextDayExpanded] = useState(false)
   const nextSectionRef = useRef<HTMLDivElement | null>(null)
 
   const isTodayWork = isTodayTarget && (date === shiftDateStr(jstTodayStr(), 1) || date === jstTodayStr())
@@ -489,6 +492,7 @@ export function PackingAndShippingViews({
           completedPacks={completedPacks}
           containerBreakdown={liveContainerBreakdown}
           specBreakdown={liveSpecBreakdown}
+          prevCarryover={prevCarryover}
           initialCarryover={initialCarryover}
           isTodayTarget={isTodayWork}
         />
@@ -614,25 +618,42 @@ export function PackingAndShippingViews({
             const prevGroupInfo = idx > 0 ? getPackGroupInfo(visiblePackItems[idx - 1]!, sortMode) : null
             const isNewSection = idx === 0 || groupInfo.groupKey !== prevGroupInfo?.groupKey
 
+            // 未完了の先頭1枚目かどうか（NEXT UPスポットライト用）
+            const firstIncompleteItemId = visiblePackItems.find(
+              (it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped',
+            )?.itemId
+            const isNextUp = item.itemId === firstIncompleteItemId
+
+            // このセクションの残り箱数・総パック数を集計
+            const sectionItems = isNewSection
+              ? visiblePackItems.filter((it) => getPackGroupInfo(it, sortMode).groupKey === groupInfo.groupKey)
+              : []
+            const sectionTotalPacks = sectionItems.reduce((acc, it) => acc + it.orderedQty, 0)
+            const sectionRemBoxes = sectionItems.reduce((acc, it) => {
+              if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') return acc
+              const perCase = it.masterPacksPerCase || 20
+              return acc + Math.ceil(it.orderedQty / perCase)
+            }, 0)
+
             return (
               <div key={item.itemId} className="space-y-2">
                 {isNewSection && (
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 pb-1 px-1 border-b-2 border-line-soft">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 pb-1.5 px-2.5 rounded-xl bg-slate-100/90 border border-line-soft shadow-2xs">
                     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                      <span className="text-xs">{groupInfo.icon}</span>
-                      <span className="text-xs font-black text-ink">{groupInfo.title}</span>
+                      <span className="text-xs sm:text-sm">{groupInfo.icon}</span>
+                      <span className="text-xs sm:text-sm font-black text-ink">{groupInfo.title}</span>
                       {isThaiMode && sortMode === 'time' && getThaiDepartureTime(item.departureTime) && (
-                        <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-black print:hidden">
+                        <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[11px] font-black print:hidden">
                           🇹🇭 {getThaiDepartureTime(item.departureTime)}
                         </span>
                       )}
                       {isThaiMode && sortMode === 'container' && getThaiContainer(item.initialContainer) && (
-                        <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-[10px] font-black print:hidden">
+                        <span className="rounded bg-sky-100 text-sky-900 border border-sky-300 px-1.5 py-0.5 text-[11px] font-black print:hidden">
                           🇹🇭 {getThaiContainer(item.initialContainer)}
                         </span>
                       )}
                       {groupInfo.badge && (
-                        <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.2 text-[10px] font-bold">
+                        <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-[10px] font-bold">
                           {groupInfo.badge}
                         </span>
                       )}
@@ -642,26 +663,24 @@ export function PackingAndShippingViews({
                         </span>
                       )}
                     </div>
-                    {sortMode === 'time' && (
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-ink-muted">
-                        <span>納品先別まとめ</span>
-                      </div>
-                    )}
-                    {sortMode === 'destination' && (
-                      <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
-                        <span>{item.initialContainer || 'コンテナ'}</span>
-                        {item.masterPacksPerCase && <span>({item.masterPacksPerCase}入)</span>}
-                      </div>
-                    )}
-                    {sortMode === 'container' && (
-                      <div className="flex items-center gap-1 shrink-0 text-[11px] font-bold text-ink-muted">
-                        <span>納品先順</span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-black">
+                      {sectionRemBoxes > 0 ? (
+                        <span className="rounded-md bg-white border border-line px-2 py-0.5 text-ink">
+                          {isThaiMode
+                            ? `เหลือ ${sectionRemBoxes} ลัง (${sectionTotalPacks.toLocaleString()}ถุง)`
+                            : `残り ${sectionRemBoxes}箱 (計${sectionTotalPacks.toLocaleString()}P)`}
+                        </span>
+                      ) : (
+                        <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5">
+                          {isThaiMode ? '✓ ครบแล้ว (完了)' : `✓ 全${sectionTotalPacks.toLocaleString()}P 完了`}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
                 <ShipmentRow
                   {...item}
+                  isNextUp={isNextUp}
                   deliveryDate={date}
                   isAdmin={isAdmin}
                   onMoveUp={
@@ -685,51 +704,66 @@ export function PackingAndShippingViews({
         </div>
       )}
 
-      {/* 翌日出荷予定カード一覧（先行作業・閲覧用、薄グレー背景＋チャコール色で視覚的分離） */}
+      {/* 翌日出荷予定カード一覧（普段は折りたたんで誤タップを防止、当日分が全て完了したときのみ自動展開） */}
       {nextItems.length > 0 && (
-        <div ref={nextSectionRef} className="pt-5 space-y-3">
-          <div className="flex items-center justify-between rounded-xl bg-slate-200/90 px-3.5 py-2.5 text-xs font-black text-slate-700 border border-slate-300 shadow-xs">
+        <div ref={nextSectionRef} className="pt-4 space-y-2.5">
+          <button
+            type="button"
+            onClick={() => setNextDayExpanded((prev) => !prev)}
+            className="w-full flex items-center justify-between rounded-xl bg-slate-200/90 hover:bg-slate-300/80 px-3.5 py-2.5 text-xs font-black text-slate-800 border border-slate-300 shadow-xs transition active:scale-[0.99]"
+          >
             <div className="flex items-center gap-1.5">
               <span className="text-base">📅</span>
-              <span>翌日作業予定（先行作業・確認用）</span>
+              <span>
+                {isThaiMode
+                  ? `รายการล่วงหน้าของวันถัดไป (翌日先行作業予定・全 ${nextItems.length} 件)`
+                  : `翌日作業予定（先行作業・確認用：全 ${nextItems.length} 件）`}
+              </span>
             </div>
-            <span className="text-[11px] text-slate-600 font-bold">全 {nextItems.length} 件</span>
-          </div>
-          <p className="px-1 text-[11px] text-slate-500 font-medium">
-            ※ 翌日出荷分の先行作業または確認用です。本日の目標・完成には含まれません。
-          </p>
-          <div className="space-y-3">
-            {nextItems.map((item) => (
-              <ShipmentRow
-                key={`next-${item.itemId}`}
-                {...item}
-                isNextDay={true}
-                deliveryDate={item.deliveryDate}
-                isAdmin={isAdmin}
-                onStatusChange={(id, newStatus, newVer) => {
-                  setNextItems((prev) =>
-                    prev.map((it) =>
-                      it.itemId === id
-                        ? { ...it, initialStatus: newStatus, initialVersion: newVer }
-                        : it,
-                    ),
-                  )
-                }}
-                onShippedQtyChange={(id, newQty) => {
-                  setNextItems((prev) =>
-                    prev.map((it) =>
-                      it.itemId === id
-                        ? { ...it, initialShippedQty: newQty }
-                        : it,
-                    ),
-                  )
-                }}
-                onDeleted={(id) => {
-                  setNextItems((prev) => prev.filter((it) => it.itemId !== id))
-                }}
-              />
-            ))}
-          </div>
+            <div className="flex items-center gap-1 text-[11px] text-slate-700 font-bold">
+              <span>{nextDayExpanded || (incompleteCount === 0 && sortedPackItems.length > 0) ? '閉じる ▲' : '開く ▼'}</span>
+            </div>
+          </button>
+
+          {(nextDayExpanded || (incompleteCount === 0 && sortedPackItems.length > 0)) && (
+            <div className="space-y-3 pt-1">
+              <p className="px-1 text-[11px] text-slate-500 font-medium">
+                ※ 翌々日納品分の先行作業または確認用です。本日の目標・完成には含まれません。
+              </p>
+              <div className="space-y-3">
+                {nextItems.map((item) => (
+                  <ShipmentRow
+                    key={`next-${item.itemId}`}
+                    {...item}
+                    isNextDay={true}
+                    deliveryDate={item.deliveryDate}
+                    isAdmin={isAdmin}
+                    onStatusChange={(id, newStatus, newVer) => {
+                      setNextItems((prev) =>
+                        prev.map((it) =>
+                          it.itemId === id
+                            ? { ...it, initialStatus: newStatus, initialVersion: newVer }
+                            : it,
+                        ),
+                      )
+                    }}
+                    onShippedQtyChange={(id, newQty) => {
+                      setNextItems((prev) =>
+                        prev.map((it) =>
+                          it.itemId === id
+                            ? { ...it, initialShippedQty: newQty }
+                            : it,
+                        ),
+                      )
+                    }}
+                    onDeleted={(id) => {
+                      setNextItems((prev) => prev.filter((it) => it.itemId !== id))
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

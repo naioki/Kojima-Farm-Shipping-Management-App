@@ -29,6 +29,22 @@ export const THAI_TAPES: Record<string, string> = {
   紫テープ: 'เทปม่วง',
 }
 
+export const THAI_PRODUCTS: Record<string, string> = {
+  青梗菜: 'กวางตุ้งฮ่องเต้',
+  チンゲンサイ: 'กวางตุ้งฮ่องเต้',
+  チンゲン菜: 'กวางตุ้งฮ่องเต้',
+  ちんげん菜: 'กวางตุ้งฮ่องเต้',
+  小松菜: 'กวางตุ้งญี่ปุ่น',
+  こまつな: 'กวางตุ้งญี่ปุ่น',
+  ほうれん草: 'ปวยเล้ง',
+  ホウレンソウ: 'ปวยเล้ง',
+  わさび菜: 'ผักวาซาบิ',
+  ワサビ菜: 'ผักวาซาบิ',
+  水菜: 'ผักมิซึนะ',
+  春菊: 'ตั้งโอ๋',
+  ターサイ: 'ผักทาไซ',
+}
+
 export const THAI_LABELS = {
   // アクションボタン
   packDone: 'เสร็จแล้ว',
@@ -69,6 +85,18 @@ export const THAI_LABELS = {
   totalLoadBoxes: 'รวมทั้งหมด',
   allPackedDone: 'แพ็คครบแล้ว',
   nextDayMorning: 'ส่งพรุ่งนี้เช้า',
+  nextUpSpotlight: 'ทำรายการนี้ก่อน',
+  inheritedCarryover: 'มีลังยกมาจากเมื่อวาน',
+}
+
+/** 品目名（野菜名）のタイ語訳を返す */
+export function getThaiProduct(name: string | null | undefined): string | null {
+  if (!name) return null
+  const norm = name.normalize('NFKC').trim()
+  for (const [k, v] of Object.entries(THAI_PRODUCTS)) {
+    if (norm.includes(k)) return v
+  }
+  return null
 }
 
 /** 出荷・締切時刻のタイ語ルビを返す */

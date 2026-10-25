@@ -8,6 +8,7 @@ import {
   getTapeColorEmoji,
   getThaiSpec,
   getThaiDepartureTime,
+  getThaiProduct,
   THAI_LABELS,
 } from '@/lib/field/thai-dict'
 
@@ -78,5 +79,7 @@ describe('Thai Translation & Helpers (lib/field/thai-dict.ts)', () => {
     expect(getBagEmoji('無地袋')).toBe('📄')
     expect(getTapeColorEmoji('赤テープ')).toBe('🔴')
     expect(getTapeColorEmoji('緑テープ')).toBe('🟢')
+    expect(getThaiProduct('青梗菜')).toBe('กวางตุ้งฮ่องเต้')
+    expect(getThaiProduct('小松菜')).toBe('กวางตุ้งญี่ปุ่น')
   })
 })

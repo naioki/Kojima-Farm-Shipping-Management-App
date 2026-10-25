@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { useFieldLang } from '@/lib/field/lang-context'
-import { getThaiContainer, getContainerColorEmoji } from '@/lib/field/thai-dict'
+import { getThaiContainer, getContainerColorEmoji, getThaiProduct, THAI_LABELS } from '@/lib/field/thai-dict'
 
 export interface ContainerBreakdownItem {
   type: string
@@ -49,6 +49,7 @@ export function HarvestPulseSummary({
   totalBoxes,
   completedBoxes: propCompletedBoxes,
   completedPacks: propCompletedPacks,
+  prevCarryover = 0,
   initialCarryover = 0,
   interimPackedBoxes = 0,
   containerBreakdown,
@@ -108,173 +109,177 @@ export function HarvestPulseSummary({
 
   return (
     <div className="space-y-2">
-      {/* メインリアルタイム進捗メーターカード（今日＝深緑 🌲 / 今日以外＝シックなチャコール 🪨） */}
+      {/* メインリアルタイム進捗コックピットカード（2カラム省スペース設計で1枚目の作業カードをファーストビューに表示） */}
       <div
         className={cn(
-          'rounded-2xl p-4 text-white shadow-md space-y-3 transition-colors',
+          'rounded-2xl p-3.5 text-white shadow-md space-y-2.5 transition-colors',
           isTodayWork ? 'bg-[#155c39]' : 'bg-[#1e293b] border border-slate-700',
         )}
       >
         {/* ヘッダー情報 */}
-        <div className="flex items-center justify-between pb-2 border-b border-white/20">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{isTodayWork ? '🥬' : '📅'}</span>
-            <span className="text-base font-black tracking-wide">{productName} パック進捗</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-white/20">
+          <div className="flex items-center gap-1.5">
+            <span className="text-lg">{isTodayWork ? '🥬' : '📅'}</span>
+            <span className="text-sm sm:text-base font-black tracking-wide">
+              {isThaiMode && getThaiProduct(productName) ? (
+                <>
+                  <span>{getThaiProduct(productName)}</span>
+                  <span className="ml-1 text-xs text-emerald-200 font-bold">({productName})</span>
+                </>
+              ) : (
+                `${productName} パック進捗`
+              )}
+            </span>
           </div>
           <span
             className={cn(
-              'text-xs font-bold px-2.5 py-0.5 rounded-md',
+              'text-[11px] font-bold px-2 py-0.5 rounded-md',
               isTodayWork ? 'text-emerald-100 bg-white/10' : 'text-slate-300 bg-white/10',
             )}
           >
             {date === shiftDateStr(jstTodayStr(), 1)
-              ? `明日 ${date} 出荷分（本日パック）`
+              ? `本日パック（${date.slice(5)}納品分）`
               : isTodayWork
-              ? `本日 ${date} 出荷分`
-              : `📅 先行・確認用（${date} 出荷分）`}
+              ? `本日 ${date.slice(5)} 納品分`
+              : `📅 ${date.slice(5)} 納品分`}
           </span>
         </div>
 
-        {/* 統合進捗ヒーローカード（上段：パック数 特大 ｜ 下段：箱数 特大 ｜ 最下部：あと残りP/箱） */}
-        <div className="rounded-2xl bg-black/25 border border-white/15 p-4 sm:p-5 text-center space-y-3.5 shadow-inner">
-          {/* ① パック数（特大表示） */}
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-xs sm:text-sm font-black tracking-wider text-white/85 mb-0.5">
-              {isThaiMode ? (
-                <>
-                  <span className="text-emerald-300 font-black">จำนวนถุง</span>
-                  <span className="ml-1 text-[11px] text-white/75 font-bold">(パック数 P)</span>
-                </>
-              ) : (
-                'パック数 (P)'
-              )}
+        {/* 前日からの持ち越し在庫（キャリーオーバー）がある場合のハイライトバナー */}
+        {prevCarryover > 0 && (
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-400/20 border border-amber-300/40 px-3 py-1.5 text-xs font-black text-amber-100">
+            <span className="flex items-center gap-1.5">
+              <span>🌅</span>
+              <span>
+                {isThaiMode
+                  ? `${THAI_LABELS.inheritedCarryover}: ${prevCarryover} ลัง (${prevCarryover * 20} ถุง)`
+                  : `前日からの持ち越し在庫: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）あり`}
+              </span>
             </span>
-            <div className="flex items-baseline justify-center gap-2 font-display">
-              <span className="text-5xl sm:text-6xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
-                {completedPacks.toLocaleString()}
-              </span>
-              <span className="text-2xl sm:text-3xl font-bold text-white/40">/</span>
-              <span
-                className={cn(
-                  'text-4xl sm:text-5xl font-extrabold tabular-nums',
-                  isTodayWork ? 'text-emerald-200' : 'text-slate-200',
-                )}
-              >
-                {totalPacks.toLocaleString()}
-              </span>
-              <span
-                className={cn(
-                  'text-lg sm:text-xl font-black ml-1',
-                  isTodayWork ? 'text-emerald-300' : 'text-slate-300',
-                )}
-              >
-                {isThaiMode ? 'ถุง (P)' : 'P'}
-              </span>
-            </div>
-          </div>
-
-          {/* 区切り線 */}
-          <div className="w-full border-t border-white/15" />
-
-          {/* ② 箱数（特大表示） */}
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-xs sm:text-sm font-black tracking-wider text-white/85 mb-0.5">
-              {isThaiMode ? (
-                <>
-                  <span className="text-emerald-300 font-black">จำนวนลัง</span>
-                  <span className="ml-1 text-[11px] text-white/75 font-bold">(箱数・ケース)</span>
-                </>
-              ) : (
-                '箱数 (ケース)'
-              )}
+            <span className="rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-[10px] font-black shrink-0">
+              {isThaiMode
+                ? `เก็บเพิ่มอีก ${Math.max(0, remainingBoxes - prevCarryover)} ลัง`
+                : `畑からの追加収穫目安: あと ${Math.max(0, remainingBoxes - prevCarryover)} 箱`}
             </span>
-            <div className="flex items-baseline justify-center gap-2 font-display">
-              <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
-                {completedBoxes.toLocaleString()}
-              </span>
-              <span className="text-2xl sm:text-3xl font-bold text-white/40">/</span>
-              <span
-                className={cn(
-                  'text-3xl sm:text-4xl font-extrabold tabular-nums',
-                  isTodayWork ? 'text-emerald-200' : 'text-slate-200',
-                )}
-              >
-                {totalBoxes.toLocaleString()}
-              </span>
-              <span
-                className={cn(
-                  'text-base sm:text-lg font-black ml-1',
-                  isTodayWork ? 'text-emerald-300' : 'text-slate-300',
-                )}
-              >
-                {isThaiMode ? 'ลัง (箱)' : '箱'}
-              </span>
-            </div>
           </div>
+        )}
 
-          {/* ③ 下段：残り数・達成バッジ */}
-          <div className="flex items-center justify-center pt-0.5">
-            {remainingPacks > 0 ? (
-              <div
-                className={cn(
-                  'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold shadow-xs border',
-                  isTodayWork
-                    ? 'bg-emerald-400/20 border-emerald-300/30 text-emerald-100'
-                    : 'bg-slate-700/60 border-slate-600/50 text-slate-200',
+        {/* 統合進捗コックピット（左：パック数 ｜ 右：箱数 の2カラム横並びで縦幅を大幅スリム化） */}
+        <div className="rounded-xl bg-black/25 border border-white/15 p-3 text-center space-y-2.5 shadow-inner">
+          <div className="grid grid-cols-2 divide-x divide-white/15 items-center">
+            {/* ① 左カラム：パック数 */}
+            <div className="flex flex-col items-center justify-center px-1">
+              <span className="text-[11px] sm:text-xs font-black tracking-wider text-white/85 mb-0.5">
+                {isThaiMode ? (
+                  <>
+                    <span className="text-emerald-300 font-black">จำนวนถุง</span>
+                    <span className="ml-1 text-[10px] text-white/75 font-bold">(パック数)</span>
+                  </>
+                ) : (
+                  'パック数 (P)'
                 )}
-              >
-                <Clock
+              </span>
+              <div className="flex items-baseline justify-center gap-1 font-display">
+                <span className="text-3xl sm:text-4xl font-black text-white tracking-tight tabular-nums drop-shadow-xs">
+                  {completedPacks.toLocaleString()}
+                </span>
+                <span className="text-lg sm:text-xl font-bold text-white/40">/</span>
+                <span
                   className={cn(
-                    'h-4 w-4 shrink-0',
+                    'text-2xl sm:text-3xl font-extrabold tabular-nums',
+                    isTodayWork ? 'text-emerald-200' : 'text-slate-200',
+                  )}
+                >
+                  {totalPacks.toLocaleString()}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs sm:text-sm font-black ml-0.5',
                     isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                   )}
-                />
-                <span>{isThaiMode ? 'เหลือ (あと)' : 'あと'}</span>
-                <span className="font-black text-white text-sm sm:text-base tabular-nums">
-                  {remainingPacks.toLocaleString()} {isThaiMode ? 'ถุง (P)' : 'P'}
-                </span>
-                <span className="text-xs text-white/80 font-semibold">
-                  ({isThaiMode ? `${remainingBoxes.toLocaleString()} ลัง` : `約 ${remainingBoxes.toLocaleString()} 箱`})
+                >
+                  {isThaiMode ? 'ถุง' : 'P'}
                 </span>
               </div>
-            ) : totalPacks > 0 ? (
-              <div
-                className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black shadow-xs',
-                  isTodayWork
-                    ? 'bg-emerald-400 text-emerald-950'
-                    : 'bg-slate-200 text-slate-900',
-                )}
-              >
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>🎉 パック目標達成！（全 {totalPacks} P / {totalBoxes} 箱 完了）</span>
-              </div>
-            ) : (
-              <div className="text-xs text-white/60">この日の注文はありません</div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* 進捗プログレスバー */}
-        <div className="space-y-1.5 pt-1">
-          <div className="flex items-center justify-between text-xs font-bold">
-            <span className={isTodayWork ? 'text-emerald-100' : 'text-slate-300'}>進捗率</span>
-            <span className="text-white font-black tabular-nums">{progressPct}%</span>
+            {/* ② 右カラム：箱数 */}
+            <div className="flex flex-col items-center justify-center px-1">
+              <span className="text-[11px] sm:text-xs font-black tracking-wider text-white/85 mb-0.5">
+                {isThaiMode ? (
+                  <>
+                    <span className="text-emerald-300 font-black">จำนวนลัง</span>
+                    <span className="ml-1 text-[10px] text-white/75 font-bold">(箱数)</span>
+                  </>
+                ) : (
+                  '箱数 (ケース)'
+                )}
+              </span>
+              <div className="flex items-baseline justify-center gap-1 font-display">
+                <span className="text-3xl sm:text-4xl font-black text-white tracking-tight tabular-nums drop-shadow-xs">
+                  {completedBoxes.toLocaleString()}
+                </span>
+                <span className="text-lg sm:text-xl font-bold text-white/40">/</span>
+                <span
+                  className={cn(
+                    'text-2xl sm:text-3xl font-extrabold tabular-nums',
+                    isTodayWork ? 'text-emerald-200' : 'text-slate-200',
+                  )}
+                >
+                  {totalBoxes.toLocaleString()}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs sm:text-sm font-black ml-0.5',
+                    isTodayWork ? 'text-emerald-300' : 'text-slate-300',
+                  )}
+                >
+                  {isThaiMode ? 'ลัง' : '箱'}
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="h-3.5 w-full rounded-full bg-black/30 p-0.5 overflow-hidden shadow-inner">
-            <div
-              style={{ width: `${progressPct}%` }}
-              className={cn(
-                'h-full rounded-full transition-all duration-300',
-                progressPct >= 100
-                  ? isTodayWork
-                    ? 'bg-gradient-to-r from-emerald-300 to-teal-200 shadow-xs'
-                    : 'bg-gradient-to-r from-slate-200 to-slate-100 shadow-xs'
-                  : isTodayWork
-                  ? 'bg-gradient-to-r from-emerald-400 to-teal-300'
-                  : 'bg-gradient-to-r from-slate-400 to-slate-300',
+
+          {/* ③ 下段：残り数・達成バッジ ＋ プログレスバー一体表示 */}
+          <div className="space-y-1.5 pt-1 border-t border-white/10">
+            <div className="flex items-center justify-between gap-2 px-1">
+              {remainingPacks > 0 ? (
+                <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-emerald-100">
+                  <Clock className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
+                  <span>{isThaiMode ? 'เหลือ (残り):' : '残り:'}</span>
+                  <span className="font-black text-white text-sm sm:text-base tabular-nums">
+                    {remainingPacks.toLocaleString()} {isThaiMode ? 'ถุง (P)' : 'P'}
+                  </span>
+                  <span className="text-xs text-white/85 font-bold">
+                    ({isThaiMode ? `${remainingBoxes.toLocaleString()} ลัง` : `約 ${remainingBoxes.toLocaleString()} 箱`})
+                  </span>
+                </div>
+              ) : totalPacks > 0 ? (
+                <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>🎉 {isThaiMode ? 'แพ็คครบตามเป้าแล้ว! (目標達成)' : `目標達成！（全 ${totalPacks}P / ${totalBoxes}箱 完了）`}</span>
+                </div>
+              ) : (
+                <div className="text-xs text-white/60">この日の注文はありません</div>
               )}
-            />
+              <span className="text-xs sm:text-sm font-black text-white tabular-nums">{progressPct}%</span>
+            </div>
+
+            <div className="h-2.5 w-full rounded-full bg-black/30 p-0.5 overflow-hidden shadow-inner">
+              <div
+                style={{ width: `${progressPct}%` }}
+                className={cn(
+                  'h-full rounded-full transition-all duration-300',
+                  progressPct >= 100
+                    ? isTodayWork
+                      ? 'bg-gradient-to-r from-emerald-300 to-teal-200 shadow-xs'
+                      : 'bg-gradient-to-r from-slate-200 to-slate-100 shadow-xs'
+                    : isTodayWork
+                    ? 'bg-gradient-to-r from-emerald-400 to-teal-300'
+                    : 'bg-gradient-to-r from-slate-400 to-slate-300',
+                )}
+              />
+            </div>
           </div>
         </div>
       </div>

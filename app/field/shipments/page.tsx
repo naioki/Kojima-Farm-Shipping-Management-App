@@ -667,13 +667,13 @@ export default async function ShipmentsPage({
         </div>
       </div>
 
-      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード［本日パック＝明日出荷］ ⇋ 🚚 便別積込・配送リスト［本日積込・出荷］） */}
+      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト：同じ対象日のまま1タップで行き来） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs">
         <span className="flex items-center justify-center gap-1.5 rounded-lg bg-forest-700 py-2 text-white shadow-xs">
           🥬 収穫・袋詰めボード
         </span>
         <Link
-          href={`/field/deliveries?date=${date === defaultDate ? jstTodayStr() : date}`}
+          href={`/field/deliveries?date=${date}`}
           className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
           🚚 便別積込・配送リスト
@@ -712,6 +712,7 @@ export default async function ShipmentsPage({
           productId={selectedProductId}
           containerBreakdown={containerBreakdown}
           specBreakdown={specBreakdown}
+          prevCarryover={chainInventory.inheritedCarryover ?? 0}
           initialCarryover={chainInventory.todayCarryover ?? 0}
           isTodayTarget={date === defaultDate || date === jstTodayStr()}
         />
