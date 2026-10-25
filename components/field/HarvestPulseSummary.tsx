@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { useFieldLang } from '@/lib/field/lang-context'
-import { getThaiContainer } from '@/lib/field/thai-dict'
+import { getThaiContainer, getContainerColorEmoji } from '@/lib/field/thai-dict'
 
 export interface ContainerBreakdownItem {
   type: string
@@ -139,9 +139,15 @@ export function HarvestPulseSummary({
         <div className="rounded-2xl bg-black/25 border border-white/15 p-4 sm:p-5 text-center space-y-3.5 shadow-inner">
           {/* ① パック数（特大表示） */}
           <div className="flex flex-col items-center justify-center">
-            <span className="text-xs font-black tracking-wider text-white/75 mb-0.5">
-              パック数 (P)
-              {isThaiMode && <span className="ml-1 text-[11px] text-emerald-300 font-normal">(จำนวนถุง)</span>}
+            <span className="text-xs sm:text-sm font-black tracking-wider text-white/85 mb-0.5">
+              {isThaiMode ? (
+                <>
+                  <span className="text-emerald-300 font-black">จำนวนถุง</span>
+                  <span className="ml-1 text-[11px] text-white/75 font-bold">(パック数 P)</span>
+                </>
+              ) : (
+                'パック数 (P)'
+              )}
             </span>
             <div className="flex items-baseline justify-center gap-2 font-display">
               <span className="text-5xl sm:text-6xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
@@ -162,7 +168,7 @@ export function HarvestPulseSummary({
                   isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                 )}
               >
-                P
+                {isThaiMode ? 'ถุง (P)' : 'P'}
               </span>
             </div>
           </div>
@@ -172,9 +178,15 @@ export function HarvestPulseSummary({
 
           {/* ② 箱数（特大表示） */}
           <div className="flex flex-col items-center justify-center">
-            <span className="text-xs font-black tracking-wider text-white/75 mb-0.5">
-              箱数 (ケース)
-              {isThaiMode && <span className="ml-1 text-[11px] text-emerald-300 font-normal">(จำนวนลัง)</span>}
+            <span className="text-xs sm:text-sm font-black tracking-wider text-white/85 mb-0.5">
+              {isThaiMode ? (
+                <>
+                  <span className="text-emerald-300 font-black">จำนวนลัง</span>
+                  <span className="ml-1 text-[11px] text-white/75 font-bold">(箱数・ケース)</span>
+                </>
+              ) : (
+                '箱数 (ケース)'
+              )}
             </span>
             <div className="flex items-baseline justify-center gap-2 font-display">
               <span className="text-4xl sm:text-5xl font-black text-white tracking-tight tabular-nums drop-shadow-md">
@@ -195,7 +207,7 @@ export function HarvestPulseSummary({
                   isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                 )}
               >
-                箱
+                {isThaiMode ? 'ลัง (箱)' : '箱'}
               </span>
             </div>
           </div>
@@ -217,12 +229,12 @@ export function HarvestPulseSummary({
                     isTodayWork ? 'text-emerald-300' : 'text-slate-300',
                   )}
                 />
-                <span>{isThaiMode ? 'あと (เหลือ)' : 'あと'}</span>
+                <span>{isThaiMode ? 'เหลือ (あと)' : 'あと'}</span>
                 <span className="font-black text-white text-sm sm:text-base tabular-nums">
-                  {remainingPacks.toLocaleString()} P
+                  {remainingPacks.toLocaleString()} {isThaiMode ? 'ถุง (P)' : 'P'}
                 </span>
                 <span className="text-xs text-white/80 font-semibold">
-                  (約 {remainingBoxes.toLocaleString()} 箱)
+                  ({isThaiMode ? `${remainingBoxes.toLocaleString()} ลัง` : `約 ${remainingBoxes.toLocaleString()} 箱`})
                 </span>
               </div>
             ) : totalPacks > 0 ? (
@@ -293,16 +305,22 @@ export function HarvestPulseSummary({
                       key={cb.type}
                       className="rounded-lg border border-line bg-white p-2 text-center"
                     >
-                      <span className="block text-xs font-bold text-ink">
-                        {cb.type}
-                        {isThaiMode && getThaiContainer(cb.type) && (
-                          <span className="block text-[11px] text-ink-muted font-normal">
-                            ({getThaiContainer(cb.type)})
-                          </span>
+                      <span className="block text-xs sm:text-sm font-black text-ink">
+                        {isThaiMode && getThaiContainer(cb.type) ? (
+                          <>
+                            <span>{getContainerColorEmoji(cb.type)} {getThaiContainer(cb.type)}</span>
+                            <span className="block text-[11px] text-ink-muted font-bold">
+                              ({cb.type})
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {getContainerColorEmoji(cb.type)} {cb.type}
+                          </>
                         )}
                       </span>
                       <span className="text-base font-black text-ink tabular-nums">
-                        {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
+                        {cb.boxes} <small className="text-xs font-bold text-ink-soft">{isThaiMode ? 'ลัง (箱)' : '箱'}</small>
                       </span>
                     </div>
                   ))}

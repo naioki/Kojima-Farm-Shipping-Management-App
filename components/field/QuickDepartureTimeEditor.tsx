@@ -144,8 +144,14 @@ export function QuickDepartureTimeEditor({
           title="出荷時間・便名を変更（一度設定すれば次回以降も自動引き継ぎ）"
         >
           <Clock className="h-3 w-3 text-earth-700 shrink-0" />
-          <span>{chipLabel}</span>
-          {thaiTime && <span className="text-[10px] text-earth-700 font-extrabold print:hidden">({thaiTime})</span>}
+          {thaiTime ? (
+            <>
+              <span className="text-xs sm:text-sm font-black">{thaiTime}</span>
+              <span className="text-[11px] font-bold opacity-85">({chipLabel})</span>
+            </>
+          ) : (
+            <span>{chipLabel}</span>
+          )}
           <span className="text-[10px] text-earth-700 underline ml-0.5 print:hidden">変更</span>
         </button>
       ) : (

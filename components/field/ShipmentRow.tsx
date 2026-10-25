@@ -22,8 +22,11 @@ import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeE
 import { useFieldLang } from '@/lib/field/lang-context'
 import {
   getThaiContainer,
+  getContainerColorEmoji,
   getThaiBag,
+  getBagEmoji,
   getThaiTape,
+  getTapeColorEmoji,
   getThaiSpec,
   THAI_LABELS,
 } from '@/lib/field/thai-dict'
@@ -697,11 +700,17 @@ export function ShipmentRow({
 
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm sm:text-base font-extrabold text-ink-soft leading-tight flex items-center gap-2 flex-wrap">
-                <span>{spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'}</span>
-                {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) && (
-                  <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    {getThaiSpec(spec || masterLabelSpec, masterPacksPerCase)}
-                  </span>
+                {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) ? (
+                  <>
+                    <span className="text-sm sm:text-base font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-300 shadow-2xs">
+                      📐 {getThaiSpec(spec || masterLabelSpec, masterPacksPerCase)}
+                    </span>
+                    <span className="text-xs font-bold text-ink-muted">
+                      ({spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'})
+                    </span>
+                  </>
+                ) : (
+                  <span>{spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'}</span>
                 )}
               </div>
               {(onMoveUp || onMoveDown) && (
@@ -774,42 +783,62 @@ export function ShipmentRow({
                 />
               )}
               {container && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-900 border border-sky-200">
-                  <span>📦 {container}</span>
-                  {isThaiMode && getThaiContainer(container) && (
-                    <span className="text-[11px] font-extrabold text-sky-700 print:hidden">({getThaiContainer(container)})</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2.5 py-1 text-xs sm:text-sm font-black text-sky-950 border border-sky-300 shadow-2xs">
+                  {isThaiMode && getThaiContainer(container) ? (
+                    <>
+                      <span>{getContainerColorEmoji(container)} {getThaiContainer(container)}</span>
+                      <span className="text-[11px] font-bold text-sky-700">({container})</span>
+                    </>
+                  ) : (
+                    <span>{getContainerColorEmoji(container)} {container}</span>
                   )}
                 </span>
               )}
               {hasCard && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
-                  <span>🃏 カード有</span>
-                  {isThaiMode && (
-                    <span className="text-[11px] font-extrabold text-indigo-700 print:hidden">({THAI_LABELS.cardYes})</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs sm:text-sm font-black text-indigo-900 border border-indigo-300 shadow-2xs">
+                  {isThaiMode ? (
+                    <>
+                      <span>🃏 {THAI_LABELS.cardYes}</span>
+                      <span className="text-[11px] font-bold text-indigo-700">(カード有)</span>
+                    </>
+                  ) : (
+                    <span>🃏 カード有</span>
                   )}
                 </span>
               )}
               {bagType && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
-                  <span>🛍️ {bagType}</span>
-                  {isThaiMode && getThaiBag(bagType) && (
-                    <span className="text-[11px] font-extrabold text-amber-700 print:hidden">({getThaiBag(bagType)})</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1 text-xs sm:text-sm font-black text-amber-950 border border-amber-300 shadow-2xs">
+                  {isThaiMode && getThaiBag(bagType) ? (
+                    <>
+                      <span>{getBagEmoji(bagType)} {getThaiBag(bagType)}</span>
+                      <span className="text-[11px] font-bold text-amber-800">({bagType})</span>
+                    </>
+                  ) : (
+                    <span>{getBagEmoji(bagType)} {bagType}</span>
                   )}
                 </span>
               )}
               {(hasSeal || sealText) && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-800 border border-rose-200">
-                  <span>🏷️ {sealText || 'シール有'}</span>
-                  {isThaiMode && (
-                    <span className="text-[11px] font-extrabold text-rose-700 print:hidden">({THAI_LABELS.sealYes})</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1 text-xs sm:text-sm font-black text-rose-900 border border-rose-300 shadow-2xs">
+                  {isThaiMode ? (
+                    <>
+                      <span>🏷️ {THAI_LABELS.sealYes}</span>
+                      <span className="text-[11px] font-bold text-rose-700">({sealText || 'シール有'})</span>
+                    </>
+                  ) : (
+                    <span>🏷️ {sealText || 'シール有'}</span>
                   )}
                 </span>
               )}
               {masterTapeColor && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
-                  <span>テープ: {masterTapeColor}</span>
-                  {isThaiMode && getThaiTape(masterTapeColor) && (
-                    <span className="text-[11px] font-extrabold text-emerald-700 print:hidden">({getThaiTape(masterTapeColor)})</span>
+                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs sm:text-sm font-black text-emerald-950 border border-emerald-300 shadow-2xs">
+                  {isThaiMode && getThaiTape(masterTapeColor) ? (
+                    <>
+                      <span>{getTapeColorEmoji(masterTapeColor)} {getThaiTape(masterTapeColor)}</span>
+                      <span className="text-[11px] font-bold text-emerald-700">({masterTapeColor})</span>
+                    </>
+                  ) : (
+                    <span>{getTapeColorEmoji(masterTapeColor)} テープ: {masterTapeColor}</span>
                   )}
                 </span>
               )}
@@ -834,13 +863,21 @@ export function ShipmentRow({
           >
             {/* 左側: 総パック数 */}
             <div className="flex items-baseline gap-2">
-              <span className="text-xs font-black text-white/85 tracking-wide">
-                総パック数
-                {isThaiMode && <span className="ml-1 text-[11px] text-emerald-200 font-bold print:hidden">({THAI_LABELS.totalPacks})</span>}
-              </span>
+              {isThaiMode ? (
+                <span className="text-xs sm:text-sm font-black text-emerald-200 tracking-wide">
+                  {THAI_LABELS.totalPacks}
+                  <span className="ml-1 text-[11px] text-white/75 font-bold">(総パック数)</span>
+                </span>
+              ) : (
+                <span className="text-xs font-black text-white/85 tracking-wide">
+                  総パック数
+                </span>
+              )}
               <span className="num text-2xl sm:text-3xl font-black tracking-tight text-white tabular-nums leading-none">
                 {orderedQty.toLocaleString()}
-                <span className="text-base sm:text-lg font-bold text-white/85 ml-1">P</span>
+                <span className="text-base sm:text-lg font-bold text-white/85 ml-1">
+                  {isThaiMode ? 'ถุง (P)' : 'P'}
+                </span>
               </span>
             </div>
 
@@ -848,20 +885,27 @@ export function ShipmentRow({
             <div className="flex items-center gap-1.5 rounded-lg bg-black/20 border border-white/15 px-2.5 py-1 text-xs sm:text-sm font-black tabular-nums">
               <span>
                 {casesText !== '—'
-                  ? `${casesText} ケース${isThaiMode ? ` (${casesText}${THAI_LABELS.casesUnit})` : ''}`
+                  ? isThaiMode
+                    ? `${casesText} ${THAI_LABELS.casesUnit} (${casesText}ケース)`
+                    : `${casesText} ケース`
                   : quantityText}
               </span>
               {Number(looseText) > 0 ? (
                 <>
                   <span className="text-white/60">＋</span>
-                  <span className="rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-xs font-black">
-                    端数 {looseText}P (1箱)
-                    {isThaiMode && <span className="ml-1 text-[10px] print:hidden">({THAI_LABELS.fractionUnit} {looseText}ถุง)</span>}
+                  <span className="rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-xs sm:text-sm font-black">
+                    {isThaiMode ? (
+                      <>
+                        {THAI_LABELS.fractionUnit} {looseText}ถุง <span className="text-[11px] font-bold">(端数{looseText}P・1箱)</span>
+                      </>
+                    ) : (
+                      <>端数 {looseText}P (1箱)</>
+                    )}
                   </span>
                 </>
               ) : (
-                <span className="text-white/75 text-xs font-bold">
-                  （端数0{isThaiMode ? ` / ${THAI_LABELS.noFraction}` : ''}）
+                <span className="text-white/80 text-xs font-bold">
+                  {isThaiMode ? `（${THAI_LABELS.noFraction} / 端数0）` : '（端数0）'}
                 </span>
               )}
             </div>
@@ -900,18 +944,36 @@ export function ShipmentRow({
             >
               {status === 'packed' ? (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>✓ パック済</span>
-                  {isThaiMode && <span className="text-[10px] font-bold text-white/90">({THAI_LABELS.packDone})</span>}
+                  {isThaiMode ? (
+                    <>
+                      <span className="text-sm sm:text-base font-black">✓ {THAI_LABELS.packDone}</span>
+                      <span className="text-[11px] font-bold text-white/90">(パック済)</span>
+                    </>
+                  ) : (
+                    <span>✓ パック済</span>
+                  )}
                 </span>
               ) : isFutureOrNextDay ? (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>📅 先行分をパック済にする</span>
-                  {isThaiMode && <span className="text-[10px] font-bold text-slate-600">({THAI_LABELS.packDoneAction})</span>}
+                  {isThaiMode ? (
+                    <>
+                      <span className="text-sm sm:text-base font-black">📅 {THAI_LABELS.packDoneAction}</span>
+                      <span className="text-[11px] font-bold text-slate-600">(先行分をパック済にする)</span>
+                    </>
+                  ) : (
+                    <span>📅 先行分をパック済にする</span>
+                  )}
                 </span>
               ) : (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>✓ パック済にする</span>
-                  {isThaiMode && <span className="text-[10px] font-bold text-emerald-700">({THAI_LABELS.packDoneAction})</span>}
+                  {isThaiMode ? (
+                    <>
+                      <span className="text-sm sm:text-base font-black">✓ {THAI_LABELS.packDoneAction}</span>
+                      <span className="text-[11px] font-bold text-emerald-700">(パック済にする)</span>
+                    </>
+                  ) : (
+                    <span>✓ パック済にする</span>
+                  )}
                 </span>
               )}
             </button>
@@ -938,13 +1000,25 @@ export function ShipmentRow({
               >
                 {status === 'shipped' ? (
                   <span className="flex flex-col items-center leading-tight">
-                    <span>✓ 出荷済</span>
-                    {isThaiMode && <span className="text-[9px] text-white/90">({THAI_LABELS.loadDone})</span>}
+                    {isThaiMode ? (
+                      <>
+                        <span className="text-xs sm:text-sm font-black">✓ {THAI_LABELS.loadDone}</span>
+                        <span className="text-[10px] text-white/90">(出荷済)</span>
+                      </>
+                    ) : (
+                      <span>✓ 出荷済</span>
+                    )}
                   </span>
                 ) : (
                   <span className="flex flex-col items-center leading-tight">
-                    <span>出荷済</span>
-                    {isThaiMode && <span className="text-[9px] text-sky-700">({THAI_LABELS.loadDone})</span>}
+                    {isThaiMode ? (
+                      <>
+                        <span className="text-xs sm:text-sm font-black">{THAI_LABELS.loadDone}</span>
+                        <span className="text-[10px] text-sky-700">(出荷済)</span>
+                      </>
+                    ) : (
+                      <span>出荷済</span>
+                    )}
                   </span>
                 )}
               </button>
@@ -965,13 +1039,25 @@ export function ShipmentRow({
             >
               {isPartial ? (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>途中({shippedNum}P)</span>
-                  {isThaiMode && <span className="text-[9px] text-amber-900 font-normal">({shippedNum} ถุง)</span>}
+                  {isThaiMode ? (
+                    <>
+                      <span className="text-xs sm:text-sm font-black">{shippedNum} ถุง</span>
+                      <span className="text-[10px] text-amber-900 font-bold">(途中{shippedNum}P)</span>
+                    </>
+                  ) : (
+                    <span>途中({shippedNum}P)</span>
+                  )}
                 </span>
               ) : (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>途中数</span>
-                  {isThaiMode && <span className="text-[9px] text-ink-muted font-normal">(ทำได้)</span>}
+                  {isThaiMode ? (
+                    <>
+                      <span className="text-xs sm:text-sm font-black">ทำได้</span>
+                      <span className="text-[10px] text-ink-muted font-bold">(途中数)</span>
+                    </>
+                  ) : (
+                    <span>途中数</span>
+                  )}
                 </span>
               )}
             </button>

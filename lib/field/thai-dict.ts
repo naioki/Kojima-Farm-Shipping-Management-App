@@ -95,6 +95,17 @@ export function getThaiContainer(name: string | null | undefined): string | null
   return null
 }
 
+/** コンテナ名から直感カラー絵文字（🟦青コン・🟫茶コン・🟨段ボール・🟩オリコン）を返す */
+export function getContainerColorEmoji(name: string | null | undefined): string {
+  if (!name) return '📦'
+  if (name.includes('青')) return '🟦'
+  if (name.includes('茶')) return '🟫'
+  if (name.includes('黄')) return '🟨'
+  if (name.includes('段ボール') || name.includes('ダンボール')) return '📦'
+  if (name.includes('農業総研') || name.includes('NSK') || name.includes('折りたたみ') || name.includes('オリコン')) return '🟩'
+  return '📦'
+}
+
 /** 袋種別のタイ語ルビを返す */
 export function getThaiBag(name: string | null | undefined): string | null {
   if (!name) return null
@@ -104,6 +115,14 @@ export function getThaiBag(name: string | null | undefined): string | null {
   return null
 }
 
+/** 袋種別から直感ピクトグラムを返す */
+export function getBagEmoji(name: string | null | undefined): string {
+  if (!name) return '🛍️'
+  if (name.includes('印刷')) return '🖨️'
+  if (name.includes('無地')) return '📄'
+  return '🛍️'
+}
+
 /** テープ色のタイ語ルビを返す */
 export function getThaiTape(name: string | null | undefined): string | null {
   if (!name) return null
@@ -111,6 +130,18 @@ export function getThaiTape(name: string | null | undefined): string | null {
     if (name.includes(k)) return v
   }
   return null
+}
+
+/** テープ色から実物カラー丸印（🟢緑・🔴赤・🔵青・🟡黄・⚪白・🟣紫）を返す */
+export function getTapeColorEmoji(name: string | null | undefined): string {
+  if (!name) return '🎗️'
+  if (name.includes('赤')) return '🔴'
+  if (name.includes('緑')) return '🟢'
+  if (name.includes('青')) return '🔵'
+  if (name.includes('黄')) return '🟡'
+  if (name.includes('白')) return '⚪'
+  if (name.includes('紫')) return '🟣'
+  return '🎗️'
 }
 
 /** 入数（20入など）や株数（2〜3株など）のタイ語表現を生成 */

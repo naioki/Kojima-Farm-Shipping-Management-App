@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   getThaiContainer,
+  getContainerColorEmoji,
   getThaiBag,
+  getBagEmoji,
   getThaiTape,
+  getTapeColorEmoji,
   getThaiSpec,
   getThaiDepartureTime,
   THAI_LABELS,
@@ -65,5 +68,15 @@ describe('Thai Translation & Helpers (lib/field/thai-dict.ts)', () => {
     expect(getThaiDepartureTime('翌午前')).toBe('ส่งพรุ่งนี้เช้า')
     expect(getThaiDepartureTime('翌09:00')).toBe('พรุ่งนี้ 09:00')
     expect(getThaiDepartureTime(null)).toBeNull()
+  })
+
+  it('correctly returns intuitive color emojis for containers, bags, and tapes', () => {
+    expect(getContainerColorEmoji('青コン')).toBe('🟦')
+    expect(getContainerColorEmoji('茶コン')).toBe('🟫')
+    expect(getContainerColorEmoji('農業総研専用折りたたみコンテナ')).toBe('🟩')
+    expect(getBagEmoji('印刷袋')).toBe('🖨️')
+    expect(getBagEmoji('無地袋')).toBe('📄')
+    expect(getTapeColorEmoji('赤テープ')).toBe('🔴')
+    expect(getTapeColorEmoji('緑テープ')).toBe('🟢')
   })
 })

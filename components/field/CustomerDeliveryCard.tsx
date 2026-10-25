@@ -21,7 +21,7 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import { getContainerColorStyle } from '@/lib/field/container-style'
 import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
 import { useFieldLang } from '@/lib/field/lang-context'
-import { getThaiContainer, THAI_LABELS } from '@/lib/field/thai-dict'
+import { getThaiContainer, getContainerColorEmoji, THAI_LABELS } from '@/lib/field/thai-dict'
 
 export interface DestinationDetail {
   destinationId: string | null
@@ -339,14 +339,26 @@ export function CustomerDeliveryCard({
               {/* パック作業の完了連動バッジ（未作成のまま誤って積込完了にする事故を防止） */}
               {allDeliveryItems.length > 0 && (
                 unpackedItemCount > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-950 shadow-2xs">
-                    <span>⚠️ パック未完了 {unpackedItemCount}件</span>
-                    {isThaiMode && <span className="text-[10px] text-amber-800 print:hidden">({THAI_LABELS.notCompletedWarn})</span>}
+                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-950 shadow-2xs">
+                    {isThaiMode ? (
+                      <>
+                        <span>⚠️ {THAI_LABELS.notCompletedWarn} ({unpackedItemCount})</span>
+                        <span className="text-[10px] text-amber-800 print:hidden">(未完了{unpackedItemCount}件)</span>
+                      </>
+                    ) : (
+                      <span>⚠️ パック未完了 {unpackedItemCount}件</span>
+                    )}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-800">
-                    <span>✓ 全パック済</span>
-                    {isThaiMode && <span className="text-[10px] text-emerald-700 print:hidden">({THAI_LABELS.allPackedDone})</span>}
+                  <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800">
+                    {isThaiMode ? (
+                      <>
+                        <span>✓ {THAI_LABELS.allPackedDone}</span>
+                        <span className="text-[10px] text-emerald-700 print:hidden">(全パック済)</span>
+                      </>
+                    ) : (
+                      <span>✓ 全パック済</span>
+                    )}
                   </span>
                 )
               )}
@@ -358,19 +370,27 @@ export function CustomerDeliveryCard({
                 {containerSummary.map((cs) => {
                   const style = getContainerColorStyle(cs.type)
                   const thaiContainer = isThaiMode ? getThaiContainer(style.label) : null
+                  const emoji = getContainerColorEmoji(style.label)
                   return (
                     <span
                       key={cs.type}
                       className={cn(
-                        'inline-flex items-center gap-1 rounded-lg px-2.5 py-0.5 text-xs font-black shadow-2xs',
+                        'inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs sm:text-sm font-black shadow-2xs',
                         style.badgeClass,
                       )}
                     >
-                      <span>
-                        📦 {style.label}
-                        {thaiContainer && <span className="print:hidden"> ({thaiContainer})</span>}
-                      </span>
-                      <span className="num underline decoration-2">{cs.boxes}箱</span>
+                      {thaiContainer ? (
+                        <>
+                          <span>{emoji} {thaiContainer}</span>
+                          <span className="text-[11px] font-bold opacity-85">({style.label})</span>
+                          <span className="num underline decoration-2 ml-0.5">{cs.boxes} {THAI_LABELS.casesUnit}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{emoji} {style.label}</span>
+                          <span className="num underline decoration-2">{cs.boxes}箱</span>
+                        </>
+                      )}
                     </span>
                   )
                 })}
@@ -390,8 +410,14 @@ export function CustomerDeliveryCard({
           {/* 最重要位置: 特大フォントの総積込数（案1: 物理箱数最優先型 28〜32px） */}
           <div className="text-right shrink-0">
             <div className="text-xs font-bold text-ink-muted">
-              総積込数
-              {isThaiMode && <span className="ml-1 text-[10px] text-earth-700 print:hidden">({THAI_LABELS.totalLoadBoxes})</span>}
+              {isThaiMode ? (
+                <>
+                  <span className="text-earth-800 font-black">{THAI_LABELS.totalLoadBoxes}</span>
+                  <span className="ml-1 text-[10px] print:hidden">(総積込数)</span>
+                </>
+              ) : (
+                '総積込数'
+              )}
             </div>
             <div
               className={cn(
@@ -401,7 +427,14 @@ export function CustomerDeliveryCard({
             >
               {grandTotalContainers}{' '}
               <span className="text-base sm:text-lg font-black text-ink-soft">
-                箱{isThaiMode && <span className="text-xs font-bold ml-0.5 print:hidden">({THAI_LABELS.casesUnit})</span>}
+                {isThaiMode ? (
+                  <>
+                    {THAI_LABELS.casesUnit}
+                    <span className="text-xs font-bold ml-0.5 print:hidden">(箱)</span>
+                  </>
+                ) : (
+                  '箱'
+                )}
               </span>
             </div>
             {subBreakdownText && (
@@ -519,19 +552,37 @@ export function CustomerDeliveryCard({
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : isCompleted ? (
               <div className="flex flex-col items-center leading-tight">
-                <div className="flex items-center gap-1.5">
-                  <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
-                  <span>✓ 積込済 (戻す)</span>
-                </div>
-                {isThaiMode && <span className="text-[10px] font-bold text-slate-500">({THAI_LABELS.loadRevert})</span>}
+                {isThaiMode ? (
+                  <>
+                    <div className="flex items-center gap-1.5 text-sm sm:text-base font-black">
+                      <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
+                      <span>{THAI_LABELS.loadRevert}</span>
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-500">(✓ 積込済・戻す)</span>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
+                    <span>✓ 積込済 (戻す)</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center leading-tight">
-                <div className="flex items-center gap-1.5">
-                  <Truck className="h-5 w-5" />
-                  <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
-                </div>
-                {isThaiMode && <span className="text-[10px] font-bold text-white/90">({THAI_LABELS.loadDone})</span>}
+                {isThaiMode ? (
+                  <>
+                    <div className="flex items-center gap-1.5 text-sm sm:text-base font-black">
+                      <Truck className="h-5 w-5" />
+                      <span>{unpackedItemCount > 0 ? `⚠️ ${THAI_LABELS.loadDone}` : `🚚 ${THAI_LABELS.loadDone}`}</span>
+                    </div>
+                    <span className="text-[11px] font-bold text-white/90">(積込 OK)</span>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Truck className="h-5 w-5" />
+                    <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
+                  </div>
+                )}
               </div>
             )}
           </button>
@@ -607,12 +658,16 @@ export function CustomerDeliveryCard({
                           colorStyle.badgeClass,
                         )}
                       >
-                        <span>
-                          📦 {colorStyle.label}
-                          {isThaiMode && getThaiContainer(colorStyle.label) && (
-                            <span className="font-extrabold text-xs"> ({getThaiContainer(colorStyle.label)})</span>
-                          )}
-                        </span>
+                        {isThaiMode && getThaiContainer(colorStyle.label) ? (
+                          <span>
+                            {getContainerColorEmoji(colorStyle.label)} {getThaiContainer(colorStyle.label)}
+                            <span className="font-bold text-xs ml-1 opacity-85">({colorStyle.label})</span>
+                          </span>
+                        ) : (
+                          <span>
+                            {getContainerColorEmoji(colorStyle.label)} {colorStyle.label}
+                          </span>
+                        )}
                       </span>
 
                       {/* 数量・荷姿（16px 太字） */}
@@ -655,16 +710,31 @@ export function CustomerDeliveryCard({
                     >
                       {isDestLoaded ? (
                         <div className="flex flex-col items-center leading-tight">
-                          <div className="flex items-center gap-1">
-                            <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
-                            <span>積込済</span>
-                          </div>
-                          {isThaiMode && <span className="text-[9px] text-emerald-700">({THAI_LABELS.undo})</span>}
+                          {isThaiMode ? (
+                            <>
+                              <div className="flex items-center gap-1 text-xs sm:text-sm font-black">
+                                <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
+                                <span>{THAI_LABELS.undo}</span>
+                              </div>
+                              <span className="text-[10px] text-emerald-700">(積込済)</span>
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
+                              <span>積込済</span>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="flex flex-col items-center leading-tight">
-                          <span>個別積込</span>
-                          {isThaiMode && <span className="text-[9px] text-emerald-700">({THAI_LABELS.loadIndividual})</span>}
+                          {isThaiMode ? (
+                            <>
+                              <span className="text-xs sm:text-sm font-black">{THAI_LABELS.loadIndividual}</span>
+                              <span className="text-[10px] text-emerald-700">(個別積込)</span>
+                            </>
+                          ) : (
+                            <span>個別積込</span>
+                          )}
                         </div>
                       )}
                     </button>
