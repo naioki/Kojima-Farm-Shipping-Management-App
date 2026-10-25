@@ -5,6 +5,9 @@ import {
   statusRank,
   comparePackItems,
   getPackGroupInfo,
+  parseDeparturePriority,
+  cleanShippingRouteName,
+  resolveDefaultRouteInfo,
   type PackSortableItem,
 } from '@/lib/field/shipment-sort'
 
@@ -52,15 +55,17 @@ describe('sortIdsByStatus（未着手→中断→梱包完了→出荷済み・�
 describe('comparePackItems (3つのソートモードの検証)', () => {
   it('mode: time（早い便順）: 出発時刻順に並び、時刻未定は一番後ろになる', () => {
     const items: PackSortableItem[] = [
-      { itemId: '1', customerName: '和郷園', destinationName: '定期便', departureTime: '11:30' },
-      { itemId: '2', customerName: '農業総研', destinationName: '早朝便', departureTime: '06:00' },
+      { itemId: '1', customerName: '和郷園', destinationName: '定期便', departureTime: '18:00' },
+      { itemId: '2', customerName: '農業総研', destinationName: '翌午前便', departureTime: '翌午前' },
       { itemId: '3', customerName: '勘兵衛', destinationName: '未定便', departureTime: null },
+      { itemId: '4', customerName: 'NSK', destinationName: '16時便', departureTime: '16:00' },
     ]
 
     const sorted = [...items].sort((a, b) => comparePackItems(a, b, 'time'))
-    expect(sorted[0]?.destinationName).toBe('早朝便') // 06:00
-    expect(sorted[1]?.destinationName).toBe('定期便') // 11:30
-    expect(sorted[2]?.destinationName).toBe('未定便') // 未定は最後
+    expect(sorted[0]?.destinationName).toBe('16時便') // 16:00 (NSK・当日16時迄)
+    expect(sorted[1]?.destinationName).toBe('定期便') // 18:00 (和郷園・当日18時迄)
+    expect(sorted[2]?.destinationName).toBe('翌午前便') // 翌午前 (農業総研・翌午前中迄)
+    expect(sorted[3]?.destinationName).toBe('未定便') // 未定は最後
   })
 
   it('mode: destination（出荷先順）: 取引先＋納品先ごとに完全にまとまる', () => {
@@ -131,5 +136,23 @@ describe('getPackGroupInfo (ヘッダー情報の生成)', () => {
     const info = getPackGroupInfo(item, 'destination')
     expect(info.title).toContain('和郷園 ➜ 岩槻')
     expect(info.groupKey).toBe('dest:和郷園__岩槻')
+  })
+
+  it('parseDeparturePriority / cleanShippingRouteName / resolveDefaultRouteInfo の検証', () => {
+    expect(parseDeparturePriority('16:00')).toBeLessThan(parseDeparturePriority('18:00'))
+    expect(parseDeparturePriority('18:00')).toBeLessThan(parseDeparturePriority('翌午前'))
+    expect(parseDeparturePriority('翌午前')).toBeLessThan(parseDeparturePriority(null))
+
+    expect(cleanShippingRouteName('18:00発 11:30発 岩槻便')).toBe('岩槻便')
+    expect(cleanShippingRouteName('翌午前発 農業総研便')).toBe('農業総研便')
+
+    const wagou = resolveDefaultRouteInfo({ customerName: '株式会社和郷園', destName: '岩槻' })
+    expect(wagou.departureTime).toBe('18:00')
+
+    const nsk = resolveDefaultRouteInfo({ customerName: 'NSK', destName: 'センター' })
+    expect(nsk.departureTime).toBe('16:00')
+
+    const nosoken = resolveDefaultRouteInfo({ customerName: '株式会社農業総合研究所（NSK）', destName: '4関東' })
+    expect(nosoken.departureTime).toBe('翌午前')
   })
 })

@@ -15,6 +15,7 @@ import { ProductSelectorTabs, type ProductTabItem } from '@/components/field/Pro
 import { type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
 import { calculateChainInventory } from '@/lib/inventory/chain'
 import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
+import { resolveDefaultRouteInfo } from '@/lib/field/shipment-sort'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import type { SpecWarning, FieldStatus } from '@/types/database'
 import type { PackInstructionValues } from '@/components/admin/PackInstructions'
@@ -459,19 +460,21 @@ export default async function ShipmentsPage({
     const override =
       (destId ? routeOverrides[`date:${date}:dest:${destId}`] : null) ||
       (dName && custId ? routeOverrides[`date:${date}:cust:${custId}:${dName}`] : null) ||
-      (!destId && custId ? routeOverrides[`date:${date}:cust:${custId}:default`] : null) ||
+      (custId ? routeOverrides[`date:${date}:cust:${custId}:default`] : null) ||
       (destId ? routeOverrides['dest:' + destId] : null) ||
       (dName ? routeOverrides['cust:' + custId + ':' + dName] : null) ||
-      (!destId && custId ? routeOverrides['cust:' + custId + ':default'] : null) ||
+      (custId ? routeOverrides['cust:' + custId + ':default'] : null) ||
       null
 
-    const resolvedShippingRoute = override?.shippingRouteName !== undefined
-      ? override.shippingRouteName
-      : dest?.shipping_route_name
+    const routeInfo = resolveDefaultRouteInfo({
+      destName: dName,
+      customerName: cName,
+      dest,
+      override,
+    })
 
-    const resolvedDepartureTime = override?.departureTime !== undefined
-      ? override.departureTime
-      : dest?.departure_time
+    const resolvedShippingRoute = routeInfo.shippingRouteName
+    const resolvedDepartureTime = routeInfo.departureTime
 
     const resolvedDailyPackSortOrder = it.daily_pack_sort_order ?? (it.id ? packSortMap[it.id] : null) ?? null
 
@@ -479,6 +482,7 @@ export default async function ShipmentsPage({
       itemId: it.id,
       customerName: cName,
       customerColor: color,
+      destinationId: destId ?? null,
       destinationName: dName,
       quantityText: formatQty(qty, perCase, pack),
       orderedQty: qty,
@@ -587,24 +591,27 @@ export default async function ShipmentsPage({
         const override =
           (destId ? routeOverrides[`date:${nextDateStr}:dest:${destId}`] : null) ||
           (dName && custId ? routeOverrides[`date:${nextDateStr}:cust:${custId}:${dName}`] : null) ||
-          (!destId && custId ? routeOverrides[`date:${nextDateStr}:cust:${custId}:default`] : null) ||
+          (custId ? routeOverrides[`date:${nextDateStr}:cust:${custId}:default`] : null) ||
           (destId ? routeOverrides['dest:' + destId] : null) ||
           (dName ? routeOverrides['cust:' + custId + ':' + dName] : null) ||
-          (!destId && custId ? routeOverrides['cust:' + custId + ':default'] : null) ||
+          (custId ? routeOverrides['cust:' + custId + ':default'] : null) ||
           null
 
-        const resolvedShippingRoute = override?.shippingRouteName !== undefined
-          ? override.shippingRouteName
-          : dest?.shipping_route_name
+        const routeInfo = resolveDefaultRouteInfo({
+          destName: dName,
+          customerName: cName,
+          dest,
+          override,
+        })
 
-        const resolvedDepartureTime = override?.departureTime !== undefined
-          ? override.departureTime
-          : dest?.departure_time
+        const resolvedShippingRoute = routeInfo.shippingRouteName
+        const resolvedDepartureTime = routeInfo.departureTime
 
         nextShipmentItems.push({
           itemId: ni.id,
           customerName: cName,
           customerColor: color,
+          destinationId: destId ?? null,
           destinationName: dName,
           quantityText: formatQty(qty, perCase, pack),
           orderedQty: qty,

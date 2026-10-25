@@ -15,6 +15,7 @@ import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { determineContainerType } from '@/lib/pipeline/schemas'
+import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 
@@ -162,60 +163,6 @@ export default async function DeliveriesPage({
     return null
   }
 
-  function isClockTime(t: string | null | undefined): boolean {
-    if (!t) return false
-    return /^\d{1,2}:\d{2}$/.test(t.trim())
-  }
-
-  function resolveRouteInfo(
-    destName: string | null,
-    customerName: string | null,
-    dest?: DestRow | null,
-    orderShippingTime?: string | null,
-    override?: { shippingRouteName?: string | null; departureTime?: string | null } | null,
-  ): { title: string; departureTime: string | null } {
-    if (override && (override.shippingRouteName || isClockTime(override.departureTime))) {
-      const effectiveTime = isClockTime(override.departureTime) ? override.departureTime! : null
-      const timePrefix = effectiveTime ? `${effectiveTime}発 ` : ''
-      const routeSuffix = override.shippingRouteName ? ` ${override.shippingRouteName}` : ''
-      return {
-        title: `${timePrefix}${routeSuffix}`.trim() || '指定便',
-        departureTime: effectiveTime,
-      }
-    }
-
-    if (dest?.shipping_route_name || isClockTime(dest?.departure_time)) {
-      const effectiveTime = isClockTime(dest?.departure_time) ? dest!.departure_time! : null
-      const timePrefix = effectiveTime ? `${effectiveTime}発 ` : ''
-      const routeSuffix = dest?.shipping_route_name ? ` ${dest.shipping_route_name}` : ''
-      return {
-        title: `${timePrefix}${routeSuffix}`.trim(),
-        departureTime: effectiveTime,
-      }
-    }
-    const d = destName ?? ''
-    const c = customerName ?? ''
-    if (d.includes('岩槻') || c.includes('パルシステム')) {
-      return { title: '11:30発 岩槻便', departureTime: '11:30' }
-    }
-    if (d.includes('戸田') || d.includes('ちばコープ')) {
-      return { title: '14:00発 戸田便', departureTime: '14:00' }
-    }
-    if (d.includes('松戸') || d.includes('柏')) {
-      return { title: '14:00発 松戸・柏便', departureTime: '14:00' }
-    }
-    if (c.includes('直売') || d.includes('直売')) {
-      return { title: '直売所便', departureTime: null }
-    }
-    if (orderShippingTime === 'am') {
-      return { title: '午前便', departureTime: '11:30' }
-    }
-    if (orderShippingTime === 'pm') {
-      return { title: '午後便', departureTime: '14:00' }
-    }
-    return { title: '一般配送・時間未指定', departureTime: null }
-  }
-
   // 1. 取引先（customer_id）を最上位キーとするデータ集約（便ごとに分断させない）
   const orderById = new Map(orders.map((o) => [o.id, o]))
 
@@ -243,13 +190,19 @@ export default async function DeliveriesPage({
     const override =
       (order.destination_id && routeOverrides[`date:${date}:dest:${order.destination_id}`]) ||
       (destName ? routeOverrides[`date:${date}:cust:${order.customer_id}:${destName}`] : null) ||
-      (!order.destination_id ? routeOverrides[`date:${date}:cust:${order.customer_id}:default`] : null) ||
+      routeOverrides[`date:${date}:cust:${order.customer_id}:default`] ||
       (order.destination_id && routeOverrides[`dest:${order.destination_id}`]) ||
       (destName ? routeOverrides[`cust:${order.customer_id}:${destName}`] : null) ||
-      (!order.destination_id ? routeOverrides[`cust:${order.customer_id}:default`] : null) ||
+      routeOverrides[`cust:${order.customer_id}:default`] ||
       null
 
-    const routeInfo = resolveRouteInfo(destName, customerName, dest, order.shipping_time, override)
+    const routeInfo = resolveDefaultRouteInfo({
+      destName,
+      customerName,
+      dest,
+      orderShippingTime: order.shipping_time,
+      override,
+    })
 
     let cEntry = customerGroupMap.get(order.customer_id)
     if (!cEntry) {
@@ -264,7 +217,10 @@ export default async function DeliveriesPage({
       customerGroupMap.set(order.customer_id, cEntry)
     }
 
-    cEntry.routeSet.set(routeInfo.title, routeInfo)
+    cEntry.routeSet.set(routeInfo.title, {
+      title: routeInfo.title,
+      departureTime: routeInfo.departureTime,
+    })
 
     // 特記事項（事前アクション喚起用メモ）の抽出：AI自動生成メタ情報は除外し、本当の伝達事項のみを残す
     const cleanOrderNote = extractActionableNote(order.note)
@@ -284,13 +240,8 @@ export default async function DeliveriesPage({
       cEntry.notesSet.add(customerDefaultNote.trim())
     }
 
-    const effectiveDepTime = override?.departureTime !== undefined && isClockTime(override.departureTime)
-      ? override.departureTime
-      : (isClockTime(dest?.departure_time) ? dest!.departure_time! : routeInfo.departureTime)
-
-    const effectiveRouteName = override?.shippingRouteName !== undefined
-      ? override.shippingRouteName
-      : (dest?.shipping_route_name || (routeInfo.title !== '一般配送・時間未指定' ? routeInfo.title : null))
+    const effectiveDepTime = routeInfo.departureTime
+    const effectiveRouteName = routeInfo.shippingRouteName
 
     const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`)
     const resolvedContainer =
@@ -325,14 +276,10 @@ export default async function DeliveriesPage({
       if (!dEntry.containerType && resolvedContainer) {
         dEntry.containerType = resolvedContainer
       }
-      if (override?.departureTime !== undefined && isClockTime(override.departureTime)) {
-        dEntry.departureTime = override.departureTime
-      } else if (!dEntry.departureTime && effectiveDepTime) {
+      if (!dEntry.departureTime && effectiveDepTime) {
         dEntry.departureTime = effectiveDepTime
       }
-      if (override?.shippingRouteName !== undefined) {
-        dEntry.shippingRouteName = override.shippingRouteName
-      } else if (!dEntry.shippingRouteName && effectiveRouteName) {
+      if (!dEntry.shippingRouteName && effectiveRouteName) {
         dEntry.shippingRouteName = effectiveRouteName
       }
     }
@@ -418,12 +365,12 @@ export default async function DeliveriesPage({
       destinationsList.length > 0 &&
       destinationsList.every((d) => d.status === 'loaded' || d.status === 'delivered')
 
-    // 出発時刻の最も早い便を特定（並び順用）
+    // 出発時刻の最も早い便を特定（並び順用：当日16:00 ➜ 当日18:00 ➜ 翌午前 ➜ 未設定）
     const routes = Array.from(cEntry.routeSet.values())
     routes.sort((a, b) => {
-      if (a.departureTime && b.departureTime) return a.departureTime.localeCompare(b.departureTime)
-      if (a.departureTime && !b.departureTime) return -1
-      if (!a.departureTime && b.departureTime) return 1
+      const prioA = parseDeparturePriority(a.departureTime)
+      const prioB = parseDeparturePriority(b.departureTime)
+      if (prioA !== prioB) return prioA - prioB
       return a.title.localeCompare(b.title, 'ja')
     })
     const earliestDepartureTime = routes.find((r) => r.departureTime)?.departureTime ?? null
@@ -449,14 +396,9 @@ export default async function DeliveriesPage({
   // ソート：未積込を優先（出発時間の早い便順 → 取引先名順）、完了済みは末尾へ
   customerCards.sort((a, b) => {
     if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1
-    if (a.earliestDepartureTime && b.earliestDepartureTime) {
-      const cmp = a.earliestDepartureTime.localeCompare(b.earliestDepartureTime)
-      if (cmp !== 0) return cmp
-    } else if (a.earliestDepartureTime && !b.earliestDepartureTime) {
-      return -1
-    } else if (!a.earliestDepartureTime && b.earliestDepartureTime) {
-      return 1
-    }
+    const prioA = parseDeparturePriority(a.earliestDepartureTime)
+    const prioB = parseDeparturePriority(b.earliestDepartureTime)
+    if (prioA !== prioB) return prioA - prioB
     return a.customerName.localeCompare(b.customerName, 'ja')
   })
 

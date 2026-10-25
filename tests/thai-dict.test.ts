@@ -4,6 +4,7 @@ import {
   getThaiBag,
   getThaiTape,
   getThaiSpec,
+  getThaiDepartureTime,
   THAI_LABELS,
 } from '@/lib/field/thai-dict'
 
@@ -56,5 +57,13 @@ describe('Thai Translation & Helpers (lib/field/thai-dict.ts)', () => {
     expect(THAI_LABELS.undo).toBe('กดยกเลิก')
     expect(THAI_LABELS.notCompletedWarn).toContain('ยังแพ็คไม่เสร็จ')
     expect(THAI_LABELS.quantityMismatchWarn).toContain('จำนวนยังไม่ครบ')
+  })
+
+  it('correctly translates departure times into Thai', () => {
+    expect(getThaiDepartureTime('16:00')).toBe('วันนี้ 16:00')
+    expect(getThaiDepartureTime('18:00')).toBe('วันนี้ 18:00')
+    expect(getThaiDepartureTime('翌午前')).toBe('ส่งพรุ่งนี้เช้า')
+    expect(getThaiDepartureTime('翌09:00')).toBe('พรุ่งนี้ 09:00')
+    expect(getThaiDepartureTime(null)).toBeNull()
   })
 })

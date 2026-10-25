@@ -6,6 +6,7 @@ import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, RotateCw }
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import { useFieldLang } from '@/lib/field/lang-context'
+import { getThaiContainer, getThaiDepartureTime } from '@/lib/field/thai-dict'
 import {
   HarvestPulseSummary,
   type ContainerBreakdownItem,
@@ -617,9 +618,19 @@ export function PackingAndShippingViews({
               <div key={item.itemId} className="space-y-2">
                 {isNewSection && (
                   <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 pb-1 px-1 border-b-2 border-line-soft">
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                       <span className="text-xs">{groupInfo.icon}</span>
                       <span className="text-xs font-black text-ink">{groupInfo.title}</span>
+                      {isThaiMode && sortMode === 'time' && getThaiDepartureTime(item.departureTime) && (
+                        <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-black print:hidden">
+                          🇹🇭 {getThaiDepartureTime(item.departureTime)}
+                        </span>
+                      )}
+                      {isThaiMode && sortMode === 'container' && getThaiContainer(item.initialContainer) && (
+                        <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-[10px] font-black print:hidden">
+                          🇹🇭 {getThaiContainer(item.initialContainer)}
+                        </span>
+                      )}
                       {groupInfo.badge && (
                         <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.2 text-[10px] font-bold">
                           {groupInfo.badge}

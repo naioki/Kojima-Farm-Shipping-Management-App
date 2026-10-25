@@ -341,10 +341,12 @@ export function CustomerDeliveryCard({
                 unpackedItemCount > 0 ? (
                   <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-[11px] font-black text-amber-950 shadow-2xs">
                     <span>⚠️ パック未完了 {unpackedItemCount}件</span>
+                    {isThaiMode && <span className="text-[10px] text-amber-800 print:hidden">({THAI_LABELS.notCompletedWarn})</span>}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-800">
                     <span>✓ 全パック済</span>
+                    {isThaiMode && <span className="text-[10px] text-emerald-700 print:hidden">({THAI_LABELS.allPackedDone})</span>}
                   </span>
                 )
               )}
@@ -366,7 +368,7 @@ export function CustomerDeliveryCard({
                     >
                       <span>
                         📦 {style.label}
-                        {thaiContainer ? ` (${thaiContainer})` : ''}
+                        {thaiContainer && <span className="print:hidden"> ({thaiContainer})</span>}
                       </span>
                       <span className="num underline decoration-2">{cs.boxes}箱</span>
                     </span>
@@ -387,14 +389,20 @@ export function CustomerDeliveryCard({
 
           {/* 最重要位置: 特大フォントの総積込数（案1: 物理箱数最優先型 28〜32px） */}
           <div className="text-right shrink-0">
-            <div className="text-xs font-bold text-ink-muted">総積込数</div>
+            <div className="text-xs font-bold text-ink-muted">
+              総積込数
+              {isThaiMode && <span className="ml-1 text-[10px] text-earth-700 print:hidden">({THAI_LABELS.totalLoadBoxes})</span>}
+            </div>
             <div
               className={cn(
                 'num text-[28px] sm:text-[32px] font-black tabular-nums tracking-tight leading-none my-0.5',
                 isCompleted ? 'text-slate-500' : 'text-ink',
               )}
             >
-              {grandTotalContainers} <span className="text-base sm:text-lg font-black text-ink-soft">箱</span>
+              {grandTotalContainers}{' '}
+              <span className="text-base sm:text-lg font-black text-ink-soft">
+                箱{isThaiMode && <span className="text-xs font-bold ml-0.5 print:hidden">({THAI_LABELS.casesUnit})</span>}
+              </span>
             </div>
             {subBreakdownText && (
               <div className="text-sm sm:text-base font-extrabold text-ink-soft my-0.5">

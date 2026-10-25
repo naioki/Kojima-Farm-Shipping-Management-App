@@ -58,10 +58,32 @@ export const THAI_LABELS = {
   mustPackMore: 'ต้องแพ็คเพิ่มอีก',
   quantityChanged: 'เปลี่ยนจำนวน',
 
-  // 見出し・ステータス
+  // 見出し・ステータス・数量
   allDoneStamp: 'เสร็จสิ้น',
   routeDeparture: 'เวลาออก',
   unassignedTime: 'ยังไม่กำหนดเวลา',
+  totalPacks: 'รวม',
+  casesUnit: 'ลัง',
+  fractionUnit: 'เศษ',
+  noFraction: 'ไม่มีเศษ',
+  totalLoadBoxes: 'รวมทั้งหมด',
+  allPackedDone: 'แพ็คครบแล้ว',
+  nextDayMorning: 'ส่งพรุ่งนี้เช้า',
+}
+
+/** 出荷・締切時刻のタイ語ルビを返す */
+export function getThaiDepartureTime(time: string | null | undefined): string | null {
+  if (!time) return null
+  const t = time.trim()
+  if (t.startsWith('翌')) {
+    const clock = t.replace(/^翌(日)?/, '').trim()
+    if (!clock || clock.includes('午前')) return 'ส่งพรุ่งนี้เช้า'
+    return `พรุ่งนี้ ${clock}`
+  }
+  if (/^\d{1,2}:\d{2}$/.test(t)) {
+    return `วันนี้ ${t}`
+  }
+  return null
 }
 
 /** コンテナ名のタイ語ルビを返す */

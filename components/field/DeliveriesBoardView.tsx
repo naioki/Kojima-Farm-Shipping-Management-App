@@ -8,6 +8,8 @@ import { cn } from '@/lib/cn'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import { useFieldLang } from '@/lib/field/lang-context'
+import { parseDeparturePriority } from '@/lib/field/shipment-sort'
+import { getThaiDepartureTime } from '@/lib/field/thai-dict'
 import {
   CustomerDeliveryCard,
   type CustomerDeliveryCardProps,
@@ -127,7 +129,9 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
       const groupTitle = isUnassigned
         ? '時間未設定（マスタ設定で次回から不要）'
         : depTime && !rawTitle.includes(depTime)
-        ? `${depTime}発 ${rawTitle}`
+        ? depTime.startsWith('翌')
+          ? `${depTime} ${rawTitle}`
+          : `${depTime}発 ${rawTitle}`
         : rawTitle
       const groupKey = isUnassigned ? '__unassigned__' : `${depTime ?? '99:99'}:${groupTitle}`
 
@@ -148,14 +152,9 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
     const list = Array.from(map.values())
     list.sort((a, b) => {
       if (a.isUnassigned !== b.isUnassigned) return a.isUnassigned ? 1 : -1
-      if (a.departureTime && b.departureTime) {
-        const cmp = a.departureTime.localeCompare(b.departureTime)
-        if (cmp !== 0) return cmp
-      } else if (a.departureTime && !b.departureTime) {
-        return -1
-      } else if (!a.departureTime && b.departureTime) {
-        return 1
-      }
+      const prioA = parseDeparturePriority(a.departureTime)
+      const prioB = parseDeparturePriority(b.departureTime)
+      if (prioA !== prioB) return prioA - prioB
       return a.title.localeCompare(b.title, 'ja')
     })
     return list
@@ -376,9 +375,14 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                       : 'border-earth-300 bg-earth-100/90 text-earth-950',
                   )}
                 >
-                  <div className="flex items-center gap-2 font-black text-sm">
-                    <span>{grp.isUnassigned ? '📦' : '⏰'}</span>
+                  <div className="flex items-center gap-2 font-black text-sm flex-wrap">
+                    <span>{grp.isUnassigned ? '📦' : grp.departureTime?.startsWith('翌') ? '🌅' : '⏰'}</span>
                     <span>{grp.title}</span>
+                    {isThaiMode && grp.departureTime && getThaiDepartureTime(grp.departureTime) && (
+                      <span className="text-xs font-bold text-earth-700 print:hidden">
+                        ({getThaiDepartureTime(grp.departureTime)})
+                      </span>
+                    )}
                     <span className="text-xs font-bold opacity-80">
                       （{grp.cards.length}社）
                     </span>
@@ -387,10 +391,16 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                     {grpAllDone ? (
                       <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5">
                         ✓ 全{grpTotalBoxes}箱 積込済
+                        {isThaiMode && <span className="ml-1 text-[10px] print:hidden">(ขึ้นรถครบแล้ว)</span>}
                       </span>
                     ) : (
                       <span className="rounded-md bg-white/90 border border-earth-300 px-2.5 py-0.5 text-earth-900">
                         残り {grpRemBoxes} 箱 ／ 計 {grpTotalBoxes} 箱
+                        {isThaiMode && (
+                          <span className="ml-1 text-[10px] text-earth-700 print:hidden">
+                            (เหลือ {grpRemBoxes} ลัง)
+                          </span>
+                        )}
                       </span>
                     )}
                   </div>

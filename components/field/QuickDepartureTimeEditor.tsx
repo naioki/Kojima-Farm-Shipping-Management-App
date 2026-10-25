@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Clock, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
+import { useFieldLang } from '@/lib/field/lang-context'
+import { getThaiDepartureTime } from '@/lib/field/thai-dict'
+import { cleanShippingRouteName } from '@/lib/field/shipment-sort'
 
 interface Props {
   deliveryDate: string
@@ -18,8 +21,26 @@ interface Props {
   variant?: 'button' | 'chip'
 }
 
-const COMMON_TIMES = ['09:00', '10:00', '11:30', '13:00', '14:00', '15:30']
-const COMMON_ROUTES = ['1便', '2便', '岩槻便', '戸田便', '松戸・柏便', '直売所便']
+const FARM_PRESETS = [
+  {
+    label: '🔥 16:00（NSK・当日16時迄）',
+    time: '16:00',
+    route: 'NSK便（当日16時迄）',
+  },
+  {
+    label: '🚚 18:00（和郷園・当日18時迄）',
+    time: '18:00',
+    route: '和郷園便（当日18時迄）',
+  },
+  {
+    label: '🌅 翌午前（農業総研・翌午前中迄）',
+    time: '翌午前',
+    route: '農総研便（翌午前中迄）',
+  },
+]
+
+const COMMON_TIMES = ['16:00', '18:00', '翌午前', '翌09:00', '翌11:00', '11:30', '14:00']
+const COMMON_ROUTES = ['NSK便（当日16時迄）', '和郷園便（当日18時迄）', '農総研便（翌午前中迄）', '岩槻便', '戸田便', '直売所便']
 
 export function QuickDepartureTimeEditor({
   deliveryDate,
@@ -32,16 +53,17 @@ export function QuickDepartureTimeEditor({
   variant = 'button',
 }: Props) {
   const router = useRouter()
+  const { isThaiMode } = useFieldLang()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const [time, setTime] = useState(currentDepartureTime ?? '')
-  const [route, setRoute] = useState(currentShippingRouteName ?? '')
+  const [route, setRoute] = useState(cleanShippingRouteName(currentShippingRouteName) ?? '')
   const [scope, setScope] = useState<'master' | 'date_only'>('master')
 
   function handleOpen() {
     setTime(currentDepartureTime ?? '')
-    setRoute(currentShippingRouteName ?? '')
+    setRoute(cleanShippingRouteName(currentShippingRouteName) ?? '')
     setScope('master')
     setOpen(true)
   }
@@ -86,15 +108,13 @@ export function QuickDepartureTimeEditor({
 
   // チップ表示ラベルの組み立て（時刻と便名の重複を防止しつつ両方表示）
   const chipLabel = (() => {
-    const cleanRoute = currentShippingRouteName
-      ?.replace(/^\d{1,2}:\d{2}発\s*/, '')
-      .replace(/^一般配送・時間未指定$/, '')
-      .trim()
+    const cleanRoute = cleanShippingRouteName(currentShippingRouteName)
+    const isNextDayTime = currentDepartureTime?.startsWith('翌')
     if (currentDepartureTime && cleanRoute) {
-      return `${currentDepartureTime}発 ${cleanRoute}`
+      return isNextDayTime ? `${currentDepartureTime} ${cleanRoute}` : `${currentDepartureTime}発 ${cleanRoute}`
     }
     if (currentDepartureTime) {
-      return `${currentDepartureTime}発`
+      return isNextDayTime ? `${currentDepartureTime}出荷` : `${currentDepartureTime}発`
     }
     if (cleanRoute) {
       return cleanRoute
@@ -102,28 +122,39 @@ export function QuickDepartureTimeEditor({
     return '時間未設定（マスタ設定可）'
   })()
 
+  const thaiTime = isThaiMode ? getThaiDepartureTime(currentDepartureTime) : null
+
   return (
     <>
       {variant === 'chip' ? (
         <button
           type="button"
-          onClick={handleOpen}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleOpen()
+          }}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition active:scale-95 print:border-slate-400 print:bg-white',
-            currentDepartureTime || currentShippingRouteName
+            'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition active:scale-95 print:border-slate-400 print:bg-white',
+            currentDepartureTime?.startsWith('翌')
+              ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-900'
+              : currentDepartureTime || currentShippingRouteName
               ? 'bg-earth-100 hover:bg-earth-200 border-earth-300 text-earth-900'
               : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700',
           )}
           title="出荷時間・便名を変更（一度設定すれば次回以降も自動引き継ぎ）"
         >
-          <Clock className="h-3.5 w-3.5 text-earth-700 shrink-0" />
+          <Clock className="h-3 w-3 text-earth-700 shrink-0" />
           <span>{chipLabel}</span>
+          {thaiTime && <span className="text-[10px] text-earth-700 font-extrabold print:hidden">({thaiTime})</span>}
           <span className="text-[10px] text-earth-700 underline ml-0.5 print:hidden">変更</span>
         </button>
       ) : (
         <button
           type="button"
-          onClick={handleOpen}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleOpen()
+          }}
           className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-bg-card hover:bg-bg-soft px-2.5 py-1 text-xs font-bold text-ink-soft transition active:scale-95 print:hidden"
         >
           <Clock className="h-3.5 w-3.5 text-earth-600" />
@@ -133,9 +164,12 @@ export function QuickDepartureTimeEditor({
 
       {/* モーダルダイアログ */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden"
+        >
           <div
-            className="w-full max-w-sm rounded-2xl bg-bg-card p-5 shadow-2xl border border-line space-y-4 animate-scale-in"
+            className="w-full max-w-sm rounded-2xl bg-bg-card p-5 shadow-2xl border border-line space-y-3.5 animate-scale-in max-h-[90vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
           >
@@ -195,14 +229,45 @@ export function QuickDepartureTimeEditor({
               </p>
             </div>
 
+            {/* 小島農園 定番プリセット（1タップで時刻＋便名を同時セット） */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-black text-ink">
+                ⚡ 定番プリセット（1タップ設定）
+              </label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {FARM_PRESETS.map((p) => {
+                  const isSelected = time === p.time && route === p.route
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        setTime(p.time)
+                        setRoute(p.route)
+                      }}
+                      className={cn(
+                        'flex items-center justify-between rounded-xl border px-3 py-2 text-xs font-black transition active:scale-98 text-left',
+                        isSelected
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-600'
+                          : 'border-line bg-white hover:bg-bg-soft text-ink',
+                      )}
+                    >
+                      <span>{p.label}</span>
+                      {isSelected && <Check className="h-4 w-4 text-emerald-700 shrink-0" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* 出荷時間（出発時刻） */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-ink">
-                ⏰ 出荷時間（出発時刻）
+                ⏰ 出荷時間（自由指定も可能）
               </label>
               <div className="flex items-center gap-2">
                 <input
-                  type="time"
+                  type={time.startsWith('翌') ? 'text' : 'time'}
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
                   className="num h-10 w-full rounded-xl border border-line-strong bg-bg-card px-3 text-base font-bold text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100"
@@ -211,7 +276,7 @@ export function QuickDepartureTimeEditor({
                   <button
                     type="button"
                     onClick={() => setTime('')}
-                    className="h-10 px-2.5 rounded-xl border border-line text-xs font-medium text-ink-muted hover:bg-bg-soft"
+                    className="h-10 px-2.5 rounded-xl border border-line text-xs font-medium text-ink-muted hover:bg-bg-soft shrink-0"
                   >
                     クリア
                   </button>
@@ -243,7 +308,7 @@ export function QuickDepartureTimeEditor({
                         : 'bg-bg-soft text-ink hover:bg-line',
                     )}
                   >
-                    {t}発
+                    {t.startsWith('翌') ? t : `${t}発`}
                   </button>
                 ))}
               </div>
