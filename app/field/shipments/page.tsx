@@ -575,16 +575,6 @@ export default async function ShipmentsPage({
     }
   }
 
-  // 当日出荷（または本日パック）に紐づく有効なFAX原本（複数件集約）
-  const uniqueReceipts = Array.from(
-    new Map(
-      Array.from(receiptByOrder.values())
-        .filter((r) => r.hasOriginal && r.id)
-        .map((r) => [r.id, r])
-    ).values()
-  )
-  const firstReceiptId = uniqueReceipts[0]?.id
-
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
       {/* ナビゲーションバー */}
@@ -595,18 +585,6 @@ export default async function ShipmentsPage({
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
         <div className="flex items-center gap-2">
-          {uniqueReceipts.length > 0 && firstReceiptId && (
-            <Link
-              href={`/field/viewer/${firstReceiptId}?date=${date}`}
-              className="inline-flex items-center gap-1 rounded-lg bg-forest-800 text-white hover:bg-forest-900 px-2.5 py-1.5 text-xs font-black shadow-xs transition active:scale-95"
-              title="該当FAX原本を表示"
-            >
-              <span>📄 FAX原本</span>
-              <span className="rounded-full bg-forest-950/70 px-1.5 py-0.2 text-[10px] text-forest-200">
-                {uniqueReceipts.length}件
-              </span>
-            </Link>
-          )}
           <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日出荷（本日パック）" />
         </div>
       </div>
