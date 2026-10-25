@@ -16,6 +16,8 @@
 - **全品目「出荷日の前日に収穫・パック」の原則**: すべての品目・取引先において、収穫およびパック（袋詰め）作業は出荷日（`delivery_date`）の前日（-1日）に行う（`harvest_tasks.task_date = shiftDateStr(delivery_date, -1)`）。
 - **二重送信禁止**: `lib/gemini/prompts.ts` には全社共通のコア指示・JSONスキーマのみを置き、取引先別ルールは Supabase `ai_rules` テーブル（高密度5ルール）から `systemInstruction` に1回だけ注入する（`parts` 側には絶対に入れない）。
 - **決定論的検算**: 入数換算（標準20／NSK24／勘兵衛ケース×20）・箱数切り上げ・固定書式・注文キー生成は `lib/gemini/analyze.ts`（`verifyAndNormalizeItem`）と `lib/pipeline/schemas.ts` で決定論的に算出する。
+- **青梗菜の進捗箱数計算ルール（収穫コンテナ40入・ニコイチ20入思想）**:
+  - 収穫コンテナには40パック入り、それを「ニコイチ」（20パック/箱）で箱詰め・配送する現場運用に基づき、青梗菜のパック進捗（ヘッダー・追従バー・進捗メーター）の目標箱数および残り箱数は、取引先別の個別入数にかかわらず一律 **`Math.ceil(総パック数 / 20)`** で決定論的に算出する（※作業画面UI上には「40入る/ニコイチ」等の内部理由は表示しない）。
 
 ## 4. 検証・デプロイ手順
 1. 検証: `npm run typecheck` / `npm run lint` / `npm test`（Vitest）

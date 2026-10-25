@@ -167,6 +167,23 @@ export function PackingAndShippingViews({
     liveSpecMap.set(sKey, curSpec)
   }
 
+  // 【小島農園固有ルール】
+  // 青梗菜のパック進捗箱数は一律「総パック数 ÷ 20」で算出する。
+  // （内部理由: 収穫コンテナに40パック入り、それをニコイチ＝20パック/箱で入れる現場運用に基づく。UI上には内部理由は非表示）
+  const isBokChoy =
+    !productName ||
+    productName.includes('青梗菜') ||
+    productName.includes('チンゲン') ||
+    productName.includes('ちんげん')
+
+  if (isBokChoy && totalPacks > 0) {
+    totalBoxes = Math.ceil(totalPacks / 20)
+    completedBoxes =
+      completedPacks >= totalPacks
+        ? totalBoxes
+        : Math.floor(completedPacks / 20)
+  }
+
   const liveContainerBreakdown: ContainerBreakdownItem[] =
     items.length > 0
       ? Array.from(liveContainerMap.entries()).map(([type, boxes]) => ({ type, boxes }))
