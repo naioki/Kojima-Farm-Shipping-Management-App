@@ -1,5 +1,7 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
@@ -8,6 +10,8 @@ import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
 
 const PATH = '/field/matrix'
 function weekDates(start: string): string[] {
@@ -24,9 +28,12 @@ export default async function MatrixPage({
 }: {
   searchParams: { week?: string; product?: string }
 }) {
+  const user = await getAuthedUser()
+  if (!user) redirect('/login')
+
   const week = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.week ?? '') ? searchParams.week! : jstTodayStr()
   const dates = weekDates(week)
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 品目・取引先（行）
   const [{ data: products, error: prodErr }, { data: customers, error: custErr }] = await Promise.all([
@@ -45,12 +52,12 @@ export default async function MatrixPage({
     )
   }
 
-  // 当該週の注文（出荷日 in dates、キャンセル除外）
+  // 当該週の承認済み注文（出荷日 in dates、未承認pending_reviewやキャンセルは除外）
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, customer_id, delivery_date')
     .in('delivery_date', dates)
-    .neq('status', 'cancelled')
+    .in('status', ['approved', 'shipped', 'invoiced'])
   // 注文はマトリックスの本体。取得失敗を「空マトリックス」に化けさせない。
   if (ordersErr)
     return <ErrorState message="注文を読み込めませんでした。時間をおいて再度お試しください。" detail={ordersErr.message} />
@@ -88,9 +95,6 @@ export default async function MatrixPage({
     (p) => productIdsWithShipments.has(p.id) || p.id === searchParams.product,
   )
 
-  // まだタブに表示されていない品目（「＋ 他の品目を追加」用）
-  const otherProducts = products.filter((p) => !filteredProducts.some((fp) => fp.id === p.id))
-
   // 選択品目: 指定があればそれ、なければ出荷のある最初の品目、それもなければ全品目の先頭
   const selected =
     (searchParams.product ? products.find((p) => p.id === searchParams.product) : null) ??
@@ -104,7 +108,10 @@ export default async function MatrixPage({
   const initial: Record<string, number> = {}
   for (const it of items) {
     const o = orderMeta.get(it.order_id)
-    if (o?.delivery_date) initial[`${o.customer_id}|${o.delivery_date}`] = it.quantity
+    if (o?.delivery_date) {
+      const cellKey = `${o.customer_id}|${o.delivery_date}`
+      initial[cellKey] = (initial[cellKey] ?? 0) + (Number(it.quantity) || 0)
+    }
   }
 
   // 選択品目の取引先別 P/C

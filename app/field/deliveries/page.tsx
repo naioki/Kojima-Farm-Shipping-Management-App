@@ -1,10 +1,12 @@
 import Link from 'next/link'
-import { Truck } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
+import { extractActionableNote } from '@/lib/field/clean-note'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
+import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import {
   type CustomerDeliveryCardProps,
   type DestinationDetail,
@@ -23,32 +25,42 @@ const PATH = '/field/deliveries'
 /**
  * 配送リスト（手書き伝票思想の「取引先ワンボックス集約」画面）。
  * - 最上位グルーピングを「取引先」に統一し、同一取引先が便ごとに分裂する問題を完全解消。
- * - 最優先情報として「総コンテナ（ケース）数 ＋ 端数」を特大フォントで配置。
- * - 事前アクション喚起型メモ（空コンテナ持参など）を見落とさない注意枠プレビュー。
- * - 指で押しやすい大きな「積込 OK」トグルボタンで一括チェック。
- * - 納品先・便ごとの個別内訳はアコーディオン内に格納（開くと端数の便が即座に判明）。
+ * - 規格・注文明細ごとにケース数＋端数箱を独立計算して合算（異規格の端数が1箱に混ざるバグを防止）。
+ * - AI生成メタ文字列を除外し、本当の伝達事項（空コンテナ持参・入数変更など）のみを注意枠に表示。
+ * - 収穫・パックボードと完全に統一されたヘッダー順序＆スクロール追従進捗バー。
  */
 export default async function DeliveriesPage({
   searchParams,
 }: {
   searchParams: { date?: string }
 }) {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
-  const supabase = createClient()
+  const user = await getAuthedUser()
+  if (!user) redirect('/login')
 
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : jstTodayStr()
   const admin = createAdminClient()
 
-  // その日の出荷対象注文（キャンセルは除外）
-  const { data: orders, error: ordersErr } = await supabase
-    .from('orders')
-    .select('id, customer_id, destination_id, status, note, shipping_time')
-    .eq('delivery_date', date)
-    .neq('status', 'cancelled')
-  if (ordersErr) return <ErrorState message={ordersErr.message} />
+  // その日の出荷対象注文（承認済み・出荷済み・請求済みのみ表示、未承認pending_reviewは別カウント）
+  const [ordersRes, pendingRes] = await Promise.all([
+    admin
+      .from('orders')
+      .select('id, customer_id, destination_id, status, note, shipping_time')
+      .eq('delivery_date', date)
+      .in('status', ['approved', 'shipped', 'invoiced']),
+    admin
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('delivery_date', date)
+      .eq('status', 'pending_review'),
+  ])
 
-  const orderIds = (orders ?? []).map((o) => o.id)
+  if (ordersRes.error) return <ErrorState message={ordersRes.error.message} />
+  const orders = ordersRes.data ?? []
+  const pendingReviewCount = pendingRes.count ?? 0
+
+  const orderIds = orders.map((o) => o.id)
   const itemsRes = orderIds.length
-    ? await supabase
+    ? await admin
         .from('order_items')
         .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id')
         .in('order_id', orderIds)
@@ -59,9 +71,9 @@ export default async function DeliveriesPage({
   // 数量が0の品目は非表示
   const items = (itemsRes?.data ?? []).filter((i) => (Number(i.quantity) || 0) > 0)
 
-  // 表示用マスタ＋その日の配送チェック状態
-  const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
-  const destinationIds = [...new Set((orders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
+  // 表示用マスタ＋その日の配送チェック状態（RLS遮断を防ぐためすべて admin クライアントで一括取得）
+  const customerIds = [...new Set(orders.map((o) => o.customer_id))]
+  const destinationIds = [...new Set(orders.map((o) => o.destination_id).filter(Boolean))] as string[]
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
 
@@ -84,16 +96,16 @@ export default async function DeliveriesPage({
 
   const [custRes, destRes, prodRes, packRes, deliveryRes, rulesRes, routeOverrides] = await Promise.all([
     customerIds.length
-      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
+      ? admin.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
     (async (): Promise<{ data: DestRow[] | null; error: { message: string } | null }> => {
       if (!destinationIds.length) return { data: [], error: null }
-      const r1 = await supabase
+      const r1 = await admin
         .from('delivery_destinations')
         .select('id, code, full_name, shipping_route_name, departure_time, pack_sort_order, default_container_type')
         .in('id', destinationIds)
       if (!r1.error) return { data: (r1.data ?? []) as DestRow[], error: null }
-      const r2 = await supabase
+      const r2 = await admin
         .from('delivery_destinations')
         .select('id, code, full_name')
         .in('id', destinationIds)
@@ -101,14 +113,14 @@ export default async function DeliveriesPage({
       return { data: (r2.data ?? []) as DestRow[], error: null }
     })(),
     productIds.length
-      ? supabase.from('products').select('id, container_capacity').in('id', productIds)
+      ? admin.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
     packIds.length
-      ? supabase.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
+      ? admin.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
       : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
-    supabase.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
+    admin.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
     customerIds.length
-      ? supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case, default_container_type').in('customer_id', customerIds)
+      ? admin.from('customer_product_rules').select('customer_id, product_id, packs_per_case, default_container_type').in('customer_id', customerIds)
       : Promise.resolve({ data: [] as RuleRow[], error: null }),
     getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
   ])
@@ -119,64 +131,60 @@ export default async function DeliveriesPage({
   if (packRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={packRes.error.message} />
   if (deliveryRes.error) return <ErrorState message="配送チェック状態を読み込めませんでした。" detail={deliveryRes.error.message} />
 
-  const custById = new Map((custRes.data ?? []).map((c) => [c.id, c]))
+  const custById = new Map((custRes.data ?? []).map((c) => [c.id, { name: c.name, display_color: c.display_color }]))
   const destById = new Map((destRes.data ?? []).map((d) => [d.id, d]))
   const capacityById = new Map((prodRes.data ?? []).map((p) => [p.id, p.container_capacity]))
-  const packById = new Map(
-    (packRes.data ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]),
-  )
-  const ruleByPair = new Map(
-    ((rulesRes.data ?? []) as RuleRow[]).map((r) => [`${r.customer_id}:${r.product_id}`, r]),
-  )
-  const deliveryByKey = new Map(
-    (deliveryRes.data ?? []).map((d) => [
-      `${d.customer_id}:${d.destination_id ?? ''}`,
-      { id: d.id, status: d.status as DeliveryStatus, photoUrl: d.photo_url, note: d.note },
-    ]),
-  )
+  const packById = new Map((packRes.data ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]))
+  const ruleByPair = new Map((rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r]))
 
-  // AIやメモから納入先名を補完するヘルパー
-  function extractDestName(note?: string | null, lineNote?: string | null): string | null {
-    if (note) {
-      const m1 = note.match(/(?:納入先|お届け先|配送先)(?:\(OCR\))?[:：\s]+([^\n,、・\]】]+)/)
-      if (m1?.[1]) return m1[1].trim()
-      const m2 = note.match(/【(?:納入先|お届け先|配送先)[:：\s]*([^】]+)】/)
-      if (m2?.[1]) return m2[1].trim()
-    }
-    if (lineNote) {
-      const m3 = lineNote.match(/納入先要確認\(([^)]+)\)/)
-      if (m3?.[1]) return m3[1].trim()
-    }
+  type DeliveryRow = {
+    id: string
+    customer_id: string
+    destination_id: string | null
+    status: DeliveryStatus
+    photo_url: string | null
+    note: string | null
+  }
+  const deliveryByKey = new Map<string, DeliveryRow>()
+  for (const d of (deliveryRes.data ?? []) as DeliveryRow[]) {
+    deliveryByKey.set(`${d.customer_id}:${d.destination_id ?? ''}`, d)
+  }
+
+  // 備考等から納入先・センター名を抽出するヘルパー
+  function extractDestName(orderNote: string | null, lineNote: string | null): string | null {
+    const combined = `${orderNote ?? ''} ${lineNote ?? ''}`
+    const match1 = combined.match(/【納入先[:：]([^】]+)】/)
+    if (match1?.[1]) return match1[1].trim()
+    const match2 = combined.match(/(?:納入先|お届け先|配送先)[:：\s]*([^\s,、・\n\]】]+)/)
+    if (match2?.[1]) return match2[1].trim()
     return null
   }
 
-  function isClockTime(t?: string | null): t is string {
-    return Boolean(t && /^\d{1,2}:\d{2}/.test(t))
+  function isClockTime(t: string | null | undefined): boolean {
+    if (!t) return false
+    return /^\d{1,2}:\d{2}$/.test(t.trim())
   }
 
-  // 便（ルート・出発時刻）の自動解決ヘルパー
   function resolveRouteInfo(
     destName: string | null,
-    customerName: string,
+    customerName: string | null,
     dest?: DestRow | null,
     orderShippingTime?: string | null,
-    override?: { departureTime: string | null; shippingRouteName: string | null } | null,
+    override?: { shippingRouteName?: string | null; departureTime?: string | null } | null,
   ): { title: string; departureTime: string | null } {
-    if (override) {
-      const effectiveTime = isClockTime(override.departureTime) ? override.departureTime : null
-      const routeName = override.shippingRouteName || dest?.shipping_route_name || null
-      if (routeName || effectiveTime) {
-        const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
-        const routeSuffix = routeName ? ` ${routeName}` : ''
-        return {
-          title: `${timePrefix}${routeSuffix}`.trim(),
-          departureTime: effectiveTime,
-        }
+    if (override && (override.shippingRouteName || isClockTime(override.departureTime))) {
+      const effectiveTime = isClockTime(override.departureTime) ? override.departureTime! : null
+      const timePrefix = effectiveTime ? `${effectiveTime}発 ` : ''
+      const routeSuffix = override.shippingRouteName ? ` ${override.shippingRouteName}` : ''
+      return {
+        title: `${timePrefix}${routeSuffix}`.trim() || '指定便',
+        departureTime: effectiveTime,
       }
     }
-    const effectiveTime = isClockTime(dest?.departure_time) ? dest!.departure_time! : isClockTime(orderShippingTime) ? orderShippingTime : null
-    if (dest?.shipping_route_name || effectiveTime) {
-      const timePrefix = effectiveTime ? `${effectiveTime}発` : ''
+
+    if (dest?.shipping_route_name || isClockTime(dest?.departure_time)) {
+      const effectiveTime = isClockTime(dest?.departure_time) ? dest!.departure_time! : null
+      const timePrefix = effectiveTime ? `${effectiveTime}発 ` : ''
       const routeSuffix = dest?.shipping_route_name ? ` ${dest.shipping_route_name}` : ''
       return {
         title: `${timePrefix}${routeSuffix}`.trim(),
@@ -207,7 +215,7 @@ export default async function DeliveriesPage({
   }
 
   // 1. 取引先（customer_id）を最上位キーとするデータ集約（便ごとに分断させない）
-  const orderById = new Map((orders ?? []).map((o) => [o.id, o]))
+  const orderById = new Map(orders.map((o) => [o.id, o]))
 
   const customerGroupMap = new Map<
     string,
@@ -230,7 +238,6 @@ export default async function DeliveriesPage({
     const dest = order.destination_id ? destById.get(order.destination_id) : null
     const destName = dest ? dest.code || dest.full_name : extractDestName(order.note, it.line_note) || '直接納品'
 
-    // 0026未適用環境でも確実に反映されるよう app_settings からの RouteOverride を最優先適用
     const override = (order.destination_id && routeOverrides[`dest:${order.destination_id}`])
       || (destName ? routeOverrides[`cust:${order.customer_id}:${destName}`] : null)
       || routeOverrides[`cust:${order.customer_id}:default`]
@@ -251,16 +258,16 @@ export default async function DeliveriesPage({
       customerGroupMap.set(order.customer_id, cEntry)
     }
 
-    // ルート情報の記録（取引先が複数便にまたがる場合も全ルートを追跡）
     cEntry.routeSet.set(routeInfo.title, routeInfo)
 
-    // 特記事項（事前アクション喚起用メモ）の抽出
-    if (order.note && !order.note.startsWith('【納入先')) {
-      const cleanNote = order.note.replace(/(?:納入先|お届け先|配送先)[^\n,、・\]】]+[\]】]?/g, '').trim()
-      if (cleanNote) cEntry.notesSet.add(cleanNote)
+    // 特記事項（事前アクション喚起用メモ）の抽出：AI自動生成メタ情報は除外し、本当の伝達事項のみを残す
+    const cleanOrderNote = extractActionableNote(order.note)
+    if (cleanOrderNote) {
+      cEntry.notesSet.add(cleanOrderNote)
     }
-    if (it.line_note && (it.line_note.includes('持参') || it.line_note.includes('注意') || it.line_note.includes('便') || it.line_note.includes('コンテナ'))) {
-      cEntry.notesSet.add(it.line_note.trim())
+    const cleanLineNote = extractActionableNote(it.line_note)
+    if (cleanLineNote) {
+      cEntry.notesSet.add(cleanLineNote)
     }
     const deliveryNote = deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.note
     if (deliveryNote?.trim()) {
@@ -271,7 +278,6 @@ export default async function DeliveriesPage({
       cEntry.notesSet.add(customerDefaultNote.trim())
     }
 
-    // 納品先マップへの追加（同一納品先が便やメモ違いで分裂しないよう、納品先IDまたは正規化名で1本化）
     const effectiveDepTime = override?.departureTime !== undefined && isClockTime(override.departureTime)
       ? override.departureTime
       : (isClockTime(dest?.departure_time) ? dest!.departure_time! : routeInfo.departureTime)
@@ -285,7 +291,7 @@ export default async function DeliveriesPage({
       it.container_type || dest?.default_container_type || rule?.default_container_type || null
 
     const destKey = order.destination_id || `name:${destName}`
-    let dEntry = cEntry.destinationsMap.get(destKey) as (DestinationDetail & { _perCase?: number }) | undefined
+    let dEntry = cEntry.destinationsMap.get(destKey)
     if (!dEntry) {
       const delStatus =
         deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.status ??
@@ -322,35 +328,37 @@ export default async function DeliveriesPage({
       }
     }
 
-    // ケース数・端数換算（取引先別ルール ＞ 荷姿マスタ ＞ 規格文字列 ＞ NSK判定 ＞ 商品標準入数20）
+    // ケース数・端数換算（規格・明細ごとに独立して端数箱を計算し、異規格の端数が1箱に混ざるバグを防止）
     let perCase: number | null =
       rule?.packs_per_case ??
       (it.pack_config_id ? packById.get(it.pack_config_id)?.base ?? null : null)
-    if (!perCase || perCase <= 0) {
-      const combinedSpec = `${customerName} ${it.spec || ''}`.normalize('NFKC')
-      const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
-      if (match) {
-        const parsedNum = Number(match[1] || match[2])
-        if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
-          perCase = parsedNum
-        }
+    // 規格文字列に明示的な入数（例: "(入数30)", "10入"）がある場合はそちらを優先
+    const combinedSpec = `${customerName} ${it.spec || ''}`.normalize('NFKC')
+    const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+    if (specMatch) {
+      const parsedNum = Number(specMatch[1] || specMatch[2])
+      if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+        perCase = parsedNum
       }
-      if (!perCase || perCase <= 0) {
-        if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
-          perCase = 24
-        } else {
-          perCase = capacityById.get(it.product_id) ?? 20
-        }
+    }
+    if (!perCase || perCase <= 0) {
+      if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
+        perCase = 24
+      } else {
+        perCase = capacityById.get(it.product_id) ?? 20
       }
     }
     const safePerCase = perCase && perCase > 0 ? perCase : 20
-    dEntry._perCase = safePerCase
 
     const itemCases = Math.floor(it.quantity / safePerCase)
     const itemLoose = it.quantity % safePerCase
+    const itemFractionBox = itemLoose > 0 ? 1 : 0
+    const itemTotalBoxes = itemCases + itemFractionBox
 
     dEntry.cases += itemCases
     dEntry.loose += itemLoose
+    dEntry.fractionBoxes += itemFractionBox
+    dEntry.totalBoxes += itemTotalBoxes
     dEntry.totalQty += it.quantity
     dEntry.items.push({
       id: it.id,
@@ -362,7 +370,7 @@ export default async function DeliveriesPage({
       ),
       unit: it.unit,
       quantity: it.quantity,
-      noteText: [it.spec, resolvedContainer, it.has_card ? 'カード有' : null, it.line_note].filter(Boolean).join('・') || '—',
+      noteText: [it.spec, resolvedContainer, it.has_card ? 'カード有' : null, cleanLineNote || null].filter(Boolean).join('・') || '—',
     })
   }
 
@@ -374,7 +382,7 @@ export default async function DeliveriesPage({
   for (const cEntry of customerGroupMap.values()) {
     const destinationsList = Array.from(cEntry.destinationsMap.values()).filter(
       (d) => d.totalQty > 0 || d.items.length > 0,
-    ) as Array<DestinationDetail & { _perCase?: number }>
+    )
     if (destinationsList.length === 0) continue
 
     let totalCases = 0
@@ -384,14 +392,6 @@ export default async function DeliveriesPage({
     let grandTotalContainers = 0
 
     for (const d of destinationsList) {
-      const foldPerCase = d._perCase && d._perCase > 0 ? d._perCase : 20
-      if (d.loose >= foldPerCase) {
-        d.cases += Math.floor(d.loose / foldPerCase)
-        d.loose %= foldPerCase
-      }
-      d.fractionBoxes = d.loose > 0 ? 1 : 0
-      d.totalBoxes = d.cases + d.fractionBoxes
-
       totalCases += d.cases
       totalFractionBoxes += d.fractionBoxes
       totalFractionPacks += d.loose
@@ -453,8 +453,19 @@ export default async function DeliveriesPage({
   const globalTotalCustomers = customerCards.length
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      {/* 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
+    <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
+      {/* ① ナビゲーションバー（収穫・パックボードと完全に統一した順序） */}
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-xl font-black text-ink">便別積込・配送リスト</h1>
+          <FieldViewSwitch active="day" date={date} />
+        </div>
+        <div className="flex items-center gap-2">
+          <DateNav date={date} basePath={PATH} />
+        </div>
+      </div>
+
+      {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs print:hidden">
         <Link
           href={`/field/shipments?date=${date}`}
@@ -467,16 +478,18 @@ export default async function DeliveriesPage({
         </span>
       </div>
 
-      {/* ヘッダー */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
-        <h1 className="flex items-center gap-2 font-display text-xl sm:text-2xl font-bold text-ink">
-          <Truck className="h-6 w-6 text-earth-600 shrink-0" aria-hidden />
-          <span>便別積込・配送リスト</span>
-        </h1>
-        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
-          <DateNav date={date} basePath={PATH} />
+      {/* 未承認データがある場合の控えめな通知バー */}
+      {pendingReviewCount > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950 print:hidden">
+          <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後にここへ表示されます）</span>
+          <Link
+            href="/admin/inbox"
+            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
+          >
+            確認する →
+          </Link>
         </div>
-      </div>
+      )}
 
       {globalTotalCustomers === 0 ? (
         <EmptyState
@@ -484,7 +497,7 @@ export default async function DeliveriesPage({
           description="承認済み注文の出荷日がこの日になると表示されます。"
         />
       ) : (
-        <DeliveriesBoardView initialCards={customerCards} />
+        <DeliveriesBoardView date={date} initialCards={customerCards} />
       )}
     </div>
   )

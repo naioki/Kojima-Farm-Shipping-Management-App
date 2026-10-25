@@ -17,6 +17,7 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { extractActionableNote } from '@/lib/field/clean-note'
 
 /**
  * ステータス別の配色は lib/field/status-style.ts（単一の正）から取る。
@@ -170,8 +171,12 @@ export function ShipmentRow({
   // 現場メモ専用クイック入力
   const [noteOpen, setNoteOpen] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
+  // 完了済み（パック済 / 出荷済）カードの展開トグル（デフォルトは1行コンパクト表示）
+  const [expandedWhenDone, setExpandedWhenDone] = useState(false)
 
   const meta = FIELD_STATUS_META[status]
+  const isDone = status === 'packed' || status === 'shipped'
+  const actionableLineNote = extractActionableNote(lineNote)
   // 「途中で止まった」= できた数が受注総数に満たない。出荷前でも記録できる。
   const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
   const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum < orderedQty
@@ -486,10 +491,14 @@ export function ShipmentRow({
   const isTomorrowOrder = deliveryDate === tomorrowStr && !isNextDay
   const isFutureOrNextDay = isNextDay || Boolean(deliveryDate && deliveryDate > tomorrowStr)
 
+  const isCollapsedDone =
+    isDone && !expandedWhenDone && !open && !quickOpen && !noteOpen && !undoGrace && !conflict
+
   return (
     <div
       className={cn(
-        'rounded-2xl border p-3.5 shadow-sm transition-all duration-200',
+        'rounded-2xl border shadow-sm transition-all duration-200',
+        isCollapsedDone ? 'px-3.5 py-2.5' : 'p-3.5',
         isFutureOrNextDay
           ? 'border-slate-300 bg-slate-100/95 text-slate-800 shadow-xs'
           : isTodayOrder
@@ -539,284 +548,342 @@ export function ShipmentRow({
         </div>
       )}
 
-      {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
-      <div className="space-y-1.5 pb-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <ColorDot color={customerColor} name={customerName} size="md" />
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              {/* 取引先名（最優先・特大フォント） */}
-              <span className="font-black text-ink text-xl sm:text-2xl tracking-tight">
-                {customerName}
+      {/* 【完了済み1行スリム表示】パック済・出荷済になったカードは自動コンパクト化し、未完了の作業カードを目線の上へ引き上げる */}
+      {isCollapsedDone ? (
+        <div
+          onClick={() => setExpandedWhenDone(true)}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+          title="タップしてカードを展開"
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
+              <Check className="h-3.5 w-3.5" />
+              <span>{status === 'shipped' ? '出荷済' : '済'}</span>
+            </span>
+            <ColorDot color={customerColor} name={customerName} size="sm" />
+            <span className="font-black text-ink text-sm sm:text-base truncate">
+              {customerName}
+            </span>
+            {destinationName && customerName !== destinationName && (
+              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
+                <span>▶</span>
+                <span className="truncate max-w-[110px] sm:max-w-[160px]">{destinationName}</span>
               </span>
+            )}
+            {(spec || masterLabelSpec) && (
+              <span className="hidden sm:inline text-xs font-bold text-ink-soft truncate">
+                ({spec || masterLabelSpec})
+              </span>
+            )}
+          </div>
 
-              {/* 納品先名（別納入先であることが一目で分かる視覚的バッジ） */}
-              {destinationName && customerName !== destinationName && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-base sm:text-lg tracking-tight shadow-xs">
-                  <span className="text-emerald-700 text-sm">▶</span>
-                  {destinationName}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="num text-sm sm:text-base font-black text-ink tabular-nums">
+              {orderedQty}P
+              <span className="text-xs font-bold text-ink-soft ml-1">
+                ({casesText}c{Number(looseText) > 0 ? `+${looseText}P` : ''})
+              </span>
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation()
+                setConfirmOpen(true)
+              }}
+              className="h-8 rounded-lg border border-line-strong bg-white px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
+              title="未完了に戻す"
+            >
+              戻す
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setExpandedWhenDone(true)
+              }}
+              className="h-8 w-8 rounded-lg border border-line bg-white/80 flex items-center justify-center text-ink-soft hover:text-ink"
+              title="カードを展開"
+              aria-label="カードを展開"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* ① 見出し情報: 納品先 ＆ 品名・規格 */}
+          <div className="space-y-1.5 pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <ColorDot color={customerColor} name={customerName} size="md" />
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  {/* 取引先名（最優先・特大フォント） */}
+                  <span className="font-black text-ink text-lg sm:text-xl tracking-tight">
+                    {customerName}
+                  </span>
+
+                  {/* 納品先名（別納入先であることが一目で分かる視覚的バッジ） */}
+                  {destinationName && customerName !== destinationName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm sm:text-base tracking-tight shadow-xs">
+                      <span className="text-emerald-700 text-xs">▶</span>
+                      {destinationName}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                {actionableLineNote.includes('★新規追加') && (
+                  <span className="inline-flex items-center rounded-md bg-orange-500 px-2 py-0.5 text-xs font-black text-white shadow-xs">
+                    新規 ★
+                  </span>
+                )}
+                {(actionableLineNote.includes('手書き修正') || actionableLineNote.includes('数量変更:')) && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
+                    📝 修正あり
+                  </span>
+                )}
+                {(needsManualConfirm || actionableLineNote.includes('⚠')) &&
+                  !actionableLineNote.includes('手書き修正') &&
+                  !actionableLineNote.includes('数量変更:') && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900 shadow-xs">
+                      ⚠️ 要確認
+                    </span>
+                  )}
+                {isDone && expandedWhenDone && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedWhenDone(false)}
+                    className="rounded-lg border border-line bg-white px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                  >
+                    1行に畳む ▲
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm sm:text-base font-extrabold text-ink-soft leading-tight">
+                {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'}
+              </div>
+              {(onMoveUp || onMoveDown) && (
+                <div className="flex items-center gap-1 shrink-0">
+                  {onMoveUp && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onMoveUp()
+                      }}
+                      disabled={busy}
+                      className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
+                      title="上へ移動"
+                    >
+                      ▲
+                    </button>
+                  )}
+                  {onMoveDown && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onMoveDown()
+                      }}
+                      disabled={busy}
+                      className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
+                      title="下へ移動"
+                    >
+                      ▼
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 本当の現場伝達事項（数量変更・手書き修正・入数変更・空コンテナ等）がある場合のみオレンジ注意バーを表示 */}
+            {actionableLineNote && (
+              <div className="mt-1 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-950 flex items-center gap-1.5">
+                <span>
+                  {actionableLineNote.includes('手書き修正') ||
+                  actionableLineNote.includes('数量変更') ||
+                  actionableLineNote.includes('入数変更')
+                    ? '📝'
+                    : '⚠️'}
+                </span>
+                <span>注意: {actionableLineNote}</span>
+              </div>
+            )}
+
+            {/* 資材タグバー（実際に指定・存在する項目のみ表示） */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              {container && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-900 border border-sky-200">
+                  📦 {container}
+                </span>
+              )}
+              {hasCard && (
+                <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
+                  🃏 カード有
+                </span>
+              )}
+              {bagType && (
+                <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
+                  🛍️ {bagType}
+                </span>
+              )}
+              {(hasSeal || sealText) && (
+                <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-800 border border-rose-200">
+                  🏷️ {sealText || 'シール有'}
+                </span>
+              )}
+              {masterTapeColor && (
+                <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+                  テープ: {masterTapeColor}
+                </span>
+              )}
+              {masterPackingNotes && (
+                <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-800 border border-purple-200">
+                  📝 {masterPackingNotes}
                 </span>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            {lineNote?.includes('★新規追加') && (
-              <span className="inline-flex items-center rounded-md bg-orange-500 px-2.5 py-0.5 text-xs font-black text-white shadow-xs">
-                新規 ★
-              </span>
-            )}
-            {(lineNote?.includes('手書き修正') || lineNote?.includes('数量変更:')) && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-xs">
-                📝 修正あり
-              </span>
-            )}
-            {(needsManualConfirm || lineNote?.includes('⚠')) && !lineNote?.includes('手書き修正') && !lineNote?.includes('数量変更:') && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900 shadow-xs">
-                ⚠️ 注意（要確認）
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-start justify-between gap-2">
-          <div className="text-base font-extrabold text-ink leading-tight">
-            {spec || masterLabelSpec ? `${spec || masterLabelSpec}` : (customerName)}
-          </div>
-          {(onMoveUp || onMoveDown) && (
-            <div className="flex items-center gap-1 shrink-0">
-              {onMoveUp && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onMoveUp()
-                  }}
-                  disabled={busy}
-                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
-                  title="上へ移動"
-                >
-                  ▲
-                </button>
-              )}
-              {onMoveDown && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onMoveDown()
-                  }}
-                  disabled={busy}
-                  className="h-7 w-7 rounded-lg border border-line bg-white text-xs font-bold text-ink-soft hover:bg-bg-soft disabled:opacity-40"
-                  title="下へ移動"
-                >
-                  ▼
-                </button>
-              )}
-            </div>
-          )}
-        </div>
 
-        {/* GAS版準拠：数量変更・手書き修正・要確認のオレンジ警告バー（常時露出） */}
-        {lineNote && (lineNote.includes('数量変更:') || lineNote.includes('⚠') || lineNote.includes('手書き修正') || lineNote.includes('入数変更')) && (
-          <div className="mt-1.5 rounded-xl border-l-4 border-orange-500 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-950 flex items-center gap-1.5">
-            <span>{lineNote.includes('手書き修正') || lineNote.includes('数量変更') || lineNote.includes('入数変更') ? '📝' : '⚠️'}</span>
-            <span>注意: {lineNote}</span>
-          </div>
-        )}
-
-        {/* 資材タグバー（実際に指定・存在する項目のみ表示・「カード不要」などの不要な否定記述は一切非表示） */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {container && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-900 border border-sky-200">
-              📦 {container}
-            </span>
-          )}
-          {hasCard && (
-            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-800 border border-indigo-200">
-              🃏 カード有
-            </span>
-          )}
-          {bagType && (
-            <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
-              🛍️ {bagType}
-            </span>
-          )}
-          {(hasSeal || sealText) && (
-            <span className="inline-flex items-center rounded-md bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-800 border border-rose-200">
-              🏷️ {sealText || 'シール有'}
-            </span>
-          )}
-          {masterTapeColor && (
-            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
-              テープ: {masterTapeColor}
-            </span>
-          )}
-          {masterPackingNotes && (
-            <span className="inline-flex items-center rounded-md bg-purple-50 px-2.5 py-0.5 text-xs font-bold text-purple-800 border border-purple-200">
-              📝 {masterPackingNotes}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ② 数量グリッド（ケース数 / 端数パック） */}
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
-          <span className="block text-xs sm:text-sm font-bold text-ink">ケース数</span>
-          <span className="num mt-0.5 block text-xl font-black text-ink tabular-nums">
-            {casesText !== '—' ? `${casesText} ケース` : `${quantityText}`}
-          </span>
-        </div>
-        <div className="rounded-xl border border-line bg-bg-soft/40 p-2.5 text-center">
-          <span className="block text-xs sm:text-sm font-bold text-ink">端数パック</span>
-          <div className="num mt-0.5 flex items-center justify-center gap-1.5 tabular-nums">
-            <span className="text-xl font-black text-ink">
-              {looseText !== '—' ? `${looseText} P` : '0 P'}
-            </span>
-            {Number(looseText) > 0 && (
-              <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 border border-amber-300">
-                1コンテナ
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ③ 【最重要】総パック数カード（今日便＝スカイネイビー / 本日パック＝フォレストグリーン / 翌日先行＝シックなチャコール） */}
-      <div
-        className={cn(
-          'rounded-xl p-3.5 text-white mb-3 shadow-sm transition-colors',
-          isFutureOrNextDay
-            ? 'bg-[#334155] border border-slate-500/30'
-            : isTodayOrder
-            ? 'bg-[#0369a1] border border-sky-600/30'
-            : 'bg-[#1b5e20]',
-        )}
-      >
-        <div className="flex items-center justify-between text-sm font-black text-white/95 tracking-wide">
-          <span>
-            {isFutureOrNextDay
-              ? '総パック数（翌日先行分）'
-              : isTodayOrder
-              ? '総パック数（当日出荷分）'
-              : '総パック数'}
-          </span>
-          {isFutureOrNextDay ? (
-            <span className="rounded bg-slate-800/80 px-2 py-0.5 text-[10px] font-bold text-slate-300">
-              📅 翌日作業枠
-            </span>
-          ) : isTodayOrder ? (
-            <span className="rounded bg-sky-900/80 px-2 py-0.5 text-[10px] font-bold text-sky-200">
-              🚚 当日便
-            </span>
-          ) : (
-            <span className="rounded bg-emerald-900/80 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
-              🥬 本日パック
-            </span>
-          )}
-        </div>
-        <div className="num mt-0.5 text-3xl font-black tracking-tight text-white tabular-nums">
-          {orderedQty} <span className="text-lg font-bold text-white/80">P</span>
-        </div>
-      </div>
-
-      {/* ⑤ アクションボタン（モバイル最適化・大きなタップターゲット） */}
-      <div className="space-y-2">
-        {/* 1段目: メインステータスボタン（パック画面では「パック済」のみを全幅で大きく表示） */}
-        <div className={cn('grid gap-2', showShippingButton ? 'grid-cols-2' : 'grid-cols-1')}>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              if (status === 'not_started') {
-                advanceTo('packed')
-              } else if (status === 'packed') {
-                setConfirmOpen(true)
-              }
-            }}
+          {/* ② 統合数量ブロック（総パック数 ＋ ケース数・端数を1つの見やすいブロックに凝縮、重複していた日付ラベルは撤去） */}
+          <div
             className={cn(
-              'h-12 rounded-xl text-base font-bold shadow-xs transition-all active:scale-[0.98]',
-              status === 'packed'
-                ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 ring-offset-1'
-                : status === 'shipped'
-                ? 'border border-line bg-bg-soft/70 text-ink-muted'
-                : 'border-2 border-emerald-600/50 bg-white text-emerald-800 hover:bg-emerald-50',
+              'rounded-xl px-3.5 py-2.5 text-white mb-2.5 shadow-sm transition-colors flex flex-wrap items-center justify-between gap-2',
+              isFutureOrNextDay
+                ? 'bg-[#334155] border border-slate-500/30'
+                : isTodayOrder
+                ? 'bg-[#0369a1] border border-sky-600/30'
+                : 'bg-[#1b5e20]',
             )}
           >
-            {status === 'packed' ? '✓ パック済' : 'パック済にする'}
-          </button>
+            {/* 左側: 総パック数 */}
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-black text-white/85 tracking-wide">総パック数</span>
+              <span className="num text-2xl sm:text-3xl font-black tracking-tight text-white tabular-nums leading-none">
+                {orderedQty.toLocaleString()}
+                <span className="text-base sm:text-lg font-bold text-white/85 ml-1">P</span>
+              </span>
+            </div>
 
-          {showShippingButton && (
+            {/* 右側: ケース数 ＋ 端数内訳 */}
+            <div className="flex items-center gap-1.5 rounded-lg bg-black/20 border border-white/15 px-2.5 py-1 text-xs sm:text-sm font-black tabular-nums">
+              <span>
+                {casesText !== '—' ? `${casesText} ケース` : quantityText}
+              </span>
+              {Number(looseText) > 0 ? (
+                <>
+                  <span className="text-white/60">＋</span>
+                  <span className="rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-xs font-black">
+                    端数 {looseText}P (1箱)
+                  </span>
+                </>
+              ) : (
+                <span className="text-white/75 text-xs font-bold">（端数0）</span>
+              )}
+            </div>
+          </div>
+
+          {/* ③ 1段スマートアクションバー（高さ44px以上の押しやすいタップ領域でカード高さを大幅スリム化） */}
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              disabled={busy || status === 'not_started'}
+              disabled={busy}
               onClick={() => {
-                if (status === 'packed') {
-                  advanceTo('shipped')
-                } else if (status === 'shipped') {
+                if (status === 'not_started') {
+                  advanceTo('packed')
+                } else if (status === 'packed') {
                   setConfirmOpen(true)
                 }
               }}
               className={cn(
-                'h-12 rounded-xl text-base font-bold shadow-xs transition-all active:scale-[0.98]',
-                status === 'shipped'
-                  ? 'bg-sky-600 text-white ring-2 ring-sky-600 ring-offset-1'
-                  : status === 'packed'
-                  ? 'border-2 border-sky-600/60 bg-white text-sky-800 hover:bg-sky-50'
-                  : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
+                'h-11 flex-1 rounded-xl px-3 text-sm sm:text-base font-black shadow-xs transition-all active:scale-[0.98]',
+                status === 'packed'
+                  ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 ring-offset-1'
+                  : status === 'shipped'
+                  ? 'border border-line bg-bg-soft/70 text-ink-muted'
+                  : 'border-2 border-emerald-600 bg-white text-emerald-800 hover:bg-emerald-50',
               )}
             >
-              {status === 'shipped' ? '✓ 出荷済' : '出荷済'}
+              {status === 'packed' ? '✓ パック済' : '✓ パック済にする'}
             </button>
-          )}
-        </div>
 
-        {/* 2段目: 補助ボタン [ 途中数 ] [ 💬 メモ ]（大きく押しやすい2大ボタン・排他制御） */}
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setQuickOpen(!quickOpen)
-              if (!quickOpen) setNoteOpen(false)
-            }}
-            className={cn(
-              "h-12 rounded-xl border text-sm font-bold shadow-xs transition-all active:scale-[0.97]",
-              isPartial
-                ? "border-amber-400 bg-amber-100 text-amber-950 font-black ring-1 ring-amber-400"
-                : "border-line-strong bg-white text-ink hover:bg-bg-soft",
+            {showShippingButton && (
+              <button
+                type="button"
+                disabled={busy || status === 'not_started'}
+                onClick={() => {
+                  if (status === 'packed') {
+                    advanceTo('shipped')
+                  } else if (status === 'shipped') {
+                    setConfirmOpen(true)
+                  }
+                }}
+                className={cn(
+                  'h-11 rounded-xl px-3 text-xs sm:text-sm font-black shadow-xs transition-all active:scale-[0.98]',
+                  status === 'shipped'
+                    ? 'bg-sky-600 text-white ring-2 ring-sky-600 ring-offset-1'
+                    : status === 'packed'
+                    ? 'border-2 border-sky-600/60 bg-white text-sky-800 hover:bg-sky-50'
+                    : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
+                )}
+              >
+                {status === 'shipped' ? '✓ 出荷済' : '出荷済'}
+              </button>
             )}
-          >
-            {isPartial ? `途中 (${shippedNum}P)` : "途中数"}
-          </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setNoteOpen(!noteOpen)
-              if (!noteOpen) setQuickOpen(false)
-            }}
-            className={cn(
-              "h-12 rounded-xl border text-sm font-bold shadow-xs transition-all active:scale-[0.97]",
-              fieldNote.trim() !== ''
-                ? "border-blue-400 bg-blue-50 text-blue-950 font-black ring-1 ring-blue-300"
-                : "border-line-strong bg-white text-ink hover:bg-bg-soft",
-            )}
-          >
-            {fieldNote.trim() !== '' ? '💬 メモあり' : '💬 メモ'}
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => {
+                setQuickOpen(!quickOpen)
+                if (!quickOpen) setNoteOpen(false)
+              }}
+              className={cn(
+                'h-11 shrink-0 rounded-xl border px-2.5 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-[0.97]',
+                isPartial
+                  ? 'border-amber-400 bg-amber-100 text-amber-950 font-black ring-1 ring-amber-400'
+                  : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
+              )}
+            >
+              {isPartial ? `途中(${shippedNum}P)` : '途中数'}
+            </button>
 
-      {/* ⑥ 開閉トグルリンク */}
-      <div className="pt-2 text-center">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-ink-soft hover:text-ink py-1"
-        >
-          <span>{open ? '詳細を閉じる' : '詳細を見る'}</span>
-          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
-        </button>
-      </div>
+            <button
+              type="button"
+              onClick={() => {
+                setNoteOpen(!noteOpen)
+                if (!noteOpen) setQuickOpen(false)
+              }}
+              className={cn(
+                'h-11 shrink-0 rounded-xl border px-2.5 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-[0.97]',
+                fieldNote.trim() !== ''
+                  ? 'border-blue-400 bg-blue-50 text-blue-950 font-black ring-1 ring-blue-300'
+                  : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
+              )}
+            >
+              {fieldNote.trim() !== '' ? '💬メモ有' : '💬メモ'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              className={cn(
+                'h-11 shrink-0 rounded-xl border px-2.5 text-xs font-bold shadow-xs transition-all inline-flex items-center gap-0.5',
+                open
+                  ? 'border-forest-600 bg-forest-50 text-forest-900'
+                  : 'border-line bg-white text-ink-soft hover:text-ink hover:bg-bg-soft',
+              )}
+              title={open ? '詳細を閉じる' : '詳細を見る'}
+            >
+              <span className="hidden xs:inline">詳細</span>
+              <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+            </button>
+          </div>
+        </>
+      )}
 
       {/* ステータス変更直後の「元に戻す」猶予バー */}
       {undoGrace && (

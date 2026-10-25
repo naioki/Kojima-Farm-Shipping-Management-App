@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { ErrorState } from '@/components/ui/States'
@@ -32,48 +33,83 @@ export const fetchCache = 'force-no-store'
 
 const PATH = '/field/shipments'
 
+function resolveItemPerCase(
+  packBase: number | null | undefined,
+  rulePacksPerCase: number | null | undefined,
+  customerName: string,
+  spec: string | null | undefined,
+  defaultCap: number | null | undefined,
+): number {
+  const combinedSpec = `${customerName} ${spec || ''}`.normalize('NFKC')
+  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  if (specMatch) {
+    const parsedNum = Number(specMatch[1] || specMatch[2])
+    if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+      return parsedNum
+    }
+  }
+  if (packBase && packBase > 0) return packBase
+  if (rulePacksPerCase && rulePacksPerCase > 0) return rulePacksPerCase
+  if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
+  if (defaultCap && defaultCap > 0) return defaultCap
+  return 20
+}
+
 export default async function ShipmentsPage({
   searchParams,
 }: {
   searchParams: { date?: string; product?: string }
 }) {
+  const user = await getAuthedUser()
+  if (!user) redirect('/login')
+
   // パック・収穫は全品目「出荷日の前日に収穫・パック」の原則に従うため、
   // デフォルトは翌日（明日出荷分 ＝ 本日パック作業対象）
   const defaultDate = shiftDateStr(jstTodayStr(), 1)
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : defaultDate
-  const supabase = createClient()
   const admin = createAdminClient()
 
-  const user = await getAuthedUser()
-  const { data: profile, error: profileErr } = user
-    ? await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-    : { data: null, error: null }
+  const { data: profile, error: profileErr } = await admin
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
   if (profileErr) console.error('[field/shipments] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const isAdmin = role === 'admin'
   const staffFeatures = await getStaffFeatures()
   const canReportSpec = canStaffUse('reportSpec', role, staffFeatures)
 
-  // ① 全商品一覧の取得（品目タブ構築用）
-  const { data: allProducts, error: prodErr } = await supabase
-    .from('products')
-    .select('id, name, unit, category')
-    .eq('is_active', true)
-    .order('category', { nullsFirst: false })
-    .order('name')
-  if (prodErr) return <ErrorState message={`商品の読み込みに失敗しました: ${prodErr.message}`} />
+  // ① 全商品一覧 ＆ ② 当日の承認済み注文（未承認pending_reviewは別カウント）を並列取得
+  const [prodListRes, ordersRes, pendingRes] = await Promise.all([
+    admin
+      .from('products')
+      .select('id, name, unit, category')
+      .eq('is_active', true)
+      .order('category', { nullsFirst: false })
+      .order('name'),
+    admin
+      .from('orders')
+      .select('id, customer_id, destination_id, status')
+      .eq('delivery_date', date)
+      .in('status', ['approved', 'shipped', 'invoiced']),
+    admin
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('delivery_date', date)
+      .eq('status', 'pending_review'),
+  ])
 
-  // ② 当日の注文（キャンセル除外）
-  const { data: orders, error: ordersErr } = await supabase
-    .from('orders')
-    .select('id, customer_id, destination_id, status')
-    .eq('delivery_date', date)
-    .neq('status', 'cancelled')
-  if (ordersErr) return <ErrorState message={ordersErr.message} />
+  if (prodListRes.error) return <ErrorState message={`商品の読み込みに失敗しました: ${prodListRes.error.message}`} />
+  if (ordersRes.error) return <ErrorState message={ordersRes.error.message} />
 
-  const orderIds = (orders ?? []).map((o) => o.id)
-  const orderToCustomer = new Map((orders ?? []).map((o) => [o.id, o.customer_id]))
-  const orderToDestination = new Map((orders ?? []).map((o) => [o.id, o.destination_id]))
+  const allProducts = prodListRes.data ?? []
+  const orders = ordersRes.data ?? []
+  const pendingReviewCount = pendingRes.count ?? 0
+
+  const orderIds = orders.map((o) => o.id)
+  const orderToCustomer = new Map(orders.map((o) => [o.id, o.customer_id]))
+  const orderToDestination = new Map(orders.map((o) => [o.id, o.destination_id]))
 
   // ③ 当日の明細取得（0026未適用DB環境にも安全にフォールバック）
   type RawOrderItemRow = {
@@ -105,7 +141,7 @@ export default async function ShipmentsPage({
   }
   let allItems: RawOrderItemRow[] = []
   if (orderIds.length) {
-    const v5ItemsRes = await supabase
+    const v5ItemsRes = await admin
       .from('order_items')
       .select(`
         id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -116,7 +152,7 @@ export default async function ShipmentsPage({
       .in('order_id', orderIds)
       .order('product_name')
     if (v5ItemsRes.error) {
-      const fallbackRes = await supabase
+      const fallbackRes = await admin
         .from('order_items')
         .select(`
           id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -143,7 +179,7 @@ export default async function ShipmentsPage({
   }
 
   // ゼロ件の品目タブは非表示（全品目0件の場合は先頭品目1件のみ表示して空案内を表示）
-  const nonMaterialProducts = (allProducts ?? []).filter((p) => p.category !== '資材')
+  const nonMaterialProducts = allProducts.filter((p) => p.category !== '資材')
   const rawTabs: ProductTabItem[] = nonMaterialProducts
     .map((p) => ({
       id: p.id,
@@ -156,16 +192,16 @@ export default async function ShipmentsPage({
   const productTabs: ProductTabItem[] = activeTabs.length > 0 ? activeTabs : rawTabs.slice(0, 1)
 
   // 選択された品目（クエリ指定がなければ注文数が最大の品目、それもなければ先頭品目）
-  const selectedProductId = searchParams.product && allProducts?.some((p) => p.id === searchParams.product)
+  const selectedProductId = searchParams.product && allProducts.some((p) => p.id === searchParams.product)
     ? searchParams.product
     : productTabs[0]?.id || ''
-  const selectedProduct = allProducts?.find((p) => p.id === selectedProductId)
+  const selectedProduct = allProducts.find((p) => p.id === selectedProductId)
 
   // ⑤ 選択された1品目の明細行に絞り込み（単一品目フォーカス・数量0は非表示）
   const items = allItems.filter((i) => i.product_id === selectedProductId && (Number(i.quantity) || 0) > 0)
 
   // ⑥ 納入先（出発便・時間・デフォルト作業順・コンテナ）取得（0026フォールバック付き）
-  const customerIds = [...new Set((orders ?? []).map((o) => o.customer_id))]
+  const customerIds = [...new Set(orders.map((o) => o.customer_id))]
   const productIds = [...new Set(items.map((i) => i.product_id))]
 
   type DestRow = {
@@ -180,27 +216,27 @@ export default async function ShipmentsPage({
     default_container_type?: string | null
   }
 
-  // マスタ取得（取引先・納入先・ルールを一括取得し、明細集計と追加フォームで共有）
+  // マスタ取得（RLS遮断防止のためすべて admin クライアントで取得）
   const [custRes, prodCapRes, destRows, rulesRes, routeOverrides, packSortMap] = await Promise.all([
-    supabase.from('customers').select('id, name, display_color').eq('is_active', true).order('name'),
+    admin.from('customers').select('id, name, display_color').eq('is_active', true).order('name'),
     productIds.length
-      ? supabase.from('products').select('id, container_capacity').in('id', productIds)
+      ? admin.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
     (async (): Promise<DestRow[]> => {
-      const r1 = await supabase
+      const r1 = await admin
         .from('delivery_destinations')
         .select('id, customer_id, code, full_name, sort_order, pack_sort_order, shipping_route_name, departure_time, default_container_type')
         .eq('is_active', true)
         .order('sort_order')
       if (!r1.error) return (r1.data ?? []) as DestRow[]
-      const r2 = await supabase
+      const r2 = await admin
         .from('delivery_destinations')
         .select('id, customer_id, code, full_name, sort_order')
         .eq('is_active', true)
         .order('sort_order')
       return (r2.data ?? []) as DestRow[]
     })(),
-    supabase.from('customer_product_rules').select('*'),
+    admin.from('customer_product_rules').select('*'),
     getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
     (async (): Promise<Record<string, number>> => {
       try {
@@ -235,7 +271,7 @@ export default async function ShipmentsPage({
   // 荷姿マスタ取得
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
   const { data: packRows, error: packErr } = packIds.length
-    ? await supabase
+    ? await admin
         .from('pack_configs')
         .select(`
           id, base_per_selling, selling_unit_label, needs_manual_confirm, spec_note, has_card,
@@ -250,7 +286,7 @@ export default async function ShipmentsPage({
   const needsConfirmByPack = new Map((packRows ?? []).map((p) => [p.id, p.needs_manual_confirm]))
   const packInstructionsById = new Map((packRows ?? []).map((p) => [p.id, p as PackInstructionValues]))
 
-  // 受注原本取得（RLSによるスタッフ閲覧遮断を防ぐため adminClient を使用、週間マトリクス等の複数日展開も完全紐付け）
+  // 受注原本取得
   function checkReceiptHasFile(receiptRow: { r2_key?: string | null; raw_payload?: unknown }): boolean {
     const p = (receiptRow.raw_payload ?? {}) as Record<string, unknown>
     const slip = (p['slip_data'] ?? {}) as Record<string, unknown>
@@ -268,7 +304,6 @@ export default async function ShipmentsPage({
 
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
   if (orderIds.length > 0) {
-    // ① 直接 order_id が一致するレコード
     const { data: directReceipts } = await admin
       .from('order_receipts')
       .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
@@ -289,7 +324,6 @@ export default async function ShipmentsPage({
       }
     }
 
-    // ② 週間マトリクス等で order_id が先頭1件のみになっているレコードの広域解決
     const missingOrderIds = orderIds.filter((oid) => !receiptByOrder.has(oid))
     if (missingOrderIds.length > 0 && customerIds.length > 0) {
       const { data: candidateReceipts } = await admin
@@ -307,7 +341,6 @@ export default async function ShipmentsPage({
 
         const hasFile = checkReceiptHasFile(cr)
 
-        // created_order_ids に含まれている注文
         for (const mId of missingOrderIds) {
           if (cOrderIds.includes(mId) && !receiptByOrder.has(mId)) {
             receiptByOrder.set(mId, {
@@ -321,28 +354,25 @@ export default async function ShipmentsPage({
             })
           }
         }
+      }
 
-        // parsed_orders に含まれる日付・取引先の注文を照合
-        const parsedOrders = Array.isArray(p['parsed_orders'])
-          ? (p['parsed_orders'] as Array<{ delivery_date?: string; destination_name?: string }>)
-          : []
-        for (const mId of missingOrderIds) {
-          if (receiptByOrder.has(mId)) continue
-          const oCust = orderToCustomer.get(mId)
-          if (oCust && oCust === cr.customer_id) {
-            const hasDateMatch = parsedOrders.some((po) => po.delivery_date === date)
-            if (hasDateMatch || cr.delivery_date === date) {
-              receiptByOrder.set(mId, {
-                id: cr.id,
-                channel: cr.channel,
-                hasOriginal: hasFile,
-                originalUrl: hasFile ? `/field/viewer/${cr.id}?date=${date}` : null,
-                emailText: null,
-                isRevision: Boolean(cr.is_revision),
-                parent: null,
-              })
-            }
-          }
+      for (const mId of missingOrderIds) {
+        if (receiptByOrder.has(mId)) continue
+        const custId = orderToCustomer.get(mId)
+        if (!custId) continue
+        const fallbackReceipt = (candidateReceipts ?? []).find(
+          (cr) => cr.customer_id === custId && checkReceiptHasFile(cr)
+        )
+        if (fallbackReceipt) {
+          receiptByOrder.set(mId, {
+            id: fallbackReceipt.id,
+            channel: fallbackReceipt.channel,
+            hasOriginal: true,
+            originalUrl: `/field/viewer/${fallbackReceipt.id}?date=${date}`,
+            emailText: null,
+            isRevision: Boolean(fallbackReceipt.is_revision),
+            parent: null,
+          })
         }
       }
     }
@@ -375,11 +405,13 @@ export default async function ShipmentsPage({
     const ruleSealText = typeof rule?.seal_text === 'string' ? rule.seal_text : null
     const ruleHasSeal = typeof rule?.has_seal === 'boolean' ? rule.has_seal : null
 
-    // 入数判定: pack_configs -> customer_product_rules -> 規格文字抽出(determineUnitCount) -> チンゲン菜標準20
-    const explicitUnit = pack?.base || rulePacksPerCase || capacityById.get(it.product_id)
-    const perCase = explicitUnit && explicitUnit > 0
-      ? explicitUnit
-      : (cName.includes('農業総合研究所') || cName.includes('NSK') || (it.spec ?? '').includes('24') ? 24 : 20)
+    const perCase = resolveItemPerCase(
+      pack?.base,
+      rulePacksPerCase,
+      cName,
+      it.spec || ruleLabelSpec,
+      capacityById.get(it.product_id),
+    )
 
     const qty = it.quantity
 
@@ -419,7 +451,7 @@ export default async function ShipmentsPage({
       customerName: cName,
       customerColor: color,
       destinationName: dName,
-      quantityText: formatQty(qty, capacityById.get(it.product_id) ?? null, pack),
+      quantityText: formatQty(qty, perCase, pack),
       orderedQty: qty,
       initialStatus: it.field_status,
       initialVersion: it.version,
@@ -464,23 +496,23 @@ export default async function ShipmentsPage({
     boxes: data.boxes,
   }))
 
-  // 翌日の注文明細（翌日先行枠・閲覧用）
+  // 翌日の承認済み注文明細（翌日先行枠・閲覧用）
   const nextDateStr = shiftDateStr(date, 1)
   const nextShipmentItems: ShipmentItemData[] = []
 
   if (selectedProductId) {
-    const { data: nextOrders } = await supabase
+    const { data: nextOrders } = await admin
       .from('orders')
       .select('id, customer_id, destination_id')
       .eq('delivery_date', nextDateStr)
-      .neq('status', 'cancelled')
+      .in('status', ['approved', 'shipped', 'invoiced'])
 
     const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
     const nextOrderCustMap = new Map((nextOrders ?? []).map((o) => [o.id, o.customer_id]))
     const nextOrderDestMap = new Map((nextOrders ?? []).map((o) => [o.id, o.destination_id]))
 
     if (nextOrderIds.length > 0) {
-      const { data: nextItems } = await supabase
+      const { data: nextItems } = await admin
         .from('order_items')
         .select(`
           id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -510,10 +542,13 @@ export default async function ShipmentsPage({
         const ruleSealText = typeof rule?.seal_text === 'string' ? rule.seal_text : null
         const ruleHasSeal = typeof rule?.has_seal === 'boolean' ? rule.has_seal : null
 
-        let perCase = pack?.base || rulePacksPerCase || defCapacity
-        if (!perCase || perCase <= 0) {
-          perCase = (cName.includes('農業総合研究所') || cName.includes('NSK') || (ni.spec ?? '').includes('24') ? 24 : 20)
-        }
+        const perCase = resolveItemPerCase(
+          pack?.base,
+          rulePacksPerCase,
+          cName,
+          ni.spec || ruleLabelSpec,
+          defCapacity,
+        )
 
         const qty = Number(ni.quantity) || 0
         if (qty <= 0) continue
@@ -538,7 +573,7 @@ export default async function ShipmentsPage({
           customerName: cName,
           customerColor: color,
           destinationName: dName,
-          quantityText: formatQty(qty, capacityById.get(ni.product_id) ?? null, pack),
+          quantityText: formatQty(qty, perCase, pack),
           orderedQty: qty,
           initialStatus: ni.field_status,
           initialVersion: ni.version,
@@ -602,6 +637,19 @@ export default async function ShipmentsPage({
         </Link>
       </div>
 
+      {/* 未承認データがある場合の控えめな通知バー */}
+      {pendingReviewCount > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950">
+          <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後に作業リストへ反映されます）</span>
+          <Link
+            href="/admin/inbox"
+            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
+          >
+            確認する →
+          </Link>
+        </div>
+      )}
+
       {/* ① 最上部：品目セレクタ（タブ） */}
       <ProductSelectorTabs
         products={productTabs}
@@ -650,9 +698,9 @@ export default async function ShipmentsPage({
       {/* ④ スマート追加フォーム */}
       <ShipmentAddForm
         deliveryDate={date}
-        customers={(allCustomers ?? []).map((c) => ({ id: c.id, name: c.name }))}
-        products={(allProducts ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
-        destinations={(allDestinations ?? []).map((d) => ({
+        customers={allCustomers.map((c) => ({ id: c.id, name: c.name }))}
+        products={allProducts.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
+        destinations={allDestinations.map((d) => ({
           id: d.id,
           customerId: d.customer_id ?? '',
           label: d.code?.trim() || d.full_name,
