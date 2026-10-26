@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { items } = body as { items: Array<{ id: string; sortOrder: number }> }
+  const { items } = body as { items: Array<{ id: string; sortOrder: number | null }> }
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json({ error: 'items array required' }, { status: 400 })
   }
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   const promises = items.map((it) =>
     admin
       .from('order_items')
-      .update({ daily_pack_sort_order: it.sortOrder })
+      .update({ daily_pack_sort_order: it.sortOrder ?? null })
       .eq('id', it.id),
   )
 
@@ -66,7 +66,11 @@ export async function POST(req: NextRequest) {
         }
 
         for (const it of items) {
-          map[it.id] = it.sortOrder
+          if (it.sortOrder == null) {
+            delete map[it.id]
+          } else {
+            map[it.id] = it.sortOrder
+          }
         }
 
         // 肥大化防止（最新500件程度を保持）

@@ -96,6 +96,7 @@ export interface ShipmentRowProps {
   isNextDay?: boolean
   /** 未完了カードの先頭1枚目（NEXT UP スポットライト表示） */
   isNextUp?: boolean
+  onMoveToTop?: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   /** 出荷済ボタンを表示するかどうか（出荷専用画面でのみ true、パック画面では非表示にしてパック済ボタンを大きく配置） */
@@ -147,6 +148,7 @@ export function ShipmentRow({
   sealText,
   hasSeal,
   deliveryDate,
+  onMoveToTop,
   onMoveUp,
   onMoveDown,
   showShippingButton = false,
@@ -728,8 +730,22 @@ export function ShipmentRow({
                   <span>{spec || masterLabelSpec ? `${spec || masterLabelSpec}` : '標準規格'}</span>
                 )}
               </div>
-              {(onMoveUp || onMoveDown) && (
+              {(onMoveToTop || onMoveUp || onMoveDown) && (
                 <div className="flex items-center gap-1 shrink-0">
+                  {onMoveToTop && !isNextUp && !isDone && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onMoveToTop()
+                      }}
+                      disabled={busy}
+                      className="h-7 px-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-[11px] font-black text-emerald-900 shadow-2xs active:scale-95 transition disabled:opacity-40"
+                      title="一番上（次にやるカード）へ割り込ませる"
+                    >
+                      {isThaiMode ? '🔝 ด่วน' : '🔝 先頭へ'}
+                    </button>
+                  )}
                   {onMoveUp && (
                     <button
                       type="button"
