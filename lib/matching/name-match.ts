@@ -8,11 +8,13 @@
  * 全角/半角・空白・記号を正規化してから比較する。
  */
 
+import { foldKana } from '@/lib/normalize/kana'
+
 export const NAME_MATCH_THRESHOLD = 0.7
 
 /** 比較用正規化：全角英数→半角、空白/記号除去、小文字化 */
 export function normalizeForMatch(s: string): string {
-  return s
+  return foldKana(s)
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/[\s　・,，.。\-―ー（）()]/g, '')
     .toLowerCase()

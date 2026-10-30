@@ -8,6 +8,7 @@ import { decideReceiptApproval, isAutoApproveOn, parseThreshold } from '@/lib/in
 import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
 import { shiftDateStr } from '@/lib/dates'
+import { foldKana } from '@/lib/normalize/kana'
 import { notify } from '@/lib/notify'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
@@ -52,8 +53,7 @@ export interface ProcessReceiptResult {
 
 /** 法人格や空白を除いた正規化名（取引先名の名寄せ用）。 */
 function normalizeOrgNameLocal(name: string): string {
-  return name
-    .normalize('NFKC')
+  return foldKana(name.normalize('NFKC'))
     .replace(/農事組合法人|株式会社|有限会社|合同会社|（株）|\(株\)|㈱|（有）|\(有\)|㈲/g, '')
     .replace(/[\s　（）()]/g, '')
     .toLowerCase()
@@ -85,12 +85,7 @@ export function matchDestinationId(
 ): string | null {
   if (!text) return null
   // ひらがな/カタカナ差（「らでぃっしゅ」⇔「ラディッシュ」）を吸収して比較する
-  const norm = (s: string) =>
-    s
-      .normalize('NFKC')
-      .toLowerCase()
-      .replace(/[\s　]/g, '')
-      .replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+  const norm = (s: string) => foldKana(s.normalize('NFKC').toLowerCase().replace(/[\s　]/g, ''))
   const lower = norm(text)
   const isSampleQuery = lower.includes('サンプル')
 
