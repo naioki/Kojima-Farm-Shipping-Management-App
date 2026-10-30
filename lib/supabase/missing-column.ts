@@ -5,10 +5,15 @@
  */
 const MISSING_COL_RE = /Could not find the '([^']+)' column|column "?(?:[\w]+\.)?([\w]+)"? (?:of relation "[^"]+" )?does not exist/
 
+export function isMissingColumnError(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false
+  if (err.code === 'PGRST204' || err.code === '42703') return true
+  return MISSING_COL_RE.test(err.message ?? '')
+}
+
 export function missingColumnName(err: { code?: string; message?: string } | null | undefined): string | null {
-  if (!err) return null
-  if (err.code !== 'PGRST204' && err.code !== '42703') return null
-  const m = (err.message ?? '').match(MISSING_COL_RE)
+  if (!isMissingColumnError(err)) return null
+  const m = (err?.message ?? '').match(MISSING_COL_RE)
   return m ? (m[1] ?? m[2] ?? null) : null
 }
 

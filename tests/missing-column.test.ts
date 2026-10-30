@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { missingColumnName, writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
+import { missingColumnName, writeDroppingMissingColumns, isMissingColumnError } from '@/lib/supabase/missing-column'
+
+describe('isMissingColumnError', () => {
+  it('delivery_destinations の PGRST204（departure_time）を未適用列として判定する', () => {
+    expect(
+      isMissingColumnError({ code: 'PGRST204', message: "Could not find the 'departure_time' column of 'delivery_destinations' in the schema cache" }),
+    ).toBe(true)
+  })
+  it('42703 も判定し、無関係なエラーは false', () => {
+    expect(isMissingColumnError({ code: '42703', message: 'column x does not exist' })).toBe(true)
+    expect(isMissingColumnError({ code: '23505', message: 'duplicate key' })).toBe(false)
+  })
+})
 
 describe('missingColumnName', () => {
   it('PGRST204 から列名を取り出す', () => {

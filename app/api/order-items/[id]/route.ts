@@ -171,7 +171,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             .eq('product_id', current.product_id)
             .maybeSingle()
           if (existingRule) {
-            await admin.from('customer_product_rules').update(rulePatch).eq('id', existingRule.id)
+            await writeDroppingMissingColumns(rulePatch, (p) =>
+              admin.from('customer_product_rules').update(p).eq('id', existingRule.id),
+            )
           }
         }
 

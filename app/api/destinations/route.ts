@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
     .eq('customer_id', parsed.data.customer_id)
 
-  if (listErr && listErr.code === '42703') {
+  if (listErr && isMissingColumnError(listErr)) {
     const { data: s2, error: listErr2 } = await supabase
       .from('delivery_destinations')
       .select('id, code, full_name, aliases, is_active')
@@ -75,8 +76,8 @@ export async function POST(req: Request) {
     .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
     .single()
 
-  if (insRes.error && insRes.error.code === '42703') {
-    // 0026 未適用環境
+  if (insRes.error && isMissingColumnError(insRes.error)) {
+    // 0026 未適用環境（PGRST204 / 42703 両対応）
     const basePayload = {
       customer_id: parsed.data.customer_id,
       code: parsed.data.code ?? null,

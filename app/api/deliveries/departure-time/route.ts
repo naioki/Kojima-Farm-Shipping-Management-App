@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
@@ -93,8 +94,8 @@ export async function POST(req: Request) {
           .select('id')
           .maybeSingle()
 
-        if (insRes.error && insRes.error.code === '42703') {
-          // 列が存在しない環境向けフォールバック
+        if (insRes.error && isMissingColumnError(insRes.error)) {
+          // 列が存在しない環境向けフォールバック（PGRST204 / 42703 両対応）
           insRes = await admin
             .from('delivery_destinations')
             .insert(basePayload)
@@ -120,7 +121,7 @@ export async function POST(req: Request) {
         })
         .eq('id', targetDestId)
 
-      if (updErr && updErr.code !== '42703') {
+      if (updErr && !isMissingColumnError(updErr)) {
         console.warn('[departure-time] delivery_destinations 更新エラー (フォールバック続行):', updErr)
       }
     }

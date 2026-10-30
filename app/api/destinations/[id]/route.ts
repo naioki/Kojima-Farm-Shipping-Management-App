@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
@@ -46,20 +47,28 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name, pack_sort_order, default_container_type')
     .single()
 
-  if (updRes.error && updRes.error.code === '42703') {
-    // 0026 未適用環境: 新規追加カラムを除外して更新
+  if (updRes.error && isMissingColumnError(updRes.error)) {
+    // 0026 未適用環境（PGRST204 / 42703 両対応）: 新規追加カラムを除外して更新
     const fallbackPatch: Record<string, unknown> = {}
     if (parsed.data.code !== undefined) fallbackPatch.code = parsed.data.code ?? null
     if (parsed.data.full_name !== undefined) fallbackPatch.full_name = parsed.data.full_name
     if (parsed.data.aliases !== undefined) fallbackPatch.aliases = parsed.data.aliases
     if (parsed.data.is_active !== undefined) fallbackPatch.is_active = parsed.data.is_active
 
-    updRes = await admin
-      .from('delivery_destinations')
-      .update(fallbackPatch)
-      .eq('id', params.id)
-      .select('id, code, full_name, aliases, is_active')
-      .single()
+    if (Object.keys(fallbackPatch).length > 0) {
+      updRes = await admin
+        .from('delivery_destinations')
+        .update(fallbackPatch)
+        .eq('id', params.id)
+        .select('id, code, full_name, aliases, is_active')
+        .single()
+    } else {
+      updRes = await admin
+        .from('delivery_destinations')
+        .select('id, code, full_name, aliases, is_active')
+        .eq('id', params.id)
+        .single()
+    }
   }
 
   if (updRes.error) return NextResponse.json({ error: updRes.error.message }, { status: 500 })

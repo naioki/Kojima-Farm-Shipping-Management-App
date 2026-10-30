@@ -128,7 +128,18 @@ export default async function DeliveriesPage({
       : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
     admin.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
     customerIds.length
-      ? admin.from('customer_product_rules').select('customer_id, product_id, packs_per_case, default_container_type').in('customer_id', customerIds)
+      ? (async (): Promise<{ data: RuleRow[]; error: null }> => {
+          const r1 = await admin
+            .from('customer_product_rules')
+            .select('customer_id, product_id, packs_per_case, default_container_type')
+            .in('customer_id', customerIds)
+          if (!r1.error) return { data: (r1.data ?? []) as RuleRow[], error: null }
+          const r2 = await admin
+            .from('customer_product_rules')
+            .select('customer_id, product_id, packs_per_case, container_type')
+            .in('customer_id', customerIds)
+          return { data: (r2.data ?? []) as RuleRow[], error: null }
+        })()
       : Promise.resolve({ data: [] as RuleRow[], error: null }),
     getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
   ])
