@@ -249,8 +249,10 @@ export default async function DeliveriesPage({
     const effectiveRouteName = routeInfo.shippingRouteName
 
     const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`)
+    const rawItemCont = (it.container_type ?? '').trim()
+    const validItemCont = rawItemCont && rawItemCont !== 'マテハン' && rawItemCont !== 'コンテナ' && rawItemCont !== '通常コンテナ' ? rawItemCont : null
     const resolvedContainer =
-      it.container_type ||
+      validItemCont ||
       dest?.default_container_type ||
       rule?.default_container_type ||
       determineContainerType(customerName, destName)

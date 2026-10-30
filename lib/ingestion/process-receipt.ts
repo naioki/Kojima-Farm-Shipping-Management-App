@@ -634,10 +634,18 @@ export async function processReceipt(
       const remainder = it.remainder_packs ?? totalP % unitCount
       const quantityCaseText =
         it.quantity_case_text || formatQuantityCaseText(totalP, cases, remainder)
+      const rawItemContainer = (it.container_type ?? '').trim()
+      const validItemContainer =
+        rawItemContainer &&
+        rawItemContainer !== 'マテハン' &&
+        rawItemContainer !== 'コンテナ' &&
+        rawItemContainer !== '通常コンテナ'
+          ? rawItemContainer
+          : null
       const containerType =
-        it.container_type ||
-        matchedRule?.container_type ||
-        determineContainerType(po.customer_name ?? matchedCustomerName ?? '', po.destination_name)
+        determineContainerType(po.customer_name ?? matchedCustomerName ?? '', po.destination_name) !== '通常コンテナ'
+          ? determineContainerType(po.customer_name ?? matchedCustomerName ?? '', po.destination_name)
+          : validItemContainer || matchedRule?.container_type || '通常コンテナ'
 
       // V5 パッキング資材: FAX記載値 → 取引ルール既定値の順でフォールバック
       const bagType = it.bag_type ?? matchedRule?.bag_type ?? null

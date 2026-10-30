@@ -6,6 +6,7 @@ import { shiftDateStr } from '@/lib/dates'
 import { getSetting } from '@/lib/settings'
 import { getStaffFeatures } from '@/lib/field/features'
 import { decideReceiptApproval, parseThreshold } from '@/lib/ingestion/auto-approve'
+import { foldKana } from '@/lib/normalize/kana'
 
 /**
  * 注文承認（pending_review → approved）の中核ロジック（純関数）。
@@ -84,14 +85,16 @@ export async function approveOrder(
       if (customerDests.length === 1 && customerDests[0]) {
         destinationId = customerDests[0].id
       } else {
-        const noteText = `${order.note ?? ''} ${(items ?? []).map((it) => it.product_name).join(' ')}`
-          .normalize('NFKC')
-          .toLowerCase()
+        const noteText = foldKana(
+          `${order.note ?? ''} ${(items ?? []).map((it) => it.product_name).join(' ')}`
+            .normalize('NFKC')
+            .toLowerCase(),
+        )
         const matched = customerDests.find((d) => {
           const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
             .filter(Boolean)
-            .map((s) => s.normalize('NFKC').toLowerCase())
-          return cands.some((c) => c && noteText.includes(c))
+            .map((s) => foldKana(s!.normalize('NFKC').toLowerCase()))
+          return cands.some((c) => c && c.length >= 3 && noteText.includes(c))
         })
         if (matched) {
           destinationId = matched.id

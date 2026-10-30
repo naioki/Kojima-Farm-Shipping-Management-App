@@ -1,3 +1,5 @@
+import { foldKana } from '@/lib/normalize/kana'
+
 export type RowStatusKey = 'not_started' | 'interrupted' | 'packed' | 'shipped'
 
 export function rowStatusKey(
@@ -283,14 +285,17 @@ export function normalizeDestinationGroupName(
 ): string {
   const raw = (destinationName ?? '').trim()
   if (!raw || raw === customerName?.trim() || raw === '直接納品' || raw === '標準納入先') return ''
-  const norm = raw.normalize('NFKC')
+  const norm = foldKana(raw.normalize('NFKC'))
+  if (norm.includes('ラディッシュ') || norm.includes('ボーヤ') || norm.toUpperCase().includes('ST')) {
+    return raw
+  }
   if (norm.includes('岩槻') && !norm.includes('サンプル')) return '岩槻'
   if (norm.includes('戸田') && !norm.includes('サンプル')) return '戸田'
-  if (norm.includes('相模')) return '相模'
+  if (norm.includes('相模')) return '相模センター'
   if (norm.includes('松戸')) return '松戸'
   if (norm.includes('柏')) return '柏'
   if (norm.includes('川越')) return '川越'
-  if (norm.includes('ちばセット') || norm.includes('千葉セット')) return 'ちばセット用'
+  if (norm.includes('チバセット') || norm.includes('千葉セット')) return 'ちばセット用'
   return raw
 }
 

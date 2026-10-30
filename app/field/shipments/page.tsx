@@ -14,6 +14,7 @@ import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import { ProductSelectorTabs, type ProductTabItem } from '@/components/field/ProductSelectorTabs'
 import { type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
 import { calculateChainInventory } from '@/lib/inventory/chain'
+import { determineContainerType } from '@/lib/pipeline/schemas'
 import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
 import { resolveDefaultRouteInfo } from '@/lib/field/shipment-sort'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
@@ -449,8 +450,10 @@ export default async function ShipmentsPage({
     const rem = qty % perCase
     const boxCount = cases + (rem > 0 ? 1 : 0)
 
-    // コンテナ集計
-    const contType = it.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
+    // コンテナ集計（ヘッダー文字の「マテハン」「コンテナ」は汎用語として無視し、決定論ルールへフォールバック）
+    const rawCont = (it.container_type ?? '').trim()
+    const validItemCont = rawCont && rawCont !== 'マテハン' && rawCont !== 'コンテナ' && rawCont !== '通常コンテナ' ? rawCont : null
+    const contType = validItemCont || dest?.default_container_type || determineContainerType(cName, dName)
     containerCounts.set(contType, (containerCounts.get(contType) ?? 0) + boxCount)
 
     // 規格集計
@@ -589,7 +592,9 @@ export default async function ShipmentsPage({
         const qty = Number(ni.quantity) || 0
         if (qty <= 0) continue
 
-        const contType = ni.container_type || dest?.default_container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ')
+        const rawNextCont = (ni.container_type ?? '').trim()
+        const validNextCont = rawNextCont && rawNextCont !== 'マテハン' && rawNextCont !== 'コンテナ' && rawNextCont !== '通常コンテナ' ? rawNextCont : null
+        const contType = validNextCont || dest?.default_container_type || determineContainerType(cName, dName)
 
         const override =
           (destId ? routeOverrides[`date:${nextDateStr}:dest:${destId}`] : null) ||

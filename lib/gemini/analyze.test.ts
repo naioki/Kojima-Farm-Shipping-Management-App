@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verifyAndNormalizeItem, buildAiRulesSection, ordersResultSchema } from './analyze'
+import { verifyAndNormalizeItem, buildAiRulesSection, ordersResultSchema, normalizeCustomerAndDestination } from './analyze'
 import { highModelTryOrder, modelTryOrder, normalizeModelId } from './models'
 import {
   generateOrderKey,
@@ -245,5 +245,49 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     expect(exactItem.quantity).toBe('59')
     expect(exactItem.confidence).toBe(0.95)
     expect(exactItem.needs_review_reason).toBeNull()
+  })
+
+  it('和郷園の「らでぃっしゅ 岩槻ST」が「パルシステム 岩槻」に誤吸収されず、「茶コン」「らでぃっしゅぼーや 岩槻ST」として独立保持される（マテハン列ヘッダー混入も自動除去）', () => {
+    const std = normalizeCustomerAndDestination({
+      customerName: '和郷園',
+      destinationName: 'らでぃっしゅ 岩槻ST',
+      spec: '200g',
+    })
+    expect(std.customerName).toBe('農事組合法人 和郷園')
+    expect(std.destinationName).toBe('らでぃっしゅぼーや 岩槻ST')
+
+    const item = verifyAndNormalizeItem(
+      {
+        raw_name: 'チンゲン菜',
+        product_name: 'チンゲン菜',
+        quantity: '220+0 (11-0)',
+        unit: 'P',
+        confidence: 0.95,
+        spec: '200g',
+        container_type: 'マテハン', // AIが列ヘッダー名を返した場合でも茶コンに補正される
+      },
+      std.customerName,
+      { destinationName: std.destinationName, deliveryDate: '2026-10-31' },
+    )
+    expect(item.quantity).toBe('220')
+    expect(item.container_type).toBe('茶コン')
+    expect(item.order_key).toBe('和郷園|2026-10-31|らでぃっしゅぼーや岩槻st|チンゲン菜|200g')
+  })
+
+  it('和郷園の「パルシステム 相模センター」にAIがマテハンを返しても「青コン」に決定論補正される', () => {
+    const item = verifyAndNormalizeItem(
+      {
+        raw_name: 'エコ・チンゲン菜',
+        product_name: 'チンゲン菜',
+        quantity: '400+0 (20-0)',
+        unit: 'P',
+        confidence: 0.95,
+        spec: '2〜3株',
+        container_type: 'マテハン',
+      },
+      '農事組合法人 和郷園',
+      { destinationName: 'パルシステム 相模センター', deliveryDate: '2026-10-31' },
+    )
+    expect(item.container_type).toBe('青コン')
   })
 })

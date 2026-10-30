@@ -9,6 +9,8 @@
  * 5. Kojima-FAX (LIFEBOOK `drive_backup.py`) から渡される Google Drive 原本URL (`source_file_url`) のプレビュー変換（Cloudflare R2・Supabase Storage 不要）
  */
 
+import { foldKana } from '@/lib/normalize/kana'
+
 export const ORDER_DETAILS_HEADERS_22 = [
   '処理日時', // A (1): 初回登録時の yyyy-MM-dd HH:mm（既存行更新時は書き換えない）
   '伝票No', // B (2): FAX記載の伝票番号（例: NO. 2665）
@@ -228,11 +230,17 @@ export function determineContainerType(
   clientName?: string | null,
   destination?: string | null,
 ): ContainerTypeLabel {
-  const normDest = (destination ?? '').normalize('NFKC')
-  const normClient = (clientName ?? '').normalize('NFKC').toUpperCase()
+  const normDest = foldKana((destination ?? '').normalize('NFKC'))
+  const normClient = foldKana((clientName ?? '').normalize('NFKC')).toUpperCase()
 
   if (normDest.includes('パルシステム')) return '青コン'
-  if (normDest.includes('ちばコープ') || normDest.includes('グリンBOX') || normDest.includes('グリーンボックス')) {
+  if (
+    normDest.includes('チバコープ') ||
+    normDest.includes('グリンBOX') ||
+    normDest.includes('グリーンボックス') ||
+    normDest.includes('ラディッシュ') ||
+    normDest.includes('ボーヤ')
+  ) {
     return '茶コン'
   }
   if (normClient.includes('農業総合研究所') || normClient.includes('NSK')) {

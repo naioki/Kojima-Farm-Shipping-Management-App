@@ -157,6 +157,8 @@ describe('getPackGroupInfo (ヘッダー情報の生成)', () => {
     expect(nosoken.departureTime).toBe('翌午前')
 
     expect(normalizeDestinationGroupName('和郷園', 'パルシステム 岩槻')).toBe('岩槻')
+    expect(normalizeDestinationGroupName('和郷園', 'らでぃっしゅぼーや 岩槻ST')).toBe('らでぃっしゅぼーや 岩槻ST')
+    expect(normalizeDestinationGroupName('和郷園', 'パルシステム 相模センター')).toBe('相模センター')
     expect(normalizeDestinationGroupName('和郷園', 'ちばコープ グリーンボックス(戸田)')).toBe('戸田')
   })
 })

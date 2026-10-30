@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { foldKana } from '@/lib/normalize/kana'
 import type { AiRule } from '@/types/database'
 import {
   calculateContainerBoxes,
@@ -303,8 +304,8 @@ export function normalizeCustomerAndDestination(params: {
   let destinationName = params.destinationName?.trim() || null
   let spec = params.spec ? normalizeSpecDisplay(params.spec) : null
 
-  const normClient = (customerName ?? '').normalize('NFKC')
-  const normDest = (destinationName ?? '').normalize('NFKC')
+  const normClient = foldKana((customerName ?? '').normalize('NFKC'))
+  const normDest = foldKana((destinationName ?? '').normalize('NFKC'))
   const isSample = Boolean(
     params.isSample ||
     normDest.includes('サンプル') ||
@@ -328,12 +329,12 @@ export function normalizeCustomerAndDestination(params: {
             const m = (spec ?? '').match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入/)
             return m ? Number(m[1] || m[2]) : 20
           })()
-    if (normDest.includes('ちばセット') || normDest.includes('千葉セット')) {
+    if (normDest.includes('チバセット') || normDest.includes('千葉セット')) {
       destinationName = 'ちばセット用'
       if (!spec || spec.includes('250g') || spec.includes('200g')) {
         spec = `200g (入数${explicitUnit})`
       }
-    } else if (normDest.includes('box') || normDest.includes('ボックス')) {
+    } else if (normDest.toLowerCase().includes('box') || normDest.includes('ボックス')) {
       destinationName = 'BOX用'
       if (!spec || spec.includes('250g') || spec.includes('200g')) {
         spec = `200g (入数${explicitUnit})`
@@ -346,8 +347,17 @@ export function normalizeCustomerAndDestination(params: {
     }
   } else if (normClient.includes('和郷園')) {
     customerName = '農事組合法人 和郷園'
-    // 4.1 OCR文字潰れ補正
-    if (normDest.includes('岩槻') || (normDest.includes('パルシステム') && !normDest.includes('相模'))) {
+    // 4.1 納入先・OCR文字潰れ補正（らでぃっしゅぼーや等の別チェーン納入先を「岩槻」単体条件でパルシステム岩槻へ誤上書きしない）
+    const isRadish = normDest.includes('ラディッシュ') || normDest.includes('ボーヤ') || normDest.toUpperCase().includes('ST')
+    if (isRadish) {
+      if (normDest.includes('岩槻')) {
+        destinationName = 'らでぃっしゅぼーや 岩槻ST'
+      }
+      if (!spec) spec = '200g (入数20)'
+    } else if (normDest.includes('相模')) {
+      destinationName = 'パルシステム 相模センター'
+      if (!spec) spec = '2〜3株 (入数20)'
+    } else if (normDest.includes('岩槻') || normDest.includes('パルシステム')) {
       if (isSample) {
         destinationName = 'パルシステム 岩槻 (サンプル)'
       } else {
@@ -489,9 +499,11 @@ export function verifyAndNormalizeItem(
 
   const normalizedProductName = normalizeItemName(item.product_name || 'チンゲン菜')
   const resolvedSpec = std.spec ?? (item.spec ? normalizeSpecDisplay(item.spec) : null)
-  const resolvedContainer =
-    (item.container_type as string | null) ||
-    determineContainerType(std.customerName ?? customerName, std.destinationName ?? context?.destinationName)
+  const rawContainer = (item.container_type ?? '').trim()
+  const isGenericContainer = !rawContainer || rawContainer === 'マテハン' || rawContainer === 'コンテナ' || rawContainer === '通常コンテナ'
+  const resolvedContainer = isGenericContainer
+    ? determineContainerType(std.customerName ?? customerName, std.destinationName ?? context?.destinationName)
+    : rawContainer
 
   const orderKey =
     item.order_key ||
