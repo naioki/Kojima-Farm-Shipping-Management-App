@@ -27,6 +27,7 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
+import { foldKana } from '@/lib/normalize/kana'
 import { cn } from '@/lib/cn'
 
 export interface ShipmentAddFormProps {
@@ -1096,9 +1097,17 @@ export function ShipmentAddForm({
     setBatchRegistering(true)
     let successCount = 0
     const updatedList = [...parsedCandidates]
+    // 黙って欠落させない：スキップ・失敗した明細は理由付きで必ず報告する
+    const failures: string[] = []
+    // 同一バッチ内で新規作成した納入先（後続明細で再利用）
+    const createdDests: Array<{ id: string; label: string; customerId: string }> = []
+    // 同一キー（取引先×品目×納入先×日付）の2件目以降は上書きせず加算する
+    const seenKeys = new Set<string>()
+    const normName = (s: string) => foldKana(s).replace(/[\s　()（）・]/g, '').toLowerCase()
 
     try {
       for (const { cand, idx } of unregistered) {
+        const rowLabel = `${cand.delivery_date ?? '日付不明'} ${cand.destination_name ?? cand.customer_name ?? ''} ${cand.product_name ?? cand.raw_name ?? ''}`.trim()
         let detectedCustName = cand.customer_name?.trim() || ''
         if (/アイプラス|小島農園/.test(detectedCustName)) detectedCustName = ''
 
@@ -1110,15 +1119,42 @@ export function ShipmentAddForm({
             })
           : customers.find((c) => c.id === customerId)
 
-        if (!matchedCust) continue
+        if (!matchedCust) {
+          failures.push(`${rowLabel}：取引先「${detectedCustName || '未選択'}」が見つかりません`)
+          continue
+        }
 
         const dName = cand.destination_name?.trim() || ''
-        const destPool = allDestinations.filter((d) => d.customerId === matchedCust.id)
-        const matchedDest = dName
-          ? destPool.find((d) => d.label.includes(dName) || dName.includes(d.label))
+        const destPool = [...allDestinations, ...createdDests].filter((d) => d.customerId === matchedCust.id)
+        const dNorm = normName(dName)
+        let matchedDest: { id: string; label: string } | undefined = dName
+          ? destPool.find((d) => normName(d.label) === dNorm) ||
+            destPool.find((d) => {
+              const l = normName(d.label)
+              // 短い別名による誤吸収を防ぐ（3文字以上のみ部分一致）
+              return l.length >= 3 && dNorm.length >= 3 && (l.includes(dNorm) || dNorm.includes(l))
+            })
           : destPool.length === 1
           ? destPool[0]
           : undefined
+
+        // 未登録の納入先は自動登録する（destination_id=null で他店舗の注文を上書きしない）
+        if (dName && !matchedDest) {
+          const dr = await fetch('/api/destinations', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ customer_id: matchedCust.id, code: dName, full_name: dName, aliases: [dName] }),
+          })
+          const dj = await dr.json().catch(() => ({}))
+          const dest = dr.status === 409 ? dj.existing : dj.destination
+          if (dest?.id) {
+            matchedDest = { id: dest.id, label: dest.full_name ?? dName }
+            createdDests.push({ id: dest.id, label: dest.full_name ?? dName, customerId: matchedCust.id })
+          } else {
+            failures.push(`${rowLabel}：納入先「${dName}」を登録できませんでした（${dj.error ?? dr.status}）`)
+            continue
+          }
+        }
 
         const pName = cand.product_name || cand.raw_name || ''
         const matchedProd =
@@ -1128,7 +1164,10 @@ export function ShipmentAddForm({
               pName.includes(p.name) ||
               (pName.includes('チンゲン') && p.name.includes('青梗菜')),
           ) || products.find((p) => p.id === productId) || products[0]
-        if (!matchedProd) continue
+        if (!matchedProd) {
+          failures.push(`${rowLabel}：品目が見つかりません`)
+          continue
+        }
 
         const rulePacks = localPacksByPair[`${matchedCust.id}:${matchedProd.id}`]
         const cPacks =
@@ -1142,12 +1181,16 @@ export function ShipmentAddForm({
             : cand.quantity != null
             ? String(cand.quantity)
             : ''
-        if (!qRaw) continue
+        if (!qRaw) {
+          failures.push(`${rowLabel}：数量が読み取れません`)
+          continue
+        }
 
-        const cDate =
-          cand.delivery_date && cand.delivery_date >= todayStr
-            ? cand.delivery_date
-            : targetDate
+        // 伝票の日付をそのまま使う（過去日を表示中の日付へ寄せると、別日の明細同士が上書きし合う）
+        const cDate = cand.delivery_date || targetDate
+        const key = `${matchedCust.id}:${matchedProd.id}:${matchedDest?.id ?? '-'}:${cDate}`
+        const rowMode = seenKeys.has(key) ? 'increase' : 'set'
+        seenKeys.add(key)
 
         const cContainer = determineContainerType(matchedCust.name, matchedDest?.label || dName)
         const baseLabel = matchedProd.name.includes('小松菜') ? '200g' : '2〜3株'
@@ -1166,13 +1209,20 @@ export function ShipmentAddForm({
             container_type: cContainer,
             has_card: true,
             destination_id: matchedDest?.id || null,
-            mode: 'set',
+            mode: rowMode,
           }),
         })
         if (res.ok) {
           updatedList[idx] = { ...cand, registered: true }
           successCount++
+        } else {
+          const ej = await res.json().catch(() => ({}))
+          failures.push(`${rowLabel}：保存失敗（${ej.error ?? res.status}）`)
         }
+      }
+
+      if (failures.length > 0) {
+        toast.error(`登録できなかった明細 ${failures.length} 件:\n${failures.slice(0, 5).join('\n')}`, { duration: 12000 })
       }
 
       setParsedCandidates(updatedList)
