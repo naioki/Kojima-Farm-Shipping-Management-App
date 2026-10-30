@@ -27,7 +27,7 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
-import { foldKana } from '@/lib/normalize/kana'
+import { matchDestination, resolveBatchDate, createBatchModePlanner } from '@/lib/field/batch-register'
 import { cn } from '@/lib/cn'
 
 export interface ShipmentAddFormProps {
@@ -1102,8 +1102,7 @@ export function ShipmentAddForm({
     // 同一バッチ内で新規作成した納入先（後続明細で再利用）
     const createdDests: Array<{ id: string; label: string; customerId: string }> = []
     // 同一キー（取引先×品目×納入先×日付）の2件目以降は上書きせず加算する
-    const seenKeys = new Set<string>()
-    const normName = (s: string) => foldKana(s).replace(/[\s　()（）・]/g, '').toLowerCase()
+    const planMode = createBatchModePlanner()
 
     try {
       for (const { cand, idx } of unregistered) {
@@ -1126,17 +1125,7 @@ export function ShipmentAddForm({
 
         const dName = cand.destination_name?.trim() || ''
         const destPool = [...allDestinations, ...createdDests].filter((d) => d.customerId === matchedCust.id)
-        const dNorm = normName(dName)
-        let matchedDest: { id: string; label: string } | undefined = dName
-          ? destPool.find((d) => normName(d.label) === dNorm) ||
-            destPool.find((d) => {
-              const l = normName(d.label)
-              // 短い別名による誤吸収を防ぐ（3文字以上のみ部分一致）
-              return l.length >= 3 && dNorm.length >= 3 && (l.includes(dNorm) || dNorm.includes(l))
-            })
-          : destPool.length === 1
-          ? destPool[0]
-          : undefined
+        let matchedDest: { id: string; label: string } | undefined = matchDestination(dName, destPool)
 
         // 未登録の納入先は自動登録する（destination_id=null で他店舗の注文を上書きしない）
         if (dName && !matchedDest) {
@@ -1187,10 +1176,13 @@ export function ShipmentAddForm({
         }
 
         // 伝票の日付をそのまま使う（過去日を表示中の日付へ寄せると、別日の明細同士が上書きし合う）
-        const cDate = cand.delivery_date || targetDate
-        const key = `${matchedCust.id}:${matchedProd.id}:${matchedDest?.id ?? '-'}:${cDate}`
-        const rowMode = seenKeys.has(key) ? 'increase' : 'set'
-        seenKeys.add(key)
+        const cDate = resolveBatchDate(cand.delivery_date, targetDate)
+        const rowMode = planMode({
+          customerId: matchedCust.id,
+          productId: matchedProd.id,
+          destinationId: matchedDest?.id ?? null,
+          date: cDate,
+        })
 
         const cContainer = determineContainerType(matchedCust.name, matchedDest?.label || dName)
         const baseLabel = matchedProd.name.includes('小松菜') ? '200g' : '2〜3株'
