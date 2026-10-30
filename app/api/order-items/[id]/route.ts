@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
@@ -100,26 +101,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   // 楽観ロック：version 一致時のみ更新。version++ も同時に行う。
-  let { data: updated, error: updErr } = await admin
-    .from('order_items')
-    .update({ ...updates, version: current.version + 1 })
-    .eq('id', params.id)
-    .eq('version', input.version)
-    .select()
-    .maybeSingle()
-  if (updErr && 'is_manual_modified' in updates) {
-    const fallbackUpdates = { ...updates }
-    delete fallbackUpdates.is_manual_modified
-    const retry = await admin
-      .from('order_items')
-      .update({ ...fallbackUpdates, version: current.version + 1 })
-      .eq('id', params.id)
-      .eq('version', input.version)
-      .select()
-      .maybeSingle()
-    updated = retry.data
-    updErr = retry.error
-  }
+  const { data: updated, error: updErr } = await writeDroppingMissingColumns(
+    { ...updates, version: current.version + 1 },
+    (p) =>
+      admin
+        .from('order_items')
+        .update(p)
+        .eq('id', params.id)
+        .eq('version', input.version)
+        .select()
+        .maybeSingle(),
+  )
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   if (!updated) {
     // 0件 = version 不一致（競合）。UI に再読込させる。

@@ -551,7 +551,7 @@ export default async function ShipmentsPage({
     const nextOrderDestMap = new Map((nextOrders ?? []).map((o) => [o.id, o.destination_id]))
 
     if (nextOrderIds.length > 0) {
-      const { data: nextItems } = await admin
+      let { data: nextItems, error: nextItemsErr } = await admin
         .from('order_items')
         .select(`
           id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -561,6 +561,18 @@ export default async function ShipmentsPage({
         `)
         .eq('product_id', selectedProductId)
         .in('order_id', nextOrderIds)
+      if (nextItemsErr) {
+        const fbNext = await admin
+          .from('order_items')
+          .select(`
+            id, order_id, product_id, product_name, quantity, unit, field_status, version,
+            spec, container_type, has_card, line_note, shipped_qty, field_note, spec_warnings,
+            pack_config_id, rule_id, is_flagged
+          `)
+          .eq('product_id', selectedProductId)
+          .in('order_id', nextOrderIds)
+        nextItems = (fbNext.data ?? []) as typeof nextItems
+      }
 
       const defCapacity = capacityById.get(selectedProductId) ?? 20
       for (const ni of nextItems ?? []) {

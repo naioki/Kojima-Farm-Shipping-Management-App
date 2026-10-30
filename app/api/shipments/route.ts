@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
@@ -294,9 +295,8 @@ export async function POST(req: Request) {
     const updatedQuantityRaw =
       updateRem > 0 ? `${updateCases}c+${updateRem}P` : `${updateCases}c`
 
-    const { data: updatedItem, error: upErr } = await supabase
-      .from('order_items')
-      .update({
+    const { data: updatedItem, error: upErr } = await writeDroppingMissingColumns(
+      {
         quantity: newQty,
         quantity_raw: updatedQuantityRaw,
         fraction_note: updateRem > 0 ? `端数${updateRem}P` : null,
@@ -312,11 +312,10 @@ export async function POST(req: Request) {
             }
           : {}),
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', existingItem.id)
-      .select()
-      .single()
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
+      },
+      (p) => supabase.from('order_items').update(p).eq('id', existingItem.id).select().single(),
+    )
+    if (upErr || !updatedItem) return NextResponse.json({ error: upErr?.message ?? 'update failed' }, { status: 500 })
     finalItem = updatedItem
 
     await writeAudit(supabase, {
@@ -334,9 +333,8 @@ export async function POST(req: Request) {
     const initQuantityRaw =
       initRem > 0 ? `${initCases}c+${initRem}P` : `${initCases}c`
 
-    const { data: item, error: itemErr } = await supabase
-      .from('order_items')
-      .insert({
+    const { data: item, error: itemErr } = await writeDroppingMissingColumns<Record<string, unknown>, { code?: string; message?: string }>(
+      {
         order_id: orderId,
         product_id,
         product_name: product.name,
@@ -354,15 +352,15 @@ export async function POST(req: Request) {
         container_type: effectiveContainerType,
         has_card: effectiveHasCard,
         is_manual_modified: true,
-      })
-      .select()
-      .single()
-    if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
+      },
+      (p) => supabase.from('order_items').insert(p as never).select().single(),
+    )
+    if (itemErr || !item) return NextResponse.json({ error: itemErr?.message ?? 'insert failed' }, { status: 500 })
     finalItem = item
 
     await writeAudit(supabase, {
       entityType: 'order_items',
-      entityId: item.id,
+      entityId: String(item.id),
       action: 'INSERT',
       oldValues: null,
       newValues: item,

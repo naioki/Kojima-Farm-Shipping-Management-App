@@ -1216,24 +1216,42 @@ export async function processReceipt(
     >()
 
     if (effectiveSlipNo) {
-      const { data: slipOrders } = await admin
+      let { data: slipOrders, error: slipOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
+      if (slipOrdersErr) {
+        const fbSlip = await admin
+          .from('orders')
+          .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity)')
+          .eq('customer_id', firstResolvedCustomerId)
+          .neq('status', 'cancelled')
+          .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
+        slipOrders = (fbSlip.data ?? []) as typeof slipOrders
+      }
       for (const row of slipOrders ?? []) {
         candidateOldOrdersMap.set(row.id as string, row as never)
       }
     }
 
     if (matrixDates.length > 0 && (isFullResendingMatrix || matrixDates.length >= 2 || effectiveSlipNo)) {
-      const { data: dateOrders } = await admin
+      let { data: dateOrders, error: dateOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .in('delivery_date', matrixDates)
+      if (dateOrdersErr) {
+        const fbDate = await admin
+          .from('orders')
+          .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity)')
+          .eq('customer_id', firstResolvedCustomerId)
+          .neq('status', 'cancelled')
+          .in('delivery_date', matrixDates)
+        dateOrders = (fbDate.data ?? []) as typeof dateOrders
+      }
       for (const row of dateOrders ?? []) {
         candidateOldOrdersMap.set(row.id as string, row as never)
       }
