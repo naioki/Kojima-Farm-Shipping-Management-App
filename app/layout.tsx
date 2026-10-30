@@ -9,6 +9,7 @@ const body = Noto_Sans_JP({
   weight: ['400', '500', '700'],
   variable: '--font-body',
   display: 'swap',
+  adjustFontFallback: false,
 })
 // 見出しは丸ゴシックでポップに（親しみやすさ）。本文・数字は据え置きで業務の堅さを保つ。
 const display = M_PLUS_Rounded_1c({
@@ -23,6 +24,7 @@ const mono = JetBrains_Mono({
   weight: ['400', '600'],
   variable: '--font-mono',
   display: 'swap',
+  adjustFontFallback: false,
 })
 
 export const metadata: Metadata = {
