@@ -79,29 +79,38 @@ function matchCustomerByName(
 }
 
 /** OCRが読んだ届け先テキストを納入先（code/full_name/aliases）に名寄せ。無ければ null。 */
-function matchDestinationId(
+export function matchDestinationId(
   text: string | null | undefined,
   dests: { id: string; code: string | null; full_name: string; aliases: string[] | null }[],
 ): string | null {
   if (!text) return null
-  const lower = text.normalize('NFKC').toLowerCase().replace(/[\s　]/g, '')
+  // ひらがな/カタカナ差（「らでぃっしゅ」⇔「ラディッシュ」）を吸収して比較する
+  const norm = (s: string) =>
+    s
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\s　]/g, '')
+      .replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+  const lower = norm(text)
   const isSampleQuery = lower.includes('サンプル')
 
   // 1. 完全一致（最優先）
   const exactHit = dests.find((d) => {
     const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
       .filter((s): s is string => Boolean(s))
-      .map((s) => s.normalize('NFKC').toLowerCase().replace(/[\s　]/g, ''))
+      .map(norm)
     return cands.some((c) => c === lower)
   })
   if (exactHit) return exactHit.id
 
   // 2. 部分一致（サンプル問い合わせならサンプル付き納入先を、通常ならサンプルなし納入先を優先）
+  //    「岩槻」のような短い別名が、別取引先名を含む長い入力（例: らでぃっしゅぼーや岩槻ST）を
+  //    誤って吸い込まないよう、「入力が候補を含む」方向は候補3文字以上に限定する。
   const partialHits = dests.filter((d) => {
     const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
       .filter((s): s is string => Boolean(s))
-      .map((s) => s.normalize('NFKC').toLowerCase().replace(/[\s　]/g, ''))
-    return cands.some((c) => c.includes(lower) || lower.includes(c))
+      .map(norm)
+    return cands.some((c) => c.includes(lower) || (c.length >= 3 && lower.includes(c)))
   })
 
   if (partialHits.length === 1 && partialHits[0]) return partialHits[0].id
@@ -504,12 +513,12 @@ export async function processReceipt(
     if (!destinationId && po.destination_name && orderCustomerId) {
       // 納品先もAIが追加判別してくれるため、未登録の納入先は自動でマスタ追加して即時バインド
       try {
-        const destCode = po.destination_name.length > 10 ? po.destination_name.slice(0, 10) : po.destination_name
+        // code は帳票・画面に表示される名称。切り詰めると「相模セ」のように途切れるため必ず全文を保存する。
         const { data: newDest } = await admin
           .from('delivery_destinations')
           .insert({
             customer_id: orderCustomerId,
-            code: destCode,
+            code: po.destination_name,
             full_name: po.destination_name,
             sort_order: (custDests.length + 1) * 10,
           })
