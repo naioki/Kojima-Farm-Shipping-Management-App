@@ -150,22 +150,12 @@ export async function POST(req: Request) {
   const confirmedDestName = destRow?.full_name || destRow?.code || ''
 
   // 取引先×商品ルール（P/C＝c記法換算の基準値）
-  let { data: rule, error: ruleErr } = await supabase
+  const { data: rule, error: ruleErr } = await supabase
     .from('customer_product_rules')
-    .select('id, packs_per_case, spec, label_spec, container_type, default_container_type, has_card')
+    .select('id, packs_per_case, spec, label_spec, container_type, has_card')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
-  if (ruleErr) {
-    const fbRule = await supabase
-      .from('customer_product_rules')
-      .select('id, packs_per_case, spec, label_spec, container_type, has_card')
-      .eq('customer_id', customer_id)
-      .eq('product_id', product_id)
-      .maybeSingle()
-    rule = fbRule.data as typeof rule
-    ruleErr = fbRule.error
-  }
   if (ruleErr) console.error('[api/shipments] P/Cルールの取得に失敗:', ruleErr.message)
 
   // 入数の決定：クライアント指定値 → 取引ルール → 商品既定容量 → 20（絶対に packs_per_case_required で失敗させない）
@@ -189,7 +179,6 @@ export async function POST(req: Request) {
   const effectiveContainerType =
     clientContainerType?.trim() ||
     rule?.container_type ||
-    rule?.default_container_type ||
     determineContainerType(confirmedCustName, confirmedDestName)
 
   const effectiveHasCard =
@@ -314,7 +303,6 @@ export async function POST(req: Request) {
         container_type: clientContainerType?.trim() || existingItem.container_type || effectiveContainerType,
         has_card: clientHasCard ?? existingItem.has_card ?? effectiveHasCard,
         line_note: combinedNote,
-        is_manual_modified: true,
         ...(qtyChanged
           ? {
               field_status: 'not_started',
@@ -361,7 +349,6 @@ export async function POST(req: Request) {
         spec: effectiveSpec,
         container_type: effectiveContainerType,
         has_card: effectiveHasCard,
-        is_manual_modified: true,
       },
       (p) => supabase.from('order_items').insert(p as never).select().single(),
     )

@@ -37,23 +37,13 @@ export async function POST(req: Request) {
   // DB の UNIQUE INDEX(uq_dest_norm_fullname) が最終防波堤。ここで 409＋既存候補を返し、
   // UI が「既存の◯◯を使いますか？」を提示できるようにする。
   const norm = normalizeOrgName(parsed.data.full_name)
-  let siblings: Array<{ id: string; full_name: string }> | null = null
-  const { data: s1, error: listErr } = await supabase
+  const { data: siblings, error: listErr } = await supabase
     .from('delivery_destinations')
-    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
+    .select('id, code, full_name, aliases, is_active')
     .eq('customer_id', parsed.data.customer_id)
 
-  if (listErr && isMissingColumnError(listErr)) {
-    const { data: s2, error: listErr2 } = await supabase
-      .from('delivery_destinations')
-      .select('id, code, full_name, aliases, is_active')
-      .eq('customer_id', parsed.data.customer_id)
-    if (listErr2) return NextResponse.json({ error: listErr2.message }, { status: 500 })
-    siblings = s2
-  } else if (listErr) {
+  if (listErr) {
     return NextResponse.json({ error: listErr.message }, { status: 500 })
-  } else {
-    siblings = s1
   }
 
   const existing = (siblings ?? []).find((d) => normalizeOrgName(d.full_name) === norm)
@@ -61,34 +51,48 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'duplicate', existing }, { status: 409 })
   }
 
-  const fullPayload = {
+  const basePayload = {
     customer_id: parsed.data.customer_id,
     code: parsed.data.code ?? null,
     full_name: parsed.data.full_name,
     aliases: parsed.data.aliases,
-    departure_time: parsed.data.departure_time ?? null,
-    shipping_route_name: parsed.data.shipping_route_name ?? null,
   }
 
-  let insRes = await supabase
-    .from('delivery_destinations')
-    .insert(fullPayload)
-    .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
-    .single()
+  const hasRouteData = Boolean(parsed.data.departure_time?.trim() || parsed.data.shipping_route_name?.trim())
+  let insRes: { data: Record<string, unknown> | null; error: { code?: string; message?: string } | null } = { data: null, error: null }
 
-  if (insRes.error && isMissingColumnError(insRes.error)) {
-    // 0026 未適用環境（PGRST204 / 42703 両対応）
-    const basePayload = {
-      customer_id: parsed.data.customer_id,
-      code: parsed.data.code ?? null,
-      full_name: parsed.data.full_name,
-      aliases: parsed.data.aliases,
+  if (hasRouteData) {
+    // 拡張カラム指定時: カラムが存在すれば直接保存を試みる
+    const fullPayload = {
+      ...basePayload,
+      departure_time: parsed.data.departure_time ?? null,
+      shipping_route_name: parsed.data.shipping_route_name ?? null,
     }
-    insRes = await supabase
+    const r1 = await supabase
+      .from('delivery_destinations')
+      .insert(fullPayload)
+      .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
+      .single()
+
+    if (r1.error && isMissingColumnError(r1.error)) {
+      // 0026 未適用環境（PGRST204 / 42703）: 基本カラムで確実に作成
+      const r2 = await supabase
+        .from('delivery_destinations')
+        .insert(basePayload)
+        .select('id, code, full_name, aliases, is_active')
+        .single()
+      insRes = { data: r2.data as Record<string, unknown> | null, error: r2.error }
+    } else {
+      insRes = { data: r1.data as Record<string, unknown> | null, error: r1.error }
+    }
+  } else {
+    // 通常（納入先名・略称のみ）: 未適用カラムへのアクセスを最初から完全に回避し一発で作成
+    const r = await supabase
       .from('delivery_destinations')
       .insert(basePayload)
       .select('id, code, full_name, aliases, is_active')
       .single()
+    insRes = { data: r.data as Record<string, unknown> | null, error: r.error }
   }
 
   if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 500 })

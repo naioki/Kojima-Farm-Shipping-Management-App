@@ -1110,20 +1110,26 @@ export function ShipmentAddForm({
         let detectedCustName = cand.customer_name?.trim() || ''
         if (/アイプラス|小島農園/.test(detectedCustName)) detectedCustName = ''
 
-        const matchedCust = detectedCustName
+        const matchedByName = detectedCustName
           ? customers.find((c) => {
               const cNorm = c.name.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
               const dNorm = detectedCustName.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
               return cNorm.includes(dNorm) || dNorm.includes(cNorm)
             })
-          : customers.find((c) => c.id === customerId)
+          : null
 
+        // 帳票から取引先名が誤読された場合でも、現在画面で作業中の取引先へ安全にフォールバック（全件一括登録を途中で落とさない）
+        const matchedCust = matchedByName || customers.find((c) => c.id === customerId) || customers[0]
         if (!matchedCust) {
-          failures.push(`${rowLabel}：取引先「${detectedCustName || '未選択'}」が見つかりません`)
+          failures.push(`${rowLabel}：取引先が見つかりません`)
           continue
         }
 
-        const dName = cand.destination_name?.trim() || ''
+        // detectedCustName が既存顧客名ではなく店舗名（例: 4関東顧客向け）だった場合は納入先名として救出
+        let dName = cand.destination_name?.trim() || ''
+        if (!dName && detectedCustName && !matchedByName) {
+          dName = detectedCustName
+        }
         const destPool = [...allDestinations, ...createdDests].filter((d) => d.customerId === matchedCust.id)
         let matchedDest: { id: string; label: string } | undefined = matchDestination(dName, destPool)
 

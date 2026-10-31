@@ -25,6 +25,11 @@ describe('matchDestination', () => {
     expect(matchDestination('', pool.slice(0, 1))?.id).toBe('a')
     expect(matchDestination('', pool)).toBeUndefined()
   })
+  it('動的に自動作成された納入先（5北海道等）が後続行のプールから正しく再利用される', () => {
+    const dynamicPool = [...pool, { id: 'd_hokkaido', label: '5北海道' }]
+    expect(matchDestination('5北海道', dynamicPool)?.id).toBe('d_hokkaido')
+    expect(matchDestination('5 北海道', dynamicPool)?.id).toBe('d_hokkaido')
+  })
 })
 
 describe('resolveBatchDate', () => {
