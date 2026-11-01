@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { deliveryConfirmSchema, type DeliveryStatus } from '@/types/database'
 
 export const runtime = 'nodejs'
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
   if (action === 'issue' && !note?.trim()) {
     return NextResponse.json({ error: 'note_required' }, { status: 400 })
   }
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 配送単位の行を取得（無ければ planned で作成）。UNIQUE(uq_delivery_unit) が二重作成を防ぐ。
   let query = supabase

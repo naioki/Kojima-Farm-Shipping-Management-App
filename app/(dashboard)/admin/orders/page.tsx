@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ClipboardList, ChevronRight, Table, Filter, Plus } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
@@ -42,7 +42,7 @@ export default async function AdminOrdersPage({
   const guard = await requireAdmin('受注一覧は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const showAll = first(searchParams.all) === '1'
   const rawStart = first(searchParams.start)

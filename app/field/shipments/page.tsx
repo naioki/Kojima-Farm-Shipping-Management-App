@@ -551,7 +551,7 @@ export default async function ShipmentsPage({
     const nextOrderDestMap = new Map((nextOrders ?? []).map((o) => [o.id, o.destination_id]))
 
     if (nextOrderIds.length > 0) {
-      let { data: nextItems, error: nextItemsErr } = await admin
+      const { data: initialNextItems, error: nextItemsErr } = await admin
         .from('order_items')
         .select(`
           id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -561,6 +561,7 @@ export default async function ShipmentsPage({
         `)
         .eq('product_id', selectedProductId)
         .in('order_id', nextOrderIds)
+      let nextItems = initialNextItems
       if (nextItemsErr) {
         const fbNext = await admin
           .from('order_items')

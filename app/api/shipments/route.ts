@@ -6,7 +6,7 @@ import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
-import { shiftDateStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { determineContainerType } from '@/lib/pipeline/schemas'
 
@@ -212,6 +212,7 @@ export async function POST(req: Request) {
 
   let orderId = existing?.id
   if (!orderId) {
+    const { data: userRow } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle()
     const { data: order, error: orderErr } = await supabase
       .from('orders')
       .insert({
@@ -219,10 +220,12 @@ export async function POST(req: Request) {
         destination_id: destination_id ?? null,
         source: 'manual',
         status: 'approved',
+        order_date: jstTodayStr(),
         delivery_date,
         delivery_date_source: 'manual',
         shipping_time: shipping_time ?? null,
-        created_by: user.id,
+        note: note ?? null,
+        created_by: userRow ? user.id : null,
       })
       .select('id')
       .single()
@@ -316,14 +319,18 @@ export async function POST(req: Request) {
     if (upErr || !updatedItem) return NextResponse.json({ error: upErr?.message ?? 'update failed' }, { status: 500 })
     finalItem = updatedItem
 
-    await writeAudit(supabase, {
-      entityType: 'order_items',
-      entityId: existingItem.id,
-      action: 'UPDATE',
-      oldValues: existingItem,
-      newValues: updatedItem,
-      userId: user.id,
-    })
+    try {
+      await writeAudit(supabase, {
+        entityType: 'order_items',
+        entityId: existingItem.id,
+        action: 'UPDATE',
+        oldValues: existingItem,
+        newValues: updatedItem,
+        userId: user.id,
+      })
+    } catch (auditErr) {
+      console.warn('[api/shipments] audit warning:', auditErr)
+    }
   } else {
     // 新規明細作成（単価・税率は商品マスタから）
     const initCases = Math.floor(deltaQty / effectivePacksPerCase)
@@ -355,14 +362,18 @@ export async function POST(req: Request) {
     if (itemErr || !item) return NextResponse.json({ error: itemErr?.message ?? 'insert failed' }, { status: 500 })
     finalItem = item
 
-    await writeAudit(supabase, {
-      entityType: 'order_items',
-      entityId: String(item.id),
-      action: 'INSERT',
-      oldValues: null,
-      newValues: item,
-      userId: user.id,
-    })
+    try {
+      await writeAudit(supabase, {
+        entityType: 'order_items',
+        entityId: String(item.id),
+        action: 'INSERT',
+        oldValues: null,
+        newValues: item,
+        userId: user.id,
+      })
+    } catch (auditErr) {
+      console.warn('[api/shipments] audit warning:', auditErr)
+    }
   }
 
   // 全品目「出荷日の前日に収穫・パック」原則に従い harvest_tasks を自動同期

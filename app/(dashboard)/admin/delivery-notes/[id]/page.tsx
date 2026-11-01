@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronLeft, FileDown } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
 import { DeliveryNoteDocument } from '@/components/admin/DeliveryNoteDocument'
@@ -18,7 +18,7 @@ export default async function SavedDeliveryNotePage({ params }: { params: { id: 
   const guard = await requireAdmin('納品書は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: note, error } = await supabase
     .from('delivery_notes')

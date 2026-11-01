@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { customerProductRuleUpsertSchema } from '@/types/database'
 import { getSetting } from '@/lib/settings'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
@@ -27,7 +28,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const input = parsed.data
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 権限（ロック＋マスター）
   const [lockRaw, masterRaw, notifyRaw] = await Promise.all([

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Sparkles, MessageSquarePlus, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
@@ -26,12 +27,15 @@ interface ParsedItem {
   cases?: number | null
   remainder_packs?: number | null
   box_count?: number | null
+  container_type?: string | null
+  has_card?: boolean | null
 }
 
 interface ParsedOrder {
   customer_name: string | null
   destination_name?: string | null
   delivery_date: string | null
+  note?: string | null
   items: ParsedItem[]
 }
 
@@ -55,14 +59,15 @@ const SAMPLE_PROMPTS = [
 
 /**
  * クイック注文入力モーダル（/admin/orders）。
- * Discord `/order` コマンドの代替として、自然言語テキスト（例:「明日 勘兵衛 イオンタウン向け チンゲン菜 5ケース」）から
- * AI解析（v2.3プロンプト + `ai_rules` 動的注入）を通して即座に注文化できる入力UI。
+ * 自然言語テキスト（例:「明日 勘兵衛 イオンタウン向け チンゲン菜 5ケース」）から
+ * AI解析（または決定論的ローカルパーサー）を通して即座に注文化できる入力UI。
  */
 export function QuickOrderModal({
   customers: initialCustomers,
   products,
   destinations: initialDestinations,
 }: QuickOrderModalProps) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
@@ -85,15 +90,15 @@ export function QuickOrderModal({
         body: JSON.stringify({ text: trimmed }),
       })
       const json = (await res.json().catch(() => ({}))) as OcrResult & { error?: string }
-      if (!res.ok) throw new Error(json.error ?? `AI解析失敗 (${res.status})`)
+      if (!res.ok) throw new Error(json.error ?? `解析失敗 (${res.status})`)
       setResult(json)
       if (!json.is_order || json.orders.length === 0) {
-        toast('チンゲン菜の注文として認識されませんでした。表現を確認してください', { icon: '⚠️' })
+        toast('注文として認識されませんでした。品目や数量の表現を確認してください', { icon: '⚠️' })
       } else {
         toast.success(`${json.orders.length}件の注文内容を解析しました。内容を確認して保存してください`)
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'AI解析に失敗しました')
+      toast.error(e instanceof Error ? e.message : '解析に失敗しました')
     } finally {
       setAnalyzing(false)
     }
@@ -118,7 +123,7 @@ export function QuickOrderModal({
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="クイック注文入力（AI自然言語解析 v2.3）"
+        title="クイック注文入力（自然言語解析）"
         className="max-w-3xl"
       >
         <div className="max-h-[80vh] space-y-4 overflow-y-auto pr-1">
@@ -172,7 +177,7 @@ export function QuickOrderModal({
               disabled={!text.trim()}
             >
               <MessageSquarePlus className="h-4 w-4" aria-hidden />
-              AIで解析して注文フォームを作成
+              解析して注文フォームを作成
             </Button>
           </div>
 
@@ -181,7 +186,7 @@ export function QuickOrderModal({
             <div className="space-y-4 border-t border-line pt-4">
               {!result.is_order || result.orders.length === 0 ? (
                 <p className="rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-xs font-medium text-warning">
-                  チンゲン菜の注文明細が抽出されませんでした（小島農園の出荷対象はチンゲン菜のみです）。テキストを確認して再度お試しください。
+                  注文明細が抽出されませんでした。取引先名・品目・数量（例: 5ケース / 100パック）を確認して再度お試しください。
                 </p>
               ) : (
                 result.orders.map((order, idx) => (
@@ -189,6 +194,7 @@ export function QuickOrderModal({
                     key={idx}
                     order={order}
                     index={idx}
+                    totalOrders={result.orders.length}
                     customers={customerList}
                     products={products}
                     destinations={destinationList}
@@ -202,6 +208,13 @@ export function QuickOrderModal({
                         prev.some((x) => x.id === d.id) ? prev : [...prev, d],
                       )
                     }
+                    onSaved={() => {
+                      router.refresh()
+                      if (result.orders.length === 1) {
+                        setOpen(false)
+                        handleReset()
+                      }
+                    }}
                   />
                 ))
               )}

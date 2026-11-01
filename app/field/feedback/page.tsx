@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { getAuthedUser, createClient } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { FeedbackReportSection } from '@/components/admin/FeedbackReportSection'
 
 export const dynamic = 'force-dynamic'
@@ -8,7 +9,7 @@ export default async function FieldFeedbackPage() {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   const isAdmin = profile?.role === 'admin'
 

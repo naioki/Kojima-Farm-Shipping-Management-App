@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { determineUndoEligibility } from '@/lib/orders/undo'
 
@@ -14,7 +15,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: item, error: itemErr } = await supabase
     .from('order_items')

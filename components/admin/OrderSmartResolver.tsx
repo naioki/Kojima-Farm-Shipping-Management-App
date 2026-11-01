@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Upload,
   Camera,
@@ -13,12 +13,19 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import {
+  findBestMatchingCustomer,
+  findBestMatchingDestination,
+} from '@/lib/orders/natural-parser'
 import type { ClarificationQuestion, ClarificationOption } from '@/lib/orders/clarifications'
 import type { ParsedOrder } from '@/lib/gemini/analyze'
 
 export interface ResolvedOrderData {
   customerId?: string
+  customerNameHint?: string
   destinationId?: string
+  destinationNameHint?: string
   deliveryDate?: string
   shippingTime?: 'am' | 'pm'
   note?: string
@@ -32,12 +39,20 @@ export interface ResolvedOrderData {
     photo_url: string | null
     pack_config_id: string | null
     base_per_selling: number | null
+    packs_per_case?: number | null
+    cases?: number | null
+    remainder_packs?: number | null
+    spec?: string | null
+    container_type?: string | null
+    has_card?: boolean | null
   }>
   originalFile?: {
     base64: string
     mimeType: string
     fileName: string
   }
+  allParsedOrders?: ParsedOrder[]
+  activeOrderIndex?: number
 }
 
 interface OrderSmartResolverProps {
@@ -52,19 +67,24 @@ interface OrderSmartResolverProps {
     default_unit_price: number | null
     default_tax_rate: 8 | 10
   }[]
+  selectedCustomerId?: string
   onOrderResolved: (data: ResolvedOrderData) => void
+  onCustomerCreated?: (newCust: { id: string; name: string }) => void
   onDestinationCreated?: (newDest: { id: string; customer_id: string; full_name: string; code?: string | null }) => void
 }
 
 export function OrderSmartResolver({
-  customers,
+  customers: initialCustomers,
   destinations: initialDestinations,
   products,
+  selectedCustomerId,
   onOrderResolved,
+  onCustomerCreated,
   onDestinationCreated,
 }: OrderSmartResolverProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const [customers, setCustomers] = useState(initialCustomers)
   const [destinations, setDestinations] = useState(initialDestinations)
   const [isDragging, setIsDragging] = useState(false)
   const [mode, setMode] = useState<'file' | 'text'>('file')
@@ -80,7 +100,15 @@ export function OrderSmartResolver({
     mimeType: string
     fileName: string
   } | null>(null)
-  const [creatingDest, setCreatingDest] = useState(false)
+  const [creatingMaster, setCreatingMaster] = useState(false)
+
+  useEffect(() => {
+    setCustomers(initialCustomers)
+  }, [initialCustomers])
+
+  useEffect(() => {
+    setDestinations(initialDestinations)
+  }, [initialDestinations])
 
   // ファイルをBase64として読み込む
   const processFile = async (file: File) => {
@@ -94,22 +122,28 @@ export function OrderSmartResolver({
         fileName: file.name,
       }
       setOriginalFile(fileInfo)
-      await runAnalyze({
-        imageBase64: base64,
-        mimeType: file.type,
-        fileName: file.name,
-      })
+      await runAnalyze(
+        {
+          imageBase64: base64,
+          mimeType: file.type,
+          fileName: file.name,
+        },
+        fileInfo,
+      )
     }
     reader.readAsDataURL(file)
   }
 
   // 解析実行
-  const runAnalyze = async (payload: {
-    imageBase64?: string
-    mimeType?: string
-    fileName?: string
-    text?: string
-  }) => {
+  const runAnalyze = async (
+    payload: {
+      imageBase64?: string
+      mimeType?: string
+      fileName?: string
+      text?: string
+    },
+    fileInfoOverride?: { base64: string; mimeType: string; fileName: string } | null,
+  ) => {
     setAnalyzing(true)
     setParsedOrders([])
     setQuestions([])
@@ -139,11 +173,11 @@ export function OrderSmartResolver({
         return
       }
 
-      toast.success(`${orders.length}件の注文・${data.applied_rules_count ?? 0}ルールをAI解析しました`)
+      toast.success(`${orders.length}件の注文・${data.applied_rules_count ?? 0}ルールを解析しました`)
 
-      // 不明点がない場合は即座にフォームへ反映
-      if (clarifs.length === 0 && orders[0]) {
-        applyOrderToForm(orders[0], {})
+      // 疑問点の有無にかかわらず、抽出できた内容は即座に下部フォームへ反映する（直接編集もワンタップ解決も両方可能にする）
+      if (orders[0]) {
+        applyOrderToForm(orders[0], {}, 0, orders, fileInfoOverride ?? originalFile)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '解析に失敗しました')
@@ -153,134 +187,275 @@ export function OrderSmartResolver({
   }
 
   // 注文データを親フォームの形式にマッピングして反映
-  const applyOrderToForm = (order: ParsedOrder, currentResolved: Record<string, string>) => {
-    // ① 取引先の解決
+  const applyOrderToForm = (
+    order: ParsedOrder,
+    currentResolved: Record<string, string>,
+    orderIdx = activeOrderIdx,
+    allOrders = parsedOrders,
+    currentFile = originalFile,
+    custPool = customers,
+    destPool = destinations,
+  ) => {
+    // ① 取引先の解決（法人格・空白・カナ差を吸収した名寄せ）
     let matchedCustId = ''
     if (order.customer_name) {
-      const cNorm = order.customer_name.replace(/[\s　株式会社農事組合法人有限会社]/g, '').toLowerCase()
-      const hit = customers.find((c) => {
-        const dbNorm = c.name.replace(/[\s　株式会社農事組合法人有限会社]/g, '').toLowerCase()
-        return dbNorm.includes(cNorm) || cNorm.includes(dbNorm)
-      })
+      const hit = findBestMatchingCustomer(order.customer_name, custPool)
       if (hit) matchedCustId = hit.id
     }
-    // 解決された上書き値があれば優先
-    const custResolved = currentResolved[`q-cust-${activeOrderIdx}`]
+    const custResolved = currentResolved[`q-cust-${orderIdx}`]
     if (custResolved) matchedCustId = custResolved
 
-    // ② 納入先の解決
+    // ② 納入先の解決（取引先が確定していればその取引先配下を優先）
     let matchedDestId = ''
     if (order.destination_name) {
-      const dNorm = order.destination_name.trim().toLowerCase()
-      const hit = destinations.find((d) => {
-        const cands = [d.code, d.full_name].filter(Boolean).map((s) => s!.toLowerCase())
-        return cands.some((c) => c === dNorm || c.includes(dNorm) || dNorm.includes(c))
-      })
+      const hit = findBestMatchingDestination(
+        order.destination_name,
+        destPool,
+        matchedCustId || selectedCustomerId || null,
+      )
       if (hit) matchedDestId = hit.id
     }
-    const destResolved = currentResolved[`q-dest-${activeOrderIdx}`]
+    const destResolved = currentResolved[`q-dest-${orderIdx}`]
     if (destResolved) matchedDestId = destResolved
 
-    // ③ 出荷日の解決
-    let finalDate = order.delivery_date || ''
-    const dateResolved = currentResolved[`q-date-${activeOrderIdx}`]
+    // ③ 出荷日の解決（未定または過去日の場合は初期値として明日をセットしつつ質問カードで選択可能にする）
+    const today = jstTodayStr()
+    const tomorrow = shiftDateStr(today, 1)
+    let finalDate = order.delivery_date && order.delivery_date >= today ? order.delivery_date : tomorrow
+    const dateResolved = currentResolved[`q-date-${orderIdx}`]
     if (dateResolved) finalDate = dateResolved
 
-    // ④ 明細の解決
+    // ④ 備考の解決
+    let finalNote = order.note || ''
+    for (let i = 0; i < order.items.length; i++) {
+      const replyResolved = currentResolved[`q-reply-${orderIdx}-${i}`]
+      if (replyResolved !== undefined) {
+        finalNote = replyResolved
+      }
+    }
+
+    // ⑤ 明細の解決
     const formItems = order.items.map((it, iIdx) => {
-      // 品目名の名寄せ
       const rawName = (it.product_name || it.raw_name || '').trim().toLowerCase()
       const hitProd =
         products.find((p) => p.name.toLowerCase() === rawName) ||
-        products.find((p) => rawName.includes(p.name.toLowerCase())) ||
-        products.find((p) => p.name.includes('チンゲン菜')) ||
+        products.find(
+          (p) =>
+            (rawName.includes('チンゲン') && p.name.includes('青梗菜')) ||
+            (rawName.includes('青梗菜') && p.name.includes('チンゲン')),
+        ) ||
+        products.find((p) => rawName.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(rawName)) ||
+        products.find((p) => p.name.includes('青梗菜') || p.name.includes('チンゲン菜')) ||
         products[0]
 
-      let qtyStr = it.quantity || '0'
-      const qtyResolved = currentResolved[`q-qty-${activeOrderIdx}-${iIdx}`]
+      let qtyStr = String(it.quantity ?? '').trim()
+      // "15c2" 等がそのまま入っている場合は数値化
+      const cMatch = qtyStr.match(/^(\d+)\s*c\s*(\d*)$/i)
+      if (cMatch) {
+        const cNum = Number(cMatch[1])
+        const rNum = cMatch[2] ? Number(cMatch[2]) : 0
+        const ppc = it.packs_per_case || 20
+        qtyStr = String(cNum * ppc + rNum)
+      } else {
+        const numMatch = qtyStr.match(/(\d+(?:\.\d+)?)/)
+        qtyStr = numMatch ? numMatch[1]! : '0'
+      }
+
+      const qtyResolved = currentResolved[`q-qty-${orderIdx}-${iIdx}`]
       if (qtyResolved) qtyStr = qtyResolved
 
       return {
         product_id: hitProd?.id || '',
-        product_name: hitProd?.name || it.product_name || 'チンゲン菜',
+        product_name: hitProd?.name || it.product_name || '青梗菜',
         quantity: qtyStr,
-        unit: hitProd?.unit || 'パック',
+        unit: hitProd?.unit || it.unit || '袋',
         unit_price: String(hitProd?.default_unit_price || 0),
         tax_rate: (hitProd?.default_tax_rate as 8 | 10) || 8,
         photo_url: hitProd?.photo_url ?? null,
         pack_config_id: null,
         base_per_selling: null,
+        packs_per_case: it.packs_per_case ?? null,
+        cases: it.cases ?? null,
+        remainder_packs: it.remainder_packs ?? null,
+        spec: it.spec ?? null,
+        container_type: it.container_type ?? null,
+        has_card: it.has_card ?? null,
       }
     })
 
     onOrderResolved({
-      customerId: matchedCustId,
-      destinationId: matchedDestId,
+      customerId: matchedCustId || undefined,
+      customerNameHint: order.customer_name || undefined,
+      destinationId: matchedDestId || undefined,
+      destinationNameHint: order.destination_name || undefined,
       deliveryDate: finalDate,
       shippingTime: 'am',
-      note: order.note || '',
+      note: finalNote,
       items: formItems,
-      originalFile: originalFile ?? undefined,
+      originalFile: currentFile ?? undefined,
+      allParsedOrders: allOrders,
+      activeOrderIndex: orderIdx,
     })
   }
 
   // 質問カードの選択肢を適用
   const handleSelectOption = async (q: ClarificationQuestion, opt: ClarificationOption) => {
     let resolvedValue = opt.value
+    let nextCustomers = customers
+    let nextDestinations = destinations
 
-    // 新規納入先としての登録オプションの場合
+    // 新規マスタ（取引先または納入先）登録オプションの場合
     if (opt.isNewMaster && opt.newMasterPayload) {
       const payload = opt.newMasterPayload
-      if (!payload.customerId) {
-        toast.error('納入先を登録する取引先を選択してください')
-        return
-      }
-      setCreatingDest(true)
-      try {
-        const res = await fetch('/api/destinations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customer_id: payload.customerId,
-            full_name: payload.name,
-            code: payload.name.slice(0, 8),
-          }),
-        })
-        const resJson = await res.json()
-        if (!res.ok) throw new Error(resJson.error || '納入先の登録に失敗しました')
-        const newDest = resJson.destination
-        if (newDest) {
-          setDestinations((prev) => [...prev, newDest])
+      if (payload.type === 'customer') {
+        setCreatingMaster(true)
+        try {
+          const res = await fetch('/api/customers/quick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: payload.name }),
+          })
+          const resJson = await res.json().catch(() => ({}))
+          if (!res.ok || !resJson.id) {
+            throw new Error(resJson.error || '取引先の登録に失敗しました')
+          }
+          const createdCust = { id: resJson.id as string, name: (resJson.name as string) || payload.name }
+          nextCustomers = customers.some((c) => c.id === createdCust.id)
+            ? customers
+            : [...customers, createdCust]
+          setCustomers(nextCustomers)
+          resolvedValue = createdCust.id
+          onCustomerCreated?.(createdCust)
+          toast.success(`取引先「${createdCust.name}」を登録しました`)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : '取引先の登録に失敗しました')
+          return
+        } finally {
+          setCreatingMaster(false)
+        }
+      } else if (payload.type === 'destination') {
+        const targetCustomerId =
+          payload.customerId ||
+          resolvedMap[`q-cust-${q.orderIndex}`] ||
+          selectedCustomerId
+        if (!targetCustomerId) {
+          toast.error('先に取引先を選択または登録してください')
+          return
+        }
+        setCreatingMaster(true)
+        try {
+          const res = await fetch('/api/destinations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              customer_id: targetCustomerId,
+              full_name: payload.name,
+              code: payload.name,
+            }),
+          })
+          const resJson = await res.json().catch(() => ({}))
+          const destObj = res.status === 409 ? resJson.existing : resJson.destination
+          if (!destObj?.id) {
+            throw new Error(resJson.error || '納入先の登録に失敗しました')
+          }
+          const newDest = {
+            id: destObj.id as string,
+            customer_id: targetCustomerId,
+            full_name: (destObj.full_name as string) || payload.name,
+            code: (destObj.code as string | null) ?? payload.name,
+          }
+          nextDestinations = destinations.some((d) => d.id === newDest.id)
+            ? destinations
+            : [...destinations, newDest]
+          setDestinations(nextDestinations)
           resolvedValue = newDest.id
           onDestinationCreated?.(newDest)
           toast.success(`納入先「${newDest.full_name}」を登録しました`)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : '納入先の登録に失敗しました')
+          return
+        } finally {
+          setCreatingMaster(false)
         }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : '納入先の登録に失敗しました')
-        return
-      } finally {
-        setCreatingDest(false)
       }
     }
 
     const nextResolved = { ...resolvedMap, [q.id]: resolvedValue }
     setResolvedMap(nextResolved)
 
-    // 現在のアクティブ注文に即時反映
     if (parsedOrders[activeOrderIdx]) {
-      applyOrderToForm(parsedOrders[activeOrderIdx]!, nextResolved)
+      applyOrderToForm(
+        parsedOrders[activeOrderIdx]!,
+        nextResolved,
+        activeOrderIdx,
+        parsedOrders,
+        originalFile,
+        nextCustomers,
+        nextDestinations,
+      )
     }
   }
 
   // 質問カードの自由入力を適用
-  const handleApplyCustomInput = (q: ClarificationQuestion) => {
+  const handleApplyCustomInput = async (q: ClarificationQuestion) => {
     const val = (customInputs[q.id] || '').trim()
     if (!val) return
+
+    // 取引先や納入先の自由入力の場合は、既存検索→無ければ新規マスタ登録を実行
+    if (q.targetField === 'customer_id') {
+      const hit = findBestMatchingCustomer(val, customers)
+      if (hit) {
+        await handleSelectOption(q, {
+          id: `custom-cust-${q.id}`,
+          label: hit.name,
+          value: hit.id,
+          field: 'customer_id',
+          orderIndex: q.orderIndex,
+        })
+      } else {
+        await handleSelectOption(q, {
+          id: `custom-cust-new-${q.id}`,
+          label: val,
+          value: val,
+          field: 'customer_id',
+          orderIndex: q.orderIndex,
+          isNewMaster: true,
+          newMasterPayload: { type: 'customer', name: val },
+        })
+      }
+      return
+    }
+
+    if (q.targetField === 'destination_id') {
+      const targetCustId = resolvedMap[`q-cust-${q.orderIndex}`] || selectedCustomerId
+      const hit = findBestMatchingDestination(val, destinations, targetCustId)
+      if (hit) {
+        await handleSelectOption(q, {
+          id: `custom-dest-${q.id}`,
+          label: hit.full_name,
+          value: hit.id,
+          field: 'destination_id',
+          orderIndex: q.orderIndex,
+        })
+      } else {
+        await handleSelectOption(q, {
+          id: `custom-dest-new-${q.id}`,
+          label: val,
+          value: val,
+          field: 'destination_id',
+          orderIndex: q.orderIndex,
+          isNewMaster: true,
+          newMasterPayload: { type: 'destination', name: val, customerId: targetCustId },
+        })
+      }
+      return
+    }
+
     const nextResolved = { ...resolvedMap, [q.id]: val }
     setResolvedMap(nextResolved)
 
     if (parsedOrders[activeOrderIdx]) {
-      applyOrderToForm(parsedOrders[activeOrderIdx]!, nextResolved)
+      applyOrderToForm(parsedOrders[activeOrderIdx]!, nextResolved, activeOrderIdx)
     }
   }
 
@@ -290,7 +465,7 @@ export function OrderSmartResolver({
     delete next[qId]
     setResolvedMap(next)
     if (parsedOrders[activeOrderIdx]) {
-      applyOrderToForm(parsedOrders[activeOrderIdx]!, next)
+      applyOrderToForm(parsedOrders[activeOrderIdx]!, next, activeOrderIdx)
     }
   }
 
@@ -307,7 +482,7 @@ export function OrderSmartResolver({
           <div>
             <h3 className="text-sm font-black text-emerald-950">AIスマート注文読取</h3>
             <p className="text-[11px] text-emerald-800">
-              FAX画像・PDF・写真・Excelを置くだけで、取引先・納入先・日付・数量を自動抽出します
+              FAX画像・PDF・写真・Excel・テキストから取引先・納入先・日付・数量を自動抽出します
             </p>
           </div>
         </div>
@@ -437,15 +612,24 @@ export function OrderSmartResolver({
           <textarea
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && textInput.trim()) {
+                e.preventDefault()
+                void runAnalyze({ text: textInput })
+              }
+            }}
             placeholder="例: 明日 勘兵衛 イオンタウン向け チンゲン菜 5ケース"
             rows={2}
             className="w-full rounded-xl border border-emerald-300 bg-white p-2.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
           />
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-emerald-800">
+              Ctrl+Enter または右のボタンで解析して下のフォームへ自動反映します
+            </span>
             <button
               type="button"
               disabled={analyzing || !textInput.trim()}
-              onClick={() => runAnalyze({ text: textInput })}
+              onClick={() => void runAnalyze({ text: textInput })}
               className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50 shadow-xs"
             >
               <Sparkles className="h-3.5 w-3.5" />
@@ -459,7 +643,7 @@ export function OrderSmartResolver({
       {analyzing && (
         <div className="flex items-center justify-center gap-2 rounded-xl bg-white/90 p-3.5 text-xs font-black text-emerald-900 shadow-xs border border-emerald-200 animate-pulse">
           <Sparkles className="h-4 w-4 text-emerald-600 animate-spin" />
-          <span>AIが注文内容を解析中...（日付・取引先・数量・納入先を照合しています）</span>
+          <span>注文内容を解析中...（日付・取引先・数量・納入先を照合しています）</span>
         </div>
       )}
 
@@ -467,7 +651,7 @@ export function OrderSmartResolver({
       {parsedOrders.length > 1 && (
         <div className="space-y-1 pt-1">
           <span className="text-[11px] font-bold text-emerald-950">
-            📑 複数注文を検出（全 {parsedOrders.length} 件）:
+            📑 複数注文を検出（全 {parsedOrders.length} 件 — タブ切替または下部で一括登録可能）:
           </span>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             {parsedOrders.map((o, idx) => (
@@ -476,7 +660,7 @@ export function OrderSmartResolver({
                 type="button"
                 onClick={() => {
                   setActiveOrderIdx(idx)
-                  applyOrderToForm(o, resolvedMap)
+                  applyOrderToForm(o, resolvedMap, idx, parsedOrders)
                 }}
                 className={cn(
                   'px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 transition border',
@@ -499,10 +683,10 @@ export function OrderSmartResolver({
           <div className="flex items-center justify-between text-xs font-black text-emerald-950">
             <span className="flex items-center gap-1.5">
               <HelpCircle className="h-4 w-4 text-amber-600" />
-              <span>AI確認事項（タップで解消・直接入力も可能）:</span>
+              <span>確認事項（タップで即時反映・下のフォームで直接変更も可能）:</span>
             </span>
             <span className="text-[11px] text-emerald-800">
-              解決済: {Object.keys(resolvedMap).length} / {currentQuestions.length}
+              解決済: {currentQuestions.filter((q) => Boolean(resolvedMap[q.id])).length} / {currentQuestions.length}
             </span>
           </div>
 
@@ -512,6 +696,8 @@ export function OrderSmartResolver({
               const resolvedVal = resolvedMap[q.id]
 
               if (isResolved) {
+                const resolvedOptionLabel =
+                  q.options.find((o) => o.value === resolvedVal)?.label || resolvedVal
                 return (
                   <div
                     key={q.id}
@@ -524,7 +710,7 @@ export function OrderSmartResolver({
                           {q.categoryLabel}
                         </span>
                         <span className="text-emerald-900 font-bold">{q.title}: </span>
-                        <span className="text-emerald-950 font-black underline">{resolvedVal}</span>
+                        <span className="text-emerald-950 font-black underline">{resolvedOptionLabel}</span>
                       </div>
                     </div>
                     <button
@@ -562,7 +748,7 @@ export function OrderSmartResolver({
                       <button
                         key={opt.id}
                         type="button"
-                        disabled={creatingDest}
+                        disabled={creatingMaster}
                         onClick={() => void handleSelectOption(q, opt)}
                         className={cn(
                           'px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-xs active:scale-95',
@@ -586,7 +772,7 @@ export function OrderSmartResolver({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            handleApplyCustomInput(q)
+                            void handleApplyCustomInput(q)
                           }
                         }}
                         placeholder={q.customInputPlaceholder || '手動で入力して指定'}
@@ -594,7 +780,8 @@ export function OrderSmartResolver({
                       />
                       <button
                         type="button"
-                        onClick={() => handleApplyCustomInput(q)}
+                        disabled={creatingMaster}
+                        onClick={() => void handleApplyCustomInput(q)}
                         className="h-8 px-2.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold shadow-xs active:scale-95"
                       >
                         適用
@@ -609,11 +796,11 @@ export function OrderSmartResolver({
       )}
 
       {/* 解析成功時の自動入力完了バナー */}
-      {parsedOrders.length > 0 && currentQuestions.every((q) => resolvedMap[q.id]) && (
+      {parsedOrders.length > 0 && (
         <div className="flex items-center justify-between rounded-xl bg-emerald-600 text-white px-3.5 py-2 text-xs font-bold shadow-xs animate-in fade-in duration-200">
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>AIの抽出内容を下部フォームに自動反映しました。内容を確認して保存してください。</span>
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>抽出内容を下部フォームに反映しました。数量や取引先を確認して保存してください。</span>
           </div>
         </div>
       )}

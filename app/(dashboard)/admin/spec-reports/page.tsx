@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Camera, ChevronRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { SpecReportActions } from '@/components/admin/SpecReportActions'
@@ -18,7 +18,7 @@ export default async function SpecReportsPage() {
   const guard = await requireAdmin('規格報告の確認は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: reports, error } = await supabase
     .from('spec_reports')

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { lotCreateSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const { product_id, harvest_date, field_name, gap_record_ref, note, assign_delivery_date } = parsed.data
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: product, error: prodErr } = await supabase
     .from('products')

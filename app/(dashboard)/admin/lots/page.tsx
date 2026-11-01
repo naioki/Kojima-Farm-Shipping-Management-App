@@ -1,5 +1,5 @@
 import { Tags } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { LotForm } from '@/components/admin/LotForm'
@@ -17,7 +17,7 @@ export default async function LotsPage() {
   const guard = await requireAdmin('ロット管理は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const [{ data: products, error: prodErr }, { data: lots, error: lotErr }] = await Promise.all([
     supabase.from('products').select('id, name').eq('is_active', true).order('name'),
     supabase

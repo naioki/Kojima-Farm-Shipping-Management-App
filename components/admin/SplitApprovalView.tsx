@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -118,12 +118,67 @@ function calcBoxBreakdown(totalPacks: number, customerName: string, destinationN
 export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   const router = useRouter()
   const [viewMode, setViewMode] = useState<'split' | 'single'>('split')
+  const [optimisticApprovedIds, setOptimisticApprovedIds] = useState<Set<string>>(new Set())
+
+  const visibleOrders = useMemo(
+    () => orders.filter((o) => !optimisticApprovedIds.has(o.id)),
+    [orders, optimisticApprovedIds],
+  )
   const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id ?? '')
 
   const selectedOrder = useMemo(
-    () => orders.find((o) => o.id === selectedOrderId) ?? orders[0] ?? null,
-    [orders, selectedOrderId],
+    () => visibleOrders.find((o) => o.id === selectedOrderId) ?? visibleOrders[0] ?? null,
+    [visibleOrders, selectedOrderId],
   )
+
+  const handleQuickApprove = useCallback(
+    async (order: PendingOrder) => {
+      const r = pendingReasons(order)
+      if (r.length > 0) return
+      const curIdx = visibleOrders.findIndex((o) => o.id === order.id)
+      const nextOrder = visibleOrders[curIdx + 1] ?? visibleOrders[curIdx - 1] ?? null
+      setOptimisticApprovedIds((prev) => new Set(prev).add(order.id))
+      if (nextOrder) setSelectedOrderId(nextOrder.id)
+      toast.success(`${order.customerName} の注文を承認しました`)
+      try {
+        const res = await fetch(`/api/orders/${order.id}/approve`, { method: 'POST' })
+        if (!res.ok) throw new Error('承認に失敗しました')
+        router.refresh()
+      } catch {
+        setOptimisticApprovedIds((prev) => {
+          const copy = new Set(prev)
+          copy.delete(order.id)
+          return copy
+        })
+        setSelectedOrderId(order.id)
+        toast.error('承認の保存に失敗したため元に戻しました')
+      }
+    },
+    [visibleOrders, router],
+  )
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+      if (!selectedOrder || visibleOrders.length === 0) return
+      const idx = visibleOrders.findIndex((o) => o.id === selectedOrder.id)
+      if (e.key.toLowerCase() === 'j') {
+        e.preventDefault()
+        const next = visibleOrders[(idx + 1) % visibleOrders.length]
+        if (next) setSelectedOrderId(next.id)
+      } else if (e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        const prev = visibleOrders[(idx - 1 + visibleOrders.length) % visibleOrders.length]
+        if (prev) setSelectedOrderId(prev.id)
+      } else if (e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        void handleQuickApprove(selectedOrder)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedOrder, visibleOrders, handleQuickApprove])
 
   // 注文ごとの編集行ステート
   const [rowsByOrder, setRowsByOrder] = useState<Record<string, EditableRow[]>>(() => {
@@ -166,8 +221,8 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
 
   // 高確信度注文（警告理由が0件・日付・納入先確定済み）
   const confidentOrders = useMemo(
-    () => orders.filter((o) => pendingReasons(o).length === 0),
-    [orders],
+    () => visibleOrders.filter((o) => pendingReasons(o).length === 0),
+    [visibleOrders],
   )
 
   function openBulkApproveModal(targets: PendingOrder[]) {
@@ -204,7 +259,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
     }
   }
 
-  if (orders.length === 0 || !selectedOrder) {
+  if (visibleOrders.length === 0 || !selectedOrder) {
     return (
       <EmptyState
         title="現在、承認待ちの注文はありません"

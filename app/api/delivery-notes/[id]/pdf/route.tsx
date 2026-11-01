@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { DeliveryNotePdf } from '@/lib/pdf/DeliveryNotePdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
@@ -13,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: note, error } = await supabase
     .from('delivery_notes')
     .select('*')

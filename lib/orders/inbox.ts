@@ -1,5 +1,4 @@
 import 'server-only'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPendingOrders, type PendingOrder } from '@/lib/orders/pending'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -96,7 +95,7 @@ export interface InboxData {
 }
 
 export async function getInboxData(): Promise<InboxData> {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   // JST の当日0時（timestamptz 比較用）。updated_at が承認で更新される想定。
   const jstMidnight = `${jstTodayStr()}T00:00:00+09:00`
 

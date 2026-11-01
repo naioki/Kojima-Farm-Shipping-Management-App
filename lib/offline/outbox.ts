@@ -1,10 +1,10 @@
 import type { FieldStatus } from '@/types/database'
 
 /**
- * オフライン同期の outbox ロジック（features.md §7 オフライン同期 / Phase F）。
- * 圏外でのタップを IndexedDB の outbox に積み、復帰時に順次 PATCH する。
- * ここでは「積まれたエントリの畳み込み」「PATCH ペイロード化」「競合判定」という
- * 純粋ロジックのみを持ち、IndexedDB I/O は呼び出し側（hooks）に委ねてテスト可能にする。
+ * オフライン同期の outbox ロジック（v6.0 Local-First Overhaul / features.md §7）。
+ * 1. セルタップ（field_status PATCH）の畳み込み・競合判定
+ * 2. 新規・増減出荷登録（POST /api/shipments）のオフラインキューイング・指数バックオフ再試行
+ * 圏外のビニールハウスや集荷場でも 0ms で UI に確定反映し、電波復帰時に確実に自動同期する。
  */
 
 export interface OutboxEntry {
@@ -14,6 +14,32 @@ export interface OutboxEntry {
   version: number
   /** epoch ms。送信順・畳み込みの基準 */
   ts: number
+}
+
+/**
+ * 圃場での新規出荷・増減登録（POST /api/shipments）用のオフラインキューエントリ（v6.0追加）。
+ */
+export interface ShipmentOutboxEntry {
+  id: string
+  payload: {
+    customer_id: string
+    product_id: string
+    delivery_date: string
+    shipping_time?: 'am' | 'pm'
+    quantity_raw: string
+    packs_per_case?: number
+    spec?: string
+    container_type?: string
+    has_card?: boolean
+    destination_id?: string | null
+    mode: 'create' | 'increase' | 'decrease' | 'set'
+    note?: string
+    ai_original?: unknown
+  }
+  /** 画面表示用のラベル（例: ランドローム / 青梗菜 30箱） */
+  summaryLabel: string
+  ts: number
+  retryCount: number
 }
 
 /**
@@ -44,6 +70,14 @@ export function toPatchPayload(entry: OutboxEntry): PatchPayload {
  */
 export function isConflict(entry: OutboxEntry, serverVersion: number): boolean {
   return entry.version !== serverVersion
+}
+
+/**
+ * 指数バックオフ待機時間（ミリ秒）を算出（最大 30 秒）。
+ */
+export function calcBackoffMs(retryCount: number): number {
+  const base = 1000 * Math.pow(2, Math.max(0, Math.min(retryCount, 5)))
+  return Math.min(30000, base)
 }
 
 export type SyncOutcome = 'sent' | 'conflict' | 'failed'

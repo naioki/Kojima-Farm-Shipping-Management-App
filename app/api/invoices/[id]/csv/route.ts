@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { buildInvoiceCsv, CSV_BOM, type InvoiceCsvRow } from '@/lib/invoices/csv'
 import type { TaxRate } from '@/types/database'
@@ -11,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: invoice, error } = await supabase
     .from('invoices')
     .select('invoice_number, customer_id, billing_month, period_start, period_end, issue_date, invoice_reg_num')

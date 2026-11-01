@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronLeft, Lock } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'

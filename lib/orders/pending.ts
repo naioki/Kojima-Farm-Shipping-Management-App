@@ -1,5 +1,5 @@
 import 'server-only'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { parseThreshold } from '@/lib/ingestion/auto-approve'
 import { toGoogleDrivePreviewUrl, toGoogleDriveViewUrl } from '@/lib/pipeline/schemas'
@@ -40,7 +40,7 @@ function extractDriveUrls(r2Key: string | null, raw: unknown): { previewUrl: str
 }
 
 export async function getPendingOrders(): Promise<PendingOrder[]> {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const threshold = parseThreshold(await getSetting('AUTO_APPROVE_THRESHOLD'))
 
   // orders テーブルの備考列は `note`（単数形: 0001_base_schema.sql 準拠）

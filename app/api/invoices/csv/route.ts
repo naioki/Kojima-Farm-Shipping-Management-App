@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { buildInvoiceCsv, CSV_BOM, type InvoiceCsvRow } from '@/lib/invoices/csv'
 import type { TaxRate } from '@/types/database'
@@ -32,7 +33,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: '開始日は終了日以前である必要があります' }, { status: 400 })
   }
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: invoices, error } = await supabase
     .from('invoices')

@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { approveOrder } from '@/lib/orders/approve'
 
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role')

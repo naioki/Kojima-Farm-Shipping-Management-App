@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,7 @@ export default async function Home() {
   const customerId = (user.app_metadata as { customer_id?: string } | undefined)?.customer_id
   if (customerId) redirect('/portal/order')
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   // ロール解決に失敗したら現場（最小権限）に振り分ける。無言にはしない。
   if (profileErr) console.error('[app/page] ロールの取得に失敗:', profileErr.message)

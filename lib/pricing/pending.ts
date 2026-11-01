@@ -1,5 +1,5 @@
 import 'server-only'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * 価格確定が必要な明細の「フラット一覧」（フィルター＋一括値付け画面用）。
@@ -26,7 +26,7 @@ export interface PricingFlatItem {
 }
 
 export async function getPricingItemsFlat(): Promise<PricingFlatItem[]> {
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // DBエラーを「確定待ちゼロ（＝全部済み）」に化けさせない。呼び出し元（価格確定ページ）で
   // error.tsx に拾わせるため、握りつぶさず throw する（CLAUDE.md: NEVER swallow errors）。

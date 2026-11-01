@@ -1,5 +1,5 @@
 import { Images } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { MasterImportWizard, type ExistingForDedup } from '@/components/admin/MasterImportWizard'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -15,7 +15,7 @@ export default async function MasterImportPage() {
   const guard = await requireAdmin('マスタ一括取込は管理者のみ利用できます。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const [{ data: customers }, { data: products }, { data: packs }] = await Promise.all([
     supabase.from('customers').select('name').eq('is_active', true),

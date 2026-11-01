@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { z } from 'zod'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { portalOrderInputSchema } from '@/types/database'
+import { jstTodayStr } from '@/lib/dates'
 
 export const runtime = 'nodejs'
 
+const extendedPortalOrderSchema = portalOrderInputSchema.extend({
+  destination_id: z.string().uuid().nullish(),
+  note: z.string().max(1000).nullish(),
+})
+
 /**
  * B2Bポータルからの発注（features.md §2-3）。
- *   - 認証ユーザーの app_metadata.customer_id を信頼の起点にする（RLS と一致）
+ *   - 認証ユーザーの app_metadata.customer_id を信頼の起点にする
+ *   - RLS で orders / order_items の INSERT が弾かれないよう、customer_id 検証後に createAdminClient() で確実に保存する
  *   - source='portal'、status='pending_review'、confidence は常に 1.0（人間入力扱い）
  *   - delivery_date 必須（Zod で検証）
  * OCR を通さない構造化入力なので Gemini 不要（無料枠を消費しない）。
@@ -21,22 +31,44 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null)
-  const parsed = portalOrderInputSchema.safeParse(body)
+  const parsed = extendedPortalOrderSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
 
-  const supabase = createClient()
+  const admin = createAdminClient()
 
-  // 商品マスタから単価・税率・名称を確定（税率は注文時に冗長保持・tax.md）
+  // 納入先が指定されている場合は自社配下であることを検証
+  if (parsed.data.destination_id) {
+    const { data: dest } = await admin
+      .from('delivery_destinations')
+      .select('id')
+      .eq('id', parsed.data.destination_id)
+      .eq('customer_id', customerId)
+      .maybeSingle()
+    if (!dest) {
+      return NextResponse.json({ error: 'invalid_destination' }, { status: 400 })
+    }
+  }
+
+  // 商品マスタおよび取引ルールから単価・税率・規格・荷姿を確定（税率は注文時に冗長保持・tax.md）
   const productIds = parsed.data.items.map((i) => i.product_id)
-  const { data: products, error: prodErr } = await supabase
-    .from('products')
-    .select('id, name, default_unit_price, default_tax_rate, unit')
-    .in('id', productIds)
-  if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 })
+  const [productsRes, rulesRes] = await Promise.all([
+    admin
+      .from('products')
+      .select('id, name, default_unit_price, default_tax_rate, unit')
+      .in('id', productIds),
+    admin
+      .from('customer_product_rules')
+      .select('id, product_id, spec, label_spec, container_type, has_card')
+      .eq('customer_id', customerId)
+      .in('product_id', productIds),
+  ])
+  if (productsRes.error) return NextResponse.json({ error: productsRes.error.message }, { status: 500 })
 
-  const byId = new Map((products ?? []).map((p) => [p.id, p]))
+  const byId = new Map((productsRes.data ?? []).map((p) => [p.id, p]))
+  const ruleByProdId = new Map((rulesRes.data ?? []).map((r) => [r.product_id, r]))
+
   for (const it of parsed.data.items) {
     if (!byId.has(it.product_id)) {
       return NextResponse.json({ error: 'unknown_product', product_id: it.product_id }, { status: 400 })
@@ -44,35 +76,48 @@ export async function POST(req: Request) {
   }
 
   // 注文ヘッダー作成
-  const { data: order, error: orderErr } = await supabase
+  const { data: order, error: orderErr } = await admin
     .from('orders')
     .insert({
       customer_id: customerId,
+      destination_id: parsed.data.destination_id ?? null,
       source: 'portal',
       status: 'pending_review',
+      order_date: jstTodayStr(),
       delivery_date: parsed.data.delivery_date,
       delivery_date_source: 'manual',
+      note: parsed.data.note?.trim() || null,
     })
     .select('id')
     .single()
-  if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
+  if (orderErr || !order) return NextResponse.json({ error: orderErr?.message ?? 'order insert failed' }, { status: 500 })
 
   // 明細作成（confidence=1.0）
-  const items = parsed.data.items.map((it) => {
+  for (const it of parsed.data.items) {
     const p = byId.get(it.product_id)!
-    return {
-      order_id: order.id,
-      product_id: it.product_id,
-      product_name: p.name,
-      quantity: it.quantity,
-      unit: p.unit,
-      unit_price: p.default_unit_price ?? 0,
-      tax_rate: p.default_tax_rate,
-      confidence: 1.0,
+    const rule = ruleByProdId.get(it.product_id)
+    const { error: itemsErr } = await writeDroppingMissingColumns(
+      {
+        order_id: order.id,
+        product_id: it.product_id,
+        product_name: p.name,
+        quantity: it.quantity,
+        unit: p.unit,
+        unit_price: p.default_unit_price ?? 0,
+        tax_rate: p.default_tax_rate,
+        confidence: 1.0,
+        rule_id: rule?.id ?? null,
+        spec: rule?.spec ?? rule?.label_spec ?? null,
+        container_type: rule?.container_type ?? null,
+        has_card: rule?.has_card ?? true,
+      },
+      (payload) => admin.from('order_items').insert(payload as never).select('id').single(),
+    )
+    if (itemsErr) {
+      await admin.from('orders').delete().eq('id', order.id)
+      return NextResponse.json({ error: itemsErr.message }, { status: 500 })
     }
-  })
-  const { error: itemsErr } = await supabase.from('order_items').insert(items)
-  if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
+  }
 
   return NextResponse.json({ order_id: order.id, status: 'pending_review' }, { status: 201 })
 }

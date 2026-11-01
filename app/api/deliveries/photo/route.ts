@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: 'file_too_large' }, { status: 400 })
   if (!file.type.startsWith('image/')) return NextResponse.json({ error: 'not_image' }, { status: 400 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 配送行を取得（チェック前でも写真は撮れるように、無ければ planned で作る）
   let query = supabase
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get('id') ?? ''
   if (!uuidRe.test(id)) return NextResponse.json({ error: 'invalid' }, { status: 400 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: row, error } = await supabase.from('deliveries').select('photo_url').eq('id', id).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!row?.photo_url) return NextResponse.json({ error: 'not_found' }, { status: 404 })

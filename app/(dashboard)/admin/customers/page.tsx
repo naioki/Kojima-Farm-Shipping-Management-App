@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'

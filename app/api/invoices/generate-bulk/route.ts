@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { generateInvoiceForCustomer } from '@/lib/invoices/generate'
 
 export const runtime = 'nodejs'
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const { period_start, period_end } = parsed.data
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: customers, error: custErr } = await supabase
     .from('customers')

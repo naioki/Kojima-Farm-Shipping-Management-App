@@ -1,4 +1,6 @@
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { foldKana } from '@/lib/normalize/kana'
+import { normalizeOrgName } from '@/lib/normalize/org-name'
 import type { ParsedOrder } from '@/lib/gemini/analyze'
 
 export interface ClarificationOption {
@@ -46,6 +48,21 @@ interface CustomerItem {
 interface ProductItem {
   id: string
   name: string
+}
+
+/** 法人格・括弧・空白・ひらがな/カタカナ差を吸収した取引先比較キー */
+function normCustomer(s: string): string {
+  return foldKana(normalizeOrgName(s))
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/[\s　・]/g, '')
+    .toLowerCase()
+}
+
+/** ひらがな/カタカナ・空白・括弧差を吸収した納入先比較キー */
+function normDest(s: string): string {
+  return foldKana(s.normalize('NFKC'))
+    .replace(/[\s　()（）・]/g, '')
+    .toLowerCase()
 }
 
 /**
@@ -106,48 +123,69 @@ export function buildClarificationQuestions(
       })
     }
 
-    // ② 取引先 (Who) の検証
+    // ② 取引先 (Who) の検証（文字クラス正規表現バグを排除し、normalizeOrgName + foldKana で正確に照合）
     let matchedCustomer: CustomerItem | undefined
     if (order.customer_name) {
-      const cNorm = order.customer_name.replace(/[\s　株式会社農事組合法人有限会社]/g, '').toLowerCase()
-      matchedCustomer = customers.find((c) => {
-        const dbNorm = c.name.replace(/[\s　株式会社農事組合法人有限会社]/g, '').toLowerCase()
-        return dbNorm.includes(cNorm) || cNorm.includes(dbNorm)
-      })
+      const cKey = normCustomer(order.customer_name)
+      matchedCustomer =
+        customers.find((c) => normCustomer(c.name) === cKey) ??
+        customers.find((c) => {
+          const dbKey = normCustomer(c.name)
+          return dbKey.length >= 2 && cKey.length >= 2 && (dbKey.includes(cKey) || cKey.includes(dbKey))
+        })
     }
-    if (!matchedCustomer && customers.length > 0) {
-      questions.push({
-        id: `q-cust-${oIdx}`,
+    if (!matchedCustomer) {
+      const custOptions: ClarificationOption[] = customers.slice(0, 4).map((c) => ({
+        id: `opt-cust-${c.id}-${oIdx}`,
+        label: c.name,
+        value: c.id,
+        field: 'customer_id',
         orderIndex: oIdx,
-        category: 'general',
-        categoryLabel: 'だれが (Who)',
-        title: '取引先の確認',
-        reason: order.customer_name
-          ? `「${order.customer_name}」に完全一致する取引先がマスタに見つかりません`
-          : '取引先が記載されていません',
-        targetField: 'customer_id',
-        allowCustomInput: true,
-        customInputPlaceholder: '新しい取引先名を入力して登録',
-        options: customers.slice(0, 4).map((c) => ({
-          id: `opt-cust-${c.id}-${oIdx}`,
-          label: c.name,
-          value: c.id,
+      }))
+      if (order.customer_name && order.customer_name.trim()) {
+        custOptions.push({
+          id: `opt-cust-new-${oIdx}`,
+          label: `＋「${order.customer_name.trim()}」を新規取引先として登録`,
+          value: order.customer_name.trim(),
           field: 'customer_id',
           orderIndex: oIdx,
-        })),
-      })
+          isNewMaster: true,
+          newMasterPayload: {
+            type: 'customer',
+            name: order.customer_name.trim(),
+          },
+        })
+      }
+      if (custOptions.length > 0) {
+        questions.push({
+          id: `q-cust-${oIdx}`,
+          orderIndex: oIdx,
+          category: 'general',
+          categoryLabel: 'だれが (Who)',
+          title: '取引先の確認',
+          reason: order.customer_name
+            ? `「${order.customer_name}」に一致する取引先がマスタに見つかりません`
+            : '取引先が記載されていません',
+          targetField: 'customer_id',
+          allowCustomInput: true,
+          customInputPlaceholder: '新しい取引先名を入力して登録',
+          options: custOptions,
+        })
+      }
     }
 
     // ③ 納入先 (Where) の検証
     if (order.destination_name) {
-      const destText = order.destination_name.trim().toLowerCase()
+      const destText = normDest(order.destination_name)
       const custDests = matchedCustomer
         ? destinations.filter((d) => d.customer_id === matchedCustomer!.id)
         : destinations
 
       const matchedDest = custDests.find((d) => {
-        const cands = [d.code, d.full_name, ...(d.aliases ?? [])].filter(Boolean).map((s) => s!.toLowerCase())
-        return cands.some((c) => c === destText || c.includes(destText) || destText.includes(c))
+        const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
+          .filter((x): x is string => Boolean(x))
+          .map(normDest)
+        return cands.some((c) => c === destText || c.includes(destText) || (c.length >= 2 && destText.includes(c)))
       })
 
       if (!matchedDest) {

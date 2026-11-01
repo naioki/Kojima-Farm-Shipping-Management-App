@@ -1,6 +1,6 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aiRuleCreateSchema } from '@/types/database'
 import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
@@ -11,7 +11,7 @@ async function verifyAdmin() {
   const user = await getAuthedUser()
   if (!user) return { ok: false as const, status: 401, error: '認証が必要です' }
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role')

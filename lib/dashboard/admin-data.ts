@@ -1,5 +1,5 @@
 import 'server-only'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { yen } from '@/lib/format'
@@ -7,10 +7,11 @@ import { formatJpDateShort } from '@/lib/dates'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
 import type { OrderStatusKey, RecentOrderRow, TrendPoint } from '@/components/dashboard/types'
-import { ClipboardList, CheckCircle2, PackageCheck, Sparkles, FileText, Settings } from 'lucide-react'
+import { ClipboardList, CheckCircle2, PackageCheck, Sparkles, FileText, Settings, PlusCircle } from 'lucide-react'
 
 /** 経営ダッシュボードのよく使う操作（固定）。 */
 const QUICK_ACTIONS: AdminDashboardData['actions'] = [
+  { href: '/admin/orders/new', label: '新規注文入力', icon: PlusCircle, tone: 'forest' },
   { href: '/admin/inbox?filter=pending', label: '受注ボックス', icon: CheckCircle2, tone: 'harvest' },
   { href: '/field/shipments', label: '当日出荷', icon: PackageCheck, tone: 'forest' },
   { href: '/admin/orders', label: '受注一覧', icon: ClipboardList, tone: 'trust' },
@@ -64,7 +65,7 @@ function sumLineTotals(items: { line_total: number | null }[] | null): number {
  * フォールバックし、ページ全体は決して落とさない（NEVER swallow→空状態で見せる）。
  */
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const jst = nowJst()
   const today = ymd(jst)
   const cur = monthRange(jst)

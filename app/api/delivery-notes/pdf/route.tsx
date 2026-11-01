@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { DeliveryNotePdf } from '@/lib/pdf/DeliveryNotePdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
@@ -23,7 +24,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'invalid_params' }, { status: 400 })
   }
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: customer, error: customerErr } = await supabase.from('customers').select('name').eq('id', customerId).maybeSingle()
   // 取引先名は見出しの補助。取得失敗しても '—' で続行。無言にはしない。
   if (customerErr) console.error('[api/delivery-notes/pdf] 取引先名の取得に失敗:', customerErr.message)

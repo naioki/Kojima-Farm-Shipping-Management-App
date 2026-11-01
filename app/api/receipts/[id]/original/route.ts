@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { toGoogleDrivePreviewUrl, toGoogleDriveViewUrl } from '@/lib/pipeline/schemas'
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role')

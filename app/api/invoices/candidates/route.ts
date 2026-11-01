@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 
 export const runtime = 'nodejs'
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: '開始日・終了日を正しく指定してください' }, { status: 400 })
   }
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 1. 期間内の承認/出荷済み明細を取得
   const { data: rows, error } = await supabase

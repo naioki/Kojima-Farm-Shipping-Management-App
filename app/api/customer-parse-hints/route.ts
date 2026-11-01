@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { customerParseHintSchema } from '@/types/database'
 
 export const runtime = 'nodejs'
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const { customer_id, raw_name, product_id, corrected_name, note } = parsed.data
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: existing, error: existingErr } = await supabase
     .from('customer_parse_hints')

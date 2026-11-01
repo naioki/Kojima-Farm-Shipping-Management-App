@@ -1,5 +1,5 @@
 import 'server-only'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * 受注一覧・受注詳細のデータ取得（admin/orders 画面用）。
@@ -63,7 +63,7 @@ const sumLine = (items: { line_total: number | null }[] | null): number =>
 
 /** すべての受注を新しい順で取得（絞り込み対応・既定 200 件）。 */
 export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Promise<OrderListRow[]> {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   let query = supabase
     .from('orders')
     .select(
@@ -106,7 +106,7 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
 
 /** 受注1件の詳細（明細付き）。存在しなければ null。 */
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('orders')
     .select(

@@ -9,6 +9,7 @@ import {
   Carrot,
   Settings,
   ClipboardList,
+  PlusCircle,
   Truck,
   Sparkles,
 } from 'lucide-react'
@@ -48,8 +49,9 @@ export const ADMIN_GROUPS: NavGroup[] = [
   {
     label: '請求・台帳',
     items: [
-      { href: '/admin/invoices', label: '請求書作成・確定', icon: FileText },
+      { href: '/admin/orders/new', label: '新規注文入力', icon: PlusCircle },
       { href: '/admin/orders', label: '受注履歴・台帳', icon: ClipboardList },
+      { href: '/admin/invoices', label: '請求書作成・確定', icon: FileText },
     ],
   },
   {

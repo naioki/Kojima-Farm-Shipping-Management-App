@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Sidebar } from '@/components/layouts/Sidebar'
 import { MobileNav } from '@/components/layouts/MobileNav'
 
@@ -11,7 +12,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role, full_name')

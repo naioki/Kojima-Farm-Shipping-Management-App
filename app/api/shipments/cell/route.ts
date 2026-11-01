@@ -5,7 +5,7 @@ import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
-import { shiftDateStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export const runtime = 'nodejs'
 
@@ -146,9 +146,9 @@ export async function PUT(req: Request) {
         customer_id,
         source: 'manual',
         status: 'approved',
+        order_date: jstTodayStr(),
         delivery_date,
         delivery_date_source: 'manual',
-        created_by: user.id,
       })
       .select('id')
       .single()

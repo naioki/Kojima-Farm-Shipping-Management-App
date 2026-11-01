@@ -1,5 +1,5 @@
 import { Tag, Package } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { PackConfigManager, type PackConfigRow } from '@/components/admin/PackConfigManager'
 import { PriceRuleManager, type PriceRuleListRow } from '@/components/admin/PriceRuleManager'
@@ -17,7 +17,7 @@ export default async function PricingMasterPage() {
   const guard = await requireAdmin('価格・荷姿マスタは管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const [productsRes, customersRes, packsRes, pricesRes] = await Promise.all([
     supabase.from('products').select('id, name, base_unit').eq('is_active', true).order('name'),

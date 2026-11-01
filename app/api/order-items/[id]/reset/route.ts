@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { fieldStatusResetSchema } from '@/types/database'
 import { resetOneStep } from '@/lib/field/tap-loop'
 import { writeAudit } from '@/lib/audit/log'
@@ -22,7 +23,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: current, error: readErr } = await supabase
     .from('order_items')

@@ -3,10 +3,11 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { analyzeOrders } from '@/lib/gemini/analyze'
-import { getStaffFeatures } from '@/lib/field/features'
+import { analyzeOrders, type OrdersResult } from '@/lib/gemini/analyze'
+import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { parseSpreadsheetToText } from '@/lib/excel/parse'
 import { buildClarificationQuestions } from '@/lib/orders/clarifications'
+import { parseNaturalOrderTextDeterministic } from '@/lib/orders/natural-parser'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -32,8 +33,9 @@ const bodySchema = z
 
 /**
  * 手動OCR・クイック注文・新規注文スマート読取解析エンドポイント。
- * 管理者は常時可。スタッフは設定「STAFF_CAN_OCR」がONのときのみ可。
+ * 管理者および社内スタッフ（public.users 登録ユーザー）が利用可能。
  * FAX画像/PDF/Excel/テキストをGeminiに通し、抽出明細と【AI質問カード（不明点・未登録店舗）】を決定論的に生成して返す。
+ * 万一 GEMINI_API_KEY 未設定または AI 過負荷時でも、テキスト・Excel・CSV入力は決定論的ローカルパーサーに自動フォールバックし業務を止めない。
  */
 export async function POST(req: Request) {
   const user = await getAuthedUser()
@@ -47,12 +49,10 @@ export async function POST(req: Request) {
     .maybeSingle()
   if (profileErr) console.error('[app/api/ocr/analyze/route.ts] ロールの取得に失敗:', profileErr.message)
 
-  const role = profile?.role
-  if (role !== 'admin') {
-    const features = await getStaffFeatures()
-    if (role !== 'staff' || !features.ocr) {
-      return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
-    }
+  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
+  const role = profile?.role ?? jwtRole
+  if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
+    return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
   }
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
@@ -64,6 +64,20 @@ export async function POST(req: Request) {
   }
 
   const { imageBase64, mimeType, fileName, text, clientNameHint, modelOverride } = parsed.data
+
+  // DBマスタを取得（名寄せ・質問カード生成・決定論的フォールバックで共用）
+  const [custRes, destRes, prodRes] = await Promise.all([
+    admin.from('customers').select('id, name').eq('is_active', true),
+    admin
+      .from('delivery_destinations')
+      .select('id, customer_id, code, full_name, aliases')
+      .eq('is_active', true),
+    admin.from('products').select('id, name, unit, aliases').eq('is_active', true),
+  ])
+
+  const customers = custRes.data ?? []
+  const destinations = destRes.data ?? []
+  const products = prodRes.data ?? []
 
   // Excel (.xlsx, .xls) または CSV の場合は、構造化テキストにデコードして Gemini へ渡す
   let analyzeInput: { imageBase64?: string; mimeType?: string; text?: string } = {
@@ -89,29 +103,34 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await analyzeOrders(
-      analyzeInput,
-      'manual',
-      undefined,
-      clientNameHint,
-      modelOverride,
-    )
-
-    // DBマスタと突合して、疑問点・未登録納入先の質問カードを自動生成
-    const [custRes, destRes, prodRes] = await Promise.all([
-      admin.from('customers').select('id, name').eq('is_active', true),
-      admin
-        .from('delivery_destinations')
-        .select('id, customer_id, code, full_name')
-        .eq('is_active', true),
-      admin.from('products').select('id, name').eq('is_active', true),
-    ])
+    let result: OrdersResult
+    try {
+      result = await analyzeOrders(
+        analyzeInput,
+        'manual',
+        undefined,
+        clientNameHint,
+        modelOverride,
+      )
+    } catch (aiErr) {
+      // テキスト入力またはExcel/CSV展開テキストがある場合は、Gemini未設定・503障害時でも決定論パーサーで即時救済する
+      if (analyzeInput.text && analyzeInput.text.trim()) {
+        console.warn('[api/ocr/analyze] Gemini解析失敗のため決定論的パーサーへフォールバック:', aiErr)
+        result = parseNaturalOrderTextDeterministic(analyzeInput.text, {
+          customers,
+          destinations,
+          products,
+        })
+      } else {
+        throw aiErr
+      }
+    }
 
     const clarifications = buildClarificationQuestions(
       result.orders ?? [],
-      custRes.data ?? [],
-      destRes.data ?? [],
-      prodRes.data ?? [],
+      customers,
+      destinations,
+      products,
     )
 
     return NextResponse.json({

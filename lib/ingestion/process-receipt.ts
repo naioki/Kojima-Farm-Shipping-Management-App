@@ -1216,12 +1216,14 @@ export async function processReceipt(
     >()
 
     if (effectiveSlipNo) {
-      let { data: slipOrders, error: slipOrdersErr } = await admin
+      let slipOrders: Record<string, unknown>[] | null = null
+      const { data: rawSlipOrders, error: slipOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
+      slipOrders = rawSlipOrders
       if (slipOrdersErr) {
         const fbSlip = await admin
           .from('orders')
@@ -1237,12 +1239,14 @@ export async function processReceipt(
     }
 
     if (matrixDates.length > 0 && (isFullResendingMatrix || matrixDates.length >= 2 || effectiveSlipNo)) {
-      let { data: dateOrders, error: dateOrdersErr } = await admin
+      let dateOrders: Record<string, unknown>[] | null = null
+      const { data: rawDateOrders, error: dateOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .in('delivery_date', matrixDates)
+      dateOrders = rawDateOrders
       if (dateOrdersErr) {
         const fbDate = await admin
           .from('orders')

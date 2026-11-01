@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { Camera } from 'lucide-react'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { SpecReportForm } from '@/components/field/SpecReportForm'
@@ -21,7 +22,7 @@ export default async function ReportSpecPage({
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   if (profileErr) console.error('[field/report-spec] ロールの取得に失敗:', profileErr.message)
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'

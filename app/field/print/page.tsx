@@ -1,5 +1,6 @@
 import { PrintCustomerFilter } from '@/components/field/PrintCustomerFilter'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
@@ -27,7 +28,7 @@ export default async function FieldPrintPage({
 
   const user = await getAuthedUser()
   if (!user) return <ErrorState message="ログインが必要です" />
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
   if (profileErr) console.error('[field/print] ロールの取得に失敗:', profileErr.message)

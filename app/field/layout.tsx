@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { MobileNav } from '@/components/layouts/MobileNav'
 import { ConnectionStatus } from '@/components/field/ConnectionStatus'
 import { FieldLangProvider } from '@/lib/field/lang-context'
@@ -17,7 +18,7 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   const user = await getAuthedUser()
   if (!user) redirect('/login')
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase
     .from('users')
     .select('role, full_name')

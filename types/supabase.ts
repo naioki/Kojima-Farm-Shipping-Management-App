@@ -18,13 +18,19 @@ import type {
   DeliveryNoteItem,
   DeliveryDestination,
   AiRule,
+  DailyContainerInventory,
+  Delivery,
+  DeliveryEvent,
+  Lot,
+  PackConfig,
+  PackConfigPhoto,
+  PriceRuleRow,
+  PrintJob,
+  SpecReport,
 } from './database'
 
 /**
- * Supabase クライアントに渡すスキーマ型（手書き版）。
- * 本来は `supabase gen types typescript` で生成するが、ローカルDBが無い段階のため
- * migrations/0001・0002 に対応する形を手書きで持つ。実DB接続後は生成版に差し替え推奨。
- *
+ * Supabase クライアントに渡すスキーマ型（migrations/0001 〜 0029 完全対応版）。
  * Row は types/database.ts の行型を再利用。Insert は DB 既定値/生成列/NULL 可の列を任意にする。
  * Update はすべて任意（Partial）。生成列（subtotal/tax_amount/line_total）は Insert/Update から除外。
  */
@@ -55,6 +61,7 @@ export interface Database {
           invoice_reg_num?: string | null
           payment_terms?: string | null
           is_active?: boolean
+          display_color?: string | null
           channel_identifiers?: Customer['channel_identifiers']
         },
         Partial<Customer>
@@ -67,6 +74,10 @@ export interface Database {
           full_name: string
           aliases?: string[]
           sort_order?: number
+          pack_sort_order?: number
+          shipping_route_name?: string | null
+          departure_time?: string | null
+          default_container_type?: string | null
           is_active?: boolean
         },
         Partial<DeliveryDestination>
@@ -78,10 +89,13 @@ export interface Database {
           name_kana?: string | null
           aliases?: string[]
           unit?: string
+          base_unit?: string | null
+          category?: string | null
           default_tax_rate?: Product['default_tax_rate']
           container_capacity?: number | null
           default_unit_price?: number | null
           stock_qty?: number
+          photo_url?: string | null
           is_active?: boolean
         },
         Partial<Product>
@@ -115,6 +129,12 @@ export interface Database {
             unit?: string
             pack_config_id?: string | null
             price_status?: OrderItem['price_status']
+            billable_qty?: number | null
+            billable_reason?: string | null
+            pricing_reference_date?: string | null
+            priced_at?: string | null
+            priced_by?: string | null
+            lot_id?: string | null
             unit_price: number
             tax_rate: OrderItem['tax_rate']
             version?: number
@@ -130,6 +150,15 @@ export interface Database {
             has_card?: boolean | null
             line_note?: string | null
             field_note?: string | null
+            spec_warnings?: OrderItem['spec_warnings']
+            bag_type?: string | null
+            seal_text?: string | null
+            has_seal?: boolean | null
+            daily_pack_sort_order?: number | null
+            snap_total_packs?: number | null
+            is_manual_modified?: boolean
+            is_new_addition?: boolean
+            order_key?: string | null
           },
           Generated
         >,
@@ -279,6 +308,9 @@ export interface Database {
           default_quantity?: number | null
           spec?: string | null
           has_card?: boolean
+          bag_type?: string | null
+          has_seal?: boolean
+          seal_text?: string | null
         },
         Partial<CustomerProductRule>
       >
@@ -309,7 +341,7 @@ export interface Database {
       >
       app_settings: Table<
         AppSetting,
-        { key: string; value?: string | null; is_secret?: boolean; updated_by?: string | null },
+        { key: string; value?: string | null; is_secret?: boolean; updated_at?: string; updated_by?: string | null },
         Partial<AppSetting>
       >
       customer_parse_hints: Table<
@@ -338,6 +370,137 @@ export interface Database {
           updated_at?: string
         },
         Partial<AiRule>
+      >
+      daily_container_inventory: Table<
+        DailyContainerInventory,
+        {
+          target_date: string
+          product_id: string
+          stock_containers?: number
+          carryover_to_next_day?: number | null
+          updated_at?: string
+        },
+        Partial<DailyContainerInventory>
+      >
+      deliveries: Table<
+        Delivery,
+        {
+          delivery_date: string
+          customer_id: string
+          destination_id?: string | null
+          status?: Delivery['status']
+          checked_by?: string | null
+          checked_at?: string | null
+          delivered_by?: string | null
+          delivered_at?: string | null
+          photo_url?: string | null
+          note?: string | null
+        },
+        Partial<Delivery>
+      >
+      delivery_events: Table<
+        DeliveryEvent,
+        {
+          delivery_id: string
+          actor?: string | null
+          action: string
+          before?: Record<string, unknown> | null
+          after?: Record<string, unknown> | null
+        },
+        Partial<DeliveryEvent>
+      >
+      lots: Table<
+        Lot,
+        {
+          lot_no: string
+          product_id: string
+          field_name?: string | null
+          harvest_date?: string | null
+          gap_record_ref?: string | null
+          note?: string | null
+        },
+        Partial<Lot>
+      >
+      pack_configs: Table<
+        PackConfig,
+        {
+          product_id: string
+          customer_id?: string | null
+          label: string
+          inner_unit_label?: string | null
+          inner_per?: number | null
+          outer_unit_label?: string | null
+          outer_per?: number | null
+          selling_unit_label: string
+          base_per_selling: number
+          needs_manual_confirm?: boolean
+          is_active?: boolean
+          spec_note?: string | null
+          has_card?: boolean | null
+          has_seal?: boolean | null
+          tape_color?: string | null
+          label_spec?: string | null
+          price_tag_required?: boolean | null
+          returnable_container?: boolean | null
+          quality_note?: string | null
+          standing_notes?: string | null
+          field_memo?: string | null
+        },
+        Partial<PackConfig>
+      >
+      pack_config_photos: Table<
+        PackConfigPhoto,
+        {
+          pack_config_id: string
+          storage_path: string
+          kind: PackConfigPhoto['kind']
+          sort_order?: number
+        },
+        Partial<PackConfigPhoto>
+      >
+      price_rules: Table<
+        PriceRuleRow,
+        {
+          product_id: string
+          customer_id?: string | null
+          pack_config_id?: string | null
+          channel?: PriceRuleRow['channel']
+          price_unit?: PriceRuleRow['price_unit']
+          unit_price: number
+          tax_rate: PriceRuleRow['tax_rate']
+          effective_from: string
+          effective_to?: string | null
+          note?: string | null
+          created_by?: string | null
+        },
+        Partial<PriceRuleRow>
+      >
+      print_jobs: Table<
+        PrintJob,
+        {
+          doc_type: PrintJob['doc_type']
+          target_date: string
+          product_id?: string | null
+          pdf_url: string
+          status?: PrintJob['status']
+          error_message?: string | null
+          requested_by?: string | null
+        },
+        Partial<PrintJob>
+      >
+      spec_reports: Table<
+        SpecReport,
+        {
+          customer_id?: string | null
+          product_id?: string | null
+          note: string
+          photo_url?: string | null
+          status?: SpecReport['status']
+          reported_by?: string | null
+          handled_by?: string | null
+          handled_at?: string | null
+        },
+        Partial<SpecReport>
       >
     }
     Views: Record<string, never>

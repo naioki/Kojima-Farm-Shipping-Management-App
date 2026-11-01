@@ -1,6 +1,6 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const customerId = req.nextUrl.searchParams.get('customer_id')
   if (!customerId) return NextResponse.json({ error: 'customer_id は必須です' }, { status: 400 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
   if (profileErr) console.error('[app/api/orders/stats/route.ts] ロールの取得に失敗:', profileErr.message)

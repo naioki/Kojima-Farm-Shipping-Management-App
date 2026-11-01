@@ -1,7 +1,7 @@
 import 'server-only'
 import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseFaxFilename } from '@/lib/config/ingestion'
 import { getSetting } from '@/lib/settings'
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         { status: 401 },
       )
     }
-    const supabase = createClient()
+    const supabase = createAdminClient()
     const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
     if (profile?.role !== 'admin' && profile?.role !== 'staff') {
       return NextResponse.json({ detail: '権限がありません', error: 'forbidden' }, { status: 403 })

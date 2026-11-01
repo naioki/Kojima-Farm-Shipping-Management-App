@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { deliveryNoteCreateSchema } from '@/types/database'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 import { getSetting } from '@/lib/settings'
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
   const { customer_id, delivery_date, amount_mode, destination_id } = parsed.data
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // 取引先（名前スナップショット用）
   const { data: customer, error: custErr } = await supabase

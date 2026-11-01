@@ -1,6 +1,6 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   invalidateAiRulesCache,
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   if (profile?.role !== 'admin' && profile?.role !== 'staff') {
     return NextResponse.json({ error: '権限がありません' }, { status: 403 })

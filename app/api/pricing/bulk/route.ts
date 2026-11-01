@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient, getAuthedUser } from '@/lib/supabase/server'
+import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolvePrice, type PriceRule } from '@/lib/pricing/resolve'
 
@@ -25,7 +25,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
   if (profileErr) console.error('[app/api/pricing/bulk/route.ts] ロールの取得に失敗:', profileErr.message)

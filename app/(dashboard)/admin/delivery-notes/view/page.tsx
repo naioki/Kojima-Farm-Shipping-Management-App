@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronLeft, FileDown } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PrintButton } from '@/components/admin/PrintButton'
 import { DeliveryNoteDocument } from '@/components/admin/DeliveryNoteDocument'
@@ -32,7 +32,7 @@ export default async function DeliveryNoteView({
     return <ErrorState title="パラメータが不正です" message="取引先と納品日を指定してください。" />
   }
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: customer, error: custErr } = await supabase
     .from('customers')

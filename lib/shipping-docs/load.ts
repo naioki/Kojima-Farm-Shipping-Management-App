@@ -1,5 +1,5 @@
 import 'server-only'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { formatSupplyDestination } from '@/lib/format/destination'
 import {
   aggregateEntries,
@@ -40,7 +40,7 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
   const dateDisplayWide = `${m} 月　${d} 日`
   const empty = (error?: string): ShippingDocsResult => ({ entries: [], dateDisplay, dateDisplayWide, error })
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   let ordersQuery = supabase
     .from('orders')

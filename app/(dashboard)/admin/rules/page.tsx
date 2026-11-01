@@ -1,5 +1,5 @@
 import { Sparkles } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getSetting } from '@/lib/settings'
 import { isAutoApproveOn } from '@/lib/ingestion/auto-approve'
@@ -22,7 +22,7 @@ export default async function AdminAiRulesPage() {
   const guard = await requireAdmin('AIルール管理は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const [rulesRes, custsRes, currentMainModel, currentHighModel, autoApproveRaw, thresholdRaw] =
     await Promise.all([

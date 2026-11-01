@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
@@ -28,7 +28,7 @@ export default async function InvoicesPage() {
   const guard = await requireAdmin('請求は管理者のみです。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: invoices, error } = await supabase
     .from('invoices')
     .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date')

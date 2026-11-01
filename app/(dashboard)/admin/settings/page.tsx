@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { SettingsForm, type SettingItem } from '@/components/admin/SettingsForm'
@@ -19,7 +19,7 @@ export default async function SettingsPage() {
   const guard = await requireAdmin('設定は管理者のみアクセスできます。')
   if (guard) return guard
 
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // app_settings を取得（admin_all RLS で admin のみ可）
   const { data: rows, error } = await supabase.from('app_settings').select('key, value')

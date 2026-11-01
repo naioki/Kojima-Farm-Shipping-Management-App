@@ -8,7 +8,7 @@ import { OrderStatusBadge, sourceLabel } from '@/components/admin/OrderStatusBad
 import { DeleteOrderButton } from '@/components/admin/DeleteOrderButton'
 import { ShippingSlipIssuer } from '@/components/admin/ShippingSlipIssuer'
 import { getOrderDetail } from '@/lib/orders/list'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { formatJpDate } from '@/lib/dates'
@@ -38,7 +38,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
   if (!order) notFound()
 
   // 出荷票ヘッダー会社名の選択候補（取引先名）
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: custRows } = await supabase
     .from('customers')
     .select('name')

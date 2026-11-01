@@ -28,7 +28,9 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
 import { matchDestination, resolveBatchDate, createBatchModePlanner } from '@/lib/field/batch-register'
+import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
+import { useOutbox } from '@/hooks/useOutbox'
 
 export interface ShipmentAddFormProps {
   deliveryDate: string
@@ -87,6 +89,7 @@ export function ShipmentAddForm({
   packsByPair,
 }: ShipmentAddFormProps) {
   const router = useRouter()
+  const { enqueueShipment } = useOutbox()
   const [isOpen, setIsOpen] = useState(false)
   const [step, setStep] = useState<'input' | 'confirm'>('input')
 
@@ -455,13 +458,26 @@ export function ShipmentAddForm({
         badges.push(`品目: ${p?.name || data.product_name}`)
       }
 
-      // 4. 数量の反映
+      // 4. 数量・入数・箱数の完全連動反映
+      const resolvedPacksPerCase =
+        (data.packs_per_case && data.packs_per_case > 0 ? Number(data.packs_per_case) : null) ||
+        inputPacksPerCase ||
+        20
+      setInputPacksPerCase(resolvedPacksPerCase)
       if (data.cases != null && data.cases > 0) {
-        setQtyRaw(`${data.cases}c`)
-        badges.push(`数量: ${data.cases}ケース`)
+        const c = Number(data.cases)
+        const tot = Math.round(c * resolvedPacksPerCase)
+        setInputCases(String(c))
+        setInputTotalPacks(String(tot))
+        setQtyRaw(`${c}c`)
+        badges.push(`数量: ${c}ケース (${tot}${data.unit || 'P'})`)
       } else if (data.quantity_number != null && data.quantity_number > 0) {
-        setQtyRaw(String(data.quantity_number))
-        badges.push(`数量: ${data.quantity_number} ${data.unit || 'P'}`)
+        const tot = Number(data.quantity_number)
+        const c = Math.floor(tot / resolvedPacksPerCase)
+        setInputTotalPacks(String(tot))
+        setInputCases(String(c))
+        setQtyRaw(String(tot))
+        badges.push(`数量: ${tot} ${data.unit || 'P'} (${c}箱相当)`)
       }
 
       // 5. 操作モード
@@ -701,11 +717,7 @@ export function ShipmentAddForm({
 
     // 1. 取引先照合
     const matchedCust = detectedCustName
-      ? customers.find((c) => {
-          const cNorm = c.name.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
-          const dNorm = detectedCustName.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
-          return cNorm.includes(dNorm) || dNorm.includes(cNorm)
-        })
+      ? findBestMatchingCustomer(detectedCustName, customers)
       : undefined
 
     if (matchedCust) {
@@ -1111,11 +1123,7 @@ export function ShipmentAddForm({
         if (/アイプラス|小島農園/.test(detectedCustName)) detectedCustName = ''
 
         const matchedByName = detectedCustName
-          ? customers.find((c) => {
-              const cNorm = c.name.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
-              const dNorm = detectedCustName.replace(/[\s　株式会社有限会社農事組合法人]/g, '')
-              return cNorm.includes(dNorm) || dNorm.includes(cNorm)
-            })
+          ? findBestMatchingCustomer(detectedCustName, customers) ?? null
           : null
 
         // 帳票から取引先名が誤読された場合でも、現在画面で作業中の取引先へ安全にフォールバック（全件一括登録を途中で落とさない）
@@ -1250,26 +1258,51 @@ export function ShipmentAddForm({
   // -------------------------------------------------------------
   async function submitFinal() {
     setSubmitting(true)
+    const shipmentPayload = {
+      customer_id: customerId,
+      product_id: productId,
+      delivery_date: targetDate,
+      shipping_time: shippingTime || undefined,
+      quantity_raw: qtyRaw,
+      packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
+      spec: spec.trim() || undefined,
+      container_type: containerType.trim() || undefined,
+      has_card: hasCard,
+      destination_id: destinationId || null,
+      mode,
+      note: note.trim() || undefined,
+      ai_original: aiOriginalParsedRef.current || undefined,
+    }
+    const summaryLabel = `${customers.find((c) => c.id === customerId)?.name ?? '取引先'} / ${products.find((p) => p.id === productId)?.name ?? '品目'} (${qtyRaw})`
+
     try {
-      const res = await fetch('/api/shipments', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: customerId,
-          product_id: productId,
-          delivery_date: targetDate,
-          shipping_time: shippingTime || undefined,
-          quantity_raw: qtyRaw,
-          packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
-          spec: spec.trim() || undefined,
-          container_type: containerType.trim() || undefined,
-          has_card: hasCard,
-          destination_id: destinationId || null,
-          mode,
-          note: note.trim() || undefined,
-          ai_original: aiOriginalParsedRef.current || undefined,
-        }),
-      })
+      if (!navigator.onLine) {
+        await enqueueShipment(shipmentPayload, summaryLabel)
+        toast.success('電波が弱い場所のため端末に一時保存しました（繋がり次第自動で反映されます）', {
+          duration: 4000,
+        })
+        setIsOpen(false)
+        setStep('input')
+        setQtyRaw('')
+        return
+      }
+      let res: Response
+      try {
+        res = await fetch('/api/shipments', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(shipmentPayload),
+        })
+      } catch {
+        await enqueueShipment(shipmentPayload, summaryLabel)
+        toast.success('電波が弱い場所のため端末に一時保存しました（繋がり次第自動で反映されます）', {
+          duration: 4000,
+        })
+        setIsOpen(false)
+        setStep('input')
+        setQtyRaw('')
+        return
+      }
       const json = await res.json()
       if (!res.ok) {
         throw new Error(ADD_ERRORS[json.error ?? ''] ?? json.error ?? `追加に失敗 (${res.status})`)

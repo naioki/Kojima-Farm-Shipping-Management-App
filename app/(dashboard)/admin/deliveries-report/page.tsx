@@ -1,5 +1,5 @@
 import { BarChart3 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -42,7 +42,7 @@ export default async function DeliveriesReportPage({
   const monthStart = `${today.slice(0, 7)}-01`
   const from = dateRe.test(searchParams.from ?? '') ? searchParams.from! : monthStart
   const to = dateRe.test(searchParams.to ?? '') ? searchParams.to! : today
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: rows, error } = await supabase
     .from('deliveries')
