@@ -7,6 +7,7 @@ import { getSetting } from '@/lib/settings'
 import { DEFAULT_MAIN_GEMINI_MODEL, modelTryOrder } from '@/lib/gemini/models'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineUnitCount } from '@/lib/pipeline/schemas'
+import { fetchActiveAiRules, buildAiRulesSection } from '@/lib/gemini/analyze'
 import {
   findBestMatchingCustomer,
   findBestMatchingDestination,
@@ -177,12 +178,13 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient()
 
   // 1. マスタ情報とAPI設定を完全並列で一括取得（直列DB往復の遅延をゼロ化）
-  const [custRes, destRes, prodRes, apiKey, configuredModel] = await Promise.all([
+  const [custRes, destRes, prodRes, apiKey, configuredModel, aiRules] = await Promise.all([
     admin.from('customers').select('id, name').eq('is_active', true),
     admin.from('delivery_destinations').select('id, customer_id, code, full_name, aliases').eq('is_active', true),
     admin.from('products').select('id, name, unit').eq('is_active', true),
     getSetting('GEMINI_API_KEY'),
     getSetting('GEMINI_MODEL'),
+    fetchActiveAiRules(null).catch(() => []),
   ])
 
   const customers = custRes.data || []
@@ -225,6 +227,8 @@ ${destListStr}
 
 【登録済み品目マスタ】:
 ${prodListStr}
+
+${buildAiRulesSection(aiRules)}
 
 【解析ルール】:
 1. 意図(action):

@@ -48,6 +48,7 @@ export default async function DeliveryNoteView({
     .select('id, destination_id')
     .eq('customer_id', customerId)
     .eq('delivery_date', date)
+    .in('status', ['approved', 'shipped', 'invoiced'])
   if (ordersErr) return <ErrorState message="納品書の対象注文を読み込めませんでした。時間をおいて再度お試しください。" detail={ordersErr.message} />
   const distinctDestIds = [...new Set((allOrders ?? []).map((o) => o.destination_id).filter(Boolean))] as string[]
   const { data: destRows, error: destErr } = distinctDestIds.length
@@ -68,13 +69,22 @@ export default async function DeliveryNoteView({
   const itemsRes = orderIds.length
     ? await supabase
         .from('order_items')
-        .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
+        .select('product_name, quantity, shipped_qty, billable_qty, unit, unit_price, tax_rate, subtotal')
         .in('order_id', orderIds)
         .order('product_name')
-    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number; tax_rate: number; subtotal: number }[], error: null }
+    : { data: [] as { product_name: string; quantity: number; shipped_qty?: number | null; billable_qty?: number | null; unit: string; unit_price: number; tax_rate: number; subtotal: number }[], error: null }
   // 明細は納品書本体。取得失敗を「明細なし」に化けさせない。
   if (itemsRes.error) return <ErrorState message="納品書の明細を読み込めませんでした。時間をおいて再度お試しください。" detail={itemsRes.error.message} />
-  const items = itemsRes.data ?? []
+  const items = (itemsRes.data ?? [])
+    .map((it) => {
+      const effQty = Number(it.billable_qty ?? it.shipped_qty ?? it.quantity) || 0
+      return {
+        ...it,
+        quantity: effQty,
+        subtotal: it.unit_price != null ? effQty * Number(it.unit_price) : it.subtotal,
+      }
+    })
+    .filter((it) => it.quantity > 0)
 
   const [farmName, farmAddr, farmTel, amountDefault] = await Promise.all([
     getSetting('FARM_NAME'),

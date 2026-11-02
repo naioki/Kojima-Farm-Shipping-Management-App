@@ -212,43 +212,62 @@ export default async function AdminOrdersPage({
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs text-ink-faint">
-                  <th className="px-4 py-2.5 font-medium">受注日</th>
-                  <th className="px-4 py-2.5 font-medium">納品日</th>
-                  <th className="px-4 py-2.5 font-medium">取引先</th>
-                  <th className="px-4 py-2.5 font-medium">受注元</th>
-                  <th className="px-4 py-2.5 text-right font-medium">件数</th>
-                  <th className="px-4 py-2.5 text-right font-medium">金額</th>
-                  <th className="px-4 py-2.5 font-medium">状態</th>
+                  <th className="px-3 py-2.5 font-bold text-ink">納品日</th>
+                  <th className="px-3 py-2.5 font-medium">受注日</th>
+                  <th className="px-3 py-2.5 font-bold text-ink">取引先 ＞ 納入先</th>
+                  <th className="px-3 py-2.5 text-right font-bold text-ink">箱数 / パック数</th>
+                  <th className="px-3 py-2.5 font-medium">現場進捗</th>
+                  <th className="px-3 py-2.5 font-medium">受注元</th>
+                  <th className="px-3 py-2.5 text-right font-medium">金額</th>
+                  <th className="px-3 py-2.5 font-medium">状態</th>
                   <th className="px-2 py-2.5" aria-hidden />
                 </tr>
               </thead>
               <tbody>
                 {orders.map((o) => (
                   <tr key={o.id} className="border-b border-line/60 transition-colors last:border-0 hover:bg-bg-soft">
-                    <td className="num whitespace-nowrap px-4 py-3 text-ink-soft">{mdShort(o.orderDate)}</td>
-                    <td className="num whitespace-nowrap px-4 py-3 text-ink-soft">{mdShort(o.deliveryDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className="flex min-w-0 items-center gap-2 font-medium text-ink">
+                    <td className="num whitespace-nowrap px-3 py-3 font-black text-forest-900">
+                      {mdShort(o.deliveryDate)}
+                    </td>
+                    <td className="num whitespace-nowrap px-3 py-3 text-xs text-ink-soft">{mdShort(o.orderDate)}</td>
+                    <td className="px-3 py-3">
+                      <span className="flex min-w-0 items-center gap-2 font-bold text-ink">
                         <ColorDot color={o.customerColor} name={o.customerName} />
                         <span className="min-w-0 truncate">
                           {o.customerName}
                           {o.destinationName && (
-                            <span className="ml-1 font-normal text-ink-soft">＞{o.destinationName}</span>
+                            <span className="ml-1.5 inline-flex items-center rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-xs font-black text-emerald-900">
+                              ▶ {o.destinationName}
+                            </span>
                           )}
                         </span>
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-faint">{sourceLabel(o.source)}</td>
-                    <td className="num whitespace-nowrap px-4 py-3 text-right text-ink-soft">{o.itemCount}件</td>
-                    <td className="num whitespace-nowrap px-4 py-3 text-right text-ink">{yen(o.amount)}</td>
-                    <td className="px-4 py-3"><OrderStatusBadge status={o.status} /></td>
+                    <td className="num whitespace-nowrap px-3 py-3 text-right">
+                      {o.totalPacks > 0 ? (
+                        <div>
+                          <span className="font-black text-ink">{o.totalBoxes} 箱</span>
+                          <span className="ml-1 text-xs font-bold text-ink-soft">
+                            ({o.totalPacks.toLocaleString()} P)
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-ink-faint">{o.itemCount}件</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs font-bold text-ink-soft">
+                      {o.fieldProgressLabel}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs text-ink-faint">{sourceLabel(o.source)}</td>
+                    <td className="num whitespace-nowrap px-3 py-3 text-right text-ink">{yen(o.amount)}</td>
+                    <td className="px-3 py-3"><OrderStatusBadge status={o.status} /></td>
                     <td className="px-2 py-3">
                       <Link
                         href={`/admin/orders/${o.id}`}
-                        aria-label={`${o.customerName} の受注詳細`}
-                        className="inline-flex items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-1 text-xs font-medium text-trust-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                        aria-label={`${o.customerName} の受注詳細・編集`}
+                        className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-lg border border-trust-200 bg-trust-50/70 px-2 py-1 text-xs font-bold text-trust-700 hover:bg-trust-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
                       >
-                        詳細<ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                        詳細・編集<ChevronRight className="h-3.5 w-3.5" aria-hidden />
                       </Link>
                     </td>
                   </tr>

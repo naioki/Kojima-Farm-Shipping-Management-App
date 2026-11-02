@@ -79,11 +79,17 @@ export function buildClarificationQuestions(
   const today = jstTodayStr()
   const tomorrow = shiftDateStr(today, 1)
   const dayAfterTomorrow = shiftDateStr(today, 2)
+  const tenDaysAgo = shiftDateStr(today, -10)
+  const isMultiOrderMatrix = orders.length >= 2
+
+  const askedUnknownCustomers = new Set<string>()
+  const askedUnknownDestinations = new Set<string>()
 
   orders.forEach((order, oIdx) => {
     // ① 出荷日 (When) の検証
+    // 週間マトリクス表（複数日一覧）の場合は、今週前半の日付（1〜10日前）が表に含まれていても正常な週間表であるため過去日エラーにしない
     const deliveryDate = order.delivery_date
-    const isDateMissingOrPast = !deliveryDate || deliveryDate < today
+    const isDateMissingOrPast = !deliveryDate || (isMultiOrderMatrix ? deliveryDate < tenDaysAgo : deliveryDate < today)
     if (isDateMissingOrPast) {
       questions.push({
         id: `q-date-${oIdx}`,
@@ -123,7 +129,7 @@ export function buildClarificationQuestions(
       })
     }
 
-    // ② 取引先 (Who) の検証（文字クラス正規表現バグを排除し、normalizeOrgName + foldKana で正確に照合）
+    // ② 取引先 (Who) の検証（normalizeOrgName + foldKana で正確に照合）
     let matchedCustomer: CustomerItem | undefined
     if (order.customer_name) {
       const cKey = normCustomer(order.customer_name)
@@ -134,7 +140,9 @@ export function buildClarificationQuestions(
           return dbKey.length >= 2 && cKey.length >= 2 && (dbKey.includes(cKey) || cKey.includes(dbKey))
         })
     }
-    if (!matchedCustomer) {
+    const custDedupKey = order.customer_name?.trim() || '__missing_customer__'
+    if (!matchedCustomer && !askedUnknownCustomers.has(custDedupKey)) {
+      askedUnknownCustomers.add(custDedupKey)
       const custOptions: ClarificationOption[] = customers.slice(0, 4).map((c) => ({
         id: `opt-cust-${c.id}-${oIdx}`,
         label: c.name,
@@ -174,7 +182,7 @@ export function buildClarificationQuestions(
       }
     }
 
-    // ③ 納入先 (Where) の検証
+    // ③ 納入先 (Where) の検証（同一納入先の重複質問を排除）
     if (order.destination_name) {
       const destText = normDest(order.destination_name)
       const custDests = matchedCustomer
@@ -188,21 +196,12 @@ export function buildClarificationQuestions(
         return cands.some((c) => c === destText || c.includes(destText) || (c.length >= 2 && destText.includes(c)))
       })
 
-      if (!matchedDest) {
-        // 未登録店舗の検出
+      if (!matchedDest && !askedUnknownDestinations.has(destText)) {
+        askedUnknownDestinations.add(destText)
         const options: ClarificationOption[] = []
-        if (custDests.length > 0) {
-          options.push({
-            id: `opt-dest-existing-${custDests[0]!.id}-${oIdx}`,
-            label: `既存の「${custDests[0]!.full_name}」を選択`,
-            value: custDests[0]!.id,
-            field: 'destination_id',
-            orderIndex: oIdx,
-          })
-        }
         options.push({
           id: `opt-dest-new-${oIdx}`,
-          label: `＋「${order.destination_name}」を新規納入先として登録`,
+          label: `＋「${order.destination_name}」を新規納入先として登録して進める`,
           value: order.destination_name,
           field: 'destination_id',
           orderIndex: oIdx,
@@ -213,14 +212,23 @@ export function buildClarificationQuestions(
             customerId: matchedCustomer?.id,
           },
         })
+        if (custDests.length > 0) {
+          options.push({
+            id: `opt-dest-existing-${custDests[0]!.id}-${oIdx}`,
+            label: `既存の「${custDests[0]!.full_name}」に統合する`,
+            value: custDests[0]!.id,
+            field: 'destination_id',
+            orderIndex: oIdx,
+          })
+        }
 
         questions.push({
           id: `q-dest-${oIdx}`,
           orderIndex: oIdx,
           category: 'destination',
           categoryLabel: 'どこへ (Where)',
-          title: '未登録の納入先',
-          reason: `納入先「${order.destination_name}」はマスタに登録されていません`,
+          title: `新しい納入先「${order.destination_name}」の確認`,
+          reason: `納入先「${order.destination_name}」はマスタに未登録です（一括登録時に自動で新規追加できます）`,
           targetField: 'destination_id',
           allowCustomInput: true,
           customInputPlaceholder: '納入先名を自由入力',
@@ -231,6 +239,8 @@ export function buildClarificationQuestions(
 
     // ④ 明細ごとの数量・単位・かすれ (Quantity & What) の検証
     order.items.forEach((item, iIdx) => {
+      if (item.explicit_cancel_in_slip && Number(item.quantity) === 0) return
+
       const hasReviewReason = Boolean(item.needs_review_reason)
       const isApprox = Boolean(item.is_approximate)
       const isLowConfidence = item.confidence < 0.75
@@ -267,7 +277,7 @@ export function buildClarificationQuestions(
           itemIndex: iIdx,
           category: 'quantity',
           categoryLabel: 'いくつ (How many)',
-          title: `数量・単位の確認（${item.raw_name || item.product_name || '品目'}）`,
+          title: `数量・単位の確認（${order.delivery_date ?? ''} ${order.destination_name ?? ''} ${item.raw_name || item.product_name || '品目'}）`,
           reason: item.needs_review_reason
             ? item.needs_review_reason
             : isApprox

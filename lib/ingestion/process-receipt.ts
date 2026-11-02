@@ -535,12 +535,12 @@ export async function processReceipt(
     type EnrichedItem = {
       parsed: ParsedItem
       matchedProduct: {
-        id: string
-        name: string
-        unit: string
-        default_tax_rate?: 8 | 10 | null
-        default_unit_price?: number | null
-      } | null
+    id: string
+    name: string
+    unit: string
+    default_tax_rate?: 8 | 10 | null
+    default_unit_price?: number | null
+  } | null
       matchedRuleId: string | null
       resolvedQty: number | null
       resolvedUnit: string
@@ -1226,14 +1226,13 @@ export async function processReceipt(
     >()
 
     if (effectiveSlipNo) {
-      let slipOrders: Record<string, unknown>[] | null = null
-      const { data: rawSlipOrders, error: slipOrdersErr } = await admin
+      const { data: slipOrdersInit, error: slipOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
-      slipOrders = rawSlipOrders
+      let slipOrders = slipOrdersInit
       if (slipOrdersErr) {
         const fbSlip = await admin
           .from('orders')
@@ -1249,14 +1248,13 @@ export async function processReceipt(
     }
 
     if (matrixDates.length > 0 && (isFullResendingMatrix || matrixDates.length >= 2 || effectiveSlipNo)) {
-      let dateOrders: Record<string, unknown>[] | null = null
-      const { data: rawDateOrders, error: dateOrdersErr } = await admin
+      const { data: dateOrdersInit, error: dateOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .in('delivery_date', matrixDates)
-      dateOrders = rawDateOrders
+      let dateOrders = dateOrdersInit
       if (dateOrdersErr) {
         const fbDate = await admin
           .from('orders')

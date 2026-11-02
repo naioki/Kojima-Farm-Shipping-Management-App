@@ -9,9 +9,9 @@ const STATUS: Record<OrderStatusKey, { label: string; cls: string }> = {
   approved: { label: '承認済み', cls: 'bg-harvest-100 text-harvest-700' },
   shipped: { label: '出荷済み', cls: 'bg-trust-100 text-trust-700' },
   invoiced: { label: '請求済み', cls: 'bg-bg-soft text-ink-soft' },
+  cancelled: { label: 'キャンセル済', cls: 'bg-slate-100 text-slate-500 line-through' },
 }
 
-/** 最新の受注（直近数件）。空状態あり（react-ui-patterns）。 */
 export function RecentOrdersTable({
   orders,
   allHref = '/admin/orders',
@@ -46,7 +46,7 @@ export function RecentOrdersTable({
             </thead>
             <tbody>
               {orders.map((o) => {
-                const s = STATUS[o.status]
+                const s = STATUS[o.status] ?? STATUS.needs_check
                 const row = (
                   <>
                     <td className="num whitespace-nowrap px-2 py-2.5 text-ink-soft">{o.date}</td>

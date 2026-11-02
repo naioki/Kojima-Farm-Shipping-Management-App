@@ -48,7 +48,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
     supabase
       .from('customer_product_rules')
-      .select('product_id, packs_per_case, container_type, spec, has_card, is_default_set, default_quantity, fraction_policy, label_spec, tape_color, packing_notes')
+      .select('*')
       .eq('customer_id', params.id),
     supabase
       .from('audit_log')
@@ -59,7 +59,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     (async () => {
       const r1 = await supabase
         .from('delivery_destinations')
-        .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
+        .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name, default_container_type')
         .eq('customer_id', params.id)
         .order('sort_order')
         .order('full_name')
@@ -101,6 +101,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       container_type: r.container_type,
       spec: r.spec,
       has_card: r.has_card,
+      has_seal: (r as Record<string, unknown>).has_seal as boolean | null ?? null,
+      seal_text: (r as Record<string, unknown>).seal_text as string | null ?? null,
+      bag_type: (r as Record<string, unknown>).bag_type as string | null ?? null,
       is_default_set: r.is_default_set,
       default_quantity: r.default_quantity,
       fraction_policy: r.fraction_policy as FractionPolicy,

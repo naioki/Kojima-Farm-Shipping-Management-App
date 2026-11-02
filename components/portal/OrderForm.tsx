@@ -4,6 +4,7 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { Minus, Plus, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/cn'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 
@@ -20,8 +21,7 @@ export interface PortalDestinationOption {
 }
 
 /**
- * 「いつものセット」発注フォーム（features.md §2-3）。
- * 数量だけ調整して送信。出荷希望日（delivery_date）は必須。納入先選択・備考入力にも対応。
+ * 「いつものセット」発注フォーム（#51 複数お届け先センターのワンタップ・チップ選択＆必須チェック対応）。
  */
 export function OrderForm({
   items,
@@ -45,6 +45,10 @@ export function OrderForm({
   const total = items.reduce((acc, i) => acc + (qty[i.productId] ?? 0), 0)
 
   async function submit() {
+    if (destinations.length > 1 && !destinationId) {
+      toast.error('お届け先（店舗・センター）を選択してください')
+      return
+    }
     const payload = {
       delivery_date: deliveryDate,
       destination_id: destinationId || undefined,
@@ -87,24 +91,32 @@ export function OrderForm({
         onChange={(e) => setDeliveryDate(e.target.value)}
       />
 
+      {/* #51 お届け先センターのワンタップ・チップ選択 */}
       {destinations.length > 0 && (
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-ink" htmlFor="portal-destination">
-            お届け先（店舗・センター）
+        <div className="space-y-1.5">
+          <label className="block text-sm font-bold text-ink">
+            お届け先（店舗・センター）{destinations.length > 1 ? ' ※必須' : ''}
           </label>
-          <select
-            id="portal-destination"
-            value={destinationId}
-            onChange={(e) => setDestinationId(e.target.value)}
-            className="h-10 w-full rounded-lg border border-line-strong bg-bg-card px-3 text-sm text-ink focus:border-grape-500 focus:outline-none focus:ring-2 focus:ring-grape-200"
-          >
-            <option value="">指定なし（標準）</option>
-            {destinations.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap gap-2">
+            {destinations.map((d) => {
+              const active = destinationId === d.id
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setDestinationId(d.id)}
+                  className={cn(
+                    'min-h-[42px] rounded-xl border px-3.5 py-2 text-sm font-black transition-all active:scale-95',
+                    active
+                      ? 'border-grape-600 bg-grape-600 text-white shadow-xs ring-2 ring-grape-200'
+                      : 'border-line-strong bg-bg-card text-ink hover:bg-bg-soft',
+                  )}
+                >
+                  📍 {d.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 

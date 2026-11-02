@@ -22,6 +22,20 @@ export interface DeliveriesBoardViewProps {
   })[]
 }
 
+function isUserTypingInInput(): boolean {
+  if (typeof document === 'undefined') return false
+  const el = document.activeElement
+  if (!el) return false
+  const tag = el.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || (el as HTMLElement).isContentEditable
+}
+
+/**
+ * 便別積込・配送リストのメインボード。
+ * - #17: 重複していた2段の進捗ヘッダーを1つの統合コックピットバーに集約。
+ * - #18: 「便・時間順（route）」モードでは、同一取引先でも出発便・時間が異なる納入先（例：16:00発と翌午前発）があれば便ごとに正確に分割表示し、トラック積込ミスを防止。
+ * - #52: メモ入力中は30秒自動更新を一時停止してフォーカス外れを防止。
+ */
 export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewProps) {
   const router = useRouter()
   const { isThaiMode } = useFieldLang()
@@ -31,7 +45,6 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
   const [isRefreshing, setIsRefreshing] = useState(false)
   const prevSignatureRef = useRef<string>('')
 
-  // 初期カードから署名を作成し、パック作業完了や数量変更を検知した際にトースト通知
   useEffect(() => {
     setCards(initialCards)
     const sig = initialCards
@@ -54,16 +67,17 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
     prevSignatureRef.current = sig
   }, [initialCards])
 
-  // 🔄 30秒おきのバックグラウンド自動同期 ＋ 画面復帰時（focus/visibilitychange）の即時最新化
+  // #52 スマート・ポーリング（入力中は自動更新を一時停止）
   useEffect(() => {
     const syncLatest = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        if (isUserTypingInInput()) return
         router.refresh()
       }
     }
     const timer = setInterval(syncLatest, 30_000)
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') router.refresh()
+      if (document.visibilityState === 'visible' && !isUserTypingInInput()) router.refresh()
     }
     window.addEventListener('focus', syncLatest)
     document.addEventListener('visibilitychange', onVisibility)
@@ -99,7 +113,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
     .reduce((acc, c) => acc + c.grandTotalContainers, 0)
   const remainingContainers = Math.max(0, totalContainers - completedContainers)
   const progressPct =
-    totalCustomers > 0 ? Math.min(100, Math.round((completedCustomers / totalCustomers) * 100)) : 0
+    totalContainers > 0 ? Math.min(100, Math.round((completedContainers / totalContainers) * 100)) : 0
 
   const effectiveDate = date || initialCards[0]?.deliveryDate || jstTodayStr()
   const isToday = effectiveDate === jstTodayStr()
@@ -108,7 +122,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
   const visibleCards =
     filterMode === 'incomplete' ? cards.filter((c) => !c.isCompleted) : cards
 
-  // 便・時間帯ごとのグルーピング（便別順モード用）
+  // #18 便・時間帯ごとの正確なグルーピング（同一取引先内で便・出発時刻が異なる納入先は、その便のグループに分割配置）
   const routeGroups = (() => {
     const map = new Map<
       string,
@@ -117,36 +131,92 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
         title: string
         departureTime: string | null
         isUnassigned: boolean
-        cards: typeof visibleCards
+        cards: (CustomerDeliveryCardProps & { earliestDepartureTime: string | null; sliceKey?: string })[]
       }
     >()
 
     for (const c of visibleCards) {
-      const primaryRoute = c.routeSummaries?.[0]
-      const depTime = c.earliestDepartureTime || primaryRoute?.departureTime || null
-      const rawTitle = primaryRoute?.title || '一般配送・時間未指定'
-      const isUnassigned = !depTime && (rawTitle === '一般配送・時間未指定' || !rawTitle)
-      const groupTitle = isUnassigned
-        ? '時間指定なし（一般便）'
-        : depTime && !rawTitle.includes(depTime)
-        ? depTime.startsWith('翌')
-          ? `🌅 ${depTime}迄 ${rawTitle}`
-          : `⏰ 当日${depTime}迄 ${rawTitle}`
-        : rawTitle
-      const groupKey = isUnassigned ? '__unassigned__' : `${depTime ?? '99:99'}:${groupTitle}`
-
-      let grp = map.get(groupKey)
-      if (!grp) {
-        grp = {
-          key: groupKey,
-          title: groupTitle,
-          departureTime: depTime,
-          isUnassigned,
-          cards: [],
+      // 取引先内の納入先を出発時間・便ごとにバケット分け
+      const destByRoute = new Map<
+        string,
+        {
+          depTime: string | null
+          routeTitle: string
+          isUnassigned: boolean
+          groupKey: string
+          dests: typeof c.destinations
         }
-        map.set(groupKey, grp)
+      >()
+
+      for (const d of c.destinations) {
+        const depTime = d.departureTime || c.earliestDepartureTime || null
+        const rawRoute = d.shippingRouteName || c.routeSummaries?.[0]?.title || '一般配送・時間未指定'
+        const isUnassigned = !depTime && (rawRoute === '一般配送・時間未指定' || !rawRoute)
+        const groupTitle = isUnassigned
+          ? '時間指定なし（一般便）'
+          : depTime && !rawRoute.includes(depTime)
+          ? depTime.startsWith('翌')
+            ? `🌅 ${depTime}迄 ${rawRoute}`
+            : `⏰ 当日${depTime}迄 ${rawRoute}`
+          : rawRoute
+        const groupKey = isUnassigned ? '__unassigned__' : `${depTime ?? '99:99'}:${groupTitle}`
+
+        let bucket = destByRoute.get(groupKey)
+        if (!bucket) {
+          bucket = {
+            depTime,
+            routeTitle: groupTitle,
+            isUnassigned,
+            groupKey,
+            dests: [],
+          }
+          destByRoute.set(groupKey, bucket)
+        }
+        bucket.dests.push(d)
       }
-      grp.cards.push(c)
+
+      for (const bucket of destByRoute.values()) {
+        if (filterMode === 'incomplete' && bucket.dests.every((d) => d.status === 'loaded' || d.status === 'delivered')) {
+          continue
+        }
+        const sliceCases = bucket.dests.reduce((acc, d) => acc + d.cases, 0)
+        const sliceFractionBoxes = bucket.dests.reduce((acc, d) => acc + d.fractionBoxes, 0)
+        const sliceFractionPacks = bucket.dests.reduce((acc, d) => acc + d.loose, 0)
+        const sliceContainers = Math.max(
+          sliceCases,
+          bucket.dests.reduce((acc, d) => acc + d.totalBoxes, 0),
+        )
+        const sliceQty = bucket.dests.reduce((acc, d) => acc + d.totalQty, 0)
+        const sliceCompleted =
+          bucket.dests.length > 0 &&
+          bucket.dests.every((d) => d.status === 'loaded' || d.status === 'delivered')
+
+        const slicedCard: CustomerDeliveryCardProps & { earliestDepartureTime: string | null; sliceKey?: string } = {
+          ...c,
+          sliceKey: `${c.customerId}:${bucket.groupKey}`,
+          totalCases: sliceCases,
+          totalFractionBoxes: sliceFractionBoxes,
+          totalFractionPacks: sliceFractionPacks,
+          grandTotalContainers: sliceContainers,
+          totalQty: sliceQty,
+          isCompleted: sliceCompleted,
+          destinations: bucket.dests,
+          earliestDepartureTime: bucket.depTime,
+        }
+
+        let grp = map.get(bucket.groupKey)
+        if (!grp) {
+          grp = {
+            key: bucket.groupKey,
+            title: bucket.routeTitle,
+            departureTime: bucket.depTime,
+            isUnassigned: bucket.isUnassigned,
+            cards: [],
+          }
+          map.set(bucket.groupKey, grp)
+        }
+        grp.cards.push(slicedCard)
+      }
     }
 
     const list = Array.from(map.values())
@@ -161,26 +231,26 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
   })()
 
   return (
-    <div className="space-y-3.5">
+    <div className="space-y-3">
       {/* 印刷時専用タイトルヘッダー */}
       <div className="hidden print:flex items-center justify-between border-b-2 border-black pb-2 mb-3">
         <div>
           <h2 className="text-lg font-black text-black">
-            🚚 小島農園 便別積込・配送リスト（{formatJpDateShort(effectiveDate)} 出荷分）
+            🚚 小島農園 便別積込・配送リスト（{formatJpDateShort(effectiveDate)} 納品分）
           </h2>
           <p className="text-xs font-bold text-slate-700">
             全 {totalCustomers} 取引先 ／ 総積込数 {totalContainers} 箱
           </p>
         </div>
         <div className="text-xs font-bold text-slate-700">
-          積込済: {completedCustomers} / {totalCustomers} 社
+          積込済: {completedCustomers} / {totalCustomers} 社（{completedContainers}/{totalContainers}箱）
         </div>
       </div>
 
-      {/* スクロール追従スティッキーヘッダー（パック画面と完全統一された日付・積込進捗・ワンタップ更新バー） */}
+      {/* #17 統合スティッキー・積込コックピットバー（重複していた2段枠を1つに統合しスッキリ！） */}
       <div
         className={cn(
-          'sticky top-14 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md rounded-b-xl border-b transition-colors duration-200 print:hidden',
+          'sticky top-14 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md rounded-2xl border transition-colors duration-200 print:hidden space-y-2',
           isToday
             ? 'bg-[#0c2e4e]/95 border-sky-600/80'
             : isTomorrow
@@ -189,7 +259,6 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
         )}
       >
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-          {/* 左側: 日付・作業区分バッジ */}
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span
               className={cn(
@@ -204,29 +273,32 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               <span>🚚</span>
               <span>
                 {isToday
-                  ? `本日 ${formatJpDateShort(effectiveDate)} 積込・配送分`
+                  ? `本日 ${formatJpDateShort(effectiveDate)} 納品分`
                   : isTomorrow
-                  ? `明日 ${formatJpDateShort(effectiveDate)} 出荷（本日パック中）`
-                  : `${formatJpDateShort(effectiveDate)} 積込・配送分`}
+                  ? `明日 ${formatJpDateShort(effectiveDate)} 納品分（本日パック・積込）`
+                  : `${formatJpDateShort(effectiveDate)} 納品分`}
               </span>
             </span>
           </div>
 
-          {/* 右側: リアルタイム積込進捗 ＆ ワンタップ更新・印刷 */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
             <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm">
-              {completedCustomers}/{totalCustomers} 社済
+              {completedContainers}/{totalContainers} 箱済
             </span>
             <span className="text-[11px] text-slate-300 font-bold tabular-nums">
-              ({progressPct}%)
+              ({completedCustomers}/{totalCustomers}社・{progressPct}%)
             </span>
             <span
               className="hidden xs:inline-block rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
               title={`残り積込 ${remainingContainers}箱`}
             >
-              {remainingCustomers > 0
-                ? `あと ${remainingCustomers}社 (計${remainingContainers}箱)`
-                : `全${totalContainers}箱 積込完了`}
+              {remainingContainers > 0 ? (
+                `残り ${remainingContainers}箱 (${remainingCustomers}社)`
+              ) : (
+                <span className="inline-flex items-center gap-1 text-emerald-200">
+                  <CheckCircle2 className="h-3 w-3" /> 全{totalContainers}箱完了
+                </span>
+              )}
             </span>
             <FieldLangSwitch />
             <button
@@ -248,99 +320,71 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-0.5 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-              <span className="hidden sm:inline text-[11px] font-bold">更新</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* 進捗サマリー ＆ 表示順（便別順 / 取引先順） ＆ ワンタップ未積込フィルタ */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-earth-200 bg-earth-50 px-3.5 py-2.5 print:hidden">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-bold text-ink-soft">積込進捗:</span>
-          <span className="text-ink font-bold text-xs sm:text-sm flex items-center">
-            <span className="num text-xl font-black tabular-nums text-earth-700 mr-0.5">
-              {completedCustomers}
-            </span>
-            <span className="mx-0.5 text-ink-muted">/</span>
-            <span>{totalCustomers} 取引先</span>
-            <span className="ml-1.5 text-xs text-ink-soft font-semibold">
-              （計 {totalContainers} 箱）
-            </span>
-            {remainingCustomers > 0 ? (
-              <span className="ml-2 rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 text-xs font-black">
-                残り {remainingCustomers}社 ({remainingContainers}箱)
-              </span>
-            ) : (
-              <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 text-xs font-black inline-flex items-center gap-0.5">
-                <CheckCircle2 className="h-3.5 w-3.5" /> 全積込完了
-              </span>
+      {/* 表示順（便・時間順 / 取引先順） ＆ ワンタップ未積込フィルタ */}
+      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+        <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 border border-line text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setGroupMode('route')}
+            className={cn(
+              'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition',
+              groupMode === 'route'
+                ? 'bg-white text-emerald-800 shadow-2xs font-black ring-1 ring-emerald-600/20'
+                : 'text-ink-muted hover:text-ink',
             )}
-          </span>
+          >
+            <Clock className="h-3.5 w-3.5" />
+            <span>便・時間順{isThaiMode ? ' (เวลา)' : ''}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setGroupMode('customer')}
+            className={cn(
+              'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition',
+              groupMode === 'customer'
+                ? 'bg-white text-emerald-800 shadow-2xs font-black ring-1 ring-emerald-600/20'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            <span>取引先順{isThaiMode ? ' (ลูกค้า)' : ''}</span>
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 便別順 / 取引先順 切替スイッチ */}
-          <div className="inline-flex items-center rounded-lg bg-white/80 p-0.5 border border-earth-200 text-xs font-bold shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setGroupMode('route')}
-              className={cn(
-                'inline-flex items-center gap-1 px-2.5 py-1 rounded-md transition',
-                groupMode === 'route'
-                  ? 'bg-earth-700 text-white shadow-2xs'
-                  : 'text-ink-soft hover:text-ink',
-              )}
-            >
-              <Clock className="h-3 w-3" />
-              <span>便・時間順{isThaiMode ? ' (เวลา)' : ''}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setGroupMode('customer')}
-              className={cn(
-                'inline-flex items-center gap-1 px-2.5 py-1 rounded-md transition',
-                groupMode === 'customer'
-                  ? 'bg-earth-700 text-white shadow-2xs'
-                  : 'text-ink-soft hover:text-ink',
-              )}
-            >
-              <Building2 className="h-3 w-3" />
-              <span>取引先順{isThaiMode ? ' (ลูกค้า)' : ''}</span>
-            </button>
-          </div>
-
-          {/* ワンタップ絞り込みスイッチ（すべて / 未積込のみ） */}
-          <div className="inline-flex items-center rounded-lg bg-white/80 p-0.5 border border-earth-200 text-xs font-bold shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setFilterMode('all')}
-              className={cn(
-                'px-2.5 py-1 rounded-md transition',
-                filterMode === 'all'
-                  ? 'bg-forest-700 text-white shadow-2xs'
-                  : 'text-ink-soft hover:text-ink',
-              )}
-            >
-              {isThaiMode ? 'すべて(ทั้งหมด)' : 'すべて'} ({totalCustomers})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterMode('incomplete')}
-              className={cn(
-                'px-2.5 py-1 rounded-md transition',
-                filterMode === 'incomplete'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'text-ink-soft hover:text-ink',
-              )}
-            >
-              {isThaiMode ? '未積込(ยังไม่ขึ้น)' : '未積込のみ'} ({remainingCustomers})
-            </button>
-          </div>
+        <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 border border-line text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setFilterMode('all')}
+            className={cn(
+              'px-3 py-1.5 rounded-lg transition',
+              filterMode === 'all'
+                ? 'bg-white text-ink shadow-2xs font-black'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            {isThaiMode ? 'すべて(ทั้งหมด)' : '全件'} ({totalCustomers})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterMode('incomplete')}
+            className={cn(
+              'px-3 py-1.5 rounded-lg transition',
+              filterMode === 'incomplete'
+                ? 'bg-emerald-700 text-white shadow-2xs font-black'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            {isThaiMode ? '未積込(ยังไม่ขึ้น)' : '未積込のみ'} ({remainingCustomers})
+          </button>
         </div>
       </div>
 
-      {/* 取引先カード一覧（便別見出し付き or 取引先フラット一覧） */}
+      {/* 取引先カード一覧 */}
       {visibleCards.length === 0 && filterMode === 'incomplete' ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center space-y-2">
           <p className="text-base font-black text-emerald-900">
@@ -355,7 +399,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
           </button>
         </div>
       ) : groupMode === 'route' ? (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {routeGroups.map((grp) => {
             const grpTotalBoxes = grp.cards.reduce((acc, c) => acc + c.grandTotalContainers, 0)
             const grpRemBoxes = grp.cards
@@ -363,8 +407,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               .reduce((acc, c) => acc + c.grandTotalContainers, 0)
             const grpAllDone = grp.cards.every((c) => c.isCompleted)
             return (
-              <div key={grp.key} className="space-y-2.5">
-                {/* 便・時間帯ごとのセクション見出しバー */}
+              <div key={grp.key} className="space-y-2">
                 <div
                   className={cn(
                     'flex flex-wrap items-center justify-between gap-2 rounded-xl px-3.5 py-2 border shadow-2xs',
@@ -391,25 +434,19 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                     {grpAllDone ? (
                       <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5">
                         ✓ 全{grpTotalBoxes}箱 積込済
-                        {isThaiMode && <span className="ml-1 text-[10px] print:hidden">(ขึ้นรถครบแล้ว)</span>}
                       </span>
                     ) : (
                       <span className="rounded-md bg-white/90 border border-earth-300 px-2.5 py-0.5 text-earth-900">
                         残り {grpRemBoxes} 箱 ／ 計 {grpTotalBoxes} 箱
-                        {isThaiMode && (
-                          <span className="ml-1 text-[10px] text-earth-700 print:hidden">
-                            (เหลือ {grpRemBoxes} ลัง)
-                          </span>
-                        )}
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {grp.cards.map((c) => (
                     <CustomerDeliveryCard
-                      key={c.customerId}
+                      key={c.sliceKey ?? c.customerId}
                       {...c}
                       onCompletionChange={handleCompletionChange}
                     />
@@ -420,7 +457,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
           })}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {visibleCards.map((c) => (
             <CustomerDeliveryCard
               key={c.customerId}

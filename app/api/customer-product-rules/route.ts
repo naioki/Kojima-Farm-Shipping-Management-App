@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { customerProductRuleUpsertSchema } from '@/types/database'
 import { getSetting } from '@/lib/settings'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
@@ -58,17 +59,22 @@ export async function PUT(req: Request) {
   // 旧値は監査差分・新規/更新判定の補助。取得失敗しても upsert は続行。無言にはしない。
   if (oldRuleErr) console.error('[api/customer-product-rules] 旧値の取得に失敗:', oldRuleErr.message)
 
-  const { data: rule, error } = await supabase
-    .from('customer_product_rules')
-    .upsert(input, { onConflict: 'customer_id,product_id' })
-    .select()
-    .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const { data: rule, error } = await writeDroppingMissingColumns(
+    input as Record<string, unknown>,
+    (p) =>
+      supabase
+        .from('customer_product_rules')
+        .upsert(p as never, { onConflict: 'customer_id,product_id' })
+        .select()
+        .single(),
+  )
+  if (error || !rule) return NextResponse.json({ error: error?.message ?? '保存に失敗しました' }, { status: 500 })
 
+  const savedRule = rule as unknown as { id: string }
   // 履歴（旧→新）。失敗は握りつぶさない（CLAUDE.md）
   await writeAudit(supabase, {
     entityType: 'customer_product_rules',
-    entityId: rule.id,
+    entityId: savedRule.id,
     action: oldRule ? 'UPDATE' : 'INSERT',
     oldValues: oldRule ?? null,
     newValues: rule,

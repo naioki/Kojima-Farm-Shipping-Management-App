@@ -8,7 +8,7 @@
  *    コアプロンプト（`DEFAULT_GEMINI_PROMPT_ORDERS`）には「全社共通の判断基準・JSONスキーマ」のみを記述する。
  *    （DB未接続・0件時のみ `FALLBACK_CLIENT_RULES_SUMMARY` を自動補完）
  * 2. AIと決定論コード（TypeScript）の役割分担:
- *    AIには「画像・テキストからの事実読取（日付・取引先・納入先・生数量・手書き修正・★印）」に100%集中させ、
+ *    AIには「画像・テキストからの事実読取（日付・取引先・納入先・生数量・手書き修正・赤字・欄外内訳・★印）」に100%集中させ、
  *    ケース数・端数・箱数・コンテナ種別・固定書式・注文キーの計算と検算は TypeScript 側（`verifyAndNormalizeItem`）で
  *    決定論的に実行することで、AIの計算ミス（ハルシネーション）とトークン消費を同時にゼロ化する。
  */
@@ -22,23 +22,30 @@ export const DEFAULT_GEMINI_PROMPT_ORDERS = `あなたは千葉県旭市「小�
 # 2. 抽出・換算・確信度ルール（前日収穫・パック原則 ＆ グリッド表厳格解釈）
 - **【全品目・全取引先共通の大原則】すべての品目において、収穫およびパック（袋詰め）作業は「出荷日（納品日: delivery_date）の前日（-1日）」に行う。** FAX・注文書に「出荷日・納品日」と「持込日・収穫日・パック日」が併記されている場合は、\`delivery_date\` には必ず「出荷日（納品日）」を \`YYYY-MM-DD\` で抽出し、前日作業が前提であることを踏まえて解釈する（和郷園のように表頭が出荷日の場合も、実際の収穫・パック・持込は前日に行う）。
 - **【画像回転・天地判定】** FAX画像が90度・180度・270度横向きまたは逆向きの場合でも、文字の向きから天地を自動判定し、表の行（品目・出荷先）と列（日付ヘッダー）を正しくクロスさせて解釈する。横向きだからといって行と列を取り違えてはならない。
+- **【社名省略表からの取引先特定】**:
+  - 表に社名（「農業総合研究所」「NSK」等）が直接印字されていなくても、**「生産者番号: 11」「生産者: 小島裕美（または小島）」「出荷先: 1加工センター / 4関東顧客向け / 5北海道 / 6関西」「入数: 24」** の特徴を持つ表は必ず \`customer_name: "株式会社農業総合研究所（NSK）"\` として抽出すること（決して \`customer_name\` を \`"小島裕美"\` や \`null\` にしてはならない）。
 - **【グリッド・マトリクス表の厳格マッピング（前詰めスライド厳禁・二重線分裂厳禁）】**:
-  - 表形式（週間連絡表・マトリクス表）の場合、表頭の列ヘッダーに印字されている有効日付リストを YYYY-MM-DD 形式で \`valid_header_dates\` に列挙すること（例: \`["2026-10-23", "2026-10-24", ..., "2026-10-29"]\`）。
-  - 各注文の \`delivery_date\` は必ずこの \`valid_header_dates\` のいずれかに一致しなければならない。表頭に存在しない日付（10/30や10/31等）を勝手に生成することは厳禁。
-  - セルが空欄・斜線・ハイフンの日は「注文なし（0件）」であり、**決して別の日の数字や別行の数字を空欄の日に前詰め（スライド）して直列連結してはならない**。
-  - 出荷先列（例: 『BOX用』『ちばセット用』）が複数行ある場合、各行ごとに独立して \`destination_name\` を抽出する。決して全行を1つの納品先に統一したり省略してはならない。入数欄（手書きで \`~~30~~ → 20\` と訂正されている場合は手書き後の \`20\` を最優先）も行ごとに正確に抽出する。
+  - 表形式（週間連絡表・マトリクス表）の場合、表頭の列ヘッダーに印字されている有効日付リストを YYYY-MM-DD 形式で \`valid_header_dates\` に列挙すること（例: \`["2026-11-01", "2026-11-02", ..., "2026-11-07"]\`）。
+  - 各注文の \`delivery_date\` は必ずこの \`valid_header_dates\` のいずれかに一致しなければならない。表頭に存在しない日付を勝手に生成することは厳禁。
+  - セルが空欄・斜線・ハイフン・『なし』の日は「注文なし」であり、**決して別の日の数字や別行の数字を空欄の日に前詰め（スライド）して直列連結してはならない**。
+  - セルに明示的に『\`0\`』と書かれている日（例: 他の日に数量があり特定の日だけ \`0\` のセル）は、既存注文のキャンセル（0への変更）を判定できるよう \`quantity: "0"\`, \`cases: 0\`, \`explicit_cancel_in_slip: true\` として出力する。
+  - 出荷先列（例: 『BOX用』『ちばセット用』、NSKの『4関東顧客向け』『5北海道』『6関西』等）が複数行ある場合、各行ごとに独立して \`destination_name\`・\`spec\`・\`has_seal\`・\`packs_per_case\` を抽出する。決して全行を1つの納品先や同一規格に統一したり省略してはならない。
+  - **【赤文字（赤字）記載・欄外内訳メモの正確な抽出】**:
+    - 表内の数値が**赤文字（赤字）**で記載されているセル（例: NSK『5北海道』の \`720\` 赤字等）も有効な確定数量として抽出し、\`is_handwritten_modified: true\` とし、\`note\` に \`"※表で赤字記載（変更箇所）"\` を含めること。
+    - 表の右端や欄外に内訳メモ（例: \`"(木)のみ ライフ近畿：40 / サンプラザ：20"\`）がある場合は、該当する出荷先・日付（例: 木曜日の『6関西』）の \`note\` に \`"内訳: ライフ近畿40箱(960P) / サンプラザ20箱(480P)"\` のように正確に記録すること。
   - **【同一セル内の二重線訂正を別列へ分裂出力することの厳禁】**: 1つのセル内で印字数字（例: \`約165\`, \`約170\`, \`約204\`）が二重線で消され、同じセル内に手書き確定数字（例: \`150\`, \`157\`, \`201\`）が書かれている場合、**二重線で消された旧数値を絶対に別の出荷先列（隣の空欄列）の注文として出力してはならない**。必ずそのセル本来の出荷先1件のみに手書き確定数字を出力し、隣の空欄列は出力しない（0件）こと。
 - **【約表記のセル単位限定判定】**:
   - 『約280』など、そのセルに『約』が明記されている数値のみ \`is_approximate: true\`, \`confidence: 0.5\`, \`needs_review_reason: "約表記（暫定値・要確認）"\` とする。『59』『164』などの数字のみの確定セルは必ず \`is_approximate: false\` とし、帳票内の他のセルの約表記を引きずってはならない。
-- 後続の【動的適用ルール(ai_rules)】を最優先で適用する。新規・未知の取引先・納入先は記載通りそのまま抽出する。
-- マトリクス表は「納入先(destination_name)×納品日(delivery_date)」ごとに別 \`order\` に分割（数量0・空欄は除外、取消線・×印の明示取消のみ \`explicit_cancel_in_slip:true\`）。
-- \`quantity\` は換算後の **総パック数/総点数** の数値文字列（例: \`"300"\`, \`"40"\`, \`"84"\`）。入数は原則20（NSKは24、勘兵衛はケース数×20、ちばセットは30）。
+- **【買値・単価の非表示鉄則】**: 表に『買値』『単価』『¥78』『¥75』等が記載されていても、現場ボード非表示ルールに従い \`note\` や \`spec\` には金額・単価を一切含めないこと。
+- 後続の【動的適用ルール(ai_rules)】およびユーザーの追加テキスト指示を最優先で適用する。新規・未知の取引先・納入先は記載通りそのまま抽出する。
+- マトリクス表は「納入先(destination_name)×納品日(delivery_date)」ごとに別 \`order\` に分割。
+- \`quantity\` は換算後の **総パック数/総点数** の数値文字列（例: \`"1440"\`, \`"720"\`, \`"300"\`, \`"40"\`）。入数は原則20（NSKは24、勘兵衛はケース数×20）。
 - 二重線＋手書き確定数字（84等） → 手書き数字を最優先採用し \`is_handwritten_modified:true\`, \`confidence:0.95\`。
 - 手書き質問事項 → \`has_reply_required:true\`, \`note:"【要返答】内容"\`。
 - 文字潰れ・検算不一致・納入先不明 → \`confidence\` を \`0.6\` 以下にし \`needs_review_reason\` に理由を明記。
 
 # 3. 出力JSONスキーマ（厳守・説明文不要）
-{"is_order":boolean,"skip_reason":string|null,"slip_no":string|null,"is_full_resending_matrix":boolean,"valid_header_dates":string[]|null,"orders":[{"customer_name":string|null,"destination_name":string|null,"delivery_date":"YYYY-MM-DD"|null,"slip_no":string|null,"note":string|null,"items":[{"raw_name":string,"product_name":string,"quantity":string,"unit":"P"|string|null,"confidence":number,"spec":string|null,"packs_per_case":number|null,"cases":number|null,"remainder_packs":number|null,"box_count":number|null,"container_type":string|null,"is_case_input":boolean|null,"is_approximate":boolean|null,"is_handwritten_modified":boolean|null,"has_reply_required":boolean|null,"explicit_cancel_in_slip":boolean|null,"is_new_addition":boolean|null,"note":string|null,"needs_review_reason":string|null}]}]}`
+{"is_order":boolean,"skip_reason":string|null,"slip_no":string|null,"is_full_resending_matrix":boolean,"valid_header_dates":string[]|null,"orders":[{"customer_name":string|null,"destination_name":string|null,"delivery_date":"YYYY-MM-DD"|null,"slip_no":string|null,"note":string|null,"items":[{"raw_name":string,"product_name":string,"quantity":string,"unit":"P"|string|null,"confidence":number,"spec":string|null,"packs_per_case":number|null,"cases":number|null,"remainder_packs":number|null,"box_count":number|null,"container_type":string|null,"has_seal":boolean|null,"seal_text":string|null,"bag_type":string|null,"is_case_input":boolean|null,"is_approximate":boolean|null,"is_handwritten_modified":boolean|null,"has_reply_required":boolean|null,"explicit_cancel_in_slip":boolean|null,"is_new_addition":boolean|null,"note":string|null,"needs_review_reason":string|null}]}]}`
 
 /**
  * Supabase `ai_rules` が万一0件（未シード・オフライン）のときのみ注入する高密度5ルール要旨。
@@ -54,7 +61,7 @@ export const FALLBACK_CLIENT_RULES_SUMMARY = `# 【動的適用ルール(ai_rule
 ## 株式会社勘兵衛
 - [ケース換算] イオンタウン向け発注書の数値=ケース数(C/S, is_case_input:true)のため×20を総P(quantity)とする(例:2→quantity:"40",cases:2)。納品先『イオンタウン向け』、規格『200gFG×20入』、容器『段ボール』。
 ## 株式会社農業総合研究所（NSK）
-- [11番抽出・24入] 生産者『11番 小島裕美(小島)』のチンゲンサイ行のみ抽出(他生産者は除外)。入数24(総P÷24)、規格『200gUP (入数24)』、容器『農業総研専用折りたたみコンテナ』。シールあり時はhas_seal:true、note『シールあり（生産者11:小島裕美）』(買値・単価は記載不可)。`
+- [11番小島裕美・24入・複数出荷先・欄外内訳] 社名印字が無くても『生産者番号11・小島裕美(小島)・出荷先(1加工センター/4関東顧客向け/5北海道/6関西)・入数24』の表は必ず customer_name: "株式会社農業総合研究所（NSK）" とする。生産者『11番 小島裕美』のチンゲンサイ行のみ抽出。入数24(表の数値は総Pのため÷24がケース数: 1,440→60箱、720→30箱)、容器『農業総研専用折りたたみコンテナ』。行ごとに規格列（『200gUP』→『200gUP (入数24)』、『200g』→『200g (入数24)』）とシール列（『あり』→has_seal:true, seal_text:『シールあり（生産者11:小島裕美）』、『なし』→has_seal:false, seal_text:『シールなし』）を厳密に区別する。赤文字の数字（例:5北海道の720赤字）も確定数量として抽出し note に『※表で赤字記載（変更箇所）』と記載。右欄外に『(木)のみ ライフ近畿：40 / サンプラザ：20』等のケース数内訳がある場合は該当日の note に『内訳: ライフ近畿40箱(960P) / サンプラザ20箱(480P)』と記載。数値『0』のセルは explicit_cancel_in_slip:true, quantity:"0" とし、『なし』や空欄は除外する。買値(¥78/¥75等)は現場非表示のため note に一切記載禁止。`
 
 /**
  * 単一注文（items[] 形式・手動OCR画面等）用プロンプト（高密度・省トークン版）。
@@ -62,7 +69,7 @@ export const FALLBACK_CLIENT_RULES_SUMMARY = `# 【動的適用ルール(ai_rule
 export const DEFAULT_GEMINI_PROMPT_NORMAL = `あなたは「小島農園」専属の受発注AI解析エンジンです。
 対象品目（チンゲン菜／青梗菜、トマト、長ネギ、ミニ白菜等）以外の帳票（きゅうり・ししとう・案内状等）は \`{"items":[]}\` を返してください。
 後続の【動的適用ルール(ai_rules)】に従い、以下のJSONのみを出力してください：
-{"items":[{"raw_name":string,"product_name":string,"quantity":string,"unit":"P"|string|null,"confidence":number,"spec":string|null,"packs_per_case":number|null,"cases":number|null,"remainder_packs":number|null,"box_count":number|null,"container_type":string|null,"note":string|null,"needs_review_reason":string|null}]}`
+{"items":[{"raw_name":string,"product_name":string,"quantity":string,"unit":"P"|string|null,"confidence":number,"spec":string|null,"packs_per_case":number|null,"cases":number|null,"remainder_packs":number|null,"box_count":number|null,"container_type":string|null,"has_seal":boolean|null,"seal_text":string|null,"bag_type":string|null,"note":string|null,"needs_review_reason":string|null}]}`
 
 export const DEFAULT_GEMINI_PROMPT_DIFF = `# 差分モード（再送・手書き修正の検出）
 前回確定明細と今回の注文票を比較し、小島農園の対象品目（チンゲン菜・トマト・長ネギ・ミニ白菜等）の変更点のみをJSONで返してください（『約80』→手書き『84』への確定等は modified に含める）：

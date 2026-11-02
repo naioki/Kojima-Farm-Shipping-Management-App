@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useNavState } from '@/components/layouts/use-nav'
+import { buildPreservedFieldHref } from '@/components/layouts/nav-items'
 
 export interface SidebarUser {
   name: string
@@ -13,6 +15,9 @@ export interface SidebarUser {
 /** lg 以上で固定表示。それ以下は MobileNav（ハンバーガー）が担う（design.md）。深緑のナビ地。 */
 export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: SidebarUser }) {
   const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
+  const searchParams = useSearchParams()
+  const currentDate = searchParams?.get('date') || searchParams?.get('week') || null
+  const currentProduct = searchParams?.get('product') || null
 
   return (
     <nav
@@ -36,6 +41,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
             <ul className="space-y-0.5">
               {group.items.map(({ href, label, icon: Icon }) => {
                 const active = href === activeHref
+                const finalHref = buildPreservedFieldHref(href, currentDate, currentProduct)
                 return (
                   <li key={href} className="relative">
                     {active && (
@@ -45,7 +51,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
                       />
                     )}
                     <Link
-                      href={href}
+                      href={finalHref}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
                         'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60',
@@ -63,7 +69,6 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
             </ul>
           )
 
-          // 見出し無し（ダッシュボード・設定）は折りたたまず常に表示
           if (!group.label) {
             return <div key={`g${gi}`}>{items}</div>
           }
@@ -95,7 +100,6 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
         })}
       </div>
 
-      {/* ユーザーチップ（経営者欄には個人の名前を出さず、農園名を表示） */}
       {user && (
         <div className="mt-3 flex items-center gap-2.5 rounded-lg bg-forest-700/60 px-3 py-2.5">
           <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forest-500 text-white">
@@ -110,7 +114,6 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
         </div>
       )}
 
-      {/* サインアウト（POST で session 破棄→/login） */}
       <form action="/auth/signout" method="post" className="mt-1">
         <button
           type="submit"

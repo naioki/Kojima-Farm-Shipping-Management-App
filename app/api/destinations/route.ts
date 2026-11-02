@@ -19,6 +19,7 @@ const createSchema = z.object({
   aliases: z.array(z.string().trim().min(1)).default([]),
   departure_time: z.string().trim().nullish(),
   shipping_route_name: z.string().trim().nullish(),
+  default_container_type: z.string().trim().nullish(),
 })
 
 /** 納入先の新規作成（取引先の配下）。admin のみ（RLS）。 */
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     aliases: parsed.data.aliases,
   }
 
-  const hasRouteData = Boolean(parsed.data.departure_time?.trim() || parsed.data.shipping_route_name?.trim())
+  const hasRouteData = Boolean(parsed.data.departure_time?.trim() || parsed.data.shipping_route_name?.trim() || parsed.data.default_container_type?.trim())
   let insRes: { data: Record<string, unknown> | null; error: { code?: string; message?: string } | null } = { data: null, error: null }
 
   if (hasRouteData) {
@@ -67,11 +68,12 @@ export async function POST(req: Request) {
       ...basePayload,
       departure_time: parsed.data.departure_time ?? null,
       shipping_route_name: parsed.data.shipping_route_name ?? null,
+      default_container_type: parsed.data.default_container_type ?? null,
     }
     const r1 = await supabase
       .from('delivery_destinations')
       .insert(fullPayload)
-      .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name')
+      .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name, default_container_type')
       .single()
 
     if (r1.error && isMissingColumnError(r1.error)) {

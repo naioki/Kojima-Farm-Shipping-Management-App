@@ -3,7 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * 受注一覧・受注詳細のデータ取得（admin/orders 画面用）。
- * 承認待ちに限らず「すべての受注」を新しい順で見せる（approvals は pending_review のみ）。
+ * - #37: 納品日・納入先に加え、総箱数・総パック数・現場ステータス進捗サマリーを集計。
+ * - #38: 注文詳細画面でのインライン編集用に customerId, destinationId, version 等も返す。
  */
 
 export interface OrderListRow {
@@ -14,9 +15,11 @@ export interface OrderListRow {
   source: string
   customerName: string
   customerColor: string | null
-  /** 納入先（取引先の配下の届け先）。無ければ null（表示は常に「取引先＞納入先」）。 */
   destinationName: string | null
   itemCount: number
+  totalPacks: number
+  totalBoxes: number
+  fieldProgressLabel: string
   amount: number
 }
 
@@ -29,14 +32,15 @@ export interface OrderDetailItem {
   lineTotal: number
   fieldStatus: string | null
   confidence: number | null
-  /** 規格（例: 1kg）。出荷票の既定値に使う。 */
   spec: string | null
-  /** 荷姿（マテハン名の既定値に使う）。 */
   containerType: string | null
+  version: number
 }
 
 export interface OrderDetail {
   id: string
+  customerId: string
+  destinationId: string | null
   orderDate: string | null
   deliveryDate: string | null
   status: string
@@ -44,13 +48,11 @@ export interface OrderDetail {
   note: string | null
   customerName: string
   customerColor: string | null
-  /** 納入先（取引先の配下の届け先）。無ければ null。 */
   destinationName: string | null
   items: OrderDetailItem[]
   total: number
 }
 
-/** 受注一覧の絞り込み条件（未指定＝全件）。期間は受注日（order_date）で判定。 */
 export interface OrderFilter {
   status?: string
   customerId?: string
@@ -61,14 +63,26 @@ export interface OrderFilter {
 const sumLine = (items: { line_total: number | null }[] | null): number =>
   (items ?? []).reduce((acc, it) => acc + Number(it.line_total ?? 0), 0)
 
-/** すべての受注を新しい順で取得（絞り込み対応・既定 200 件）。 */
+function resolveOrderItemPerCase(customerName: string, spec?: string | null): number {
+  const combined = `${customerName} ${spec ?? ''}`.normalize('NFKC')
+  const m = combined.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  if (m) {
+    const n = Number(m[1] || m[2])
+    if (Number.isFinite(n) && n > 0 && n <= 200) return n
+  }
+  if (combined.includes('小コン')) return 30
+  if (combined.includes('農業総合研究所') || combined.toUpperCase().includes('NSK')) return 24
+  return 20
+}
+
 export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Promise<OrderListRow[]> {
   const supabase = createAdminClient()
   let query = supabase
     .from('orders')
     .select(
-      'id, order_date, delivery_date, status, source, customers(name, display_color), delivery_destinations(code, full_name), order_items(line_total)',
+      'id, order_date, delivery_date, status, source, customers(name, display_color), delivery_destinations(code, full_name), order_items(quantity, spec, field_status, line_total)',
     )
+    .order('delivery_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -88,29 +102,58 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
     source: string
     customers: { name: string; display_color: string | null } | null
     delivery_destinations: { code: string | null; full_name: string } | null
-    order_items: { line_total: number | null }[] | null
+    order_items: {
+      quantity: number | null
+      spec: string | null
+      field_status: string | null
+      line_total: number | null
+    }[] | null
   }
-  return ((data ?? []) as unknown as Row[]).map((o) => ({
-    id: o.id,
-    orderDate: o.order_date,
-    deliveryDate: o.delivery_date,
-    status: o.status,
-    source: o.source,
-    customerName: o.customers?.name ?? '取引先 未紐付け',
-    customerColor: o.customers?.display_color ?? null,
-    destinationName: o.delivery_destinations ? o.delivery_destinations.code || o.delivery_destinations.full_name : null,
-    itemCount: o.order_items?.length ?? 0,
-    amount: sumLine(o.order_items),
-  }))
+  return ((data ?? []) as unknown as Row[]).map((o) => {
+    const cName = o.customers?.name ?? '取引先 未紐付け'
+    const rawItems = (o.order_items ?? []).filter((it) => (Number(it.quantity) || 0) > 0)
+    let totalPacks = 0
+    let totalBoxes = 0
+    let packedCount = 0
+    let shippedCount = 0
+    for (const it of rawItems) {
+      const q = Number(it.quantity) || 0
+      const ppc = resolveOrderItemPerCase(cName, it.spec)
+      totalPacks += q
+      totalBoxes += Math.ceil(q / ppc)
+      if (it.field_status === 'shipped') shippedCount++
+      else if (it.field_status === 'packed') packedCount++
+    }
+    let fieldProgressLabel = '未着手'
+    if (rawItems.length === 0) fieldProgressLabel = '—'
+    else if (shippedCount === rawItems.length) fieldProgressLabel = '🚚 積込・出荷済'
+    else if (packedCount + shippedCount === rawItems.length) fieldProgressLabel = '✓ パック済'
+    else if (packedCount + shippedCount > 0) fieldProgressLabel = `作業中(${packedCount + shippedCount}/${rawItems.length})`
+
+    return {
+      id: o.id,
+      orderDate: o.order_date,
+      deliveryDate: o.delivery_date,
+      status: o.status,
+      source: o.source,
+      customerName: cName,
+      customerColor: o.customers?.display_color ?? null,
+      destinationName: o.delivery_destinations ? o.delivery_destinations.code || o.delivery_destinations.full_name : null,
+      itemCount: rawItems.length,
+      totalPacks,
+      totalBoxes,
+      fieldProgressLabel,
+      amount: sumLine(o.order_items),
+    }
+  })
 }
 
-/** 受注1件の詳細（明細付き）。存在しなければ null。 */
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, order_date, delivery_date, status, source, note, customers(name, display_color), delivery_destinations(code, full_name), order_items(id, product_name, quantity, unit, unit_price, line_total, field_status, confidence, spec, container_type)',
+      'id, customer_id, destination_id, order_date, delivery_date, status, source, note, customers(name, display_color), delivery_destinations(code, full_name), order_items(id, product_name, quantity, unit, unit_price, line_total, field_status, confidence, spec, container_type, version)',
     )
     .eq('id', id)
     .maybeSingle()
@@ -119,6 +162,8 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
 
   type Row = {
     id: string
+    customer_id: string
+    destination_id: string | null
     order_date: string | null
     delivery_date: string | null
     status: string
@@ -137,6 +182,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
       confidence: number | null
       spec: string | null
       container_type: string | null
+      version?: number | null
     }[] | null
   }
   const o = data as unknown as Row
@@ -151,9 +197,12 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     confidence: it.confidence != null ? Number(it.confidence) : null,
     spec: it.spec,
     containerType: it.container_type,
+    version: Number(it.version ?? 1),
   }))
   return {
     id: o.id,
+    customerId: o.customer_id,
+    destinationId: o.destination_id,
     orderDate: o.order_date,
     deliveryDate: o.delivery_date,
     status: o.status,

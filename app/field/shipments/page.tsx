@@ -551,7 +551,7 @@ export default async function ShipmentsPage({
     const nextOrderDestMap = new Map((nextOrders ?? []).map((o) => [o.id, o.destination_id]))
 
     if (nextOrderIds.length > 0) {
-      const { data: initialNextItems, error: nextItemsErr } = await admin
+      const { data: nextItemsInit, error: nextItemsErr } = await admin
         .from('order_items')
         .select(`
           id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -561,7 +561,7 @@ export default async function ShipmentsPage({
         `)
         .eq('product_id', selectedProductId)
         .in('order_id', nextOrderIds)
-      let nextItems = initialNextItems
+      let nextItems = nextItemsInit
       if (nextItemsErr) {
         const fbNext = await admin
           .from('order_items')
@@ -672,16 +672,16 @@ export default async function ShipmentsPage({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
+    <div className="mx-auto max-w-2xl space-y-3.5 pb-28">
       {/* ナビゲーションバー */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h1 className="font-display text-xl font-black text-ink">収穫・パックボード</h1>
-          <FieldViewSwitch active="day" date={date} />
+          <FieldViewSwitch active="day" date={date} product={selectedProductId} />
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
         <div className="flex items-center gap-2">
-          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日出荷（本日パック）" />
+          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProductId} />
         </div>
       </div>
 
@@ -691,7 +691,7 @@ export default async function ShipmentsPage({
           🥬 収穫・袋詰めボード
         </span>
         <Link
-          href={`/field/deliveries?date=${date}`}
+          href={`/field/deliveries?date=${date}${selectedProductId ? `&product=${selectedProductId}` : ''}`}
           className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
           🚚 便別積込・配送リスト
@@ -703,10 +703,10 @@ export default async function ShipmentsPage({
         <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950">
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後に作業リストへ反映されます）</span>
           <Link
-            href="/admin/inbox"
+            href={isAdmin ? '/admin/approvals' : '/field/approvals'}
             className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
           >
-            確認する →
+            確認・承認する →
           </Link>
         </div>
       )}

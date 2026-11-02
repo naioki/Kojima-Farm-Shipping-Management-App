@@ -3,17 +3,16 @@ import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { yen } from '@/lib/format'
-import { formatJpDateShort } from '@/lib/dates'
+import { formatJpDateShort, shiftDateStr } from '@/lib/dates'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
-import type { OrderStatusKey, RecentOrderRow, TrendPoint } from '@/components/dashboard/types'
+import type { OrderStatusKey, RecentOrderRow, TomorrowPackStats, TrendPoint } from '@/components/dashboard/types'
 import { ClipboardList, CheckCircle2, PackageCheck, Sparkles, FileText, Settings, PlusCircle } from 'lucide-react'
 
-/** 経営ダッシュボードのよく使う操作（固定）。 */
 const QUICK_ACTIONS: AdminDashboardData['actions'] = [
   { href: '/admin/orders/new', label: '新規注文入力', icon: PlusCircle, tone: 'forest' },
   { href: '/admin/inbox?filter=pending', label: '受注ボックス', icon: CheckCircle2, tone: 'harvest' },
-  { href: '/field/shipments', label: '当日出荷', icon: PackageCheck, tone: 'forest' },
+  { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck, tone: 'forest' },
   { href: '/admin/orders', label: '受注一覧', icon: ClipboardList, tone: 'trust' },
   { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles, tone: 'earth' },
   { href: '/admin/invoices', label: '請求書作成', icon: FileText, tone: 'earth' },
@@ -22,7 +21,6 @@ const QUICK_ACTIONS: AdminDashboardData['actions'] = [
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 
-/** JST の現在時刻（サーバが UTC でも崩れないよう +9h して UTC 系で読む）。 */
 function nowJst(): Date {
   return new Date(Date.now() + 9 * 60 * 60 * 1000)
 }
@@ -47,33 +45,43 @@ function pct(curr: number, prev: number): number | null {
   return ((curr - prev) / prev) * 100
 }
 
+// #46 cancelled は needs_check ではなく cancelled として正確にマッピング
 const ORDER_STATUS_MAP: Record<string, OrderStatusKey> = {
   pending_review: 'pending_review',
   approved: 'approved',
   shipped: 'shipped',
   invoiced: 'invoiced',
-  cancelled: 'needs_check',
+  cancelled: 'cancelled',
 }
 
-/** 出荷金額の合計（line_total を持つ items の和）。 */
 function sumLineTotals(items: { line_total: number | null }[] | null): number {
   return (items ?? []).reduce((acc, it) => acc + (it.line_total ?? 0), 0)
 }
 
-/**
- * 経営ダッシュボードの実データを組み立てる。各ブロックは失敗しても空/0に
- * フォールバックし、ページ全体は決して落とさない（NEVER swallow→空状態で見せる）。
- */
+function resolveDashboardPpc(spec?: string | null): number {
+  const s = (spec ?? '').normalize('NFKC')
+  const m = s.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  if (m) {
+    const n = Number(m[1] || m[2])
+    if (Number.isFinite(n) && n > 0 && n <= 200) return n
+  }
+  if (s.includes('小コン')) return 30
+  if (s.includes('24')) return 24
+  return 20
+}
+
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const supabase = createAdminClient()
   const jst = nowJst()
   const today = ymd(jst)
+  const tomorrow = shiftDateStr(today, 1)
   const cur = monthRange(jst)
   const prev = monthRange(new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth() - 1, 1)))
 
   const [
     user,
     todayItemsRes,
+    tomorrowItemsRes,
     pendingOrdersRes,
     pendingReceiptsRes,
     failedReceiptsRes,
@@ -90,7 +98,15 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .from('order_items')
       .select('field_status, quantity, shipped_qty, line_total, orders!inner(delivery_date,status)')
       .eq('orders.delivery_date', today)
-      .in('orders.status', ['approved', 'shipped']),
+      .in('orders.status', ['approved', 'shipped', 'invoiced'])
+      .gt('quantity', 0),
+    // #44 本日パック作業対象（明日納品分）の進捗集計
+    supabase
+      .from('order_items')
+      .select('field_status, quantity, shipped_qty, spec, orders!inner(delivery_date,status)')
+      .eq('orders.delivery_date', tomorrow)
+      .in('orders.status', ['approved', 'shipped', 'invoiced'])
+      .gt('quantity', 0),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).in('status', ['ai_failed', 'unmatched']),
@@ -106,27 +122,25 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .gte('orders.delivery_date', prev.start)
       .lte('orders.delivery_date', prev.end)
       .in('orders.status', ['shipped', 'invoiced']),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).gte('order_date', cur.start).lte('order_date', cur.end),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).gte('order_date', prev.start).lte('order_date', prev.end),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).gte('order_date', cur.start).lte('order_date', cur.end).neq('status', 'cancelled'),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).gte('order_date', prev.start).lte('order_date', prev.end).neq('status', 'cancelled'),
     supabase.from('invoices').select('total_amount').eq('billing_month', cur.ym),
     supabase.from('invoices').select('total_amount').eq('billing_month', prev.ym),
     supabase
       .from('orders')
-      .select('id, order_date, status, customers(name), order_items(line_total)')
+      .select('id, order_date, delivery_date, status, customers(name), order_items(line_total)')
       .order('created_at', { ascending: false })
       .limit(5),
   ])
 
-  // --- 名前・あいさつ・日付 ---
-  const { data: profile, error: profileErr } = user
+  const { error: profileErr } = user
     ? await supabase.from('users').select('full_name').eq('id', user.id).maybeSingle()
-    : { data: null, error: null }
-  // 表示名は補助。取得失敗してもメール名にフォールバックする。無言にはしない。
+    : { error: null }
   if (profileErr) console.error('[admin-data] 表示名の取得に失敗:', profileErr.message)
   const name = '小島農園'
   const dateLabel = `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日 (${WEEKDAYS[jst.getUTCDay()]})`
 
-  // --- 本日の出荷状況 ---
+  // --- 本日の納品・出荷状況 ---
   type TodayItem = { field_status: string | null; quantity: number; shipped_qty: number | null; line_total: number | null }
   const todayItems = (todayItemsRes.data ?? []) as unknown as TodayItem[]
   const counts = { not_started: 0, packed: 0, shipped: 0 }
@@ -145,18 +159,53 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     }
   }
   const totalItems = todayItems.length
-  const progressPct = totalItems > 0 ? Math.round((counts.shipped / totalItems) * 100) : 0
+  const progressPct = totalItems > 0 ? Math.round(((counts.packed + counts.shipped) / totalItems) * 100) : 0
+
+  // --- #44 本日パック作業（明日納品分）の進捗集計 ---
+  type TomorrowItem = { field_status: string | null; quantity: number; shipped_qty: number | null; spec: string | null }
+  const tomorrowItems = (tomorrowItemsRes.data ?? []) as unknown as TomorrowItem[]
+  let tTotalBoxes = 0
+  let tCompletedBoxes = 0
+  let tTotalPacks = 0
+  let tCompletedPacks = 0
+  let tCompletedItems = 0
+  for (const it of tomorrowItems) {
+    const q = Number(it.quantity) || 0
+    const ppc = resolveDashboardPpc(it.spec)
+    const boxes = Math.ceil(q / ppc)
+    tTotalPacks += q
+    tTotalBoxes += boxes
+    if (it.field_status === 'packed' || it.field_status === 'shipped') {
+      tCompletedItems++
+      tCompletedPacks += q
+      tCompletedBoxes += boxes
+    } else if (it.shipped_qty && it.shipped_qty > 0) {
+      const partial = Math.min(q, Number(it.shipped_qty))
+      tCompletedPacks += partial
+      tCompletedBoxes += Math.floor(partial / ppc)
+    }
+  }
+  const tomorrowPackStats: TomorrowPackStats = {
+    deliveryDate: tomorrow,
+    deliveryDateLabel: formatJpDateShort(tomorrow),
+    totalItems: tomorrowItems.length,
+    completedItems: tCompletedItems,
+    totalBoxes: tTotalBoxes,
+    completedBoxes: tCompletedBoxes,
+    totalPacks: tTotalPacks,
+    completedPacks: tCompletedPacks,
+    progressPct: tTotalPacks > 0 ? Math.min(100, Math.round((tCompletedPacks / tTotalPacks) * 100)) : 0,
+  }
 
   // --- 要対応アラート ---
   const pendingOrders = pendingOrdersRes.count ?? 0
   const pendingReceipts = pendingReceiptsRes.count ?? 0
   const failedReceipts = failedReceiptsRes.count ?? 0
-  // 規格未登録はナビから外しここで通知（ToDo性が強いため）。集計失敗は0扱いで全体を止めない。
   const missingSpecs = await getMissingSpecs(createAdminClient()).catch(() => [])
   const missingSpecsCount = missingSpecs.length
   const alerts: AlertItem[] = []
   if (pendingOrders > 0)
-    alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/inbox?filter=pending' })
+    alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/approvals' })
   if (pendingReceipts > 0)
     alerts.push({ id: 'pr', tone: 'warning', label: `未処理の受信データが ${pendingReceipts}件 あります`, count: pendingReceipts, href: '/admin/inbox' })
   if (failedReceipts > 0)
@@ -181,7 +230,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       return { label: `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`, value: v }
     })
 
-  // --- 今月のサマリー（4指標・前月比） ---
+  // --- 今月のサマリー ---
   const shippedCur = sumLineTotals(curShipRes.data as { line_total: number | null }[] | null)
   const shippedPrev = sumLineTotals(prevShipRes.data as { line_total: number | null }[] | null)
   const ordersCur = curOrdersRes.count ?? 0
@@ -198,10 +247,10 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     { key: 'unbilled', label: '未請求額', value: yen(unbilledCur), deltaPct: pct(unbilledCur, unbilledPrev), spark: [unbilledPrev, unbilledCur], invertDelta: true },
   ]
 
-  // --- 最新の受注 ---
   type RecentRow = {
     id: string
     order_date: string
+    delivery_date: string | null
     status: string
     customers: { name: string } | null
     order_items: { line_total: number | null }[] | null
@@ -210,7 +259,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const recentOrders: RecentOrderRow[] = recentRows.map((o) => {
     return {
       id: o.id,
-      date: formatJpDateShort(o.order_date),
+      date: formatJpDateShort(o.delivery_date ?? o.order_date),
       customer: o.customers?.name ?? '（未紐付け）',
       itemCount: o.order_items?.length ?? 0,
       amount: sumLineTotals(o.order_items),
@@ -234,6 +283,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       totalItems,
       amounts: { notStarted: amt.notStarted, packed: amt.packed, shipped: amt.shipped },
     },
+    tomorrowPackStats,
     trend,
     alerts,
     actions: QUICK_ACTIONS,

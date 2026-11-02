@@ -8,47 +8,31 @@ import { getStaffFeatures } from '@/lib/field/features'
 import { decideReceiptApproval, parseThreshold } from '@/lib/ingestion/auto-approve'
 import { foldKana } from '@/lib/normalize/kana'
 
-/**
- * 注文承認（pending_review → approved）の中核ロジック（純関数）。
- *
- * 承認ルート（app/api/orders/[id]/approve/route.ts）と、チャット自動化のユースケース
- * （lib/chat/use-cases.ts）の両方がこの関数を呼ぶ。抜け道を作らないため、承認は必ず
- * ここを通す（v4 のような RPC 直挿しはしない）。認証・権限判定（401/403 の入口）は
- * 呼び出し側に残し、この関数は「役割が確定した後の業務ゲート＋副作用」だけを担う。
- *
- * ゲート（すべて既存ルートと同一メッセージ・同一ステータスコード）:
- *   - 納品日ゲート : harvest_tasks.task_date に必須（全品目「出荷日の前日に収穫・パック」のため task_date = delivery_date - 1日）
- *   - 納入先ゲート : 取引先に納入先登録があるのに未確定なら拒否（取引先＞納入先の仕分け保証）
- *   - 荷姿ゲート   : 商品×取引先に選べる荷姿があるのに未確定なら拒否（箱数計算の保証）
- *   - スタッフ判定 : role=staff は「機能解放＋高確信・取引先一致・納品日確定」のみ可
- * 成功時: status=approved に更新し、各明細から harvest_tasks（出荷日前日）を生成、audit_log に記録。
- */
-
 type AdminClient = SupabaseClient<Database>
 
 export interface ApproveOrderInput {
   orderId: string
-  /** 納品日が未確定なら承認時にここで確定（YYYY-MM-DD）。 */
   deliveryDate?: string
-  /** 納入先が未確定なら承認時にここで確定。 */
   destinationId?: string
-  /** 呼び出し側で確定済みの実行者ロール（認証・権限判定は呼び出し側の責務）。 */
   role: 'admin' | 'staff'
-  /** 監査記録の approved_by に使う実行者ユーザーID。 */
   userId: string
 }
 
 export type ApproveOrderResult =
-  | { ok: true; tasksCreated: number; deliveryDate: string }
+  | { ok: true; tasksCreated: number; deliveryDate: string; mergedIntoOrderId?: string }
   | { ok: false; status: number; error: string; reason?: string }
 
+/**
+ * 注文承認（pending_review → approved）の中核ロジック。
+ * - #36: 同一 (customer_id, destination_id, delivery_date) に既に承認済（approved/shipped）の注文が存在する場合、
+ *   カードが2枚に分裂しないよう既存注文へ明細を自動統合し、重複注文シェルをクリーンアップする。
+ */
 export async function approveOrder(
   admin: AdminClient,
   input: ApproveOrderInput,
 ): Promise<ApproveOrderResult> {
   const { orderId, role, userId } = input
 
-  // 対象注文＋明細を取得
   const { data: order, error: orderErr } = await admin
     .from('orders')
     .select('id, customer_id, status, delivery_date, destination_id, note')
@@ -62,17 +46,15 @@ export async function approveOrder(
 
   const { data: items, error: itemsErr } = await admin
     .from('order_items')
-    .select('id, product_id, product_name, quantity, confidence, pack_config_id')
+    .select('id, product_id, product_name, quantity, confidence, pack_config_id, spec, container_type, has_card, line_note')
     .eq('order_id', order.id)
   if (itemsErr) return { ok: false, status: 500, error: itemsErr.message }
 
-  // 納品日（引数で確定可。harvest_tasks.task_date に必須）
   const deliveryDate = input.deliveryDate ?? order.delivery_date
   if (!deliveryDate) {
     return { ok: false, status: 400, error: '納品日を確定してください' }
   }
 
-  // 納入先解決: AI判別または指定値を優先。未指定の場合は取引先の納入先やメモから自動名寄せ解決
   let destinationId = order.destination_id ?? input.destinationId ?? null
   if (!destinationId && order.customer_id) {
     const { data: customerDests } = await admin
@@ -103,7 +85,6 @@ export async function approveOrder(
     }
   }
 
-  // 荷姿ゲート: その商品×取引先に選べる荷姿マスタがあるのに未確定なら承認させない
   const productIds = [...new Set(items.map((it) => it.product_id).filter(Boolean))] as string[]
   if (productIds.length > 0) {
     const { data: packConfigs, error: packErr } = await admin
@@ -111,7 +92,6 @@ export async function approveOrder(
       .select('id, product_id, customer_id')
       .in('product_id', productIds)
       .eq('is_active', true)
-    // 荷姿の取得失敗を「荷姿マスタなし」に化けさせない（ゲートをすり抜けさせない）。
     if (packErr) return { ok: false, status: 500, error: `荷姿マスタの確認に失敗しました: ${packErr.message}` }
     for (const it of items) {
       if (it.pack_config_id || !it.product_id) continue
@@ -124,7 +104,6 @@ export async function approveOrder(
     }
   }
 
-  // スタッフは高確信・取引先一致・納品日確定のときだけ承認可
   if (role === 'staff') {
     const features = await getStaffFeatures()
     if (!features.approve) {
@@ -148,7 +127,95 @@ export async function approveOrder(
     }
   }
 
-  // 承認：status 更新（＋必要なら delivery_date・destination_id を確定）
+  const harvestTaskDate = shiftDateStr(deliveryDate, -1)
+
+  // #36 既に同じ (customer_id, destination_id, delivery_date) の承認済み注文があるかチェックし、あれば統合する
+  if (order.customer_id) {
+    let dupQuery = admin
+      .from('orders')
+      .select('id, note')
+      .eq('customer_id', order.customer_id)
+      .eq('delivery_date', deliveryDate)
+      .in('status', ['approved', 'shipped'])
+      .neq('id', order.id)
+    dupQuery = destinationId ? dupQuery.eq('destination_id', destinationId) : dupQuery.is('destination_id', null)
+    const { data: existingOrders } = await dupQuery.order('created_at', { ascending: false }).limit(1)
+    const targetExistingOrder = existingOrders?.[0]
+
+    if (targetExistingOrder) {
+      const { data: existingItems } = await admin
+        .from('order_items')
+        .select('id, product_id, product_name, quantity, version, field_status')
+        .eq('order_id', targetExistingOrder.id)
+
+      let tasksCreated = 0
+      for (const it of items) {
+        const matchExisting = (existingItems ?? []).find(
+          (ex) =>
+            (it.product_id && ex.product_id === it.product_id) ||
+            (!it.product_id && ex.product_name === it.product_name),
+        )
+        if (matchExisting) {
+          const newQty = Number(it.quantity) || 0
+          await admin
+            .from('order_items')
+            .update({
+              quantity: newQty,
+              quantity_raw: String(newQty),
+              spec: it.spec ?? undefined,
+              container_type: it.container_type ?? undefined,
+              line_note: it.line_note ?? undefined,
+              field_status: 'not_started',
+              version: (Number(matchExisting.version) || 1) + 1,
+            })
+            .eq('id', matchExisting.id)
+          await admin
+            .from('harvest_tasks')
+            .update({ required_qty: newQty, task_date: harvestTaskDate })
+            .eq('order_item_id', matchExisting.id)
+          await admin.from('order_items').delete().eq('id', it.id)
+        } else {
+          await admin
+            .from('order_items')
+            .update({ order_id: targetExistingOrder.id })
+            .eq('id', it.id)
+          if (it.product_id) {
+            await admin.from('harvest_tasks').insert({
+              product_id: it.product_id,
+              order_item_id: it.id,
+              required_qty: it.quantity,
+              task_date: harvestTaskDate,
+            })
+            tasksCreated++
+          }
+        }
+      }
+
+      try {
+        await admin
+          .from('order_receipts')
+          .update({ order_id: targetExistingOrder.id, status: 'approved' })
+          .eq('order_id', order.id)
+      } catch {}
+
+      await admin.from('orders').delete().eq('id', order.id)
+
+      try {
+        await writeAudit(admin, {
+          entityType: 'orders',
+          entityId: targetExistingOrder.id,
+          action: 'UPDATE',
+          oldValues: { merged_from_order_id: order.id },
+          newValues: { status: 'approved', approved_by: userId },
+          userId,
+        })
+      } catch {}
+
+      return { ok: true, tasksCreated, deliveryDate, mergedIntoOrderId: targetExistingOrder.id }
+    }
+  }
+
+  // 既存の重複注文がない場合はそのまま approved に昇格
   const updates: Record<string, unknown> = { status: 'approved' }
   if (!order.delivery_date && input.deliveryDate) {
     updates.delivery_date = input.deliveryDate
@@ -160,8 +227,6 @@ export async function approveOrder(
   const { error: updErr } = await admin.from('orders').update(updates).eq('id', order.id)
   if (updErr) return { ok: false, status: 500, error: updErr.message }
 
-  // 各明細 → 収穫タスク生成（全品目「出荷日の前日に収穫・パック」の原則に従い task_date は deliveryDate - 1日）
-  const harvestTaskDate = shiftDateStr(deliveryDate, -1)
   const tasks = items
     .filter((it) => it.product_id)
     .map((it) => ({
@@ -170,21 +235,20 @@ export async function approveOrder(
       required_qty: it.quantity,
       task_date: harvestTaskDate,
     }))
-  const { error: taskErr } = await admin.from('harvest_tasks').insert(tasks)
-  if (taskErr) {
-    // タスク生成に失敗したら承認を巻き戻す（中途半端な状態を残さない）
-    await admin.from('orders').update({ status: 'pending_review' }).eq('id', order.id)
-    return { ok: false, status: 500, error: `収穫タスクの生成に失敗: ${taskErr.message}` }
+  if (tasks.length > 0) {
+    const { error: taskErr } = await admin.from('harvest_tasks').insert(tasks)
+    if (taskErr) {
+      await admin.from('orders').update({ status: 'pending_review' }).eq('id', order.id)
+      return { ok: false, status: 500, error: `収穫タスクの生成に失敗: ${taskErr.message}` }
+    }
   }
 
-  // 紐づく受信ログのステータスも approved に更新
   try {
     await admin.from('order_receipts').update({ status: 'approved' }).eq('order_id', order.id)
   } catch (e) {
     console.error('[approve] order_receipts status update failed', e)
   }
 
-  // 監査記録（best-effort で全体は止めない）
   try {
     await writeAudit(admin, {
       entityType: 'orders',

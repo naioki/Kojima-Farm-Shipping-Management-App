@@ -74,6 +74,18 @@ interface Row extends EditableOrderItem {
  * 数量はその場で編集（楽観ロック version）。誤った明細は削除。要確認は注意喚起バナー＋赤表示。
  * 管理者が修正した際には「💡 この修正を取引先ルールとして学習させる」ワンクリック保存を提供する。
  */
+function resolveCardPacksPerCase(customerName: string, spec?: string | null, containerType?: string | null): number {
+  const combined = `${customerName} ${spec ?? ''} ${containerType ?? ''}`.normalize('NFKC')
+  const m = combined.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  if (m) {
+    const n = Number(m[1] || m[2])
+    if (Number.isFinite(n) && n > 0 && n <= 200) return n
+  }
+  if (combined.includes('小コン')) return 30
+  if (combined.includes('農業総合研究所') || combined.toUpperCase().includes('NSK')) return 24
+  return 20
+}
+
 export function EditableOrderCard({
   orderId,
   customerName,
@@ -238,18 +250,26 @@ export function EditableOrderCard({
             {deliveryDate ? `📅 納品: ${formatJpDateShort(deliveryDate)}` : '納品日未定'}
           </span>
 
-          {/* 品目サマリー（バッジ表示） */}
+          {/* #34 品目サマリー（箱数＋パック数の両方をバッジ表示） */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {rows.map((r) => (
-              <span
-                key={r.id}
-                className="inline-flex items-center gap-1 rounded-md border border-line bg-bg-soft/80 px-2 py-0.5 text-xs text-ink"
-              >
-                <span className="font-medium">{r.productName}</span>
-                <span className="font-bold tabular-nums text-trust-800">{r.quantity}</span>
-                <span className="text-[10px] text-ink-muted">{r.unit}</span>
-              </span>
-            ))}
+            {rows.map((r) => {
+              const ppc = resolveCardPacksPerCase(customerName, r.spec, r.containerType)
+              const boxes = r.quantity > 0 ? Math.ceil(r.quantity / ppc) : 0
+              return (
+                <span
+                  key={r.id}
+                  className="inline-flex items-center gap-1 rounded-md border border-forest-300 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
+                >
+                  <span className="font-bold">{r.productName}</span>
+                  <span className="font-black tabular-nums text-forest-800">
+                    📦 {boxes}箱
+                  </span>
+                  <span className="font-bold tabular-nums text-ink-soft">
+                    ({r.quantity.toLocaleString()}{r.unit})
+                  </span>
+                </span>
+              )
+            })}
           </div>
         </div>
 
@@ -392,7 +412,9 @@ export function EditableOrderCard({
                         low ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
                       }`}
                     />
-                    <span className="w-8 shrink-0 text-sm font-semibold text-ink-soft">{row.unit}</span>
+                    <span className="shrink-0 text-xs font-bold text-ink-soft">
+                      {row.unit}（約{Math.ceil((Number(row.draft) || 0) / resolveCardPacksPerCase(customerName, row.spec, row.containerType))}箱）
+                    </span>
                     {row.confirmDelete ? (
                       <span className="flex shrink-0 items-center gap-1">
                         <button

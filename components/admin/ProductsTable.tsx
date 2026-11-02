@@ -15,6 +15,8 @@ export interface ProductRow {
   name_kana: string | null
   base_unit: string
   category: string | null
+  container_capacity: number | null
+  default_unit_price: number | null
   default_tax_rate: TaxRate
   stock_qty: number
   is_active: boolean
@@ -28,10 +30,7 @@ const numOrNull = (s: string): number | null => {
 }
 
 /**
- * 商品（品目）マスタの編集テーブル。
- * - 品目追加後の props 更新にも自動同期。
- * - スマホ・PCどちらでも「保存」「削除」ボタンが画面外に隠れないレスポンシブ設計。
- * - 削除ボタンは未使用なら物理削除、過去注文履歴があれば自動で非表示（アーカイブ）化し、エラーで止まらない。
+ * 商品（品目）マスタの編集テーブル（#49 標準1箱入数 container_capacity と 標準単価 default_unit_price のインライン編集に対応）。
  */
 export function ProductsTable({ products, categories = [] }: { products: ProductRow[]; categories?: string[] }) {
   const router = useRouter()
@@ -45,14 +44,12 @@ export function ProductsTable({ products, categories = [] }: { products: Product
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // 統合モーダル
   const [mergeId, setMergeId] = useState<string | null>(null)
   const [mergeTarget, setMergeTarget] = useState('')
   const [mergeSellingLabel, setMergeSellingLabel] = useState('')
   const [mergeBasePer, setMergeBasePer] = useState('')
   const [merging, setMerging] = useState(false)
 
-  // 親からの products 更新（新規品目追加など）を同期
   useEffect(() => {
     setRows(Object.fromEntries(products.map((p) => [p.id, { ...p }])))
     setIds(products.map((p) => p.id))
@@ -83,8 +80,10 @@ export function ProductsTable({ products, categories = [] }: { products: Product
         body: JSON.stringify({
           name: r.name.trim(),
           name_kana: r.name_kana || null,
-          base_unit: r.base_unit.trim() || '個',
+          base_unit: r.base_unit.trim() || 'P',
           category: r.category?.trim() || null,
+          container_capacity: r.container_capacity,
+          default_unit_price: r.default_unit_price,
           default_tax_rate: r.default_tax_rate,
           stock_qty: r.stock_qty,
           is_active: r.is_active,
@@ -200,7 +199,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-[11px] font-bold text-ink-soft">品目名</span>
             <input
-              className={cn(inp, 'w-36 font-bold')}
+              className={cn(inp, 'w-32 font-bold')}
               value={r.name}
               onChange={(e) => patch(id, { name: e.target.value })}
             />
@@ -209,9 +208,9 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-[11px] font-bold text-ink-soft">グループ</span>
             <input
-              className={cn(inp, 'w-24')}
+              className={cn(inp, 'w-20')}
               list="products-table-category-list"
-              placeholder="その他"
+              placeholder="野菜"
               value={r.category ?? ''}
               onChange={(e) => patch(id, { category: e.target.value })}
               aria-label={`${r.name} の品目グループ`}
@@ -221,9 +220,33 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-[11px] font-bold text-ink-soft">単位</span>
             <input
-              className={cn(inp, 'w-16 text-center')}
+              className={cn(inp, 'w-14 text-center')}
               value={r.base_unit}
               onChange={(e) => patch(id, { base_unit: e.target.value })}
+            />
+          </label>
+
+          {/* #49 標準1箱入数（container_capacity） */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-bold text-forest-800">標準1箱入数</span>
+            <input
+              className={cn(inp, 'num w-18 text-center font-bold')}
+              inputMode="numeric"
+              placeholder="20"
+              value={r.container_capacity ?? ''}
+              onChange={(e) => patch(id, { container_capacity: numOrNull(e.target.value) })}
+            />
+          </label>
+
+          {/* #49 標準単価（default_unit_price） */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-bold text-ink-soft">標準単価(円)</span>
+            <input
+              className={cn(inp, 'num w-20 text-right')}
+              inputMode="numeric"
+              placeholder="—"
+              value={r.default_unit_price ?? ''}
+              onChange={(e) => patch(id, { default_unit_price: numOrNull(e.target.value) })}
             />
           </label>
 
@@ -255,7 +278,6 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           </label>
         </div>
 
-        {/* 操作ボタン群（常に右側に明示表示・スマホでも折り返して確実に押せる） */}
         <div className="flex items-center gap-1.5 ml-auto pt-2 sm:pt-0">
           <Button
             variant={isDirty ? 'primary' : 'secondary'}
@@ -364,7 +386,6 @@ export function ProductsTable({ products, categories = [] }: { products: Product
         isLoading={deleting}
       />
 
-      {/* 統合モーダル */}
       <Modal
         open={mergeId !== null}
         onClose={() => setMergeId(null)}
@@ -399,9 +420,6 @@ export function ProductsTable({ products, categories = [] }: { products: Product
               <input type="number" inputMode="decimal" min={0} className={cn(inp, 'num w-full')} placeholder="例: 20" value={mergeBasePer} onChange={(e) => setMergeBasePer(e.target.value)} />
             </label>
           </div>
-          <p className="text-xs text-ink-faint">
-            例：トマトの「箱」を統合先＝トマト、販売単位＝箱、1箱＝20個 とすると、トマトに「箱」荷姿が追加されます。
-          </p>
         </div>
       </Modal>
     </div>

@@ -33,7 +33,7 @@ const STANDARD_CLIENTS = [
 ]
 
 const SOURCE_LABEL: Record<string, string> = {
-  'seed_v2.3': '標準v2.3シード',
+  'seed_v2.3': '標準初期ルール',
   admin_gui: '管理画面手動追加',
   hitl_approval: '承認画面から学習',
   learned_from_correction: '修正指示から学習',
@@ -56,7 +56,7 @@ const DRY_RUN_SAMPLES = [
   },
   {
     label: 'NSK（小島裕美11番・入数24・シールあり）',
-    text: '株式会社農業総合研究所 生産者11:小島裕美 明日 チンゲンサイ 50P シール:あり 買値¥130',
+    text: '株式会社農業総合研究所 生産者11:小島裕美 明日 チンゲンサイ 50P シール:あり 200gUP',
   },
   {
     label: '注文外スキップ（JA富里きゅうり割振表）',

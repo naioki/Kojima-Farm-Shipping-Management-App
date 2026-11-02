@@ -20,10 +20,10 @@ export async function getRouteOverrides(admin: SupabaseClient): Promise<Record<s
       .maybeSingle()
     if (!data?.value) return {}
     try {
-      return JSON.parse(data.value) as Record<string, RouteOverride>
-    } catch {
-      return {}
-    }
+    return JSON.parse(data.value) as Record<string, RouteOverride>
+  } catch {
+    return {}
+  }
   } catch {
     return {}
   }

@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, ExternalLink } from 'lucide-react'
 import { ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { OrderStatusBadge, sourceLabel } from '@/components/admin/OrderStatusBadge'
 import { DeleteOrderButton } from '@/components/admin/DeleteOrderButton'
 import { ShippingSlipIssuer } from '@/components/admin/ShippingSlipIssuer'
+import { OrderDetailEditor } from '@/components/admin/OrderDetailEditor'
 import { getOrderDetail } from '@/lib/orders/list'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { yen } from '@/lib/format'
@@ -17,13 +18,9 @@ export const dynamic = 'force-dynamic'
 
 const fullDate = (d: string | null) => (d ? formatJpDate(d) : '未定')
 
-const FIELD_STATUS: Record<string, { label: string; cls: string }> = {
-  not_started: { label: '未着手', cls: 'text-ink-faint' },
-  packed: { label: '梱包完了', cls: 'text-earth-700' },
-  shipped: { label: '出荷済み', cls: 'text-trust-700' },
-}
-
-/** 受注詳細（管理者・読み取り）。明細・荷姿状態・確信度を1画面で確認する。 */
+/**
+ * 受注詳細・インライン編集画面（#38 納品日・納入先・数量・規格・コンテナ・単価の編集に完全対応）。
+ */
 export default async function AdminOrderDetailPage({ params }: { params: { id: string } }) {
   const guard = await requireAdmin('受注詳細は管理者のみです。')
   if (guard) return guard
@@ -37,14 +34,21 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
   }
   if (!order) notFound()
 
-  // 出荷票ヘッダー会社名の選択候補（取引先名）
   const supabase = createAdminClient()
-  const { data: custRows } = await supabase
-    .from('customers')
-    .select('name')
-    .eq('is_active', true)
-    .order('name')
+  const [{ data: custRows }, { data: destRows }] = await Promise.all([
+    supabase.from('customers').select('name').eq('is_active', true).order('name'),
+    supabase
+      .from('delivery_destinations')
+      .select('id, code, full_name')
+      .eq('customer_id', order.customerId)
+      .eq('is_active', true)
+      .order('sort_order'),
+  ])
   const companyOptions = [...new Set((custRows ?? []).map((c) => c.name as string))]
+  const destinations = (destRows ?? []).map((d) => ({
+    id: d.id as string,
+    label: (d.code as string | null)?.trim() || (d.full_name as string),
+  }))
 
   const slipItems = order.items.map((it) => ({
     id: it.id,
@@ -59,7 +63,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/admin/orders"
           className="inline-flex items-center gap-1 text-sm font-medium text-trust-600 hover:underline"
@@ -67,7 +71,16 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
           <ChevronLeft className="h-4 w-4" aria-hidden />
           受注一覧へ戻る
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {order.deliveryDate && (
+            <Link
+              href={`/field/shipments?date=${order.deliveryDate}`}
+              className="inline-flex h-9 items-center gap-1 rounded-lg border border-forest-300 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
+            >
+              <span>🥬 この日のパックボードを見る</span>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          )}
           <ShippingSlipIssuer
             orderId={order.id}
             items={slipItems}
@@ -80,7 +93,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
         </div>
       </div>
 
-      {/* ヘッダー */}
+      {/* ヘッダーサマリー */}
       <Card className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -89,7 +102,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
               <h1 className="font-display text-xl font-bold text-ink">
                 {order.customerName}
                 {order.destinationName && (
-                  <span className="ml-1.5 text-base font-normal text-ink-soft">＞{order.destinationName}</span>
+                  <span className="ml-1.5 text-base font-bold text-emerald-800">＞{order.destinationName}</span>
                 )}
               </h1>
               <p className="text-xs text-ink-faint">受注元: {sourceLabel(order.source)}</p>
@@ -104,69 +117,25 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
           </div>
           <div>
             <dt className="text-xs text-ink-faint">納品日</dt>
-            <dd className="num text-ink">{fullDate(order.deliveryDate)}</dd>
+            <dd className="num font-black text-forest-900">{fullDate(order.deliveryDate)}</dd>
           </div>
           <div>
             <dt className="text-xs text-ink-faint">合計金額</dt>
             <dd className="num font-bold text-ink">{yen(order.total)}</dd>
           </div>
         </dl>
-        {order.note && (
-          <p className="rounded-lg bg-bg-soft px-3 py-2 text-sm text-ink-soft">{order.note}</p>
-        )}
       </Card>
 
-      {/* 明細 */}
-      <Card variant="elevated" className="overflow-hidden p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-ink-faint">
-                <th className="px-4 py-2.5 font-medium">商品</th>
-                <th className="px-4 py-2.5 text-right font-medium">数量</th>
-                <th className="px-4 py-2.5 text-right font-medium">単価</th>
-                <th className="px-4 py-2.5 text-right font-medium">金額</th>
-                <th className="px-4 py-2.5 font-medium">現場</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map((it) => {
-                const fs = it.fieldStatus ? FIELD_STATUS[it.fieldStatus] : undefined
-                const lowConf = it.confidence != null && it.confidence < 0.7
-                return (
-                  <tr key={it.id} className="border-b border-line/60 last:border-0">
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-ink">{it.productName}</span>
-                      {lowConf && (
-                        <span className="num ml-2 text-xs text-alert">確信度 {Math.round(it.confidence! * 100)}%</span>
-                      )}
-                    </td>
-                    <td className="num whitespace-nowrap px-4 py-3 text-right text-ink">
-                      {it.quantity} {it.unit}
-                    </td>
-                    <td className="num whitespace-nowrap px-4 py-3 text-right text-ink-soft">
-                      {it.unitPrice != null ? yen(it.unitPrice) : '—'}
-                    </td>
-                    <td className="num whitespace-nowrap px-4 py-3 text-right text-ink">{yen(it.lineTotal)}</td>
-                    <td className={`whitespace-nowrap px-4 py-3 text-xs ${fs?.cls ?? 'text-ink-faint'}`}>
-                      {fs?.label ?? '—'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-line">
-                <td className="px-4 py-3 text-sm font-medium text-ink-soft" colSpan={3}>
-                  合計
-                </td>
-                <td className="num px-4 py-3 text-right font-bold text-ink">{yen(order.total)}</td>
-                <td aria-hidden />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </Card>
+      {/* #38 インライン編集コンポーネント */}
+      <OrderDetailEditor
+        orderId={order.id}
+        customerName={order.customerName}
+        initialDeliveryDate={order.deliveryDate}
+        initialDestinationId={order.destinationId}
+        initialNote={order.note}
+        destinations={destinations}
+        initialItems={order.items}
+      />
     </div>
   )
 }

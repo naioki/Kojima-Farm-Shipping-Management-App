@@ -4,10 +4,11 @@ import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aiRuleCreateSchema } from '@/types/database'
 import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
+import { isStaffUser } from '@/lib/auth/is-staff-user'
 
 export const runtime = 'nodejs'
 
-async function verifyAdmin() {
+async function verifyStaffOrAdmin() {
   const user = await getAuthedUser()
   if (!user) return { ok: false as const, status: 401, error: '認証が必要です' }
 
@@ -19,8 +20,10 @@ async function verifyAdmin() {
     .maybeSingle()
 
   if (profileErr) console.error('[app/api/ai-rules/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return { ok: false as const, status: 403, error: '管理者権限が必要です' }
+  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
+  const role = profile?.role ?? jwtRole
+  if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
+    return { ok: false as const, status: 403, error: 'スタッフまたは管理者権限が必要です' }
   }
   return { ok: true as const, userId: user.id }
 }
@@ -30,7 +33,7 @@ async function verifyAdmin() {
  * 取引先別のAI読取ルール一覧を取得（優先度順 → 作成日時順）。
  */
 export async function GET(req: NextRequest) {
-  const auth = await verifyAdmin()
+  const auth = await verifyStaffOrAdmin()
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const clientName = req.nextUrl.searchParams.get('client_name')?.trim()
@@ -54,10 +57,10 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/ai-rules
- * 新しい取引先別AI読取ルールを追加（管理画面 `/admin/rules` または承認画面のワンクリック学習から呼ばれる）。
+ * 新しい取引先別AI読取ルールを追加（管理画面 `/admin/rules`・承認画面・現場スマート読取のワンタップ学習から呼ばれる）。
  */
 export async function POST(req: NextRequest) {
-  const auth = await verifyAdmin()
+  const auth = await verifyStaffOrAdmin()
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const body = await req.json().catch(() => null)

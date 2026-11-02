@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react'
+import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { ViewerTargetItem, ViewerReceiptTab } from '@/app/api/field/viewer-meta/route'
 
@@ -12,8 +12,10 @@ export default function ReceiptViewerPage() {
   const searchParams = useSearchParams()
   const receiptId = params.receiptId as string
   const returnDate = searchParams.get('date') || ''
+  const returnProduct = searchParams.get('product') || ''
 
   const [zoom, setZoom] = useState<number>(100)
+  const [lightMode, setLightMode] = useState<boolean>(false)
   const [receipts, setReceipts] = useState<ViewerReceiptTab[]>([])
   const [targetItems, setTargetItems] = useState<ViewerTargetItem[]>([])
   const [loadingMeta, setLoadingMeta] = useState<boolean>(true)
@@ -21,7 +23,6 @@ export default function ReceiptViewerPage() {
   const originalUrl = `/api/receipts/${receiptId}/original?mode=preview`
   const directFileUrl = `/api/receipts/${receiptId}/original`
 
-  // 照合ハイライトデータおよび同日FAXリストの取得
   useEffect(() => {
     let active = true
     async function loadMeta() {
@@ -47,45 +48,86 @@ export default function ReceiptViewerPage() {
     }
   }, [receiptId, returnDate])
 
+  // #32 戻り遷移時に date と product の両方を保持
   const handleBack = () => {
-    // 別タブで開いた場合はタブを閉じる試み、または一覧画面へ確実に戻る
     if (window.opener && window.history.length <= 1) {
       try {
         window.close()
       } catch {}
     }
-    router.push(returnDate ? `/field/shipments?date=${returnDate}` : '/field/shipments')
+    const qs = new URLSearchParams()
+    if (returnDate) qs.set('date', returnDate)
+    if (returnProduct) qs.set('product', returnProduct)
+    const queryStr = qs.toString()
+    router.push(queryStr ? `/field/shipments?${queryStr}` : '/field/shipments')
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-slate-900 text-white select-none">
+    <div
+      className={cn(
+        'flex h-screen w-screen flex-col select-none transition-colors',
+        lightMode ? 'bg-slate-100 text-slate-900' : 'bg-slate-900 text-white',
+      )}
+    >
       {/* ① 最上部固定操作バー */}
-      <header className="flex h-14 sm:h-16 shrink-0 items-center justify-between border-b border-slate-700 bg-slate-800 px-3 sm:px-6">
+      <header
+        className={cn(
+          'flex h-14 sm:h-16 shrink-0 items-center justify-between border-b px-3 sm:px-6',
+          lightMode ? 'border-slate-300 bg-white' : 'border-slate-700 bg-slate-800',
+        )}
+      >
         <button
           type="button"
           onClick={handleBack}
-          className="inline-flex h-10 sm:h-12 items-center gap-1.5 sm:gap-2 rounded-xl bg-slate-700 px-3 sm:px-4 text-xs sm:text-sm font-bold text-white shadow hover:bg-slate-600 active:scale-95 transition"
+          className={cn(
+            'inline-flex h-10 sm:h-12 items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-bold shadow active:scale-95 transition',
+            lightMode
+              ? 'bg-forest-700 text-white hover:bg-forest-800'
+              : 'bg-slate-700 text-white hover:bg-slate-600',
+          )}
         >
           <ArrowLeft className="h-5 w-5" />
-          <span>⬅ 注文一覧に戻る</span>
+          <span>⬅ 収穫・パックボードに戻る</span>
         </button>
 
         <div className="flex items-center gap-1 sm:gap-2">
+          {/* #32 屋外・ハウスでも見やすいライト/ダーク背景切替 */}
+          <button
+            type="button"
+            onClick={() => setLightMode((prev) => !prev)}
+            className={cn(
+              'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2.5 text-xs font-bold transition active:scale-95',
+              lightMode
+                ? 'border border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200'
+                : 'bg-slate-700 text-amber-300 hover:bg-slate-600',
+            )}
+            title="背景の明るさを切り替え"
+          >
+            {lightMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            <span className="hidden sm:inline">{lightMode ? 'ダーク' : '屋外ライト'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setZoom((prev) => Math.max(50, prev - 25))}
-            className="inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-slate-700 text-white hover:bg-slate-600 active:scale-95 transition"
+            className={cn(
+              'inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl active:scale-95 transition',
+              lightMode ? 'bg-slate-200 text-slate-900 hover:bg-slate-300' : 'bg-slate-700 text-white hover:bg-slate-600',
+            )}
             aria-label="縮小"
           >
             <ZoomOut className="h-4 w-4 sm:h-5 sm:w-5" />
           </button>
-          <span className="min-w-[40px] text-center text-xs sm:text-sm font-bold text-slate-300 tabular-nums">
+          <span className="min-w-[40px] text-center text-xs sm:text-sm font-bold tabular-nums">
             {zoom}%
           </span>
           <button
             type="button"
             onClick={() => setZoom((prev) => Math.min(300, prev + 25))}
-            className="inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-slate-700 text-white hover:bg-slate-600 active:scale-95 transition"
+            className={cn(
+              'inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl active:scale-95 transition',
+              lightMode ? 'bg-slate-200 text-slate-900 hover:bg-slate-300' : 'bg-slate-700 text-white hover:bg-slate-600',
+            )}
             aria-label="拡大"
           >
             <ZoomIn className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -93,7 +135,10 @@ export default function ReceiptViewerPage() {
           <button
             type="button"
             onClick={() => setZoom(100)}
-            className="inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-slate-700 text-white hover:bg-slate-600 active:scale-95 transition"
+            className={cn(
+              'inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl active:scale-95 transition',
+              lightMode ? 'bg-slate-200 text-slate-900 hover:bg-slate-300' : 'bg-slate-700 text-white hover:bg-slate-600',
+            )}
             aria-label="リセット"
           >
             <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -112,18 +157,29 @@ export default function ReceiptViewerPage() {
 
       {/* ② 複数FAX原本のワンタップ切替タブ帯 */}
       {receipts.length > 1 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto bg-slate-800/90 px-3 py-1.5 border-b border-slate-700 scrollbar-none shrink-0">
-          <span className="text-[11px] font-black text-slate-400 shrink-0">📄 原本切替:</span>
+        <div
+          className={cn(
+            'flex items-center gap-1.5 overflow-x-auto px-3 py-1.5 border-b scrollbar-none shrink-0',
+            lightMode ? 'bg-slate-200 border-slate-300' : 'bg-slate-800/90 border-slate-700',
+          )}
+        >
+          <span className="text-[11px] font-black opacity-75 shrink-0">📄 原本切替:</span>
           {receipts.map((r) => (
             <button
               key={r.id}
               type="button"
-              onClick={() => router.replace(`/field/viewer/${r.id}?date=${returnDate}`)}
+              onClick={() =>
+                router.replace(
+                  `/field/viewer/${r.id}?date=${returnDate}${returnProduct ? `&product=${returnProduct}` : ''}`,
+                )
+              }
               className={cn(
                 'rounded-lg px-3 py-1 text-xs font-black transition active:scale-95 shrink-0 flex items-center gap-1',
                 r.isCurrent
                   ? 'bg-trust-600 text-white shadow-xs'
-                  : 'bg-slate-700/80 text-slate-300 hover:bg-slate-700'
+                  : lightMode
+                  ? 'bg-white text-slate-700 hover:bg-slate-100'
+                  : 'bg-slate-700/80 text-slate-300 hover:bg-slate-700',
               )}
             >
               <span>{r.name}</span>
@@ -133,13 +189,13 @@ export default function ReceiptViewerPage() {
         </div>
       )}
 
-      {/* ③ ★ 本日該当明細の照合ハイライト帯（黄色・太字・高コントラスト常時固定） */}
+      {/* ③ 本日該当明細の照合ハイライト帯 */}
       <div className="bg-amber-300 text-amber-950 border-b border-amber-400 px-3 py-2 shadow-xs shrink-0 select-text">
         <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-base">🔍</span>
             <span className="text-xs sm:text-sm font-black tracking-tight">
-              {returnDate ? `${returnDate} 出荷該当明細:` : '該当明細:'}
+              {returnDate ? `${returnDate} 納品該当明細:` : '該当明細:'}
             </span>
           </div>
 
@@ -157,10 +213,10 @@ export default function ReceiptViewerPage() {
                   </span>
                   <span className="text-amber-900 font-extrabold">{it.productName}</span>
                   <span className="text-amber-950 text-sm font-black bg-white/80 px-1.5 py-0.2 rounded shadow-2xs">
-                    {it.quantity}{it.unit}
+                    {it.boxCount}箱 ({it.quantity}{it.unit})
                   </span>
                   <span className="text-amber-900 text-[11px] font-bold">
-                    ({it.container} {it.boxCount}箱)
+                    [{it.container}]
                   </span>
                   {it.spec && (
                     <span className="text-amber-800 text-[11px] font-bold hidden sm:inline">
@@ -178,8 +234,13 @@ export default function ReceiptViewerPage() {
         </div>
       </div>
 
-      {/* ④ メイン原本表示エリア（Google Driveプレビュー） */}
-      <main className="relative flex-1 overflow-auto p-2 bg-slate-950 flex items-center justify-center">
+      {/* ④ メイン原本表示エリア */}
+      <main
+        className={cn(
+          'relative flex-1 overflow-auto p-2 flex items-center justify-center',
+          lightMode ? 'bg-slate-200' : 'bg-slate-950',
+        )}
+      >
         <div
           className="transition-transform duration-150 origin-top flex items-center justify-center w-full h-full"
           style={{ transform: `scale(${zoom / 100})` }}
@@ -187,7 +248,7 @@ export default function ReceiptViewerPage() {
           <iframe
             src={originalUrl}
             title="FAX原本プレビュー"
-            className="h-full w-full max-w-5xl rounded-lg border border-slate-700 bg-white shadow-2xl"
+            className="h-full w-full max-w-5xl rounded-lg border border-slate-400 bg-white shadow-2xl"
           />
         </div>
       </main>

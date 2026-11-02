@@ -10,11 +10,8 @@ import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 export const runtime = 'nodejs'
 
 /**
- * 週間マトリックスの1セル更新（Laravel版 画面3）。
- * (取引先 × 品目 × 出荷日) を1セルとして upsert / 削除する。
- *   - 空欄保存 → その日のその明細を削除（features.md §5）。空になった注文は片付ける。
- *   - 値あり → スマートパースで総数確定（c記法は P/C 換算）。既存はUPDATE、無ければINSERT。
- *   - 税率・単価・名称は商品マスタから確定し冗長保持（tax.md。計算は order_items.tax_rate）。
+ * 週間マトリックスの1セル更新（#25 destination_id 対応）。
+ * (取引先 × 納入先(任意) × 品目 × 出荷日) を1セルとして upsert / 削除する。
  */
 export async function PUT(req: Request) {
   const user = await getAuthedUser()
@@ -28,15 +25,18 @@ export async function PUT(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
-  const { customer_id, product_id, delivery_date, quantity_raw } = parsed.data
+  const { customer_id, destination_id, product_id, delivery_date, quantity_raw } = parsed.data
   const supabase = createAdminClient()
 
-  // 商品マスタ
-  const { data: product, error: prodErr } = await supabase
-    .from('products')
-    .select('id, name, unit, default_unit_price, default_tax_rate')
-    .eq('id', product_id)
-    .maybeSingle()
+  // 商品マスタ ＆ 取引先名
+  const [{ data: product, error: prodErr }, { data: cust }] = await Promise.all([
+    supabase
+      .from('products')
+      .select('id, name, unit, default_unit_price, default_tax_rate, container_capacity')
+      .eq('id', product_id)
+      .maybeSingle(),
+    supabase.from('customers').select('name').eq('id', customer_id).maybeSingle(),
+  ])
   if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 })
   if (!product) return NextResponse.json({ error: 'unknown_product' }, { status: 400 })
 
@@ -47,20 +47,31 @@ export async function PUT(req: Request) {
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
-  // P/C は換算の補助（未設定でも動く）。取得失敗しても続行するが無言にはしない。
   if (ruleErr) console.error('[api/shipments/cell] P/Cルールの取得に失敗:', ruleErr.message)
 
-  // 既存の注文（取引先×出荷日：FAX/メール取込等の承認済み注文も含めて検索し、二重注文の発生を防止）
-  const { data: order, error: orderErr } = await supabase
+  const custName = cust?.name ?? ''
+  const defaultPpc =
+    rule?.packs_per_case ??
+    (custName.includes('農業総合研究所') || custName.toUpperCase().includes('NSK')
+      ? 24
+      : product.container_capacity ?? 20)
+
+  // #25 destination_id が指定されている場合はその納入先の注文に正確に絞り込む
+  let orderQuery = supabase
     .from('orders')
     .select('id')
     .eq('customer_id', customer_id)
     .eq('delivery_date', delivery_date)
     .neq('status', 'cancelled')
+
+  if (destination_id) {
+    orderQuery = orderQuery.eq('destination_id', destination_id)
+  }
+
+  const { data: order, error: orderErr } = await orderQuery
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  // 既存注文判定のDBエラーを「既存なし」に化けさせない（重複注文の作成を防ぐ）。
   if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
 
   const existingItem = order
@@ -75,7 +86,7 @@ export async function PUT(req: Request) {
       ).data
     : null
 
-  const result = parseQuantity(quantity_raw, { packsPerCase: rule?.packs_per_case ?? null })
+  const result = parseQuantity(quantity_raw, { packsPerCase: defaultPpc })
 
   // 空欄＝削除
   if (result.type === 'delete') {
@@ -91,7 +102,6 @@ export async function PUT(req: Request) {
         newValues: null,
         userId: user.id,
       })
-      // 注文が空になったら片付ける
       if (order) {
         const { count } = await supabase
           .from('order_items')
@@ -109,7 +119,6 @@ export async function PUT(req: Request) {
 
   const quantity = result.total.toNumber()
 
-  // 既存はUPDATE（数量変更時は quantity_raw 更新＋パック済からの増量時は未完了へ戻して欠品を防止）
   if (existingItem) {
     const oldQty = Number(existingItem.quantity) || 0
     const qtyChanged = quantity !== oldQty
@@ -141,7 +150,6 @@ export async function PUT(req: Request) {
       .single()
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-    // 収穫タスクの数量も連動同期
     try {
       await supabase
         .from('harvest_tasks')
@@ -160,13 +168,13 @@ export async function PUT(req: Request) {
     return NextResponse.json({ item: updated })
   }
 
-  // 注文が無ければ作成
   let orderId = order?.id
   if (!orderId) {
-    const { data: newOrder, error: orderErr } = await supabase
+    const { data: newOrder, error: createOrderErr } = await supabase
       .from('orders')
       .insert({
         customer_id,
+        destination_id: destination_id ?? null,
         source: 'manual',
         status: 'approved',
         order_date: jstTodayStr(),
@@ -175,7 +183,7 @@ export async function PUT(req: Request) {
       })
       .select('id')
       .single()
-    if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
+    if (createOrderErr) return NextResponse.json({ error: createOrderErr.message }, { status: 500 })
     orderId = newOrder.id
   }
 
@@ -210,7 +218,6 @@ export async function PUT(req: Request) {
     userId: user.id,
   })
 
-  // 全品目「出荷日の前日に収穫・パック」原則に従い harvest_tasks を自動生成
   try {
     const harvestDate = shiftDateStr(delivery_date, -1)
     await supabase.from('harvest_tasks').insert({

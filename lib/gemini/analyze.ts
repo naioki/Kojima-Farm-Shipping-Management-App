@@ -35,6 +35,9 @@ export function invalidateAiRulesCache(): void {
   aiRulesCache = null
 }
 
+const NSK_UPGRADED_RULE_TEXT =
+  '[11番小島裕美・24入・複数出荷先・欄外内訳] 社名印字が無くても『生産者番号11・小島裕美(小島)・出荷先(1加工センター/4関東顧客向け/5北海道/6関西)・入数24』の表は必ず customer_name: "株式会社農業総合研究所（NSK）" とする。生産者『11番 小島裕美』のチンゲンサイ行のみ抽出。入数24(表の数値は総Pのため÷24がケース数: 1,440→60箱、720→30箱)、容器『農業総研専用折りたたみコンテナ』。行ごとに規格列（『200gUP』→『200gUP (入数24)』、『200g』→『200g (入数24)』）とシール列（『あり』→has_seal:true, seal_text:『シールあり（生産者11:小島裕美）』、『なし』→has_seal:false, seal_text:『シールなし』）を厳密に区別する。赤文字の数字（例:5北海道の720赤字）も確定数量として抽出し note に『※表で赤字記載（変更箇所）』と記載。右欄外に『(木)のみ ライフ近畿：40 / サンプラザ：20』等のケース数内訳がある場合は該当日の note に『内訳: ライフ近畿40箱(960P) / サンプラザ20箱(480P)』と記載。数値『0』のセルは explicit_cancel_in_slip:true, quantity:"0" とし、『なし』や空欄は除外する。買値(¥78/¥75等)は現場非表示のため note に一切記載禁止。'
+
 /** APIキーは設定（DB→env）。設定画面 or Secret Manager で投入する。 */
 async function client(): Promise<GoogleGenerativeAI> {
   const key = await getSetting('GEMINI_API_KEY')
@@ -213,7 +216,21 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
         console.error('[lib/gemini/analyze] ai_rules の取得に失敗:', error.message)
         return []
       }
-      allRules = (data ?? []) as AiRule[]
+      allRules = ((data ?? []) as AiRule[]).map((r) => {
+        // 旧シード（seed_v2.3）のNSKルールに『買値¥◯◯』が含まれている、または社名省略表ルールが未反映の場合は自動アップグレード
+        if (
+          (r.client_name.includes('農業総合研究所') || r.client_name.toUpperCase().includes('NSK')) &&
+          r.source === 'seed_v2.3' &&
+          (r.rule_text.includes('買値¥◯◯') || !r.rule_text.includes('社名印字が無くても'))
+        ) {
+          void admin
+            .from('ai_rules')
+            .update({ rule_text: NSK_UPGRADED_RULE_TEXT, updated_at: new Date().toISOString() })
+            .eq('id', r.id)
+          return { ...r, rule_text: NSK_UPGRADED_RULE_TEXT }
+        }
+        return r
+      })
       aiRulesCache = { rules: allRules, expiresAt: now + AI_RULES_CACHE_TTL_MS }
     } catch (e) {
       console.error('[lib/gemini/analyze] ai_rules 取得中に例外:', e)
@@ -281,7 +298,7 @@ function buildInputParts(
     })
   }
   if (input.text && input.text.trim() !== '') {
-    parts.push({ text: `注文テキスト:\n${input.text.trim()}` })
+    parts.push({ text: `注文テキスト・追加指示:\n${input.text.trim()}` })
   }
   if (parts.length === 0) {
     parts.push({ text: '注文データを解析しJSONを出力してください。' })
@@ -315,13 +332,51 @@ export function normalizeCustomerAndDestination(params: {
     (params.spec ?? '').includes('サンプル')
   )
 
+  // NSK（株式会社農業総合研究所）の特定：社名印字がない表（生産者11・小島裕美・4関東顧客向け/5北海道/6関西/1加工センター・入数24）も決定論的に特定
+  const isNskClient =
+    normClient.includes('農業総合研究所') ||
+    normClient.toUpperCase().includes('NSK') ||
+    normClient.includes('農総研') ||
+    normClient.includes('小島裕美') ||
+    normClient.includes('生産者11') ||
+    normClient === '11' ||
+    normDest.includes('4関東') ||
+    normDest.includes('関東顧客向け') ||
+    normDest.includes('1加工センター') ||
+    normDest.includes('5北海道') ||
+    normDest.includes('6関西') ||
+    normDest.includes('ライフ近畿') ||
+    normDest.includes('サンプラザ') ||
+    ((!customerName || normClient.includes('小島')) && params.packsPerCase === 24)
+
   if (normClient.includes('勘兵衛')) {
     customerName = '株式会社勘兵衛'
     if (!destinationName) destinationName = 'イオンタウン向け'
     if (!spec) spec = '200gFG×20入'
-  } else if (normClient.includes('農業総合研究所') || normClient.toUpperCase().includes('NSK')) {
+  } else if (isNskClient) {
     customerName = '株式会社農業総合研究所（NSK）'
-    if (!spec) spec = '200gUP (入数24)'
+    if (normDest.includes('4関東') || normDest.includes('関東顧客')) {
+      destinationName = '4関東顧客向け'
+    } else if (normDest.includes('5北海道') || normDest === '北海道') {
+      destinationName = '5北海道'
+    } else if (normDest.includes('6関西') || normDest === '関西') {
+      if (!normDest.includes('ライフ') && !normDest.includes('サンプラザ')) {
+        destinationName = '6関西'
+      }
+    } else if (normDest.includes('1加工') || normDest.includes('加工センター')) {
+      destinationName = '1加工センター'
+    }
+
+    const rawSpecUpper = (spec ?? '').toUpperCase()
+    if (rawSpecUpper.includes('200G') && !rawSpecUpper.includes('UP')) {
+      spec = '200g (入数24)'
+    } else if (!spec && normDest.includes('北海道')) {
+      spec = '200g (入数24)'
+    } else if (!spec || rawSpecUpper.includes('200GUP')) {
+      spec = '200gUP (入数24)'
+    } else if (!spec.includes('入数')) {
+      spec = `${spec} (入数24)`
+    }
   } else if (normClient.includes('房総食料')) {
     customerName = '農事組合法人 房総食料センター'
     // FAX記載の packsPerCase または spec 内の入数指定があれば尊重し、未指定時のみ入数20とする（ちばセット用も入数変更20に対応）
@@ -392,6 +447,21 @@ export function normalizeCustomerAndDestination(params: {
 }
 
 /**
+ * 現場ボード非表示ルールに従い、note・seal_text から買値・単価・¥金額表記を決定論的に除去する。
+ */
+function stripPriceTextFromNote(text?: string | null): string | null {
+  if (!text) return null
+  const cleaned = text
+    .replace(/[\/／・,、\s]*買値\s*[:：]?\s*[¥￥]?\s*\d+(?:円)?/g, '')
+    .replace(/[\/／・,、\s]*単価\s*[:：]?\s*[¥￥]?\s*\d+(?:円)?/g, '')
+    .replace(/[¥￥]\s*\d+/g, '')
+    .replace(/\(\s*\)|（\s*）/g, '')
+    .replace(/^[\/／・\s]+|[\/／・\s]+$/g, '')
+    .trim()
+  return cleaned || null
+}
+
+/**
  * 入数（20 / 24）換算・箱数自動検算・固定書式・注文キー生成（指示書 v2.3 & ARCHITECTURE.md Ver 4.1 準拠）。
  */
 export function verifyAndNormalizeItem(
@@ -407,6 +477,7 @@ export function verifyAndNormalizeItem(
   })
   const cust = (std.customerName ?? customerName ?? '').toLowerCase()
   const isKanbei = cust.includes('勘兵衛')
+  const isNsk = cust.includes('農業総合研究所') || cust.includes('nsk')
 
   const packsPerCase = determineUnitCount(
     std.customerName ?? customerName,
@@ -415,10 +486,10 @@ export function verifyAndNormalizeItem(
     item.product_name ?? item.raw_name,
   )
 
-  let quantityStr = item.quantity.trim()
+  let quantityStr = item.quantity.replace(/,/g, '').trim()
   let confidence = item.confidence
   let needsReviewReason = item.needs_review_reason ?? null
-  let note = item.note ?? null
+  let note = stripPriceTextFromNote(item.note)
 
   // ★印の特記事項からの分離（ARCHITECTURE.md §4.1: ★は新規追加枠のみに入れ特記事項には入れない）
   let isNewAddition = Boolean(item.is_new_addition)
@@ -439,9 +510,12 @@ export function verifyAndNormalizeItem(
     needsReviewReason = needsReviewReason ?? '約表記（暫定値・要確認）'
     quantityStr = quantityStr.replace(/約\s*/g, '')
   } else if (item.is_handwritten_modified) {
-    const handNote = `手書き修正（${quantityStr.replace(/約\s*/g, '')}点）`
-    if (!(note ?? '').includes('手書き修正')) {
-      note = note ? `${handNote} / ${note}` : handNote
+    const isRedTextNote = Boolean((note ?? '').includes('赤字') || (note ?? '').includes('赤文字'))
+    if (!isRedTextNote) {
+      const handNote = `手書き修正（${quantityStr.replace(/約\s*/g, '')}点）`
+      if (!(note ?? '').includes('手書き修正')) {
+        note = note ? `${handNote} / ${note}` : handNote
+      }
     }
   }
 
@@ -496,7 +570,7 @@ export function verifyAndNormalizeItem(
 
     const finalCases = cases ?? computedCases
     const finalRemainder = remainder ?? computedRemainder
-    boxCount = item.explicit_cancel_in_slip ? 0 : calculateContainerBoxes(finalCases, finalRemainder)
+    boxCount = item.explicit_cancel_in_slip || numericTotal === 0 ? 0 : calculateContainerBoxes(finalCases, finalRemainder)
     quantityCaseText = formatQuantityCaseText(numericTotal, finalCases, finalRemainder)
   }
 
@@ -538,16 +612,25 @@ export function verifyAndNormalizeItem(
   }
 
   let hasSeal: boolean | null = item.has_seal ?? null
-  let sealText: string | null = item.seal_text?.trim() || null
-  if (/シール\s*(?:あり|有|付)|バーコード|JANシール|値札/.test(combinedText)) {
+  let sealText: string | null = stripPriceTextFromNote(item.seal_text)
+  if (/シール\s*(?:なし|無|不要)/.test(combinedText)) {
+    hasSeal = false
+    sealText = 'シールなし'
+  } else if (/シール\s*(?:あり|有|付)|バーコード|JANシール|値札/.test(combinedText)) {
     hasSeal = true
     if (!sealText) {
       const nskSealMatch = combinedText.match(/シールあり[（(][^）)]+[）)]/)
-      sealText = nskSealMatch ? nskSealMatch[0] : 'シールあり'
+      sealText = nskSealMatch ? stripPriceTextFromNote(nskSealMatch[0]) : isNsk ? 'シールあり（生産者11:小島裕美）' : 'シールあり'
     }
-  } else if (/シール\s*(?:なし|無|不要)/.test(combinedText)) {
-    hasSeal = false
-    sealText = 'シールなし'
+  } else if (isNsk) {
+    const destNorm = (std.destinationName ?? context?.destinationName ?? '').normalize('NFKC')
+    if (hasSeal === false || destNorm.includes('北海道') || resolvedSpec === '200g (入数24)') {
+      hasSeal = false
+      sealText = 'シールなし'
+    } else {
+      hasSeal = true
+      sealText = sealText || 'シールあり（生産者11:小島裕美）'
+    }
   }
 
   let hasCard: boolean | null = item.has_card ?? null
@@ -738,25 +821,27 @@ export async function analyzeOrders(
           (order.destination_name ?? '').includes('サンプル') ||
           (order.items ?? []).some((i) => (i.note ?? '').includes('サンプル'))
         )
+        const firstPacks = order.items?.[0]?.packs_per_case
         const std = normalizeCustomerAndDestination({
           customerName: order.customer_name,
           destinationName: order.destination_name,
+          packsPerCase: firstPacks,
           isSample: isSampleOrd,
         })
         const resolvedCustomer = std.customerName ?? order.customer_name
         const resolvedDest = std.destinationName ?? order.destination_name ?? null
 
         const items = order.items
-          // 1. 数量が0の品目は転記不要のため自動除外（ユーザー要望）
+          // 1. 数量が0の品目は、明示キャンセル（explicit_cancel_in_slip: true）を除き自動除外
           .filter((it) => {
-            const qStr = (it.quantity ?? '').trim()
+            const qStr = (it.quantity ?? '').replace(/,/g, '').trim()
             const numQ = Number(qStr)
             const isZeroQty =
               qStr === '0' ||
               (Number.isFinite(numQ) && numQ === 0) ||
               (it.cases === 0 && (qStr === '' || qStr === '0' || numQ === 0)) ||
               (it.box_count === 0 && (qStr === '' || qStr === '0' || numQ === 0))
-            if (isZeroQty) return false
+            if (isZeroQty && !it.explicit_cancel_in_slip) return false
 
             // 2. 小島農園の非対象品目（きゅうり・ししとう等）のみ除外。チンゲン菜、トマト、長ネギ、ミニ白菜等は通過させる
             const name = `${it.product_name ?? ''} ${it.raw_name}`.toLowerCase()
@@ -804,6 +889,7 @@ export async function analyzeOrders(
           ...order,
           customer_name: resolvedCustomer,
           destination_name: resolvedDest,
+          note: stripPriceTextFromNote(order.note),
           slip_no: order.slip_no ?? parsed.slip_no ?? null,
           items,
         }
@@ -811,22 +897,14 @@ export async function analyzeOrders(
       .filter((o) => o.items.length > 0)
 
     // ── 決定論的「同一セル二重線訂正の2列分裂（Ghost Order）」検出・統合フィルタ ──
-    // 1つのセル内で「~~約165~~ → 150」「~~約170~~ → 157」「~~約204~~ → 201」のように訂正されている際、
-    // 万一AIが「消された旧数値（約表記）」を隣の空欄列に出力し、「手書き確定値」をもう一方の列に出力した場合、
-    // 自動的に旧数値側のゴースト注文を除去し、手書き確定値側に「手書き修正（旧165→150P）」の履歴を引き継ぐ。
     const deduplicatedOrders = collapseStrikethroughSplitOrders(normalizedOrders)
 
-    // ── 重要箇所（画像OCRで手書き修正または極端な低確信がある場合のみ）高精度モデルで自動再検証 ──
-    // ※テキスト入力時や日付未記載時は不要な2回目呼び出し（数秒の遅延）を行わず即座に確認カードを返す
+    // ── 重要箇所（画像OCRで極端な低確信がある場合のみ）高精度モデルで自動再検証 ──
     const needsEscalation =
       !modelOverride &&
       Boolean(input.imageBase64) &&
       deduplicatedOrders.some((o) =>
-        o.items.some(
-          (it) =>
-            it.confidence < 0.65 ||
-            Boolean(it.is_handwritten_modified),
-        ),
+        o.items.some((it) => it.confidence < 0.65),
       )
 
     let finalUsedModel = usedModel
@@ -867,7 +945,10 @@ export async function analyzeOrders(
       Boolean(parsed.is_full_resending_matrix) ||
       Boolean(parsed.valid_header_dates && parsed.valid_header_dates.length >= 2) ||
       ((deduplicatedOrders.some(
-        (o) => (o.customer_name ?? '').includes('和郷園') || (o.customer_name ?? '').includes('房総食料'),
+        (o) =>
+          (o.customer_name ?? '').includes('和郷園') ||
+          (o.customer_name ?? '').includes('房総食料') ||
+          (o.customer_name ?? '').includes('農業総合研究所'),
       ) &&
         deduplicatedOrders.length >= 2))
 
@@ -876,6 +957,7 @@ export async function analyzeOrders(
       skip_reason: null,
       slip_no: parsed.slip_no ?? deduplicatedOrders[0]?.slip_no ?? null,
       is_full_resending_matrix: isMatrixSlip,
+      valid_header_dates: parsed.valid_header_dates ?? null,
       orders: deduplicatedOrders,
       used_model: finalUsedModel,
       applied_rules_count: activeRules.length,
@@ -924,6 +1006,7 @@ export async function reviseOrdersWithInstruction(params: {
     const std = normalizeCustomerAndDestination({
       customerName: order.customer_name,
       destinationName: order.destination_name,
+      packsPerCase: order.items?.[0]?.packs_per_case,
       isSample: isSampleOrd,
     })
     const resolvedCustomer = std.customerName ?? order.customer_name
@@ -932,15 +1015,16 @@ export async function reviseOrdersWithInstruction(params: {
       ...order,
       customer_name: resolvedCustomer,
       destination_name: resolvedDest,
+      note: stripPriceTextFromNote(order.note),
       items: order.items
         .filter((it) => {
-          const qStr = (it.quantity ?? '').trim()
+          const qStr = (it.quantity ?? '').replace(/,/g, '').trim()
           const numQ = Number(qStr)
-          return !(
+          const isZero =
             qStr === '0' ||
             (Number.isFinite(numQ) && numQ === 0) ||
             (it.cases === 0 && (qStr === '' || qStr === '0' || numQ === 0))
-          )
+          return !isZero || Boolean(it.explicit_cancel_in_slip)
         })
         .map((it) =>
           verifyAndNormalizeItem(it, resolvedCustomer, {

@@ -122,6 +122,20 @@ export async function POST(req: Request) {
               .eq('id', it.id)
           }
         }
+        // #23 orders.status も積込完了時は shipped、戻し時は approved（invoiced以外）へ整合同期
+        if (action === 'loaded') {
+          await admin
+            .from('orders')
+            .update({ status: 'shipped' })
+            .in('id', ordIds)
+            .eq('status', 'approved')
+        } else if (action === 'revert') {
+          await admin
+            .from('orders')
+            .update({ status: 'approved' })
+            .in('id', ordIds)
+            .eq('status', 'shipped')
+        }
       }
     } catch (syncErr) {
       console.warn('[confirm-customer] order_items.field_status 同期警告:', syncErr)

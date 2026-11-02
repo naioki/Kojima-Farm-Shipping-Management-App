@@ -81,9 +81,25 @@ function confidenceBadgeStyle(confidence: number | null) {
  * 取引先名・納入先に応じた標準入数（NSKは24、それ以外は20）・ケース数・端数・箱数・コンテナ種別・固定書式を計算。
  * （ARCHITECTURE.md 第3.1章・第4.5章 継承）
  */
-function calcBoxBreakdown(totalPacks: number, customerName: string, destinationName?: string | null) {
-  const isNsk = customerName.includes('農業総合研究所') || customerName.toLowerCase().includes('nsk')
-  const packsPerCase = isNsk ? 24 : 20
+function calcBoxBreakdown(
+  totalPacks: number,
+  customerName: string,
+  destinationName?: string | null,
+  specOrLabel?: string | null,
+) {
+  const combined = `${customerName} ${destinationName ?? ''} ${specOrLabel ?? ''}`.normalize('NFKC')
+  const specMatch = combined.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  let packsPerCase = 20
+  if (specMatch) {
+    const parsedNum = Number(specMatch[1] || specMatch[2])
+    if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+      packsPerCase = parsedNum
+    }
+  } else if (combined.includes('小コン')) {
+    packsPerCase = 30
+  } else if (combined.includes('農業総合研究所') || combined.toLowerCase().includes('nsk')) {
+    packsPerCase = 24
+  }
   const containerType = determineContainerType(customerName, destinationName)
   if (!Number.isFinite(totalPacks) || totalPacks <= 0) {
     return {
@@ -910,10 +926,12 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                     {currentRows.map((row) => {
                       const style = confidenceBadgeStyle(row.confidence)
                       const needsPack = row.packConfigOptions.length > 0 && !row.packConfigId
+                      const chosenOptLabel = row.packConfigOptions.find((pc) => pc.id === row.packConfigId)?.label
                       const breakdown = calcBoxBreakdown(
                         Number(row.draftQty) || 0,
                         selectedOrder.customerName,
                         selectedOrder.destinationName,
+                        chosenOptLabel,
                       )
                       const chosenPackLabel =
                         row.packConfigOptions.find((pc) => pc.id === row.packConfigId)?.label ??

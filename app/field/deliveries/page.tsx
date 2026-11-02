@@ -35,7 +35,7 @@ const PATH = '/field/deliveries'
 export default async function DeliveriesPage({
   searchParams,
 }: {
-  searchParams: { date?: string }
+  searchParams: { date?: string; product?: string }
 }) {
   const user = await getAuthedUser()
   if (!user) redirect('/login')
@@ -43,7 +43,10 @@ export default async function DeliveriesPage({
   // 収穫・パックボードと同じく「本日パックして当日夕方（16:00 NSK / 18:00 和郷園）〜翌午前（農業総研）に出荷する注文グループ（＝翌日納品分）」をデフォルト表示
   const defaultDate = shiftDateStr(jstTodayStr(), 1)
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : defaultDate
+  const selectedProduct = searchParams.product ?? null
   const admin = createAdminClient()
+  const { data: profile } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
+  const isAdmin = profile?.role === 'admin'
 
   // その日の出荷対象注文（承認済み・出荷済み・請求済みのみ表示、未承認pending_reviewは有効な明細(quantity > 0)がある注文のみカウント）
   const [ordersRes, pendingRes] = await Promise.all([
@@ -303,10 +306,7 @@ export default async function DeliveriesPage({
     }
 
     // ケース数・端数換算（規格・明細ごとに独立して端数箱を計算し、異規格の端数が1箱に混ざるバグを防止）
-    let perCase: number | null =
-      rule?.packs_per_case ??
-      (it.pack_config_id ? packById.get(it.pack_config_id)?.base ?? null : null)
-    // 規格文字列に明示的な入数（例: "(入数30)", "10入"）がある場合はそちらを優先
+    let perCase: number | null = null
     const combinedSpec = `${customerName} ${it.spec || ''}`.normalize('NFKC')
     const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
     if (specMatch) {
@@ -316,11 +316,11 @@ export default async function DeliveriesPage({
       }
     }
     if (!perCase || perCase <= 0) {
-      if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
-        perCase = 24
-      } else {
-        perCase = capacityById.get(it.product_id) ?? 20
-      }
+      const packBase = it.pack_config_id ? packById.get(it.pack_config_id)?.base ?? null : null
+      if (packBase && packBase > 0) perCase = packBase
+      else if (rule?.packs_per_case && rule.packs_per_case > 0) perCase = rule.packs_per_case
+      else if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) perCase = 24
+      else perCase = capacityById.get(it.product_id) ?? 20
     }
     const safePerCase = perCase && perCase > 0 ? perCase : 20
 
@@ -425,22 +425,22 @@ export default async function DeliveriesPage({
   const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3.5 pb-10">
+    <div className="mx-auto max-w-2xl space-y-3.5 pb-24">
       {/* ① ナビゲーションバー（収穫・パックボードと完全に統一した順序） */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-2">
           <h1 className="font-display text-xl font-black text-ink">便別積込・配送リスト</h1>
-          <FieldViewSwitch active="delivery" date={date} />
+          <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
         </div>
         <div className="flex items-center gap-2">
-          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="本日パック・積込対象" />
+          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProduct} />
         </div>
       </div>
 
       {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト：同じ対象日のまま1タップで行き来） */}
       <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs print:hidden">
         <Link
-          href={`/field/shipments?date=${date}`}
+          href={`/field/shipments?date=${date}${selectedProduct ? `&product=${selectedProduct}` : ''}`}
           className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
         >
           🥬 収穫・袋詰めボード
@@ -481,7 +481,7 @@ export default async function DeliveriesPage({
         <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950 print:hidden">
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後にここへ表示されます）</span>
           <Link
-            href="/admin/inbox"
+            href={isAdmin ? '/admin/approvals' : '/field/approvals'}
             className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
           >
             確認する →

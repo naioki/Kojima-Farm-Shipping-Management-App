@@ -12,6 +12,18 @@ import { determineContainerType } from '@/lib/pipeline/schemas'
 
 export const runtime = 'nodejs'
 
+function stripPriceFromNote(text?: string | null): string | null {
+  if (!text) return null
+  const cleaned = text
+    .replace(/[\/／・,、\s]*買値\s*[:：]?\s*[¥￥]?\s*\d+(?:円)?/g, '')
+    .replace(/[\/／・,、\s]*単価\s*[:：]?\s*[¥￥]?\s*\d+(?:円)?/g, '')
+    .replace(/[¥￥]\s*\d+/g, '')
+    .replace(/\(\s*\)|（\s*）/g, '')
+    .replace(/^[\/／・\s]+|[\/／・\s]+$/g, '')
+    .trim()
+  return cleaned || null
+}
+
 /**
  * GET /api/shipments?customerId=...&deliveryDate=...&productId=...&destinationId=...
  * 登録・変更前の既存出荷状況（差分プレビュー用）を高速チェック。
@@ -82,9 +94,9 @@ export async function GET(req: Request) {
 }
 
 /**
- * 出荷一覧の「スマート追加」（Laravel版 画面2）。手動入力チャネル。
+ * 出荷一覧の「スマート追加」（Laravel版 画面2）。手動入力・AI一括登録チャネル。
  *   - 数量はスマートパース（"15c2" など）。c記法は customer_product_rules.packs_per_case で換算。
- *   - 同一 (取引先 × 出荷日 × source='manual') の注文があれば再利用、無ければ作成。
+ *   - 数量 0（mode='set' で '0' または '0c'）は既存出荷があればキャンセル（削除）、無ければスキップ。
  *   - 税率・単価・名称は商品マスタから確定して order_items に冗長保持（tax.md）。
  *   - mode: 'increase' | 'decrease' | 'set' | 'create' による既存出荷の加算・減量・上書きに対応。
  */
@@ -109,11 +121,15 @@ export async function POST(req: Request) {
     spec: clientSpec,
     container_type: clientContainerType,
     has_card: clientHasCard,
+    has_seal: clientHasSeal,
+    seal_text: clientSealText,
+    bag_type: clientBagType,
     destination_id,
     mode = 'create',
     shipping_time,
-    note,
+    note: rawNote,
   } = parsed.data
+  const note = stripPriceFromNote(rawNote)
   const supabase = createAdminClient()
 
   // 納入先が指定されたら、その取引先の配下（有効）であることを検証
@@ -150,27 +166,38 @@ export async function POST(req: Request) {
   const confirmedDestName = destRow?.full_name || destRow?.code || ''
 
   // 取引先×商品ルール（P/C＝c記法換算の基準値）
-  const { data: rule, error: ruleErr } = await supabase
+  const { data: ruleRaw, error: ruleErr } = await supabase
     .from('customer_product_rules')
-    .select('id, packs_per_case, spec, label_spec, container_type, has_card')
+    .select('*')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
   if (ruleErr) console.error('[api/shipments] P/Cルールの取得に失敗:', ruleErr.message)
+  const rule = ruleRaw as Record<string, unknown> | null
 
-  // 入数の決定：クライアント指定値 → 取引ルール → 商品既定容量 → 20（絶対に packs_per_case_required で失敗させない）
+  // 入数の決定：クライアント指定値 → 取引ルール → 商品既定容量 → NSK判定(24) → 20
+  const isNsk = confirmedCustName.includes('農業総合研究所') || confirmedCustName.toUpperCase().includes('NSK')
+  const rulePacks = typeof rule?.packs_per_case === 'number' && rule.packs_per_case > 0 ? rule.packs_per_case : null
   const effectivePacksPerCase =
     (clientPacksPerCase && clientPacksPerCase > 0 ? clientPacksPerCase : null) ??
-    (rule?.packs_per_case && rule.packs_per_case > 0 ? rule.packs_per_case : null) ??
+    rulePacks ??
     (product.container_capacity && product.container_capacity > 0 ? product.container_capacity : null) ??
-    20
+    (isNsk ? 24 : 20)
 
-  // 規格（spec）・コンテナ種別（container_type）・カード有無（has_card）の決定論的フォールバック
+  // 規格（spec）・コンテナ種別（container_type）・カード有無（has_card）・シール（has_seal/seal_text）の決定論的フォールバック
+  const ruleSpec = (typeof rule?.spec === 'string' && rule.spec) || (typeof rule?.label_spec === 'string' && rule.label_spec) || ''
   const baseSpec =
     clientSpec?.trim() ||
-    rule?.spec ||
-    rule?.label_spec ||
-    (product.name.includes('小松菜') ? '200g' : product.name.includes('青梗菜') ? '2〜3株' : '')
+    ruleSpec ||
+    (isNsk
+      ? confirmedDestName.includes('北海道')
+        ? '200g'
+        : '200gUP'
+      : product.name.includes('小松菜')
+      ? '200g'
+      : product.name.includes('青梗菜') || product.name.includes('チンゲン')
+      ? '2〜3株'
+      : '')
   const effectiveSpec =
     baseSpec && !baseSpec.includes('入数')
       ? `${baseSpec} (入数${effectivePacksPerCase})`
@@ -178,13 +205,40 @@ export async function POST(req: Request) {
 
   const effectiveContainerType =
     clientContainerType?.trim() ||
-    rule?.container_type ||
+    (typeof rule?.container_type === 'string' ? rule.container_type : '') ||
     determineContainerType(confirmedCustName, confirmedDestName)
 
   const effectiveHasCard =
     clientHasCard !== undefined && clientHasCard !== null
       ? clientHasCard
-      : rule?.has_card ?? true
+      : typeof rule?.has_card === 'boolean'
+      ? rule.has_card
+      : true
+
+  const effectiveHasSeal =
+    clientHasSeal !== undefined && clientHasSeal !== null
+      ? clientHasSeal
+      : typeof rule?.has_seal === 'boolean'
+      ? rule.has_seal
+      : isNsk
+      ? !confirmedDestName.includes('北海道') && !effectiveSpec.startsWith('200g (')
+      : null
+
+  const effectiveSealText =
+    stripPriceFromNote(clientSealText) ||
+    (typeof rule?.seal_text === 'string' ? stripPriceFromNote(rule.seal_text) : null) ||
+    (effectiveHasSeal === true
+      ? isNsk
+        ? 'シールあり（生産者11:小島裕美）'
+        : 'シールあり'
+      : effectiveHasSeal === false
+      ? 'シールなし'
+      : null)
+
+  const effectiveBagType =
+    clientBagType?.trim() ||
+    (typeof rule?.bag_type === 'string' ? rule.bag_type : null) ||
+    (confirmedCustName.includes('勘兵衛') ? '印字袋(FG)' : null)
 
   // スマートパース（誤解釈防止のため lib に集約・Decimal.js）
   const result = parseQuantity(quantity_raw, { packsPerCase: effectivePacksPerCase })
@@ -195,7 +249,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: result.reason, input: result.input }, { status: 400 })
   }
 
-  // 同一 (取引先 × 納入先 × 出荷日) の有効注文（キャンセル除外）を再利用、無ければ作成。
+  const deltaQty = result.total.toNumber()
+
+  // 同一 (取引先 × 納入先 × 出荷日) の有効注文（キャンセル除外）を検索
   const findQuery = supabase
     .from('orders')
     .select('id')
@@ -209,6 +265,62 @@ export async function POST(req: Request) {
     .limit(1)
     .maybeSingle()
   if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 })
+
+  type OrderItemRow = {
+    id: string
+    quantity: number
+    version?: number | null
+    shipped_qty?: number | null
+    field_status?: string | null
+    line_note: string | null
+    spec?: string | null
+    container_type?: string | null
+    has_card?: boolean | null
+    has_seal?: boolean | null
+    seal_text?: string | null
+    bag_type?: string | null
+    [key: string]: unknown
+  }
+  let existingItem: OrderItemRow | null = null
+  if (existing?.id) {
+    const { data: itm } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', existing.id)
+      .eq('product_id', product_id)
+      .limit(1)
+      .maybeSingle()
+    existingItem = itm as OrderItemRow | null
+  }
+
+  // ⚡ 数量 0（キャンセル・削除指示）のハンドリング
+  if (deltaQty === 0) {
+    if (existingItem && (mode === 'set' || mode === 'create')) {
+      await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
+      await supabase.from('order_items').delete().eq('id', existingItem.id)
+      try {
+        await writeAudit(supabase, {
+          entityType: 'order_items',
+          entityId: existingItem.id,
+          action: 'DELETE',
+          oldValues: existingItem,
+          newValues: null,
+          userId: user.id,
+        })
+      } catch {}
+      if (existing?.id) {
+        const { count } = await supabase
+          .from('order_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('order_id', existing.id)
+        if ((count ?? 0) === 0) {
+          await supabase.from('orders').delete().eq('id', existing.id)
+        }
+      }
+      return NextResponse.json({ deleted: true, cancelled: true, mode }, { status: 200 })
+    }
+    return NextResponse.json({ deleted: true, skipped: true, mode }, { status: 200 })
+  }
 
   let orderId = existing?.id
   if (!orderId) {
@@ -232,35 +344,7 @@ export async function POST(req: Request) {
     if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
     orderId = order.id
   } else if (shipping_time && orderId) {
-    // 既存注文が存在する場合も指定があれば出荷時間帯を更新
     await supabase.from('orders').update({ shipping_time }).eq('id', orderId)
-  }
-
-  const deltaQty = result.total.toNumber()
-
-  // 既存明細の検索（加算・減量・上書き時、または同一品目が既に存在する場合の合算）
-  type OrderItemRow = {
-    id: string
-    quantity: number
-    version?: number | null
-    shipped_qty?: number | null
-    field_status?: string | null
-    line_note: string | null
-    spec?: string | null
-    container_type?: string | null
-    has_card?: boolean | null
-    [key: string]: unknown
-  }
-  let existingItem: OrderItemRow | null = null
-  if (existing?.id) {
-    const { data: itm } = await supabase
-      .from('order_items')
-      .select('*')
-      .eq('order_id', existing.id)
-      .eq('product_id', product_id)
-      .limit(1)
-      .maybeSingle()
-    existingItem = itm as OrderItemRow | null
   }
 
   let finalItem: Record<string, unknown>
@@ -268,8 +352,24 @@ export async function POST(req: Request) {
     const oldQty = Number(existingItem.quantity) || 0
     let newQty = oldQty
     if (mode === 'increase' || mode === 'create') newQty += deltaQty
-    else if (mode === 'decrease') newQty = Math.max(0, newQty - deltaQty)
+    else if (mode === 'decrease') newQty = Math.max(0, oldQty - deltaQty)
     else if (mode === 'set') newQty = deltaQty
+
+    // 減量または上書きの結果 0 になった場合は明細を削除してクリーンアップ
+    if (newQty <= 0) {
+      await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
+      await supabase.from('order_items').delete().eq('id', existingItem.id)
+      if (existing?.id) {
+        const { count } = await supabase
+          .from('order_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('order_id', existing.id)
+        if ((count ?? 0) === 0) {
+          await supabase.from('orders').delete().eq('id', existing.id)
+        }
+      }
+      return NextResponse.json({ deleted: true, cancelled: true, mode }, { status: 200 })
+    }
 
     const qtyChanged = newQty !== oldQty
     const wasPackedAndIncreased =
@@ -289,7 +389,7 @@ export async function POST(req: Request) {
         : `数量変更:${oldQty}→${newQty}P`
       : null
 
-    const combinedNote = [existingItem.line_note, changeNote, note]
+    const combinedNote = [stripPriceFromNote(existingItem.line_note), changeNote, note]
       .filter((s): s is string => Boolean(s && s.trim()))
       .join(' / ') || null
 
@@ -307,6 +407,9 @@ export async function POST(req: Request) {
         spec: clientSpec?.trim() || existingItem.spec || effectiveSpec,
         container_type: clientContainerType?.trim() || existingItem.container_type || effectiveContainerType,
         has_card: clientHasCard ?? existingItem.has_card ?? effectiveHasCard,
+        has_seal: clientHasSeal ?? existingItem.has_seal ?? effectiveHasSeal,
+        seal_text: effectiveSealText ?? existingItem.seal_text ?? null,
+        bag_type: effectiveBagType ?? existingItem.bag_type ?? null,
         line_note: combinedNote,
         ...(qtyChanged
           ? {
@@ -351,13 +454,16 @@ export async function POST(req: Request) {
         unit: product.unit,
         unit_price: product.default_unit_price ?? 0,
         tax_rate: product.default_tax_rate,
-        rule_id: rule?.id ?? null,
+        rule_id: (typeof rule?.id === 'string' ? rule.id : null),
         confidence: 1.0,
         field_status: 'not_started',
         line_note: note ?? null,
         spec: effectiveSpec,
         container_type: effectiveContainerType,
         has_card: effectiveHasCard,
+        has_seal: effectiveHasSeal,
+        seal_text: effectiveSealText,
+        bag_type: effectiveBagType,
       },
       (p) => supabase.from('order_items').insert(p as never).select().single(),
     )

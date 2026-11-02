@@ -4,21 +4,24 @@ import { cn } from '@/lib/cn'
 
 /**
  * 現場3大画面（収穫・パックボード ⇄ 便別積込・配送リスト ⇄ 週間マトリックス）の統合スイッチャー。
- * 基準日（date）を維持したまま、どの画面からでも1タップで相互に行き来できる。
+ * 基準日（date）および選択中の品目（product）を維持したまま、どの画面からでも1タップで相互に行き来できる（#01, #04）。
  */
 export function FieldViewSwitch({
   active,
   date,
+  product,
 }: {
   active: 'day' | 'delivery' | 'week'
   date: string
+  product?: string | null
 }) {
+  const prodParam = product ? `&product=${encodeURIComponent(product)}` : ''
   const base =
     'inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-black transition-all active:scale-95'
   return (
     <div className="inline-flex rounded-xl border border-line-strong bg-bg-soft p-1 shadow-2xs">
       <Link
-        href={`/field/shipments?date=${date}`}
+        href={`/field/shipments?date=${date}${prodParam}`}
         aria-current={active === 'day' ? 'page' : undefined}
         className={cn(
           base,
@@ -31,7 +34,7 @@ export function FieldViewSwitch({
         <span>パック</span>
       </Link>
       <Link
-        href={`/field/deliveries?date=${date}`}
+        href={`/field/deliveries?date=${date}${prodParam}`}
         aria-current={active === 'delivery' ? 'page' : undefined}
         className={cn(
           base,
@@ -44,7 +47,7 @@ export function FieldViewSwitch({
         <span>積込・配送</span>
       </Link>
       <Link
-        href={`/field/matrix?week=${date}`}
+        href={`/field/matrix?week=${date}&date=${date}${prodParam}`}
         aria-current={active === 'week' ? 'page' : undefined}
         className={cn(
           base,

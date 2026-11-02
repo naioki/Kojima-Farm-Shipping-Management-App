@@ -15,6 +15,7 @@ export interface Destination {
   is_active: boolean
   departure_time?: string | null
   shipping_route_name?: string | null
+  default_container_type?: string | null
 }
 
 interface Props {
@@ -27,20 +28,19 @@ const fieldCls =
   'h-9 w-full rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
 
 /**
- * 納入先の登録・編集（取引先の配下）。
- * 表示は常に「取引先 ＞ 納入先(略称)」。出荷時間（departure_time）・便名（shipping_route_name）も管理。
+ * 納入先の登録・編集（#48 出荷時間・便名に加え、納入先ごとの規定コンテナ種別 default_container_type も管理）。
  */
 export function DestinationManager({ customerId, customerName, initial }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<Destination[]>(initial)
   const [savingId, setSavingId] = useState<string | null>(null)
 
-  // 新規入力
   const [code, setCode] = useState('')
   const [fullName, setFullName] = useState('')
   const [aliases, setAliases] = useState('')
   const [departureTime, setDepartureTime] = useState('')
   const [shippingRouteName, setShippingRouteName] = useState('')
+  const [defaultContainerType, setDefaultContainerType] = useState('')
   const [adding, setAdding] = useState(false)
 
   async function addDestination() {
@@ -57,12 +57,13 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           aliases: aliases.split(/[,、\s]+/).map((s) => s.trim()).filter(Boolean),
           departure_time: departureTime.trim() || null,
           shipping_route_name: shippingRouteName.trim() || null,
+          default_container_type: defaultContainerType.trim() || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { destination?: Destination; error?: string }
       if (!res.ok || !json.destination) throw new Error(json.error ?? `登録失敗 (${res.status})`)
       setRows((p) => [...p, json.destination!])
-      setCode(''); setFullName(''); setAliases(''); setDepartureTime(''); setShippingRouteName('')
+      setCode(''); setFullName(''); setAliases(''); setDepartureTime(''); setShippingRouteName(''); setDefaultContainerType('')
       toast.success('納入先を登録しました')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '登録に失敗しました')
@@ -89,6 +90,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           is_active: row.is_active,
           departure_time: row.departure_time?.trim() || null,
           shipping_route_name: row.shipping_route_name?.trim() || null,
+          default_container_type: row.default_container_type?.trim() || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
@@ -121,7 +123,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
     <div className="space-y-3">
       {rows.length === 0 ? (
         <p className="rounded border border-dashed border-line px-3 py-4 text-center text-sm text-ink-faint">
-          納入先は未登録です。複数の届け先がある取引先（例: 仲卸）はここで登録してください。
+          納入先は未登録です。複数の届け先がある取引先（例: 仲卸・センター別）はここで登録してください。
         </p>
       ) : (
         <div className="space-y-2">
@@ -133,29 +135,45 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                 !r.is_active && 'opacity-60',
               )}
             >
-              <div className="mb-2 flex items-center justify-between gap-1 text-xs font-medium text-ink-soft">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-1 text-xs font-medium text-ink-soft">
                 <div className="flex items-center gap-1">
                   <MapPin className="h-3.5 w-3.5 text-earth-500" aria-hidden />
                   {customerName} <span className="text-ink-faint">＞</span>{' '}
                   <span className="font-bold text-ink">{r.code?.trim() || r.full_name}</span>
                 </div>
-                {r.departure_time && (
-                  <span className="rounded bg-earth-100 px-2 py-0.5 text-[11px] font-bold text-earth-800">
-                    ⏰ {r.departure_time}発 {r.shipping_route_name ? `(${r.shipping_route_name})` : ''}
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {r.default_container_type && (
+                    <span className="rounded bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-900">
+                      📦 {r.default_container_type}
+                    </span>
+                  )}
+                  {r.departure_time && (
+                    <span className="rounded bg-earth-100 px-2 py-0.5 text-[11px] font-bold text-earth-800">
+                      ⏰ {r.departure_time}発 {r.shipping_route_name ? `(${r.shipping_route_name})` : ''}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-6">
                 <label className="block sm:col-span-1">
                   <span className="mb-0.5 block text-[11px] text-ink-faint">略称（表示用）</span>
-                  <input value={r.code ?? ''} onChange={(e) => patchRow(r.id, 'code', e.target.value)} className={fieldCls} placeholder="例: マルタ" />
+                  <input value={r.code ?? ''} onChange={(e) => patchRow(r.id, 'code', e.target.value)} className={fieldCls} placeholder="例: 4関東" />
                 </label>
                 <label className="block sm:col-span-2">
                   <span className="mb-0.5 block text-[11px] text-ink-faint">正式名（伝票）</span>
                   <input value={r.full_name} onChange={(e) => patchRow(r.id, 'full_name', e.target.value)} className={fieldCls} />
                 </label>
                 <label className="block sm:col-span-1">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">出荷時間（出発時刻）</span>
+                  <span className="mb-0.5 block text-[11px] text-ink-faint">規定コンテナ</span>
+                  <input
+                    value={r.default_container_type ?? ''}
+                    onChange={(e) => patchRow(r.id, 'default_container_type', e.target.value)}
+                    className={fieldCls}
+                    placeholder="青コン / 茶コン"
+                  />
+                </label>
+                <label className="block sm:col-span-1">
+                  <span className="mb-0.5 block text-[11px] text-ink-faint">出荷時間</span>
                   <input
                     type="time"
                     value={r.departure_time ?? ''}
@@ -164,23 +182,23 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                   />
                 </label>
                 <label className="block sm:col-span-1">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">便名・ルート名</span>
+                  <span className="mb-0.5 block text-[11px] text-ink-faint">便名・ルート</span>
                   <input
                     value={r.shipping_route_name ?? ''}
                     onChange={(e) => patchRow(r.id, 'shipping_route_name', e.target.value)}
                     className={fieldCls}
-                    placeholder="例: 岩槻便, 1便"
+                    placeholder="例: 16時便"
                   />
                 </label>
               </div>
               <div className="mt-2">
                 <label className="block">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">表記ゆれ（カンマ区切り）</span>
+                  <span className="mb-0.5 block text-[11px] text-ink-faint">表記ゆれ・OCR別表記（カンマ区切り）</span>
                   <input
                     value={r.aliases.join(', ')}
                     onChange={(e) => patchRow(r.id, 'aliases', e.target.value.split(/[,、]+/).map((s) => s.trim()).filter(Boolean))}
                     className={fieldCls}
-                    placeholder="OCRの別表記"
+                    placeholder="OCRの別表記（例: 関東顧客向け, 4関東顧客向け）"
                   />
                 </label>
               </div>
@@ -205,7 +223,6 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
         </div>
       )}
 
-      {/* 新規追加 */}
       {!adding ? (
         <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
           <Plus className="h-3.5 w-3.5" aria-hidden />
@@ -214,9 +231,10 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
       ) : (
         <div className="space-y-2 rounded-lg border border-earth-200 bg-earth-50 p-3">
           <p className="text-xs font-semibold text-earth-700">{customerName} ＞ 新しい納入先</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-            <input value={code} onChange={(e) => setCode(e.target.value)} className={fieldCls} placeholder="略称（例: マルタ）" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+            <input value={code} onChange={(e) => setCode(e.target.value)} className={fieldCls} placeholder="略称（例: 4関東）" />
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} className={fieldCls} placeholder="正式名（必須）" />
+            <input value={defaultContainerType} onChange={(e) => setDefaultContainerType(e.target.value)} className={fieldCls} placeholder="規定コンテナ（青コン等）" />
             <input
               type="time"
               value={departureTime}

@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { useFieldLang } from '@/lib/field/lang-context'
-import { getThaiContainer, getContainerColorEmoji, getThaiProduct, THAI_LABELS } from '@/lib/field/thai-dict'
+import { getThaiContainer, getContainerColorEmoji, THAI_LABELS } from '@/lib/field/thai-dict'
 
 export interface ContainerBreakdownItem {
   type: string
@@ -42,7 +42,6 @@ export interface HarvestPulseSummaryProps {
 }
 
 export function HarvestPulseSummary({
-  productName,
   productId,
   date,
   totalPacks,
@@ -106,158 +105,93 @@ export function HarvestPulseSummary({
   }
 
   const isTodayWork = isTodayTarget && (date === shiftDateStr(jstTodayStr(), 1) || date === jstTodayStr())
+  const activeContainers = containerBreakdown.filter((cb) => cb.boxes > 0)
+  const activeSpecs = specBreakdown.filter((sb) => sb.packs > 0 || sb.boxes > 0)
 
   return (
     <div className="space-y-2">
-      {/* メインリアルタイム進捗コックピットカード（2カラム省スペース設計で1枚目の作業カードをファーストビューに表示） */}
+      {/* 省スペース・高視認性進捗コックピット（左：主役の箱数 ｜ 右：総パック数） */}
       <div
         className={cn(
-          'rounded-2xl p-3.5 text-white shadow-md space-y-2.5 transition-colors',
+          'rounded-2xl p-3 text-white shadow-sm space-y-2 transition-colors',
           isTodayWork ? 'bg-[#155c39]' : 'bg-[#1e293b] border border-slate-700',
         )}
       >
-        {/* ヘッダー情報 */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-white/20">
-          <div className="flex items-center gap-1.5">
-            <span className="text-lg">{isTodayWork ? '🥬' : '📅'}</span>
-            <span className="text-sm sm:text-base font-black tracking-wide">
-              {isThaiMode && getThaiProduct(productName) ? (
-                <>
-                  <span>{getThaiProduct(productName)}</span>
-                  <span className="ml-1 text-xs text-emerald-200 font-bold">({productName})</span>
-                </>
-              ) : (
-                `${productName} パック進捗`
-              )}
-            </span>
-          </div>
-          <span
-            className={cn(
-              'text-[11px] font-bold px-2 py-0.5 rounded-md',
-              isTodayWork ? 'text-emerald-100 bg-white/10' : 'text-slate-300 bg-white/10',
-            )}
-          >
-            {date === shiftDateStr(jstTodayStr(), 1)
-              ? `本日パック（${date.slice(5)}納品分）`
-              : isTodayWork
-              ? `本日 ${date.slice(5)} 納品分`
-              : `📅 ${date.slice(5)} 納品分`}
-          </span>
-        </div>
-
-        {/* 前日からの持ち越し在庫（キャリーオーバー）がある場合のハイライトバナー */}
         {prevCarryover > 0 && (
           <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-400/20 border border-amber-300/40 px-3 py-1.5 text-xs font-black text-amber-100">
             <span className="flex items-center gap-1.5">
               <span>🌅</span>
               <span>
                 {isThaiMode
-                  ? `${THAI_LABELS.inheritedCarryover}: ${prevCarryover} ลัง (${prevCarryover * 20} ถุง)`
-                  : `前日からの持ち越し在庫: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）あり`}
+                  ? `${THAI_LABELS.inheritedCarryover}: ${prevCarryover} ลัง`
+                  : `前日からの持ち越し: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）`}
               </span>
             </span>
             <span className="rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-[10px] font-black shrink-0">
-              {isThaiMode
-                ? `เก็บเพิ่มอีก ${Math.max(0, remainingBoxes - prevCarryover)} ลัง`
-                : `畑からの追加収穫目安: あと ${Math.max(0, remainingBoxes - prevCarryover)} 箱`}
+              畑からの追加収穫目安: あと {Math.max(0, remainingBoxes - prevCarryover)} 箱
             </span>
           </div>
         )}
 
-        {/* 統合進捗コックピット（左：パック数 ｜ 右：箱数 の2カラム横並びで縦幅を大幅スリム化） */}
-        <div className="rounded-xl bg-black/25 border border-white/15 p-3 text-center space-y-2.5 shadow-inner">
+        <div className="rounded-xl bg-black/25 border border-white/15 px-3 py-2.5 text-center space-y-2 shadow-inner">
           <div className="grid grid-cols-2 divide-x divide-white/15 items-center">
-            {/* ① 左カラム：パック数 */}
+            {/* ① 左カラム（主役）：箱数（ケース） */}
             <div className="flex flex-col items-center justify-center px-1">
-              <span className="text-[11px] sm:text-xs font-black tracking-wider text-white/85 mb-0.5">
-                {isThaiMode ? (
-                  <>
-                    <span className="text-emerald-300 font-black">จำนวนถุง</span>
-                    <span className="ml-1 text-[10px] text-white/75 font-bold">(パック数)</span>
-                  </>
-                ) : (
-                  'パック数 (P)'
-                )}
+              <span className="text-[11px] font-black tracking-wider text-emerald-200 mb-0.5">
+                {isThaiMode ? 'จำนวนลัง (箱数・ケース)' : '完成箱数 / 目標箱数'}
               </span>
               <div className="flex items-baseline justify-center gap-1 font-display">
-                <span className="text-3xl sm:text-4xl font-black text-white tracking-tight tabular-nums drop-shadow-xs">
-                  {completedPacks.toLocaleString()}
+                <span className="text-3xl sm:text-4xl font-black text-white tracking-tight tabular-nums">
+                  {completedBoxes.toLocaleString()}
                 </span>
-                <span className="text-lg sm:text-xl font-bold text-white/40">/</span>
-                <span
-                  className={cn(
-                    'text-2xl sm:text-3xl font-extrabold tabular-nums',
-                    isTodayWork ? 'text-emerald-200' : 'text-slate-200',
-                  )}
-                >
-                  {totalPacks.toLocaleString()}
+                <span className="text-lg font-bold text-white/40">/</span>
+                <span className="text-2xl sm:text-3xl font-extrabold tabular-nums text-emerald-200">
+                  {totalBoxes.toLocaleString()}
                 </span>
-                <span
-                  className={cn(
-                    'text-xs sm:text-sm font-black ml-0.5',
-                    isTodayWork ? 'text-emerald-300' : 'text-slate-300',
-                  )}
-                >
-                  {isThaiMode ? 'ถุง' : 'P'}
+                <span className="text-xs sm:text-sm font-black ml-0.5 text-emerald-300">
+                  {isThaiMode ? 'ลัง' : '箱'}
                 </span>
               </div>
             </div>
 
-            {/* ② 右カラム：箱数 */}
+            {/* ② 右カラム：総パック数 */}
             <div className="flex flex-col items-center justify-center px-1">
-              <span className="text-[11px] sm:text-xs font-black tracking-wider text-white/85 mb-0.5">
-                {isThaiMode ? (
-                  <>
-                    <span className="text-emerald-300 font-black">จำนวนลัง</span>
-                    <span className="ml-1 text-[10px] text-white/75 font-bold">(箱数)</span>
-                  </>
-                ) : (
-                  '箱数 (ケース)'
-                )}
+              <span className="text-[11px] font-bold tracking-wider text-white/80 mb-0.5">
+                {isThaiMode ? 'จำนวนถุง (総パック数)' : '完成パック数 / 総数'}
               </span>
               <div className="flex items-baseline justify-center gap-1 font-display">
-                <span className="text-3xl sm:text-4xl font-black text-white tracking-tight tabular-nums drop-shadow-xs">
-                  {completedBoxes.toLocaleString()}
+                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight tabular-nums">
+                  {completedPacks.toLocaleString()}
                 </span>
-                <span className="text-lg sm:text-xl font-bold text-white/40">/</span>
-                <span
-                  className={cn(
-                    'text-2xl sm:text-3xl font-extrabold tabular-nums',
-                    isTodayWork ? 'text-emerald-200' : 'text-slate-200',
-                  )}
-                >
-                  {totalBoxes.toLocaleString()}
+                <span className="text-base font-bold text-white/40">/</span>
+                <span className="text-xl sm:text-2xl font-extrabold tabular-nums text-white/90">
+                  {totalPacks.toLocaleString()}
                 </span>
-                <span
-                  className={cn(
-                    'text-xs sm:text-sm font-black ml-0.5',
-                    isTodayWork ? 'text-emerald-300' : 'text-slate-300',
-                  )}
-                >
-                  {isThaiMode ? 'ลัง' : '箱'}
+                <span className="text-xs font-black ml-0.5 text-white/80">
+                  P
                 </span>
               </div>
             </div>
           </div>
 
-          {/* ③ 下段：残り数・達成バッジ ＋ プログレスバー一体表示 */}
+          {/* 下段：残り箱数・パック数 ＋ プログレスバー */}
           <div className="space-y-1.5 pt-1 border-t border-white/10">
             <div className="flex items-center justify-between gap-2 px-1">
               {remainingPacks > 0 ? (
                 <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-emerald-100">
                   <Clock className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
-                  <span>{isThaiMode ? 'เหลือ (残り):' : '残り:'}</span>
+                  <span>残り:</span>
                   <span className="font-black text-white text-sm sm:text-base tabular-nums">
-                    {remainingPacks.toLocaleString()} {isThaiMode ? 'ถุง (P)' : 'P'}
+                    あと {remainingBoxes.toLocaleString()} 箱
                   </span>
-                  <span className="text-xs text-white/85 font-bold">
-                    ({isThaiMode ? `${remainingBoxes.toLocaleString()} ลัง` : `約 ${remainingBoxes.toLocaleString()} 箱`})
+                  <span className="text-xs text-white/80 font-bold tabular-nums">
+                    （{remainingPacks.toLocaleString()} P）
                   </span>
                 </div>
               ) : totalPacks > 0 ? (
                 <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-emerald-300">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>🎉 {isThaiMode ? 'แพ็คครบตามเป้าแล้ว! (目標達成)' : `目標達成！（全 ${totalPacks}P / ${totalBoxes}箱 完了）`}</span>
+                  <span>🎉 全 {totalBoxes}箱（{totalPacks.toLocaleString()}P）完了！</span>
                 </div>
               ) : (
                 <div className="text-xs text-white/60">この日の注文はありません</div>
@@ -265,107 +199,108 @@ export function HarvestPulseSummary({
               <span className="text-xs sm:text-sm font-black text-white tabular-nums">{progressPct}%</span>
             </div>
 
-            <div className="h-2.5 w-full rounded-full bg-black/30 p-0.5 overflow-hidden shadow-inner">
+            <div className="h-2 w-full rounded-full bg-black/30 p-0.5 overflow-hidden shadow-inner">
               <div
                 style={{ width: `${progressPct}%` }}
                 className={cn(
                   'h-full rounded-full transition-all duration-300',
                   progressPct >= 100
-                    ? isTodayWork
-                      ? 'bg-gradient-to-r from-emerald-300 to-teal-200 shadow-xs'
-                      : 'bg-gradient-to-r from-slate-200 to-slate-100 shadow-xs'
-                    : isTodayWork
-                    ? 'bg-gradient-to-r from-emerald-400 to-teal-300'
-                    : 'bg-gradient-to-r from-slate-400 to-slate-300',
+                    ? 'bg-gradient-to-r from-emerald-300 to-teal-200'
+                    : 'bg-gradient-to-r from-emerald-400 to-teal-300',
                 )}
               />
             </div>
           </div>
         </div>
+
+        {/* #08 タップ不要で一目でわかるコンテナ別・規格別1行ピルバー */}
+        {activeContainers.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            {activeContainers.map((cb) => {
+              const shortLabel = cb.type === '農業総研専用折りたたみコンテナ' ? 'NSKオリコン' : cb.type
+              return (
+                <span
+                  key={cb.type}
+                  className="inline-flex items-center gap-1 rounded-lg bg-white/15 border border-white/25 px-2 py-0.5 text-[11px] font-black text-white"
+                >
+                  <span>{getContainerColorEmoji(cb.type)}</span>
+                  <span>{shortLabel}:</span>
+                  <span className="text-emerald-200 tabular-nums">{cb.boxes}箱</span>
+                </span>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* 折りたたみ内訳アコーディオン（普段は閉じて画面スッキリ） */}
-      <details className="group rounded-xl border border-line bg-white shadow-xs">
-        <summary className="flex cursor-pointer items-center justify-between px-3.5 py-2.5 text-xs font-bold text-ink-soft select-none hover:bg-bg-soft/50">
-          <span className="flex items-center gap-1.5">
-            <Box className="h-4 w-4 text-emerald-600" />
-            <span>品目・コンテナ・規格ごとの内訳を見る</span>
+      {/* 折りたたみ内訳アコーディオン（コンテナ別・規格別・翌朝持ち越し） */}
+      <details className="group rounded-xl border border-line bg-white shadow-2xs">
+        <summary className="flex cursor-pointer items-center justify-between px-3.5 py-2 text-xs font-bold text-ink-soft select-none hover:bg-bg-soft/50">
+          <span className="flex items-center gap-1.5 flex-wrap">
+            <Box className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>コンテナ別・規格別の詳細内訳 ／ 翌朝持ち越し登録</span>
+            {carryover > 0 && (
+              <span className="rounded bg-amber-100 text-amber-900 px-1.5 py-0.5 text-[10px] font-black">
+                引継 {carryover}箱
+              </span>
+            )}
           </span>
-          <ChevronDown className="h-4 w-4 text-ink-muted transition-transform group-open:rotate-180" />
+          <ChevronDown className="h-4 w-4 text-ink-muted transition-transform group-open:rotate-180 shrink-0" />
         </summary>
 
         <div className="border-t border-line/60 px-3.5 py-3 space-y-3 text-xs bg-bg-soft/20">
-          {/* コンテナ別箱数（数量0は非表示） */}
-          {containerBreakdown.filter((cb) => cb.boxes > 0).length > 0 && (
+          {activeContainers.length > 0 && (
             <div>
               <div className="font-extrabold text-ink mb-1.5 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                 <span>コンテナ種別内訳</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {containerBreakdown
-                  .filter((cb) => cb.boxes > 0)
-                  .map((cb) => (
-                    <div
-                      key={cb.type}
-                      className="rounded-lg border border-line bg-white p-2 text-center"
-                    >
-                      <span className="block text-xs sm:text-sm font-black text-ink">
-                        {isThaiMode && getThaiContainer(cb.type) ? (
-                          <>
-                            <span>{getContainerColorEmoji(cb.type)} {getThaiContainer(cb.type)}</span>
-                            <span className="block text-[11px] text-ink-muted font-bold">
-                              ({cb.type})
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            {getContainerColorEmoji(cb.type)} {cb.type}
-                          </>
-                        )}
-                      </span>
-                      <span className="text-base font-black text-ink tabular-nums">
-                        {cb.boxes} <small className="text-xs font-bold text-ink-soft">{isThaiMode ? 'ลัง (箱)' : '箱'}</small>
-                      </span>
-                    </div>
-                  ))}
+                {activeContainers.map((cb) => (
+                  <div
+                    key={cb.type}
+                    className="rounded-lg border border-line bg-white p-2 text-center"
+                  >
+                    <span className="block text-xs font-black text-ink truncate">
+                      {isThaiMode && getThaiContainer(cb.type)
+                        ? `${getContainerColorEmoji(cb.type)} ${getThaiContainer(cb.type)}`
+                        : `${getContainerColorEmoji(cb.type)} ${cb.type === '農業総研専用折りたたみコンテナ' ? 'NSKオリコン' : cb.type}`}
+                    </span>
+                    <span className="text-base font-black text-ink tabular-nums">
+                      {cb.boxes} <small className="text-xs font-bold text-ink-soft">箱</small>
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* 規格別内訳（数量0は非表示） */}
-          {specBreakdown.filter((sb) => sb.packs > 0 || sb.boxes > 0).length > 0 && (
+          {activeSpecs.length > 0 && (
             <div>
               <div className="font-extrabold text-ink mb-1.5 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                 <span>規格別内訳（畑への収穫指示用）</span>
               </div>
               <div className="space-y-1">
-                {specBreakdown
-                  .filter((sb) => sb.packs > 0 || sb.boxes > 0)
-                  .map((sb) => (
-                    <div
-                      key={sb.spec}
-                      className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line"
-                    >
-                      <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
-                      <span className="font-black text-ink tabular-nums">
-                        {sb.packs.toLocaleString()} P{' '}
-                        <span className="text-ink-soft text-xs font-bold">({sb.boxes} 箱)</span>
-                      </span>
-                    </div>
-                  ))}
+                {activeSpecs.map((sb) => (
+                  <div
+                    key={sb.spec}
+                    className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line"
+                  >
+                    <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
+                    <span className="font-black text-ink tabular-nums">
+                      {sb.boxes} 箱{' '}
+                      <span className="text-ink-soft text-xs font-bold">({sb.packs.toLocaleString()} P)</span>
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* 夕方の持ち越し入力 */}
           <div className="pt-2 border-t border-line/60">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs sm:text-sm font-bold text-ink">
-                夕方の翌朝持ち越し登録:
-                {isThaiMode && <span className="text-xs text-ink-muted ml-1">(คงเหลือยกไปพรุ่งนี้)</span>}
-              </span>
+              <span className="text-xs font-bold text-ink">夕方の翌朝持ち越し登録:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -375,60 +310,29 @@ export function HarvestPulseSummary({
                 className="text-xs font-bold text-emerald-700 underline"
               >
                 {isEditingCarryover
-                  ? isThaiMode ? '閉じる (ปิด)' : '閉じる'
+                  ? '閉じる'
                   : carryover > 0
-                  ? isThaiMode ? `${carryover}箱を引継中 (${carryover}ลัง)` : `${carryover}箱を引継設定中 (変更)`
-                  : isThaiMode ? '＋ 今日の余り箱数を登録 (ลงทะเบียนลังคงเหลือ)' : '＋ 今日の余り箱数を登録'}
+                  ? `${carryover}箱を引継設定中 (変更)`
+                  : '＋ 今日の余り箱数を登録'}
               </button>
             </div>
 
             {isEditingCarryover && (
               <div className="rounded-xl bg-white p-2.5 border border-line shadow-xs space-y-2 mt-1">
                 <div className="grid grid-cols-4 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
-                      const next = Math.max(0, cur - 5)
-                      setTempCarryoverStr(String(next))
-                    }}
-                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
-                  >
-                    -5
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
-                      const next = Math.max(0, cur - 1)
-                      setTempCarryoverStr(String(next))
-                    }}
-                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
-                  >
-                    -1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
-                      const next = cur + 1
-                      setTempCarryoverStr(String(next))
-                    }}
-                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
-                  >
-                    +1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
-                      const next = cur + 5
-                      setTempCarryoverStr(String(next))
-                    }}
-                    className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
-                  >
-                    +5
-                  </button>
+                  {[-5, -1, 1, 5].map((delta) => (
+                    <button
+                      key={delta}
+                      type="button"
+                      onClick={() => {
+                        const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
+                        setTempCarryoverStr(String(Math.max(0, cur + delta)))
+                      }}
+                      className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
+                    >
+                      {delta > 0 ? `+${delta}` : delta}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="flex items-center justify-end gap-1.5">
@@ -446,7 +350,7 @@ export function HarvestPulseSummary({
                     onClick={() => saveCarryover(Math.max(0, parseInt(tempCarryoverStr, 10) || 0))}
                     className="h-9 rounded-lg bg-[#155c39] px-3 text-xs font-bold text-white hover:bg-[#10482c] disabled:opacity-50 active:scale-95 shadow-xs"
                   >
-                    {busy ? '保存中...' : isThaiMode ? '確定 (บันทึก)' : '確定'}
+                    {busy ? '保存中...' : '確定'}
                   </button>
                 </div>
               </div>

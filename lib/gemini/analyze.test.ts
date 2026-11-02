@@ -290,4 +290,75 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     )
     expect(item.container_type).toBe('青コン')
   })
+
+  it("NSK週間表（5945.jpg）: 社名印字がなく『小島裕美』『4関東顧客向け/5北海道/6関西』『入数24』のみでもNSKと特定し、200gUP/200g・シール有無・買値除去・赤字・欄外内訳を正確に処理する", () => {
+    // 1. 4関東顧客向け（200gUP・シールあり・1,440P＝60箱・買値¥78除去）
+    const kantoStd = normalizeCustomerAndDestination({
+      customerName: "小島裕美",
+      destinationName: "4関東顧客向け",
+      spec: "200gUP",
+      packsPerCase: 24,
+    })
+    expect(kantoStd.customerName).toBe("株式会社農業総合研究所（NSK）")
+    expect(kantoStd.destinationName).toBe("4関東顧客向け")
+    expect(kantoStd.spec).toBe("200gUP (入数24)")
+
+    const kantoItem = verifyAndNormalizeItem(
+      {
+        raw_name: "チンゲンサイ",
+        product_name: "チンゲンサイ",
+        quantity: "1,440",
+        unit: "P",
+        confidence: 0.98,
+        spec: "200gUP",
+        packs_per_case: 24,
+        has_seal: true,
+        note: "シールあり（生産者11:小島裕美 / 買値¥78）",
+      },
+      kantoStd.customerName,
+      { destinationName: kantoStd.destinationName, deliveryDate: "2026-11-03" },
+    )
+    expect(kantoItem.quantity).toBe("1440")
+    expect(kantoItem.cases).toBe(60)
+    expect(kantoItem.spec).toBe("200gUP (入数24)")
+    expect(kantoItem.has_seal).toBe(true)
+    expect(kantoItem.note).not.toContain("買値")
+    expect(kantoItem.note).not.toContain("78")
+
+    // 2. 5北海道（200g・シールなし・720P＝30箱・赤字記載・買値¥75除去）
+    const hokkaidoStd = normalizeCustomerAndDestination({
+      customerName: null,
+      destinationName: "5北海道",
+      spec: "200g",
+      packsPerCase: 24,
+    })
+    expect(hokkaidoStd.customerName).toBe("株式会社農業総合研究所（NSK）")
+    expect(hokkaidoStd.destinationName).toBe("5北海道")
+    expect(hokkaidoStd.spec).toBe("200g (入数24)")
+
+    const hokkaidoItem = verifyAndNormalizeItem(
+      {
+        raw_name: "チンゲンサイ",
+        product_name: "チンゲンサイ",
+        quantity: "720",
+        unit: "P",
+        confidence: 0.95,
+        spec: "200g",
+        packs_per_case: 24,
+        has_seal: false,
+        is_handwritten_modified: true,
+        note: "※表で赤字記載（変更箇所） / 買値¥75",
+      },
+      hokkaidoStd.customerName,
+      { destinationName: hokkaidoStd.destinationName, deliveryDate: "2026-11-02" },
+    )
+    expect(hokkaidoItem.quantity).toBe("720")
+    expect(hokkaidoItem.cases).toBe(30)
+    expect(hokkaidoItem.spec).toBe("200g (入数24)")
+    expect(hokkaidoItem.has_seal).toBe(false)
+    expect(hokkaidoItem.seal_text).toBe("シールなし")
+    expect(hokkaidoItem.note).toContain("赤字記載")
+    expect(hokkaidoItem.note).not.toContain("買値")
+    expect(hokkaidoItem.note).not.toContain("75")
+  })
 })

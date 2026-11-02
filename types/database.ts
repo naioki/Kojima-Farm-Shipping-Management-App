@@ -487,6 +487,9 @@ export const orderItemPatchSchema = z.object({
   spec: z.string().nullish(),
   container_type: z.string().nullish(),
   has_card: z.boolean().nullish(),
+  has_seal: z.boolean().nullish(),
+  seal_text: z.string().nullish(),
+  bag_type: z.string().nullish(),
   line_note: z.string().nullish(),
   /** 現場の記録（中断時の部分完了数・現場メモ・migrations/0006） */
   shipped_qty: z.number().nonnegative().nullish(),
@@ -524,6 +527,10 @@ export const shipmentAddSchema = z.object({
   container_type: z.string().nullish(),
   /** 生産者カード有無 */
   has_card: z.boolean().nullish(),
+  /** シール有無・シール表記・袋種別（NSK・勘兵衛等の荷姿指示用） */
+  has_seal: z.boolean().nullish(),
+  seal_text: z.string().nullish(),
+  bag_type: z.string().nullish(),
   /** 納入先（届け先）。複数納入先を持つ取引先で確定させる。単一/無しの取引先は null。 */
   destination_id: z.string().uuid().nullish(),
   /** 登録モード（新規作成、既存への加算、減量、数量上書き）。既定は create。 */
@@ -731,6 +738,9 @@ export const customerProductRuleUpsertSchema = z.object({
   default_quantity: z.number().nonnegative().nullish(),
   spec: z.string().nullish(),
   has_card: z.boolean().optional(),
+  has_seal: z.boolean().nullish(),
+  seal_text: z.string().nullish(),
+  bag_type: z.string().nullish(),
 })
 export type CustomerProductRuleUpsert = z.infer<typeof customerProductRuleUpsertSchema>
 
@@ -741,6 +751,7 @@ export type CustomerProductRuleUpsert = z.infer<typeof customerProductRuleUpsert
  */
 export const matrixCellSchema = z.object({
   customer_id: z.string().uuid(),
+  destination_id: z.string().uuid().nullish(),
   product_id: z.string().uuid(),
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   quantity_raw: z.string(), // 空文字＝削除
@@ -750,6 +761,7 @@ export type MatrixCellInput = z.infer<typeof matrixCellSchema>
 /** ポータル発注（features.md §2-3：confidence は常に 1.0、delivery_date 必須） */
 export const portalOrderInputSchema = z.object({
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  destination_id: z.string().uuid().nullish(),
   items: z
     .array(
       z.object({

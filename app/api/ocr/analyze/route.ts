@@ -34,8 +34,8 @@ const bodySchema = z
 /**
  * 手動OCR・クイック注文・新規注文スマート読取解析エンドポイント。
  * 管理者および社内スタッフ（public.users 登録ユーザー）が利用可能。
- * FAX画像/PDF/Excel/テキストをGeminiに通し、抽出明細と【AI質問カード（不明点・未登録店舗）】を決定論的に生成して返す。
- * 万一 GEMINI_API_KEY 未設定または AI 過負荷時でも、テキスト・Excel・CSV入力は決定論的ローカルパーサーに自動フォールバックし業務を止めない。
+ * FAX画像/PDF/Excel/テキストをGeminiに通し、抽出明細と【AI質問カード（不明点・未登録店舗）】、
+ * さらに該当日の既存出荷状況（差分比較用）を一括で返す。
  */
 export async function POST(req: Request) {
   const [user, rawBody] = await Promise.all([
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     const sheetResult = parseSpreadsheetToText(imageBase64, fileName)
     if (sheetResult.isSpreadsheet && sheetResult.text) {
       analyzeInput = {
-        text: sheetResult.text,
+        text: text ? `${sheetResult.text}\n\n追加指示:\n${text}` : sheetResult.text,
       }
     }
   }
@@ -147,9 +147,53 @@ export async function POST(req: Request) {
       products,
     )
 
+    // 抽出された納品日群の既存出荷データを1クエリで一括取得（UI側で「新規 / 数量変更 / 取消(0P)」を即座に表示するため）
+    const uniqueDates = Array.from(
+      new Set(
+        (result.orders ?? [])
+          .map((o) => o.delivery_date)
+          .filter((d): d is string => Boolean(d && /^\d{4}-\d{2}-\d{2}$/.test(d))),
+      ),
+    )
+
+    let existingShipments: Array<{
+      order_id: string
+      customer_id: string | null
+      destination_id: string | null
+      delivery_date: string
+      total_quantity: number
+    }> = []
+
+    if (uniqueDates.length > 0) {
+      try {
+        const { data: existOrders } = await admin
+          .from('orders')
+          .select('id, customer_id, destination_id, delivery_date, order_items(quantity)')
+          .in('delivery_date', uniqueDates)
+          .neq('status', 'cancelled')
+
+        if (existOrders) {
+          existingShipments = existOrders.map((ord) => {
+            const rawItems = (ord.order_items ?? []) as Array<{ quantity?: number | null }>
+            const totalQty = rawItems.reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0)
+            return {
+              order_id: ord.id,
+              customer_id: ord.customer_id ?? null,
+              destination_id: ord.destination_id ?? null,
+              delivery_date: ord.delivery_date ?? '',
+              total_quantity: totalQty,
+            }
+          })
+        }
+      } catch (exErr) {
+        console.warn('[api/ocr/analyze] 既存出荷照会スキップ:', exErr)
+      }
+    }
+
     return NextResponse.json({
       ...result,
       clarifications,
+      existingShipments,
     })
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e)

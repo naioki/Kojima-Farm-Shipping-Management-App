@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { OrderNewForm } from '@/components/admin/OrderNewForm'
+import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { getSetting } from '@/lib/settings'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -159,9 +161,22 @@ export default async function OrderNewPage() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">注文を新規入力</h1>
         <p className="text-sm text-ink-soft">
-          FAX画像・PDF・写真・Excel・テキストからAI読取するか、そのまま手動入力できます。登録すると即座に出荷ボード・収穫タスクへ反映されます。
+          FAX画像・PDF・写真・Excel・テキストからAIスマート一括読取（生協連の週間表切替・6関西余白内訳分割・既存差分比較対応）するか、下のフォームから手動入力できます。
         </p>
       </div>
+      <ShipmentAddForm
+        deliveryDate={shiftDateStr(jstTodayStr(), 1)}
+        customers={customers.map((c) => ({ id: c.id, name: c.name }))}
+        products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
+        destinations={destinations.map((d) => ({
+          id: d.id,
+          customerId: d.customer_id ?? '',
+          label: d.code?.trim() || d.full_name,
+        }))}
+        packsByPair={Object.fromEntries(
+          Object.entries(customerRulesByPair).map(([k, v]) => [k, v.packs_per_case]),
+        )}
+      />
       <Card>
         <OrderNewForm
           customers={customers.map((c) => ({

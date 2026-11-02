@@ -10,10 +10,9 @@ import { writeAudit } from '@/lib/audit/log'
 export const runtime = 'nodejs'
 
 /**
- * 納品書を発行（スナップショット保存）。取引先×納品日のその日の明細を凍結して履歴に残す。
- *   - 明細・取引先名・自社情報・金額モード・税率別合計を delivery_notes に保存
- *   - 以後、元注文(order_items)を編集しても保存済み納品書は不変（再印刷・確認用）
- *   - 番号は月別連番 D{YYYYMM}-{seq}（参照用・欠番許容）
+ * 納品書を発行（スナップショット保存）。
+ * - #40: status IN ('approved', 'shipped', 'invoiced') かつ実出荷数が1以上の明細のみを対象にし、キャンセル済注文や未承認注文の混入を防止。
+ * - #41: 数量は billable_qty ?? shipped_qty ?? quantity の優先順で実出荷数を採用。
  */
 export async function POST(req: Request) {
   const user = await getAuthedUser()
@@ -26,7 +25,6 @@ export async function POST(req: Request) {
   const { customer_id, delivery_date, amount_mode, destination_id } = parsed.data
   const supabase = createAdminClient()
 
-  // 取引先（名前スナップショット用）
   const { data: customer, error: custErr } = await supabase
     .from('customers')
     .select('name')
@@ -35,8 +33,6 @@ export async function POST(req: Request) {
   if (custErr) return NextResponse.json({ error: custErr.message }, { status: 500 })
   if (!customer) return NextResponse.json({ error: 'unknown_customer' }, { status: 400 })
 
-  // 納入先で絞り込み中は「取引先＞納入先」をスナップショット名にする（表示は常にこのルール）。
-  // delivery_notes に専用列を追加せず、既存の customer_name スナップショットに含める。
   let customerNameSnapshot = customer.name
   if (destination_id) {
     const { data: dest, error: destErr } = await supabase
@@ -48,28 +44,56 @@ export async function POST(req: Request) {
     if (dest) customerNameSnapshot = `${customer.name}＞${dest.code || dest.full_name}`
   }
 
-  // その日の明細（orders→order_items）。納入先で絞り込み中はその納入先の注文だけを対象にする
-  // （表示のプレビューと発行内容がズレないように・複数納入先混在時の事故防止）。
-  let ordersQuery = supabase.from('orders').select('id').eq('customer_id', customer_id).eq('delivery_date', delivery_date)
+  // #40 有効な確定注文のみに絞り込む（cancelled / pending_review を除外）
+  let ordersQuery = supabase
+    .from('orders')
+    .select('id')
+    .eq('customer_id', customer_id)
+    .eq('delivery_date', delivery_date)
+    .in('status', ['approved', 'shipped', 'invoiced'])
   if (destination_id) ordersQuery = ordersQuery.eq('destination_id', destination_id)
   const { data: orders, error: ordersErr } = await ordersQuery
-  // 発行スナップショットの元データ。取得失敗を「明細なし」に化けさせない（誤った空伝票の凍結を防ぐ）。
   if (ordersErr) return NextResponse.json({ error: `対象注文の取得に失敗しました: ${ordersErr.message}` }, { status: 500 })
   const orderIds = (orders ?? []).map((o) => o.id)
+
   const itemsRes = orderIds.length
     ? await supabase
         .from('order_items')
-        .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
+        .select('product_name, quantity, shipped_qty, billable_qty, unit, unit_price, tax_rate, subtotal')
         .in('order_id', orderIds)
         .order('product_name')
-    : { data: [] as { product_name: string; quantity: number; unit: string; unit_price: number | null; tax_rate: number; subtotal: number | null }[], error: null }
+    : {
+        data: [] as {
+          product_name: string
+          quantity: number
+          shipped_qty?: number | null
+          billable_qty?: number | null
+          unit: string
+          unit_price: number | null
+          tax_rate: number
+          subtotal: number | null
+        }[],
+        error: null,
+      }
   if (itemsRes.error) return NextResponse.json({ error: `明細の取得に失敗しました: ${itemsRes.error.message}` }, { status: 500 })
-  const items = itemsRes.data ?? []
+
+  // #40 & #41 実出荷数（billable_qty ?? shipped_qty ?? quantity）を採用し、0以下の明細を除外
+  const items = (itemsRes.data ?? [])
+    .map((it) => {
+      const effectiveQty = Number(it.billable_qty ?? it.shipped_qty ?? it.quantity) || 0
+      const unitPrice = it.unit_price ?? 0
+      return {
+        ...it,
+        quantity: effectiveQty,
+        subtotal: it.unit_price != null ? effectiveQty * unitPrice : it.subtotal,
+      }
+    })
+    .filter((it) => it.quantity > 0)
+
   if (items.length === 0) {
     return NextResponse.json({ error: 'no_items' }, { status: 400 })
   }
 
-  // 自社情報スナップショット
   const [issuerName, issuerAddress, issuerTel] = await Promise.all([
     getSetting('FARM_NAME'),
     getSetting('FARM_ADDRESS'),
@@ -80,13 +104,11 @@ export async function POST(req: Request) {
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
   )
 
-  // 採番（月別連番）
   const monthKey = deliveryNoteMonthKey(delivery_date)
   const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', { p_month: monthKey })
   if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
   const note_number = formatDeliveryNoteNumber(monthKey, seq as number)
 
-  // ヘッダー作成
   const { data: note, error: noteErr } = await supabase
     .from('delivery_notes')
     .insert({
@@ -107,7 +129,6 @@ export async function POST(req: Request) {
     .single()
   if (noteErr) return NextResponse.json({ error: noteErr.message }, { status: 500 })
 
-  // 明細スナップショット
   const itemRows = items.map((it, i) => ({
     delivery_note_id: note.id,
     product_name: it.product_name,
@@ -120,7 +141,6 @@ export async function POST(req: Request) {
   }))
   const { error: itemsErr } = await supabase.from('delivery_note_items').insert(itemRows)
   if (itemsErr) {
-    // ヘッダーだけ残らないよう後始末
     await supabase.from('delivery_notes').delete().eq('id', note.id)
     return NextResponse.json({ error: itemsErr.message }, { status: 500 })
   }

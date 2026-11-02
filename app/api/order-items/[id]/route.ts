@@ -9,7 +9,6 @@ import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 
 export const runtime = 'nodejs'
 
-// quantity/価格変更（admin）と field_status タップ（圃場）を同じ PATCH で受ける。
 function parsePatch(body: unknown) {
   const isFieldTap =
     typeof body === 'object' && body !== null && 'field_status' in body
@@ -17,8 +16,7 @@ function parsePatch(body: unknown) {
 }
 
 /**
- * 数量変更・タップ更新（features.md §6/§7）。楽観ロック必須。
- * RLSによるスタッフ操作遮断を防ぐため createAdminClient を使用。
+ * 数量変更・タップ更新・現場仕様更新（#09 注文数の直接変更, #10 シール・袋種別の変更対応）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
@@ -42,7 +40,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   const input = parsed.data
 
-  // 現在値を取得（楽観ロックの比較と監査の old_values 用）
   const { data: current, error: readErr } = await admin
     .from('order_items')
     .select('*')
@@ -51,7 +48,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
   if (!current) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
-  // field_status は前進のみ（安全版タップループ）。要求値が前進先と一致するか検証。
   const updates: Record<string, unknown> = {}
   if ('field_status' in input) {
     const expected = nextFieldStatus(current.field_status)
@@ -67,8 +63,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   } else {
     if (input.quantity != null) {
       updates.quantity = input.quantity
-      // 数量変更時: GAS版二重ガードに従い、誤出荷防止のためステータスを未着手に自動リセット
-      // ただし既にパック済・出荷済だったものが数量増加した場合は、作成済みの数量を shipped_qty（途中数）として引き継ぎ「あと+〇〇P追加必要」を明示する
       if (input.quantity !== current.quantity) {
         const oldQ = Number(current.quantity)
         const newQ = Number(input.quantity)
@@ -91,16 +85,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.spec !== undefined) updates.spec = input.spec
     if (input.container_type !== undefined) updates.container_type = input.container_type
     if (input.has_card !== undefined) updates.has_card = input.has_card
+    if (input.has_seal !== undefined) updates.has_seal = input.has_seal
+    if (input.seal_text !== undefined) updates.seal_text = input.seal_text
+    if (input.bag_type !== undefined) updates.bag_type = input.bag_type
     if (input.line_note !== undefined) updates.line_note = input.line_note
     if (input.pack_config_id !== undefined) updates.pack_config_id = input.pack_config_id
-    // 現場の記録（中断時の部分完了数・現場メモ）
     if (input.shipped_qty !== undefined) updates.shipped_qty = input.shipped_qty
     if (input.field_note !== undefined) updates.field_note = input.field_note
-    // 手動修正保護マーク（FAX再送時の誤上書き防止）
     updates.is_manual_modified = true
   }
 
-  // 楽観ロック：version 一致時のみ更新。version++ も同時に行う。
   const { data: updated, error: updErr } = await writeDroppingMissingColumns(
     { ...updates, version: current.version + 1 },
     (p) =>
@@ -114,11 +108,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   )
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   if (!updated) {
-    // 0件 = version 不一致（競合）。UI に再読込させる。
     return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
   }
 
-  // 数量が変更された場合は harvest_tasks の必要数も自動同期
   if ('quantity' in input && input.quantity != null && input.quantity !== current.quantity) {
     try {
       await admin
@@ -130,11 +122,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」手動修正を自動学習ループ & 取引先×品目ルールへ自動蓄積
+  // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」「シール」「袋」手動修正を自動学習ループ & 取引先×品目ルールへ自動蓄積
   if (
     !('field_status' in input) &&
     ((input.spec !== undefined && input.spec !== current.spec && input.spec) ||
-      (input.container_type !== undefined && input.container_type !== current.container_type && input.container_type))
+      (input.container_type !== undefined && input.container_type !== current.container_type && input.container_type) ||
+      (input.has_seal !== undefined && input.has_seal !== current.has_seal) ||
+      (input.bag_type !== undefined && input.bag_type !== current.bag_type && input.bag_type))
   ) {
     try {
       const { data: ord } = await admin
@@ -150,7 +144,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           .maybeSingle()
         const clientName = cust?.name || '共通'
 
-        // 1. 取引先×品目マスタ（customer_product_rules）へも自動反映して次回以降のデフォルト化
         const rulePatch: Record<string, unknown> = {}
         if (input.spec && input.spec !== current.spec) {
           rulePatch.label_spec = input.spec
@@ -162,6 +155,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         }
         if (input.container_type && input.container_type !== current.container_type) {
           rulePatch.default_container_type = input.container_type
+        }
+        if (input.has_seal !== undefined && input.has_seal !== current.has_seal) {
+          rulePatch.has_seal = input.has_seal
+        }
+        if (input.seal_text !== undefined) {
+          rulePatch.seal_text = input.seal_text
+        }
+        if (input.bag_type && input.bag_type !== current.bag_type) {
+          rulePatch.bag_type = input.bag_type
         }
         if (Object.keys(rulePatch).length > 0 && current.product_id) {
           const { data: existingRule } = await admin
@@ -177,7 +179,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           }
         }
 
-        // 2. AI自動学習ループ（ai_rules）へ蓄積
         if (input.spec && input.spec !== current.spec) {
           await recordMistakeFeedback({
             clientName,
@@ -214,11 +215,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ item: updated })
 }
 
-/**
- * 明細の削除（出荷一覧の詳細から・誤追加の取消）。admin/staff 可。
- * 安全ガード：出荷済み・価格確定済み・請求済み注文の明細は削除不可（履歴/税務保護）。
- * 紐づく収穫タスクはクリーンアップまたは FK の ON DELETE CASCADE で安全に連動。
- */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -251,13 +247,11 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: '請求確定済みのため削除できません' }, { status: 409 })
   }
 
-  // 収穫タスクを明示的に事前クリーンアップ
   await admin.from('harvest_tasks').delete().eq('order_item_id', params.id)
 
   const { error } = await admin.from('order_items').delete().eq('id', params.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // 監査用スナップショット（埋め込んだ orders を除く）
   const snapshot: Record<string, unknown> = { ...(item as Record<string, unknown>) }
   delete snapshot.orders
   await writeAudit(admin, {

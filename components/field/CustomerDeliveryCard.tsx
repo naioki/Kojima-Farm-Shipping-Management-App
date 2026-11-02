@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Truck,
-  CheckCircle2,
   ChevronDown,
   AlertTriangle,
   Edit3,
@@ -56,8 +55,8 @@ export interface CustomerDeliveryCardProps {
   totalFractionPacks: number
   grandTotalContainers: number
   totalQty: number
-  notes: string[] // 注文や配送の特記事項
-  isCompleted: boolean // 属する納品先がすべて積込OK
+  notes: string[]
+  isCompleted: boolean
   destinations: DestinationDetail[]
   routeSummaries?: Array<{
     title: string
@@ -70,17 +69,16 @@ export interface CustomerDeliveryCardProps {
 }
 
 /**
- * 手書き伝票思想の「取引先ワンボックス集約」配送カード。
- * - 案1（物理積込総数最優先型）：右上に「総積込数 24箱」を特大28〜32pxで表示。
- * - サブ内訳：「満杯 22ケース ＋ 端数 2箱 (11P)」
- * - 内訳一覧：コンテナ色（青コン・茶コン等）のカラーバッジ＋太字2段レイアウト。
+ * 便別積込・配送リストの1カードコンポーネント。
+ * - #19: 納入先が複数ある取引先（和郷園・日本生協連など）は最初から納入先別内訳を展開表示し、タップ不要でセンター別の箱数・個別積込が可能。
+ * - #20: 端数がない通常注文での冗長な「（満杯 ◯ケース）」や重複パック数を排除し、端数がある時のみアンバーバッジで強調。
+ * - #21: 積込完了（isCompleted）カードは1行のスリム完了バーに自動折りたたみ（タップでいつでも展開・取消可能）。
  */
 export function CustomerDeliveryCard({
   customerId,
   customerName,
   customerColor,
   deliveryDate,
-  totalCases,
   totalFractionBoxes,
   totalFractionPacks,
   grandTotalContainers,
@@ -96,7 +94,9 @@ export function CustomerDeliveryCard({
   const { isThaiMode } = useFieldLang()
   const [isCompleted, setIsCompleted] = useState<boolean>(initialIsCompleted)
   const [destinations, setDestinations] = useState<DestinationDetail[]>(initialDestinations)
-  const [open, setOpen] = useState<boolean>(false)
+  // #19 複数納入先がある取引先は初期状態で内訳を展開（積込完了時は折りたたむ）
+  const [open, setOpen] = useState<boolean>(() => initialDestinations.length > 1 && !initialIsCompleted)
+  const [expandedWhenDone, setExpandedWhenDone] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
   const [unpackedConfirmOpen, setUnpackedConfirmOpen] = useState<boolean>(false)
   const [pendingDestConfirm, setPendingDestConfirm] = useState<{
@@ -106,14 +106,12 @@ export function CustomerDeliveryCard({
     unpackedCount: number
   } | null>(null)
 
-  // パック進捗連動（全明細のうち何件が packed / shipped か）
   const allDeliveryItems = destinations.flatMap((d) => d.items).filter((it) => (Number(it.quantity) || 0) > 0)
   const packedItemCount = allDeliveryItems.filter(
     (it) => it.fieldStatus === 'packed' || it.fieldStatus === 'shipped',
   ).length
   const unpackedItemCount = Math.max(0, allDeliveryItems.length - packedItemCount)
 
-  // カードを閉じていても一目で荷姿・品目がわかるよう、コンテナ別箱数と品目サマリを集計
   const containerSummary = (() => {
     const map = new Map<string, number>()
     for (const d of destinations) {
@@ -134,7 +132,6 @@ export function CustomerDeliveryCard({
     return Array.from(map.entries()).map(([name, v]) => ({ name, qty: v.qty, unit: v.unit }))
   })()
 
-  // 親からの Props 更新を同期
   useEffect(() => {
     setIsCompleted(initialIsCompleted)
   }, [initialIsCompleted])
@@ -143,7 +140,6 @@ export function CustomerDeliveryCard({
     setDestinations(initialDestinations)
   }, [initialDestinations])
 
-  // メモ編集用の State
   const [notes, setNotes] = useState<string[]>(initialNotes)
   const [editingNote, setEditingNote] = useState<boolean>(false)
   const [noteInput, setNoteInput] = useState<string>(notes.join(' / '))
@@ -154,24 +150,8 @@ export function CustomerDeliveryCard({
     setNoteInput(initialNotes.join(' / '))
   }, [initialNotes])
 
-  // 納品先ID一覧
   const destinationIds = destinations.map((d) => d.destinationId)
 
-  // サブ内訳テキストの生成（文字拡大 ＆ （満杯 22ケース ＋ 端数 2箱 (11P)）と全体をカッコで囲む）
-  const subBreakdownText = (() => {
-    if (totalCases > 0 && totalFractionBoxes > 0) {
-      return `（満杯 ${totalCases}ケース ＋ 端数 ${totalFractionBoxes}箱 (${totalFractionPacks}P)）`
-    }
-    if (totalCases > 0) {
-      return `（満杯 ${totalCases}ケース）`
-    }
-    if (totalFractionBoxes > 0) {
-      return `（端数 ${totalFractionBoxes}箱 (${totalFractionPacks}P)）`
-    }
-    return null
-  })()
-
-  // 取引先単位の一括ワンタップ積込OKトグル
   async function toggleLoaded() {
     if (busy) return
     const nextCompleted = !isCompleted
@@ -179,6 +159,7 @@ export function CustomerDeliveryCard({
     const prevCompleted = isCompleted
     const prevDestinations = destinations
     setIsCompleted(nextCompleted)
+    if (nextCompleted) setExpandedWhenDone(false)
     setDestinations((prev) =>
       prev.map((d) => ({ ...d, status: nextCompleted ? 'loaded' : 'planned' })),
     )
@@ -210,7 +191,6 @@ export function CustomerDeliveryCard({
     }
   }
 
-  // アコーディオン内の個別納品先積込トグル
   async function toggleDestination(destId: string | null, currentStatus: string) {
     if (busy) return
     const nextAction = currentStatus === 'loaded' || currentStatus === 'delivered' ? 'revert' : 'loaded'
@@ -226,6 +206,7 @@ export function CustomerDeliveryCard({
 
     setDestinations(updatedDestinations)
     setIsCompleted(nextAllCompleted)
+    if (nextAllCompleted) setExpandedWhenDone(false)
     onCompletionChange?.(customerId, nextAllCompleted)
     setBusy(true)
     try {
@@ -254,7 +235,6 @@ export function CustomerDeliveryCard({
     }
   }
 
-  // メモの保存
   async function saveNote() {
     setSavingNote(true)
     try {
@@ -282,496 +262,477 @@ export function CustomerDeliveryCard({
 
   const hasNote = notes.length > 0 && notes.some((n) => n.trim().length > 0)
   const noteDisplay = notes.filter((n) => n.trim().length > 0).join(' ・ ')
+  const isCollapsedDone = isCompleted && !expandedWhenDone
 
   return (
     <div
       className={cn(
         'rounded-2xl border transition-all duration-200 overflow-hidden',
-        isCompleted
-          ? 'border-slate-300 bg-slate-50/80 opacity-75 shadow-2xs'
+        isCollapsedDone
+          ? 'border-emerald-300 bg-emerald-50/70 px-3.5 py-2.5 shadow-2xs'
+          : isCompleted
+          ? 'border-slate-300 bg-slate-50/80 shadow-2xs'
           : 'border-slate-300 bg-white shadow-md border-l-4 border-l-emerald-600',
       )}
     >
-      <div className="p-3.5 space-y-3">
-        {/* ① 上段: 取引先名 & 最重要【総積込数（案1: 物理箱数最優先型）】特大表示 */}
-        <div className="flex items-start justify-between gap-3">
-          {/* 取引先情報 */}
-          <div className="space-y-1.5 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <ColorDot color={customerColor} name={customerName} size="md" />
-              <h2
-                className={cn(
-                  'font-display text-lg sm:text-xl font-black truncate',
-                  isCompleted ? 'text-slate-600 line-through decoration-slate-400 decoration-2' : 'text-ink',
-                )}
-              >
-                {customerName}
-              </h2>
-
-              {/* 完了時の済印風スタンプ */}
-              {isCompleted && (
-                <span className="inline-flex items-center gap-1 rounded-md border-2 border-emerald-600 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800 shadow-2xs rotate-[-3deg] select-none">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>済</span>
-                </span>
-              )}
-            </div>
-
-            {/* 時間指定・所属便設定（タップで即座に変更可能） */}
-            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ink-soft">
-              <QuickDepartureTimeEditor
-                deliveryDate={deliveryDate}
-                customerId={customerId ?? ''}
-                destinationId={destinations[0]?.destinationId ?? null}
-                customerName={customerName}
-                destinationName={destinations[0]?.destinationName ?? null}
-                currentDepartureTime={earliestDepartureTime ?? (destinations[0]?.departureTime || null)}
-                currentShippingRouteName={destinations[0]?.shippingRouteName || (routeSummaries[0]?.title ?? null)}
-                variant="chip"
-              />
-
-              {destinations.length > 1 && (
-                <span className="text-[11px] text-ink-muted font-bold">
-                  (全{destinations.length}納品先)
-                </span>
-              )}
-
-              {/* パック作業の完了連動バッジ（未作成のまま誤って積込完了にする事故を防止） */}
-              {allDeliveryItems.length > 0 && (
-                unpackedItemCount > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-950 shadow-2xs">
-                    {isThaiMode ? (
-                      <>
-                        <span>⚠️ {THAI_LABELS.notCompletedWarn} ({unpackedItemCount})</span>
-                        <span className="text-[10px] text-amber-800 print:hidden">(未完了{unpackedItemCount}件)</span>
-                      </>
-                    ) : (
-                      <span>⚠️ パック未完了 {unpackedItemCount}件</span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800">
-                    {isThaiMode ? (
-                      <>
-                        <span>✓ {THAI_LABELS.allPackedDone}</span>
-                        <span className="text-[10px] text-emerald-700 print:hidden">(全パック済)</span>
-                      </>
-                    ) : (
-                      <span>✓ 全パック済</span>
-                    )}
-                  </span>
-                )
-              )}
-            </div>
-
-            {/* アコーディオンを閉じていても一目で分かる【コンテナ種別箱数 ＋ 品目内訳】サマリ帯 */}
-            {(containerSummary.length > 0 || productSummary.length > 0) && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                {containerSummary.map((cs) => {
-                  const style = getContainerColorStyle(cs.type)
-                  const thaiContainer = isThaiMode ? getThaiContainer(style.label) : null
-                  const emoji = getContainerColorEmoji(style.label)
-                  return (
-                    <span
-                      key={cs.type}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs sm:text-sm font-black shadow-2xs',
-                        style.badgeClass,
-                      )}
-                    >
-                      {thaiContainer ? (
-                        <>
-                          <span>{emoji} {thaiContainer}</span>
-                          <span className="text-[11px] font-bold opacity-85">({style.label})</span>
-                          <span className="num underline decoration-2 ml-0.5">{cs.boxes} {THAI_LABELS.casesUnit}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>{emoji} {style.label}</span>
-                          <span className="num underline decoration-2">{cs.boxes}箱</span>
-                        </>
-                      )}
-                    </span>
-                  )
-                })}
-                {productSummary.map((ps) => (
-                  <span
-                    key={ps.name}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-black text-ink"
-                  >
-                    <span>🥬 {ps.name}</span>
-                    <span className="num text-forest-800">{ps.qty}{ps.unit}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 最重要位置: 特大フォントの総積込数（案1: 物理箱数最優先型 28〜32px） */}
-          <div className="text-right shrink-0">
-            <div className="text-xs font-bold text-ink-muted">
-              {isThaiMode ? (
-                <>
-                  <span className="text-earth-800 font-black">{THAI_LABELS.totalLoadBoxes}</span>
-                  <span className="ml-1 text-[10px] print:hidden">(総積込数)</span>
-                </>
-              ) : (
-                '総積込数'
-              )}
-            </div>
-            <div
-              className={cn(
-                'num text-[28px] sm:text-[32px] font-black tabular-nums tracking-tight leading-none my-0.5',
-                isCompleted ? 'text-slate-500' : 'text-ink',
-              )}
-            >
-              {grandTotalContainers}{' '}
-              <span className="text-base sm:text-lg font-black text-ink-soft">
-                {isThaiMode ? (
-                  <>
-                    {THAI_LABELS.casesUnit}
-                    <span className="text-xs font-bold ml-0.5 print:hidden">(箱)</span>
-                  </>
-                ) : (
-                  '箱'
-                )}
+      {/* #21 積込済1行スリム表示（タップで展開、または「戻す」で1タップ解除） */}
+      {isCollapsedDone ? (
+        <div
+          onClick={() => setExpandedWhenDone(true)}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none print:hidden"
+          title="タップしてカードを展開"
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
+              <Check className="h-3.5 w-3.5" />
+              <span>積込済</span>
+            </span>
+            <ColorDot color={customerColor} name={customerName} size="sm" />
+            <span className="font-black text-ink text-sm sm:text-base truncate">
+              {customerName}
+            </span>
+            {destinations.length === 1 && destinations[0]?.destinationName && destinations[0].destinationName !== customerName && (
+              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
+                <span>▶</span>
+                <span className="truncate max-w-[120px]">{destinations[0].destinationName}</span>
               </span>
-            </div>
-            {subBreakdownText && (
-              <div className="text-sm sm:text-base font-extrabold text-ink-soft my-0.5">
-                {subBreakdownText}
-              </div>
             )}
-            <div className="text-[11px] sm:text-xs font-medium text-ink-muted">
-              (総 {totalQty.toLocaleString()}点)
-            </div>
+            {destinations.length > 1 && (
+              <span className="rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 text-[11px] font-bold shrink-0">
+                {destinations.length}納品先
+              </span>
+            )}
           </div>
-        </div>
 
-        {/* ② 中段: 事前アクション喚起型メモ（特記事項） */}
-        {hasNote && !editingNote && (
-          <div
-            onClick={() => setEditingNote(true)}
-            className="rounded-xl border-l-4 border-amber-500 bg-amber-50/90 p-2.5 text-xs sm:text-sm font-bold text-amber-950 flex items-center justify-between gap-2 cursor-pointer hover:bg-amber-100/90 transition-colors shadow-2xs"
-            title="タップして編集"
-          >
-            <span className="flex items-center gap-1.5 min-w-0">
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              <span className="truncate">⚠️ 注意: 「{noteDisplay}」</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="num text-sm sm:text-base font-black text-ink tabular-nums">
+              {grandTotalContainers}箱
+              <span className="text-xs font-bold text-ink-soft ml-1">
+                ({totalQty.toLocaleString()}P)
+              </span>
             </span>
-            <span className="text-xs text-amber-800 underline shrink-0 flex items-center gap-0.5">
-              <Edit3 className="h-3 w-3" />
-              編集
-            </span>
-          </div>
-        )}
-
-        {/* メモ編集フォーム */}
-        {editingNote && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-amber-950">⚠️ 特記事項・積み込み前メモ:</span>
-              <button
-                type="button"
-                onClick={() => setNoteInput('')}
-                className="text-xs text-ink-faint hover:text-ink font-bold"
-              >
-                クリア
-              </button>
-            </div>
-            <input
-              type="text"
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              placeholder="例: 空コンテナ20個持参 / 手前に積むこと / 伝票別添え 等"
-              className="w-full h-10 rounded-lg border border-amber-300 bg-white px-3 text-xs sm:text-sm font-bold text-ink focus:outline-none focus:ring-2 focus:ring-amber-400"
-              autoFocus
-            />
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setEditingNote(false)}
-                className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
-              >
-                キャンセル
-              </button>
-              <Button size="sm" onClick={saveNote} isLoading={savingNote}>
-                保存する
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ③ 下段: 内訳展開ボタン ＆ 【積込 OK】大ボタン */}
-        <div className="flex items-center justify-between gap-3 pt-1 border-t border-line/60">
-          {/* 左: 納品先内訳（アコーディオン）開閉トリガー */}
-          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setOpen(!open)}
-              className="inline-flex items-center gap-1 rounded-lg border border-line bg-bg-soft/70 px-2.5 py-1.5 text-xs font-bold text-ink-soft hover:text-ink hover:bg-bg-soft transition-colors active:scale-98"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation()
+                void toggleLoaded()
+              }}
+              className="h-8 rounded-lg border border-line-strong bg-white px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
+              title="未積込に戻す"
             >
-              <span>納品先内訳 ({destinations.length}件)</span>
-              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+              <span>戻す</span>
             </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setExpandedWhenDone(true)
+              }}
+              className="h-8 w-8 rounded-lg border border-line bg-white/80 flex items-center justify-center text-ink-soft hover:text-ink"
+              title="カードを展開"
+              aria-label="カードを展開"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="p-3.5 space-y-2.5">
+            {/* ① 上段: 取引先名 & 特大表示の総積込数（#20 冗長な「満杯◯ケース」と重複パック数を解消） */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <ColorDot color={customerColor} name={customerName} size="md" />
+                  <h2
+                    className={cn(
+                      'font-display text-lg sm:text-xl font-black truncate',
+                      isCompleted ? 'text-slate-600' : 'text-ink',
+                    )}
+                  >
+                    {customerName}
+                  </h2>
+                  {destinations.length === 1 && destinations[0]?.destinationName && destinations[0].destinationName !== customerName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm tracking-tight">
+                      <span className="text-emerald-700 text-xs">▶</span>
+                      {destinations[0].destinationName}
+                    </span>
+                  )}
+                  {isCompleted && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedWhenDone(false)}
+                      className="rounded-lg border border-line bg-white px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                    >
+                      1行に畳む ▲
+                    </button>
+                  )}
+                </div>
 
-            {!hasNote && !editingNote && (
+                {/* 時間指定・所属便設定 ＆ パック進捗連動バッジ */}
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ink-soft">
+                  <QuickDepartureTimeEditor
+                    deliveryDate={deliveryDate}
+                    customerId={customerId ?? ''}
+                    destinationId={destinations[0]?.destinationId ?? null}
+                    customerName={customerName}
+                    destinationName={destinations[0]?.destinationName ?? null}
+                    currentDepartureTime={earliestDepartureTime ?? (destinations[0]?.departureTime || null)}
+                    currentShippingRouteName={destinations[0]?.shippingRouteName || (routeSummaries[0]?.title ?? null)}
+                    variant="chip"
+                  />
+
+                  {allDeliveryItems.length > 0 && (
+                    unpackedItemCount > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-950 shadow-2xs">
+                        {isThaiMode ? (
+                          <span>⚠️ {THAI_LABELS.notCompletedWarn} ({unpackedItemCount})</span>
+                        ) : (
+                          <span>⚠️ パック未完了 {unpackedItemCount}件</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800">
+                        {isThaiMode ? (
+                          <span>✓ {THAI_LABELS.allPackedDone}</span>
+                        ) : (
+                          <span>✓ 全パック済</span>
+                        )}
+                      </span>
+                    )
+                  )}
+                </div>
+
+                {/* コンテナ種別箱数 ＋ 品目バッジ */}
+                {(containerSummary.length > 0 || productSummary.length > 0) && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    {containerSummary.map((cs) => {
+                      const style = getContainerColorStyle(cs.type)
+                      const thaiContainer = isThaiMode ? getThaiContainer(style.label) : null
+                      const emoji = getContainerColorEmoji(style.label)
+                      return (
+                        <span
+                          key={cs.type}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs sm:text-sm font-black shadow-2xs',
+                            style.badgeClass,
+                          )}
+                        >
+                          {thaiContainer ? (
+                            <>
+                              <span>{emoji} {thaiContainer}</span>
+                              <span className="num underline decoration-2 ml-0.5">{cs.boxes} {THAI_LABELS.casesUnit}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>{emoji} {style.label}</span>
+                              <span className="num underline decoration-2">{cs.boxes}箱</span>
+                            </>
+                          )}
+                        </span>
+                      )
+                    })}
+                    {productSummary.map((ps) => (
+                      <span
+                        key={ps.name}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-black text-ink"
+                      >
+                        <span>🥬 {ps.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* #20 右側: 特大フォントの総積込箱数 ＋ 総パック数（端数がある時だけ琥珀色バッジで強調） */}
+              <div className="text-right shrink-0">
+                <div className="text-[11px] font-bold text-ink-muted">
+                  {isThaiMode ? THAI_LABELS.totalLoadBoxes : '総積込箱数'}
+                </div>
+                <div
+                  className={cn(
+                    'num text-3xl sm:text-4xl font-black tabular-nums tracking-tight leading-none my-0.5',
+                    isCompleted ? 'text-slate-500' : 'text-ink',
+                  )}
+                >
+                  {grandTotalContainers}
+                  <span className="text-base sm:text-lg font-black text-ink-soft ml-1">
+                    {isThaiMode ? THAI_LABELS.casesUnit : '箱'}
+                  </span>
+                </div>
+                {totalFractionBoxes > 0 && (
+                  <div className="inline-block rounded-md bg-amber-200 border border-amber-400 px-2 py-0.5 text-xs font-black text-amber-950 my-0.5">
+                    ＋端数 {totalFractionBoxes}箱 ({totalFractionPacks}P)
+                  </div>
+                )}
+                <div className="text-xs font-bold text-ink-soft tabular-nums">
+                  総数 {totalQty.toLocaleString()} P
+                </div>
+              </div>
+            </div>
+
+            {/* ② 中段: 特記事項・メモ */}
+            {hasNote && !editingNote && (
+              <div
+                onClick={() => setEditingNote(true)}
+                className="rounded-xl border-l-4 border-amber-500 bg-amber-50/90 p-2.5 text-xs sm:text-sm font-bold text-amber-950 flex items-center justify-between gap-2 cursor-pointer hover:bg-amber-100/90 transition-colors shadow-2xs"
+                title="タップして編集"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span className="truncate">📝 {noteDisplay}</span>
+                </span>
+                <span className="text-xs text-amber-800 underline shrink-0 flex items-center gap-0.5">
+                  <Edit3 className="h-3 w-3" />
+                  編集
+                </span>
+              </div>
+            )}
+
+            {editingNote && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-950">📝 特記事項・積み込み前メモ:</span>
+                  <button
+                    type="button"
+                    onClick={() => setNoteInput('')}
+                    className="text-xs text-ink-faint hover:text-ink font-bold"
+                  >
+                    クリア
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={noteInput}
+                  onChange={(e) => setNoteInput(e.target.value)}
+                  placeholder="例: 空コンテナ20個持参 / 手前に積むこと / 伝票別添え 等"
+                  className="w-full h-10 rounded-lg border border-amber-300 bg-white px-3 text-xs sm:text-sm font-bold text-ink focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  autoFocus
+                />
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditingNote(false)}
+                    className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                  >
+                    キャンセル
+                  </button>
+                  <Button size="sm" onClick={saveNote} isLoading={savingNote}>
+                    保存する
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ③ 下段: 内訳開閉ボタン ＆ 【積込 OK】大ボタン */}
+            <div className="flex items-center justify-between gap-3 pt-1 border-t border-line/60">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpen(!open)}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors active:scale-98',
+                    open
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                      : 'border-line bg-bg-soft/70 text-ink-soft hover:text-ink hover:bg-bg-soft',
+                  )}
+                >
+                  <span>{open ? `内訳を閉じる (${destinations.length}件)` : `納品先・品目内訳 (${destinations.length}件)`}</span>
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+                </button>
+
+                {!hasNote && !editingNote && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingNote(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-line px-2 py-1 text-xs font-bold text-ink-muted hover:text-ink hover:border-line-strong transition-colors"
+                    title="特記事項を追加"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>メモ</span>
+                  </button>
+                )}
+              </div>
+
               <button
                 type="button"
-                onClick={() => setEditingNote(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-line px-2 py-1 text-xs font-bold text-ink-muted hover:text-ink hover:border-line-strong transition-colors"
-                title="特記事項を追加"
+                disabled={busy}
+                onClick={() => {
+                  if (!isCompleted && unpackedItemCount > 0) {
+                    setUnpackedConfirmOpen(true)
+                    return
+                  }
+                  toggleLoaded()
+                }}
+                className={cn(
+                  'h-12 px-5 sm:px-7 rounded-xl font-black text-sm sm:text-base transition-all active:scale-97 shadow-sm flex items-center justify-center gap-2 shrink-0',
+                  isCompleted
+                    ? 'border-2 border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                    : unpackedItemCount > 0
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500 ring-offset-1 shadow-amber-600/20'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-600 ring-offset-1 shadow-emerald-600/20',
+                )}
               >
-                <Plus className="h-3 w-3" />
-                <span>メモ</span>
-              </button>
-            )}
-          </div>
-
-          {/* 右: 指で押しやすい特大「積込 OK」ボタン */}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              if (!isCompleted && unpackedItemCount > 0) {
-                setUnpackedConfirmOpen(true)
-                return
-              }
-              toggleLoaded()
-            }}
-            className={cn(
-              'h-12 px-5 sm:px-7 rounded-xl font-black text-sm sm:text-base transition-all active:scale-97 shadow-sm flex items-center justify-center gap-2 shrink-0',
-              isCompleted
-                ? 'border-2 border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                : unpackedItemCount > 0
-                ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500 ring-offset-1 shadow-amber-600/20'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-600 ring-offset-1 shadow-emerald-600/20',
-            )}
-          >
-            {busy ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : isCompleted ? (
-              <div className="flex flex-col items-center leading-tight">
-                {isThaiMode ? (
-                  <>
-                    <div className="flex items-center gap-1.5 text-sm sm:text-base font-black">
-                      <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
-                      <span>{THAI_LABELS.loadRevert}</span>
-                    </div>
-                    <span className="text-[11px] font-bold text-slate-500">(✓ 積込済・戻す)</span>
-                  </>
-                ) : (
+                {busy ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : isCompleted ? (
                   <div className="flex items-center gap-1.5">
                     <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
                     <span>✓ 積込済 (戻す)</span>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center leading-tight">
-                {isThaiMode ? (
-                  <>
-                    <div className="flex items-center gap-1.5 text-sm sm:text-base font-black">
-                      <Truck className="h-5 w-5" />
-                      <span>{unpackedItemCount > 0 ? `⚠️ ${THAI_LABELS.loadDone}` : `🚚 ${THAI_LABELS.loadDone}`}</span>
-                    </div>
-                    <span className="text-[11px] font-bold text-white/90">(積込 OK)</span>
-                  </>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <Truck className="h-5 w-5" />
                     <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
                   </div>
                 )}
-              </div>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* ④ アコーディオン展開時（納品先・便ごとの個別内訳：2段構造＆コンテナカラー化、印刷時は常時展開） */}
-      <div
-        className={cn(
-          'bg-bg-soft/50 border-t border-line/60 p-3 space-y-3 animate-fadeIn',
-          open ? 'block' : 'hidden print:block',
-        )}
-      >
-          <div className="text-xs font-bold text-ink-muted uppercase tracking-wider">
-            ▼ 納品先・便別 内訳一覧（全 {destinations.length} 件）
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-2.5">
-            {destinations.map((dest, idx) => {
-              const isDestLoaded = dest.status === 'loaded' || dest.status === 'delivered'
-              const colorStyle = getContainerColorStyle(dest.containerType)
+          {/* ④ 納品先・便別 内訳一覧（#19 複数納入先の場合はデフォルト展開、印刷時は常時展開） */}
+          <div
+            className={cn(
+              'bg-bg-soft/50 border-t border-line/60 p-3 space-y-2.5 animate-fadeIn',
+              open ? 'block' : 'hidden print:block',
+            )}
+          >
+            <div className="space-y-2">
+              {destinations.map((dest, idx) => {
+                const isDestLoaded = dest.status === 'loaded' || dest.status === 'delivered'
+                const colorStyle = getContainerColorStyle(dest.containerType)
 
-              // 納品先ごとの数量テキスト
-              const destQtyText = (() => {
-                if (dest.cases > 0 && dest.fractionBoxes > 0) {
-                  return `${dest.cases}ケース ＋ 端数 ${dest.fractionBoxes}箱 (${dest.loose}P)`
-                }
-                if (dest.cases > 0) {
-                  return `${dest.cases}ケース`
-                }
-                if (dest.fractionBoxes > 0) {
-                  return `端数 ${dest.fractionBoxes}箱 (${dest.loose}P)`
-                }
-                return `${dest.totalQty}点`
-              })()
-
-              return (
-                <div
-                  key={dest.destinationId ?? idx}
-                  className={cn(
-                    'rounded-xl border p-3.5 space-y-2.5 transition-all border-l-4 shadow-xs',
-                    colorStyle.leftBorder,
-                    isDestLoaded ? 'border-emerald-200 bg-emerald-50/40 opacity-70' : 'border-line bg-white',
-                  )}
-                >
-                  {/* 上段（納品先名 ＋ 時間指定変更チップ）: 16〜17px 太字 */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 pb-2">
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      <span className="text-[16px] sm:text-[17px] font-black text-ink">
+                return (
+                  <div
+                    key={dest.destinationId ?? idx}
+                    className={cn(
+                      'rounded-xl border p-3 space-y-2 transition-all border-l-4 shadow-xs',
+                      colorStyle.leftBorder,
+                      isDestLoaded ? 'border-emerald-200 bg-emerald-50/40 opacity-75' : 'border-line bg-white',
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 pb-1.5">
+                      <span className="text-base font-black text-ink">
                         📍 {dest.destinationName}
                       </span>
+
+                      <QuickDepartureTimeEditor
+                        deliveryDate={deliveryDate}
+                        customerId={customerId ?? ''}
+                        destinationId={dest.destinationId}
+                        customerName={customerName}
+                        destinationName={dest.destinationName}
+                        currentDepartureTime={dest.departureTime ?? null}
+                        currentShippingRouteName={dest.shippingRouteName ?? null}
+                        variant="chip"
+                      />
                     </div>
 
-                    <QuickDepartureTimeEditor
-                      deliveryDate={deliveryDate}
-                      customerId={customerId ?? ''}
-                      destinationId={dest.destinationId}
-                      customerName={customerName}
-                      destinationName={dest.destinationName}
-                      currentDepartureTime={dest.departureTime ?? null}
-                      currentShippingRouteName={dest.shippingRouteName ?? null}
-                      variant="chip"
-                    />
-                  </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs sm:text-sm font-black shadow-2xs',
+                            colorStyle.badgeClass,
+                          )}
+                        >
+                          {isThaiMode && getThaiContainer(colorStyle.label) ? (
+                            <span>
+                              {getContainerColorEmoji(colorStyle.label)} {getThaiContainer(colorStyle.label)}
+                            </span>
+                          ) : (
+                            <span>
+                              {getContainerColorEmoji(colorStyle.label)} {colorStyle.label}
+                            </span>
+                          )}
+                        </span>
 
-                  {/* 下段（コンテナ色バッジ ＋ 必要数量・荷姿 ＆ 個別積込ボタン） */}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      {/* コンテナ種別のカラーバッジ（14px太字＋太め枠線） */}
-                      <span
+                        <span className="num text-base sm:text-lg font-black text-ink tabular-nums">
+                          {dest.totalBoxes} 箱
+                          {dest.fractionBoxes > 0 && (
+                            <span className="ml-1.5 rounded bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-xs font-black text-amber-950">
+                              うち端数 {dest.fractionBoxes}箱 ({dest.loose}P)
+                            </span>
+                          )}
+                          <span className="ml-1.5 text-xs font-bold text-ink-soft">
+                            ({dest.totalQty.toLocaleString()} P)
+                          </span>
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          const destUnpacked = dest.items.filter(
+                            (it) =>
+                              (Number(it.quantity) || 0) > 0 &&
+                              it.fieldStatus !== 'packed' &&
+                              it.fieldStatus !== 'shipped',
+                          ).length
+                          if (!isDestLoaded && destUnpacked > 0) {
+                            setPendingDestConfirm({
+                              destId: dest.destinationId,
+                              currentStatus: dest.status,
+                              destName: dest.destinationName,
+                              unpackedCount: destUnpacked,
+                            })
+                            return
+                          }
+                          toggleDestination(dest.destinationId, dest.status)
+                        }}
                         className={cn(
-                          'inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-black shadow-2xs',
-                          colorStyle.badgeClass,
+                          'h-9 px-3.5 rounded-xl text-xs sm:text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1 print:hidden',
+                          isDestLoaded
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                            : 'border-2 border-emerald-600 bg-white text-emerald-700 hover:bg-emerald-50',
                         )}
                       >
-                        {isThaiMode && getThaiContainer(colorStyle.label) ? (
-                          <span>
-                            {getContainerColorEmoji(colorStyle.label)} {getThaiContainer(colorStyle.label)}
-                            <span className="font-bold text-xs ml-1 opacity-85">({colorStyle.label})</span>
-                          </span>
+                        {isDestLoaded ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
+                            <span>積込済 (戻す)</span>
+                          </>
                         ) : (
-                          <span>
-                            {getContainerColorEmoji(colorStyle.label)} {colorStyle.label}
-                          </span>
+                          <span>個別積込 OK</span>
                         )}
-                      </span>
-
-                      {/* 数量・荷姿（16px 太字） */}
-                      <span className="num text-[16px] sm:text-[17px] font-black text-ink tabular-nums">
-                        {destQtyText}
-                        <span className="ml-1.5 text-xs font-semibold text-ink-muted">
-                          (計 {dest.totalBoxes}箱 ／ {dest.totalQty}点)
-                        </span>
-                      </span>
+                      </button>
                     </div>
 
-                    {/* 個別積込ボタン（未パック品目がある場合は確認モーダルを挟む） */}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        const destUnpacked = dest.items.filter(
-                          (it) =>
-                            (Number(it.quantity) || 0) > 0 &&
-                            it.fieldStatus !== 'packed' &&
-                            it.fieldStatus !== 'shipped',
-                        ).length
-                        if (!isDestLoaded && destUnpacked > 0) {
-                          setPendingDestConfirm({
-                            destId: dest.destinationId,
-                            currentStatus: dest.status,
-                            destName: dest.destinationName,
-                            unpackedCount: destUnpacked,
-                          })
-                          return
-                        }
-                        toggleDestination(dest.destinationId, dest.status)
-                      }}
-                      className={cn(
-                        'h-10 px-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1.5 print:hidden',
-                        isDestLoaded
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
-                          : 'border-2 border-emerald-600 bg-white text-emerald-700 hover:bg-emerald-50',
-                      )}
-                    >
-                      {isDestLoaded ? (
-                        <div className="flex flex-col items-center leading-tight">
-                          {isThaiMode ? (
-                            <>
-                              <div className="flex items-center gap-1 text-xs sm:text-sm font-black">
-                                <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
-                                <span>{THAI_LABELS.undo}</span>
-                              </div>
-                              <span className="text-[10px] text-emerald-700">(積込済)</span>
-                            </>
-                          ) : (
-                            <div className="flex items-center gap-1">
-                              <Check className="h-4 w-4 text-emerald-600 stroke-[3]" />
-                              <span>積込済</span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center leading-tight">
-                          {isThaiMode ? (
-                            <>
-                              <span className="text-xs sm:text-sm font-black">{THAI_LABELS.loadIndividual}</span>
-                              <span className="text-[10px] text-emerald-700">(個別積込)</span>
-                            </>
-                          ) : (
-                            <span>個別積込</span>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* 明細品目リスト（数量0の品目は非表示） */}
-                  {dest.items.filter((it) => (Number(it.quantity) || 0) > 0).length > 0 && (
-                    <div className="space-y-1 border-t border-line/40 pt-2 text-xs">
-                      {dest.items
-                        .filter((it) => (Number(it.quantity) || 0) > 0)
-                        .map((it) => (
-                          <div
-                            key={it.id}
-                            className="flex items-center justify-between text-ink-soft py-0.5"
-                          >
-                            <span className="font-bold text-ink truncate pr-2">
-                              {it.productName}
-                            </span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {it.noteText !== '—' && (
-                                <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
-                                  {it.noteText}
-                                </span>
-                              )}
-                              <span className="num font-black text-ink tabular-nums">
-                                {it.quantityText}
+                    {dest.items.filter((it) => (Number(it.quantity) || 0) > 0).length > 0 && (
+                      <div className="space-y-1 border-t border-line/40 pt-1.5 text-xs">
+                        {dest.items
+                          .filter((it) => (Number(it.quantity) || 0) > 0)
+                          .map((it) => (
+                            <div
+                              key={it.id}
+                              className="flex items-center justify-between text-ink-soft py-0.5"
+                            >
+                              <span className="font-bold text-ink truncate pr-2">
+                                {it.productName}
                               </span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {it.noteText !== '—' && (
+                                  <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
+                                    {it.noteText}
+                                  </span>
+                                )}
+                                <span className="num font-black text-ink tabular-nums">
+                                  {it.quantityText}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        </>
+      )}
 
       <ConfirmModal
         open={unpackedConfirmOpen}
@@ -780,13 +741,9 @@ export function CustomerDeliveryCard({
           setUnpackedConfirmOpen(false)
           await toggleLoaded()
         }}
-        title={isThaiMode ? `⚠️ パック未完了の品目があります (${THAI_LABELS.notCompletedWarn})` : "⚠️ パック未完了の品目があります。積込OKにしますか？"}
-        message={
-          isThaiMode
-            ? `「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。\n\n【タイ語注意】${THAI_LABELS.notCompletedWarn}: ยังมีรายการที่แพ็คไม่เสร็จ ${unpackedItemCount} รายการ กรุณาตรวจสอบของจริงก่อนกดยืนยัน`
-            : `「${customerName}」には収穫・袋詰めボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。`
-        }
-        confirmLabel={isThaiMode ? `実物確認済・積込OKにする (${THAI_LABELS.confirmLoadCheckDone})` : "実物確認済・積込OKにする"}
+        title="⚠️ パック未完了の品目があります。積込OKにしますか？"
+        message={`「${customerName}」には収穫・パックボード上でまだ「パック済」になっていない明細が ${unpackedItemCount} 件あります。実物がすべて揃って積み込み完了しているか確認してください。`}
+        confirmLabel="実物確認済・積込OKにする"
         isLoading={busy}
       />
 
@@ -800,15 +757,13 @@ export function CustomerDeliveryCard({
             await toggleDestination(target.destId, target.currentStatus)
           }
         }}
-        title={isThaiMode ? `⚠️ この納品先にパック未完了の品目があります (${THAI_LABELS.notCompletedWarn})` : "⚠️ この納品先にパック未完了の品目があります"}
+        title="⚠️ この納品先にパック未完了の品目があります"
         message={
           pendingDestConfirm
-            ? isThaiMode
-              ? `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。\n\n【タイ語注意】${THAI_LABELS.notCompletedWarn}: ในจุดส่งนี้ยังมี ${pendingDestConfirm.unpackedCount} รายการที่ยังไม่เสร็จ กรุณาตรวจสอบของจริง`
-              : `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。`
+            ? `「${customerName}（${pendingDestConfirm.destName}）」には、まだ「パック済」になっていない明細が ${pendingDestConfirm.unpackedCount} 件あります。実物が揃って積み込み完了しているか確認してください。`
             : ''
         }
-        confirmLabel={isThaiMode ? `実物確認済・個別積込OKにする (${THAI_LABELS.confirmLoadCheckDone})` : "実物確認済・個別積込OKにする"}
+        confirmLabel="実物確認済・個別積込OKにする"
         isLoading={busy}
       />
     </div>

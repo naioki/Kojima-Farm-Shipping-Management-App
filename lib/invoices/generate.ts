@@ -4,15 +4,6 @@ import { sumInvoiceTotals, formatInvoiceNumber, type TaxRate } from '@/lib/calcu
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr } from '@/lib/dates'
 
-/**
- * 1取引先・指定期間の請求書を生成する共通ロジック（tax.md 厳守）。
- * 単発（/api/invoices/generate）と一括（/api/invoices/generate-bulk）で共有する。
- *   - 期間内の approved/shipped の order_items を税率別に集計
- *   - 欠番なし採番（終了日の月で番号払い出し）
- *   - invoices / invoice_items を作成し audit_log に記録
- *   - 税率は order_items.tax_rate（冗長保持値）。products.default_tax_rate では計算しない。
- */
-
 export interface GenerateOk {
   ok: true
   invoice_id: string
@@ -24,35 +15,78 @@ export type GenerateOutcome =
   | { ok: false; reason: 'no_items' }
   | { ok: false; reason: 'error'; message: string }
 
+/**
+ * 1取引先・指定期間の請求書を生成する共通ロジック（#42 unpriced 注文でも0件エラーにならない自動単価補完＆確定対応）。
+ */
 export async function generateInvoiceForCustomer(
-  // 呼び出し側で型付き Supabase クライアントを渡す（RLS or service_role）
   supabase: SupabaseClient,
   params: { customerId: string; periodStart: string; periodEnd: string; userId: string | null },
 ): Promise<GenerateOutcome> {
   const { customerId, periodStart, periodEnd, userId } = params
   const billingMonth = periodEnd.slice(0, 7)
 
-  // 後決め対応：confirmed（価格確定済み）の明細だけを請求対象にする。
-  // 請求数量は billable_qty（赤点で減らした実数）→ 無ければ shipped_qty → quantity の順。
-  const { data: rows, error } = await supabase
+  // #42 現場・管理画面から追加された注文（price_status = 'unpriced'）も含め、期間内の確定注文（approved / shipped）を取得
+  const { data: rawRows, error } = await supabase
     .from('order_items')
-    .select('id, product_name, quantity, shipped_qty, billable_qty, unit, unit_price, tax_rate, price_status, orders!inner(customer_id, status, delivery_date)')
+    .select(
+      'id, order_id, product_id, product_name, quantity, shipped_qty, billable_qty, unit, unit_price, tax_rate, price_status, orders!inner(customer_id, status, delivery_date)',
+    )
     .eq('orders.customer_id', customerId)
-    .eq('price_status', 'confirmed')
     .in('orders.status', ['approved', 'shipped'])
     .gte('orders.delivery_date', periodStart)
     .lte('orders.delivery_date', periodEnd)
   if (error) return { ok: false, reason: 'error', message: error.message }
-  if (!rows?.length) return { ok: false, reason: 'no_items' }
 
-  // 請求数量の確定（billable_qty → shipped_qty → quantity）
   const billableQty = (r: { quantity: number; shipped_qty: number | null; billable_qty: number | null }): number =>
-    r.billable_qty ?? r.shipped_qty ?? r.quantity
+    Number(r.billable_qty ?? r.shipped_qty ?? r.quantity) || 0
+
+  const rows = (rawRows ?? []).filter((r) => billableQty(r) > 0)
+  if (!rows.length) return { ok: false, reason: 'no_items' }
+
+  // 単価が 0 または未設定の明細がある場合は price_rules または products.default_unit_price から自動補完
+  const productIds = [...new Set(rows.map((r) => r.product_id).filter(Boolean))] as string[]
+  const [priceRulesRes, productsRes] = await Promise.all([
+    productIds.length
+      ? supabase
+          .from('price_rules')
+          .select('product_id, customer_id, unit_price, effective_from, effective_to')
+          .in('product_id', productIds)
+          .or(`customer_id.eq.${customerId},customer_id.is.null`)
+          .order('effective_from', { ascending: false })
+      : Promise.resolve({ data: [] as { product_id: string; customer_id: string | null; unit_price: number }[] }),
+    productIds.length
+      ? supabase.from('products').select('id, default_unit_price').in('id', productIds)
+      : Promise.resolve({ data: [] as { id: string; default_unit_price: number | null }[] }),
+  ])
+
+  const defaultPriceByProd = new Map((productsRes.data ?? []).map((p) => [p.id, Number(p.default_unit_price ?? 0)]))
+  const rulePriceByProd = new Map<string, number>()
+  for (const pr of priceRulesRes.data ?? []) {
+    if (pr.customer_id === customerId && !rulePriceByProd.has(pr.product_id)) {
+      rulePriceByProd.set(pr.product_id, Number(pr.unit_price))
+    }
+  }
+  for (const pr of priceRulesRes.data ?? []) {
+    if (pr.customer_id === null && !rulePriceByProd.has(pr.product_id)) {
+      rulePriceByProd.set(pr.product_id, Number(pr.unit_price))
+    }
+  }
+
+  const resolvedRows = rows.map((r) => {
+    let up = Number(r.unit_price ?? 0)
+    if (up <= 0 && r.product_id) {
+      up = rulePriceByProd.get(r.product_id) ?? defaultPriceByProd.get(r.product_id) ?? 0
+    }
+    return {
+      ...r,
+      resolvedUnitPrice: up,
+    }
+  })
 
   const totals = sumInvoiceTotals(
-    rows.map((r: { quantity: number; shipped_qty: number | null; billable_qty: number | null; unit_price: number; tax_rate: number }) => ({
+    resolvedRows.map((r) => ({
       quantity: billableQty(r),
-      unitPrice: r.unit_price,
+      unitPrice: r.resolvedUnitPrice,
       taxRate: r.tax_rate as TaxRate,
     })),
   )
@@ -68,7 +102,6 @@ export async function generateInvoiceForCustomer(
     .select('invoice_reg_num')
     .eq('id', customerId)
     .maybeSingle()
-  // 登録番号は帳票の補助情報。取得失敗しても請求書生成は続行（番号は空扱い）。無言にはしない。
   if (customerErr) console.error('[invoices/generate] 取引先の登録番号取得に失敗:', customerErr.message)
 
   const { data: invoice, error: invErr } = await supabase
@@ -93,19 +126,26 @@ export async function generateInvoiceForCustomer(
     .single()
   if (invErr) return { ok: false, reason: 'error', message: invErr.message }
 
-  const invoiceItems = rows.map(
-    (r: { id: string; product_name: string; quantity: number; shipped_qty: number | null; billable_qty: number | null; unit: string; unit_price: number; tax_rate: number }) => ({
-      invoice_id: invoice.id,
-      order_item_id: r.id,
-      product_name: r.product_name,
-      quantity: billableQty(r), // 請求数量＝実出荷/赤点反映後
-      unit: r.unit,
-      unit_price: r.unit_price,
-      tax_rate: r.tax_rate,
-    }),
-  )
+  const invoiceItems = resolvedRows.map((r) => ({
+    invoice_id: invoice.id,
+    order_item_id: r.id,
+    product_name: r.product_name,
+    quantity: billableQty(r),
+    unit: r.unit,
+    unit_price: r.resolvedUnitPrice,
+    tax_rate: r.tax_rate,
+  }))
   const { error: iiErr } = await supabase.from('invoice_items').insert(invoiceItems)
   if (iiErr) return { ok: false, reason: 'error', message: iiErr.message }
+
+  // 請求書に取り込んだ明細の price_status を confirmed に同期
+  try {
+    const itemIds = resolvedRows.map((r) => r.id)
+    await supabase
+      .from('order_items')
+      .update({ price_status: 'confirmed' })
+      .in('id', itemIds)
+  } catch {}
 
   await writeAudit(supabase, {
     entityType: 'invoices',

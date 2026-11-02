@@ -12,14 +12,14 @@ export interface RuleRow {
   container_type: string | null
   spec: string | null
   has_card: boolean
+  has_seal?: boolean | null
+  seal_text?: string | null
+  bag_type?: string | null
   is_default_set: boolean
   default_quantity: number | null
   fraction_policy: FractionPolicy
-  /** ラベル/シール指定（例: "Oisixラベル"/"農園独自"）。DBにはあったがこれまで未編集だった項目。 */
   label_spec: string | null
-  /** テープ色（例: "透明"/"黄"/"赤"） */
   tape_color: string | null
-  /** 固定の梱包指示（毎回同じ注意事項。その場限りの追記事項＝order_items.line_noteとは別） */
   packing_notes: string | null
 }
 
@@ -27,7 +27,6 @@ export interface CustomerRulesEditorProps {
   customerId: string
   products: { id: string; name: string; unit: string }[]
   initialRules: Record<string, RuleRow>
-  /** false なら閲覧のみ（規格ロック中・非マスター）。既定 true。 */
   canEdit?: boolean
 }
 
@@ -43,6 +42,9 @@ const EMPTY: RuleRow = {
   container_type: null,
   spec: null,
   has_card: false,
+  has_seal: null,
+  seal_text: null,
+  bag_type: null,
   is_default_set: false,
   default_quantity: null,
   fraction_policy: 'confirm',
@@ -59,14 +61,12 @@ const numOrNull = (s: string): number | null => {
 }
 
 /**
- * 取引先×商品の取引ルール編集（Laravel版 画面5）。
- * 品目ごとに P/C（スマートパースの基準）・コンテナ・いつものセット・既定数量・端数ポリシーを
- * 編集して行単位で保存（upsert）。P/C はケース記法 "15c2" 換算の要となる数値。
+ * 取引先×商品の取引ルール編集（#47 シール有無・シール表記・袋種別の設定に対応）。
  */
 export function CustomerRulesEditor({ customerId, products, initialRules, canEdit = true }: CustomerRulesEditorProps) {
   const [rows, setRows] = useState<Record<string, RuleRow>>(() => {
     const r: Record<string, RuleRow> = {}
-    for (const p of products) r[p.id] = initialRules[p.id] ?? { ...EMPTY }
+    for (const p of products) r[p.id] = initialRules[p.id] ? { ...EMPTY, ...initialRules[p.id] } : { ...EMPTY }
     return r
   })
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -91,6 +91,9 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
           container_type: row.container_type || null,
           spec: row.spec || null,
           has_card: row.has_card,
+          has_seal: row.has_seal ?? null,
+          seal_text: row.seal_text || null,
+          bag_type: row.bag_type || null,
           is_default_set: row.is_default_set,
           default_quantity: row.default_quantity,
           fraction_policy: row.fraction_policy,
@@ -104,7 +107,7 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
         throw new Error(j.error ?? `保存に失敗 (${res.status})`)
       }
       setSavedId(productId)
-      toast.success('保存しました')
+      toast.success('取引ルールを保存しました')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
@@ -119,17 +122,18 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
     <fieldset disabled={!canEdit} className="overflow-x-auto disabled:opacity-60">
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="text-left text-ink-soft">
+          <tr className="text-left text-xs text-ink-soft">
             <th className="px-2 py-2 font-medium">品目</th>
-            <th className="px-2 py-2 font-medium">P/C（1ケース入数）</th>
-            <th className="px-2 py-2 font-medium">荷姿</th>
+            <th className="px-2 py-2 font-medium">P/C（入数）</th>
+            <th className="px-2 py-2 font-medium">コンテナ・荷姿</th>
             <th className="px-2 py-2 font-medium">規格</th>
+            <th className="px-2 py-2 font-medium">シール有無・表記</th>
+            <th className="px-2 py-2 font-medium">袋種別</th>
             <th className="px-2 py-2 font-medium">カード</th>
-            <th className="px-2 py-2 font-medium">ラベル/シール</th>
             <th className="px-2 py-2 font-medium">テープ色</th>
             <th className="px-2 py-2 font-medium">固定の梱包指示</th>
-            <th className="px-2 py-2 font-medium">いつものセット</th>
-            <th className="px-2 py-2 font-medium">既定数量</th>
+            <th className="px-2 py-2 font-medium">定番</th>
+            <th className="px-2 py-2 font-medium">既定数</th>
             <th className="px-2 py-2 font-medium">端数</th>
             <th className="px-2 py-2 font-medium"></th>
           </tr>
@@ -139,9 +143,9 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
             const row = rows[p.id]!
             return (
               <tr key={p.id} className="border-t border-line align-middle">
-                <td className="px-2 py-2 font-medium text-ink">
+                <td className="px-2 py-2 font-bold text-ink whitespace-nowrap">
                   {p.name}
-                  <span className="ml-1 text-xs text-ink-faint">/{p.unit}</span>
+                  <span className="ml-1 text-xs font-normal text-ink-faint">/{p.unit}</span>
                 </td>
                 <td className="px-2 py-2">
                   <input
@@ -150,8 +154,8 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                     inputMode="numeric"
                     value={row.packs_per_case ?? ''}
                     onChange={(e) => patch(p.id, { packs_per_case: numOrNull(e.target.value) })}
-                    className={cn(cellInput, 'num w-24 tabular-nums')}
-                    placeholder="未設定"
+                    className={cn(cellInput, 'num w-20 tabular-nums font-bold')}
+                    placeholder="20"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -160,17 +164,57 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                     value={row.container_type ?? ''}
                     onChange={(e) => patch(p.id, { container_type: e.target.value })}
                     className={cn(cellInput, 'w-28')}
-                    placeholder="ケース/箱/化粧箱"
+                    placeholder="青コン/茶コン"
                   />
                 </td>
                 <td className="px-2 py-2">
                   <input
                     type="text"
-                    value={row.spec ?? ''}
-                    onChange={(e) => patch(p.id, { spec: e.target.value })}
-                    className={cn(cellInput, 'w-24')}
-                    placeholder="L/200g 等"
+                    value={row.spec ?? row.label_spec ?? ''}
+                    onChange={(e) => patch(p.id, { spec: e.target.value, label_spec: e.target.value })}
+                    className={cn(cellInput, 'w-28')}
+                    placeholder="200gUP / 2〜3株"
                   />
+                </td>
+                {/* #47 シール有無・シール表記 */}
+                <td className="px-2 py-2">
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={row.has_seal === true ? 'true' : row.has_seal === false ? 'false' : ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const nextHasSeal = v === 'true' ? true : v === 'false' ? false : null
+                        patch(p.id, {
+                          has_seal: nextHasSeal,
+                          seal_text: nextHasSeal === true ? (row.seal_text || 'シールあり') : nextHasSeal === false ? 'シールなし' : null,
+                        })
+                      }}
+                      className={cn(cellInput, 'w-24 text-xs font-bold px-1.5')}
+                    >
+                      <option value="">自動判定</option>
+                      <option value="true">🏷️ あり</option>
+                      <option value="false">なし</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={row.seal_text ?? ''}
+                      onChange={(e) => patch(p.id, { seal_text: e.target.value })}
+                      className={cn(cellInput, 'w-24 text-xs')}
+                      placeholder="シール表記"
+                    />
+                  </div>
+                </td>
+                {/* #47 袋種別 */}
+                <td className="px-2 py-2">
+                  <select
+                    value={row.bag_type ?? ''}
+                    onChange={(e) => patch(p.id, { bag_type: e.target.value || null })}
+                    className={cn(cellInput, 'w-28 text-xs font-bold')}
+                  >
+                    <option value="">指定なし</option>
+                    <option value="印字袋(FG)">印字袋(FG)</option>
+                    <option value="無地袋">無地袋</option>
+                  </select>
                 </td>
                 <td className="px-2 py-2 text-center">
                   <input
@@ -184,19 +228,10 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                 <td className="px-2 py-2">
                   <input
                     type="text"
-                    value={row.label_spec ?? ''}
-                    onChange={(e) => patch(p.id, { label_spec: e.target.value })}
-                    className={cn(cellInput, 'w-32')}
-                    placeholder="Oisixラベル 等"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="text"
                     value={row.tape_color ?? ''}
                     onChange={(e) => patch(p.id, { tape_color: e.target.value })}
                     className={cn(cellInput, 'w-20')}
-                    placeholder="透明/黄/赤"
+                    placeholder="紫/透明"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -204,7 +239,7 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                     type="text"
                     value={row.packing_notes ?? ''}
                     onChange={(e) => patch(p.id, { packing_notes: e.target.value })}
-                    className={cn(cellInput, 'w-40')}
+                    className={cn(cellInput, 'w-36')}
                     placeholder="毎回同じ注意事項"
                   />
                 </td>
@@ -224,7 +259,7 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                     inputMode="numeric"
                     value={row.default_quantity ?? ''}
                     onChange={(e) => patch(p.id, { default_quantity: numOrNull(e.target.value) })}
-                    className={cn(cellInput, 'num w-24 tabular-nums')}
+                    className={cn(cellInput, 'num w-20 tabular-nums')}
                     placeholder="—"
                   />
                 </td>
@@ -232,7 +267,7 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                   <select
                     value={row.fraction_policy}
                     onChange={(e) => patch(p.id, { fraction_policy: e.target.value as FractionPolicy })}
-                    className={cn(cellInput, 'w-24')}
+                    className={cn(cellInput, 'w-20 text-xs')}
                   >
                     {FRACTION_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>

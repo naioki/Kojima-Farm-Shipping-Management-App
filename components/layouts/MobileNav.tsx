@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { Menu, X, LogOut, ChevronDown, Leaf, UserRound, MessageSquarePlus } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { navFor } from '@/components/layouts/nav-items'
+import { navFor, buildPreservedFieldHref } from '@/components/layouts/nav-items'
 import { useNavState } from '@/components/layouts/use-nav'
 import type { SidebarUser } from '@/components/layouts/Sidebar'
 
@@ -14,9 +14,7 @@ const FOCUSABLE_SELECTOR =
 
 /**
  * モバイル用ナビ（lg 未満）。上部バー＋ハンバーガー → スライドドロワー。
- * タップ対象は大きめ（h-14・text-base）にして手袋・屋外でも押しやすくする（design.md）。
- * 画面遷移・背景タップ・×・Esc で閉じる。印刷時は非表示。
- * ドロワーは role="dialog" + フォーカストラップ（開時に閉じるボタンへ、Tab循環、閉時にハンバーガーへ復帰）。
+ * 現場画面間の遷移では URL の ?date= / ?week= と ?product= を自動的に維持する（#01）。
  */
 export function MobileNav({
   role,
@@ -28,21 +26,22 @@ export function MobileNav({
   user?: SidebarUser
 }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const currentDate = searchParams?.get('date') || searchParams?.get('week') || null
+  const currentProduct = searchParams?.get('product') || null
+
   const [open, setOpen] = useState(false)
   const nav = navFor(role)
   const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
-  // 初回マウント時（open=false）にハンバーガーへフォーカスを奪わないためのフラグ
   const wasOpenRef = useRef(false)
 
-  // ルート変更で自動的に閉じる
   useEffect(() => {
     setOpen(false)
   }, [pathname])
 
-  // 開いている間は背面スクロールを止める・Escで閉じる
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -55,7 +54,6 @@ export function MobileNav({
     }
   }, [open])
 
-  // フォーカストラップ：開時に閉じるボタンへフォーカス、Tabで循環、閉時にハンバーガーへ復帰
   useEffect(() => {
     if (!open) {
       if (wasOpenRef.current) menuButtonRef.current?.focus()
@@ -88,7 +86,6 @@ export function MobileNav({
 
   return (
     <>
-      {/* 上部バー（モバイル／現場は常時） */}
       <header
         className={cn(
           'sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg-soft/95 px-4 backdrop-blur print:hidden',
@@ -111,7 +108,6 @@ export function MobileNav({
         {current && <span className="truncate text-sm text-ink-soft">／ {current.label}</span>}
       </header>
 
-      {/* ドロワー */}
       {open && (
         <div className={cn('fixed inset-0 z-50', !persistent && 'lg:hidden')}>
           <button
@@ -163,10 +159,11 @@ export function MobileNav({
                   <ul className="space-y-1">
                     {group.items.map(({ href, label, icon: Icon }) => {
                       const active = href === activeHref
+                      const finalHref = buildPreservedFieldHref(href, currentDate, currentProduct)
                       return (
                         <li key={href}>
                           <Link
-                            href={href}
+                            href={finalHref}
                             aria-current={active ? 'page' : undefined}
                             className={cn(
                               'flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium transition-colors',

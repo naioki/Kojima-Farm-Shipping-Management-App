@@ -21,7 +21,7 @@ export default async function ProductsPage() {
   const supabase = createAdminClient()
   const { data: products, error } = await supabase
     .from('products')
-    .select('id, name, name_kana, unit, base_unit, category, default_tax_rate, stock_qty, is_active')
+    .select('id, name, name_kana, unit, base_unit, category, container_capacity, default_unit_price, default_tax_rate, stock_qty, is_active')
     .order('is_active', { ascending: false })
     .order('category', { nullsFirst: false })
     .order('name')
@@ -33,6 +33,8 @@ export default async function ProductsPage() {
     name_kana: p.name_kana,
     base_unit: p.base_unit ?? p.unit ?? '個',
     category: p.category ?? null,
+    container_capacity: p.container_capacity ?? null,
+    default_unit_price: p.default_unit_price != null ? Number(p.default_unit_price) : null,
     default_tax_rate: p.default_tax_rate as TaxRate,
     stock_qty: p.stock_qty,
     is_active: p.is_active,
