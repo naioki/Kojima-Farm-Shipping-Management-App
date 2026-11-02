@@ -1202,28 +1202,41 @@ export function ShipmentAddForm({
         const baseLabel = matchedProd.name.includes('小松菜') ? '200g' : '2〜3株'
         const cSpec = `${baseLabel} (入数${cPacks})`
 
-        const res = await fetch('/api/shipments', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            customer_id: matchedCust.id,
-            product_id: matchedProd.id,
-            delivery_date: cDate,
-            quantity_raw: qRaw,
-            packs_per_case: cPacks,
-            spec: cSpec,
-            container_type: cContainer,
-            has_card: true,
-            destination_id: matchedDest?.id || null,
-            mode: rowMode,
-          }),
-        })
-        if (res.ok) {
+        const batchPayload = {
+          customer_id: matchedCust.id,
+          product_id: matchedProd.id,
+          delivery_date: cDate,
+          quantity_raw: qRaw,
+          packs_per_case: cPacks,
+          spec: cSpec,
+          container_type: cContainer,
+          has_card: true,
+          destination_id: matchedDest?.id || null,
+          mode: rowMode,
+        }
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          await enqueueShipment(batchPayload, rowLabel)
           updatedList[idx] = { ...cand, registered: true }
           successCount++
-        } else {
-          const ej = await res.json().catch(() => ({}))
-          failures.push(`${rowLabel}：保存失敗（${ej.error ?? res.status}）`)
+          continue
+        }
+        try {
+          const res = await fetch('/api/shipments', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(batchPayload),
+          })
+          if (res.ok) {
+            updatedList[idx] = { ...cand, registered: true }
+            successCount++
+          } else {
+            const ej = await res.json().catch(() => ({}))
+            failures.push(`${rowLabel}：保存失敗（${ej.error ?? res.status}）`)
+          }
+        } catch {
+          await enqueueShipment(batchPayload, rowLabel)
+          updatedList[idx] = { ...cand, registered: true }
+          successCount++
         }
       }
 

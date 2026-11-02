@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { collapseOutbox, toPatchPayload, isConflict, type OutboxEntry } from './outbox'
+import { collapseOutbox, toPatchPayload, isConflict, calcBackoffMs, type OutboxEntry } from './outbox'
 
 const e = (itemId: string, fieldStatus: OutboxEntry['fieldStatus'], version: number, ts: number): OutboxEntry => ({
   itemId,
@@ -36,5 +36,14 @@ describe('isConflict', () => {
   it('version 不一致は競合', () => {
     expect(isConflict(e('a', 'packed', 2, 1), 3)).toBe(true)
     expect(isConflict(e('a', 'packed', 3, 1), 3)).toBe(false)
+  })
+})
+
+describe('calcBackoffMs — 指数バックオフ', () => {
+  it('リトライ回数に応じて指数増加し上限30秒で頭打ちになる', () => {
+    expect(calcBackoffMs(0)).toBe(1000)
+    expect(calcBackoffMs(1)).toBe(2000)
+    expect(calcBackoffMs(2)).toBe(4000)
+    expect(calcBackoffMs(10)).toBe(30000)
   })
 })

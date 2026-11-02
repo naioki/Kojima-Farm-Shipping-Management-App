@@ -405,7 +405,7 @@ export async function processReceipt(
   // 商品マスタと照合（「青梗菜 / チンゲン菜」を名寄せ解決）
   const { data: products, error: productsErr } = await admin
     .from('products')
-    .select('id, name, unit, aliases')
+    .select('id, name, unit, aliases, default_tax_rate, default_unit_price')
     .eq('is_active', true)
   if (productsErr) {
     return await failReceipt(receiptId, `商品マスタの取得に失敗: ${productsErr.message}`)
@@ -415,6 +415,8 @@ export async function processReceipt(
     name: string
     unit: string
     aliases: string[] | null
+    default_tax_rate?: 8 | 10 | null
+    default_unit_price?: number | null
   }[]
   const candidates: ProductCandidate[] = productRows.map((p) => ({
     id: p.id,
@@ -532,7 +534,13 @@ export async function processReceipt(
 
     type EnrichedItem = {
       parsed: ParsedItem
-      matchedProduct: { id: string; name: string; unit: string } | null
+      matchedProduct: {
+        id: string
+        name: string
+        unit: string
+        default_tax_rate?: 8 | 10 | null
+        default_unit_price?: number | null
+      } | null
       matchedRuleId: string | null
       resolvedQty: number | null
       resolvedUnit: string
@@ -728,6 +736,7 @@ export async function processReceipt(
       product_id?: string | null
       product_name: string
       quantity: number
+      version?: number | null
       field_status?: string
       shipped_qty?: number | null
       field_note?: string | null
@@ -980,6 +989,7 @@ export async function processReceipt(
             product_id: e.matchedProduct?.id ?? null,
             product_name: targetName,
             quantity: newQty,
+            version: (Number(prev.version) || 1) + 1,
             quantity_raw: e.quantityCaseText || e.parsed.quantity,
             unit: e.resolvedUnit,
             pack_config_id: e.resolvedPackConfigId,
@@ -1047,8 +1057,8 @@ export async function processReceipt(
               e.parsed.remainder_packs && e.parsed.remainder_packs > 0
                 ? `端数${e.parsed.remainder_packs}P`
                 : null,
-            unit_price: 0,
-            tax_rate: 8,
+            unit_price: e.matchedProduct?.default_unit_price ?? 0,
+            tax_rate: e.matchedProduct?.default_tax_rate ?? 8,
             price_status: 'unpriced' as const,
             confidence: e.effectiveConfidence,
             is_flagged: e.isFlagged,
@@ -1124,8 +1134,8 @@ export async function processReceipt(
           e.parsed.remainder_packs && e.parsed.remainder_packs > 0
             ? `端数${e.parsed.remainder_packs}P`
             : null,
-        unit_price: 0,
-        tax_rate: 8,
+        unit_price: e.matchedProduct?.default_unit_price ?? 0,
+        tax_rate: e.matchedProduct?.default_tax_rate ?? 8,
         price_status: 'unpriced' as const,
         confidence: e.effectiveConfidence,
         is_flagged: e.isFlagged,

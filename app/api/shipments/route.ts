@@ -242,6 +242,7 @@ export async function POST(req: Request) {
   type OrderItemRow = {
     id: string
     quantity: number
+    version?: number | null
     shipped_qty?: number | null
     field_status?: string | null
     line_note: string | null
@@ -300,6 +301,7 @@ export async function POST(req: Request) {
     const { data: updatedItem, error: upErr } = await writeDroppingMissingColumns(
       {
         quantity: newQty,
+        version: (Number(existingItem.version) || 1) + 1,
         quantity_raw: updatedQuantityRaw,
         fraction_note: updateRem > 0 ? `端数${updateRem}P` : null,
         spec: clientSpec?.trim() || existingItem.spec || effectiveSpec,

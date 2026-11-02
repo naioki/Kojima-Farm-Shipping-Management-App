@@ -336,11 +336,32 @@ export function ShipmentRow({
 
   /** 猶予中の「元に戻す」。既存の reset API（1段戻す・楽観ロック）をそのまま使う。 */
   async function undoAdvance() {
+    const graceSnap = undoGrace
     if (undoTimerRef.current != null) {
       window.clearTimeout(undoTimerRef.current)
       undoTimerRef.current = null
     }
     setUndoGrace(null)
+    // 圏外一時保存中（または現在オフライン）の場合は /reset API を叩かず、元のステータスを Outbox に上書きして即座に戻す
+    if ((offlinePending || (typeof navigator !== 'undefined' && !navigator.onLine)) && graceSnap) {
+      setStatus(graceSnap)
+      try {
+        await enqueue({
+          itemId,
+          fieldStatus: graceSnap,
+          version,
+          ts: Date.now(),
+        })
+      } catch (err) {
+        console.error('Failed to enqueue offline undo', err)
+      }
+      onStatusChange?.(itemId, graceSnap, version)
+      onStatusSettled?.(
+        itemId,
+        rowStatusKey(graceSnap, isPartial ? shippedNum : null, orderedQty),
+      )
+      return
+    }
     await reset()
   }
 
