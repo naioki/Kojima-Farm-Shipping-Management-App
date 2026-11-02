@@ -9,7 +9,8 @@ import type { FieldStatus } from '@/types/database'
 
 export interface OutboxEntry {
   itemId: string
-  fieldStatus: FieldStatus
+  fieldStatus?: FieldStatus
+  shippedQty?: number | null
   /** タップ時点で UI が持っていた version（楽観ロック用） */
   version: number
   /** epoch ms。送信順・畳み込みの基準 */
@@ -50,18 +51,31 @@ export function collapseOutbox(entries: OutboxEntry[]): OutboxEntry[] {
   const latest = new Map<string, OutboxEntry>()
   for (const e of entries) {
     const cur = latest.get(e.itemId)
-    if (!cur || e.ts > cur.ts) latest.set(e.itemId, e)
+    if (!cur) {
+      latest.set(e.itemId, { ...e })
+    } else if (e.ts >= cur.ts) {
+      latest.set(e.itemId, {
+        ...cur,
+        ...e,
+        fieldStatus: e.fieldStatus !== undefined ? e.fieldStatus : cur.fieldStatus,
+        shippedQty: e.shippedQty !== undefined ? e.shippedQty : cur.shippedQty,
+      })
+    }
   }
   return [...latest.values()].sort((a, b) => a.ts - b.ts)
 }
 
 export interface PatchPayload {
-  field_status: FieldStatus
+  field_status?: FieldStatus
+  shipped_qty?: number | null
   version: number
 }
 
 export function toPatchPayload(entry: OutboxEntry): PatchPayload {
-  return { field_status: entry.fieldStatus, version: entry.version }
+  const payload: PatchPayload = { version: entry.version }
+  if (entry.fieldStatus !== undefined) payload.field_status = entry.fieldStatus
+  if (entry.shippedQty !== undefined) payload.shipped_qty = entry.shippedQty
+  return payload
 }
 
 /**

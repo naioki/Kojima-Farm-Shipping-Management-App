@@ -497,15 +497,19 @@ export function ShipmentRow({
     }
   }
 
-  /** クイック入力：できた数（shipped_qty）だけを即保存。荷姿・メモは触らない。 */
+  /** クイック入力：できた数（shipped_qty）だけを即保存。荷姿・メモは触らない。圏外時はOutboxに安全保存。 */
   async function saveQuick() {
+    const val = shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null
     setSavingQuick(true)
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new TypeError('Failed to fetch (offline)')
+      }
       const res = await fetch(`/api/order-items/${itemId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          shipped_qty: shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null,
+          shipped_qty: val,
           version,
         }),
       })
@@ -517,11 +521,29 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
-      onShippedQtyChange?.(itemId, shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null)
+      onShippedQtyChange?.(itemId, val)
       toast.success('できた数を記録しました')
       setQuickOpen(false)
       router.refresh()
     } catch (e) {
+      const isOfflineErr = (typeof navigator !== 'undefined' && !navigator.onLine) || e instanceof TypeError
+      if (isOfflineErr) {
+        try {
+          await enqueue({
+            itemId,
+            shippedQty: val,
+            version,
+            ts: Date.now(),
+          })
+          setOfflinePending(true)
+          onShippedQtyChange?.(itemId, val)
+          toast('電波が弱い場所のため「できた数」を一時保存しました（復帰時に自動反映）', { icon: '📡' })
+          setQuickOpen(false)
+          return
+        } catch (enqErr) {
+          console.error('Failed to enqueue shipped_qty', enqErr)
+        }
+      }
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))
     } finally {
       setSavingQuick(false)
@@ -972,7 +994,7 @@ export function ShipmentRow({
                 }
               }}
               className={cn(
-                'h-11 flex-1 rounded-xl px-3 text-sm sm:text-base font-black shadow-xs transition-all active:scale-[0.98]',
+                'min-h-[48px] h-12 flex-1 rounded-xl px-3.5 text-sm sm:text-base font-black shadow-xs transition-all active:scale-[0.98]',
                 status === 'packed'
                   ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 ring-offset-1'
                   : status === 'shipped'
@@ -1030,7 +1052,7 @@ export function ShipmentRow({
                   }
                 }}
                 className={cn(
-                  'h-11 rounded-xl px-3 text-xs sm:text-sm font-black shadow-xs transition-all active:scale-[0.98]',
+                  'min-h-[48px] h-12 rounded-xl px-3.5 text-xs sm:text-sm font-black shadow-xs transition-all active:scale-[0.98]',
                   status === 'shipped'
                     ? 'bg-sky-600 text-white ring-2 ring-sky-600 ring-offset-1'
                     : status === 'packed'
@@ -1071,7 +1093,7 @@ export function ShipmentRow({
                 if (!quickOpen) setNoteOpen(false)
               }}
               className={cn(
-                'h-11 shrink-0 rounded-xl border px-2.5 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-[0.97]',
+                'min-h-[48px] h-12 shrink-0 rounded-xl border px-3 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-[0.97]',
                 isPartial
                   ? 'border-amber-400 bg-amber-100 text-amber-950 font-black ring-1 ring-amber-400'
                   : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
@@ -1109,7 +1131,7 @@ export function ShipmentRow({
                 if (!noteOpen) setQuickOpen(false)
               }}
               className={cn(
-                'h-11 shrink-0 rounded-xl border px-2.5 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-[0.97]',
+                'min-h-[48px] h-12 shrink-0 rounded-xl border px-3 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-[0.97]',
                 fieldNote.trim() !== ''
                   ? 'border-blue-400 bg-blue-50 text-blue-950 font-black ring-1 ring-blue-300'
                   : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
@@ -1122,7 +1144,7 @@ export function ShipmentRow({
               type="button"
               onClick={() => setOpen(!open)}
               className={cn(
-                'h-11 shrink-0 rounded-xl border px-2.5 text-xs font-bold shadow-xs transition-all inline-flex items-center gap-0.5',
+                'min-h-[48px] h-12 shrink-0 rounded-xl border px-3 text-xs font-bold shadow-xs transition-all inline-flex items-center gap-0.5',
                 open
                   ? 'border-forest-600 bg-forest-50 text-forest-900'
                   : 'border-line bg-white text-ink-soft hover:text-ink hover:bg-bg-soft',
@@ -1153,7 +1175,7 @@ export function ShipmentRow({
             type="button"
             onClick={undoAdvance}
             disabled={busy}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line-strong bg-white px-3 text-xs font-bold text-ink hover:bg-bg-soft"
+            className="inline-flex min-h-[44px] h-11 shrink-0 items-center gap-1.5 rounded-xl border border-line-strong bg-white px-3.5 text-xs font-black text-ink hover:bg-bg-soft active:scale-95 transition"
           >
             <Undo2 className="h-3.5 w-3.5" aria-hidden />
             <span>元に戻す</span>
@@ -1261,7 +1283,7 @@ export function ShipmentRow({
               const step = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
               setShippedQty(String(Math.min(orderedQty, cur + step)))
             }}
-            className="h-9 px-2.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 text-xs font-black active:scale-95 transition shadow-2xs"
+            className="min-h-[44px] h-11 px-3 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 text-xs font-black active:scale-95 transition shadow-2xs"
           >
             {isThaiMode
               ? `+1ลัง (+${packsPerCase || 20}ถุง)`
@@ -1274,7 +1296,7 @@ export function ShipmentRow({
               const step = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
               setShippedQty(String(Math.max(0, cur - step)))
             }}
-            className="h-9 px-2 rounded-lg bg-white hover:bg-slate-100 text-ink border border-line-strong text-xs font-bold active:scale-95 transition"
+            className="min-h-[44px] h-11 px-3 rounded-xl bg-white hover:bg-slate-100 text-ink border border-line-strong text-xs font-bold active:scale-95 transition"
           >
             -1箱
           </button>

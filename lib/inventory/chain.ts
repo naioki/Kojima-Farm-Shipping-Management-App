@@ -34,7 +34,11 @@ export async function readFallbackInventory(
       .eq('key', `v5_container_inv:${productId}`)
       .maybeSingle()
     if (!res?.data?.value) return {}
-    return JSON.parse(res.data.value) as FallbackInventoryRecord
+    try {
+      return JSON.parse(res.data.value) as FallbackInventoryRecord
+    } catch {
+      return {}
+    }
   } catch {
     return {}
   }

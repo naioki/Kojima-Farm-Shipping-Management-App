@@ -382,6 +382,7 @@ export async function POST(req: NextRequest) {
         const { error: upErr } = await writeDroppingMissingColumns(
           {
             quantity: newQty,
+            version: (Number(prev.version) || 1) + 1,
             quantity_raw: mergedPayload.quantity_raw,
             fraction_note: mergedPayload.fraction_note,
             line_note: combinedLineNote,
@@ -444,7 +445,7 @@ export async function POST(req: NextRequest) {
 
     const { data: oldItems, error: oldItemsErr } = await admin
       .from('order_items')
-      .select('product_id, product_name, quantity, unit, unit_price, tax_rate, pack_config_id')
+      .select('id, product_id, product_name, quantity, unit, unit_price, tax_rate, pack_config_id')
       .eq('order_id', replace_order_id)
     if (oldItemsErr) console.error('[api/orders] 差し替え前明細の取得に失敗（監査）:', oldItemsErr.message)
 

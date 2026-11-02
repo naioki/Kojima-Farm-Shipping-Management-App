@@ -135,7 +135,7 @@ export function OrderForm({
                   type="button"
                   aria-label={`${i.productName} を減らす`}
                   onClick={() => setOne(i.productId, n - 1)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-line text-ink-soft transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200 disabled:opacity-40"
+                  className="flex h-12 w-12 items-center justify-center rounded-xl border border-line text-ink-soft transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200 disabled:opacity-40 active:scale-95"
                   disabled={n <= 0}
                 >
                   <Minus className="h-4 w-4" aria-hidden />
@@ -145,7 +145,7 @@ export function OrderForm({
                   min={0}
                   inputMode="numeric"
                   aria-label={`${i.productName} の数量`}
-                  className="num h-9 w-16 rounded-lg border border-line bg-bg-card text-center text-base font-bold text-ink focus:border-grape-500 focus:outline-none focus:ring-2 focus:ring-grape-200"
+                  className="num h-12 w-20 rounded-xl border border-line bg-bg-card text-center text-lg font-bold text-ink focus:border-grape-500 focus:outline-none focus:ring-2 focus:ring-grape-200"
                   value={n}
                   onChange={(e) => setOne(i.productId, Number(e.target.value))}
                 />
@@ -154,7 +154,7 @@ export function OrderForm({
                   type="button"
                   aria-label={`${i.productName} を増やす`}
                   onClick={() => setOne(i.productId, n + 1)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-grape-600 text-white transition-colors hover:bg-grape-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200"
+                  className="flex h-12 w-12 items-center justify-center rounded-xl bg-grape-600 text-white transition-colors hover:bg-grape-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-grape-200 active:scale-95"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                 </button>

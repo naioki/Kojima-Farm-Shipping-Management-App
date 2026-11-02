@@ -1,3 +1,4 @@
+import { shiftDateStr } from '@/lib/dates'
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
@@ -103,7 +104,7 @@ export async function POST(req: NextRequest) {
       }
       const { data: existingItems } = await admin
         .from('order_items')
-        .select('id, product_name, quantity')
+        .select('id, product_name, quantity, version')
         .eq('order_id', body.orderId)
         .order('id', { ascending: true })
 
@@ -117,12 +118,22 @@ export async function POST(req: NextRequest) {
               .from('order_items')
               .update({
                 quantity: newQty,
+                version: (Number((dbItem as { version?: number }).version) || 1) + 1,
                 quantity_raw: newItem.quantity_case_text ?? newItem.quantity,
                 spec: newItem.spec ?? undefined,
                 container_type: newItem.container_type ?? undefined,
                 confidence: 1.0,
               })
               .eq('id', dbItem.id)
+            try {
+              const htPatch: Record<string, unknown> = { required_qty: newQty }
+              if (revOrder.delivery_date) {
+                htPatch.task_date = shiftDateStr(revOrder.delivery_date, -1)
+              }
+              await admin.from('harvest_tasks').update(htPatch).eq('order_item_id', dbItem.id)
+            } catch (htErr) {
+              console.warn('[orders/revise] harvest_tasks 同期警告:', htErr)
+            }
           }
         }
       }

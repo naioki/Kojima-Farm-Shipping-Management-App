@@ -8,16 +8,17 @@ const e = (itemId: string, fieldStatus: OutboxEntry['fieldStatus'], version: num
   ts,
 })
 
-describe('collapseOutbox — 同一itemは最終状態に畳み込み', () => {
-  it('同じ item の連打は ts 最大のみ残す', () => {
+describe('collapseOutbox — 同一itemは最終状態に畳み込み（fieldStatus + shippedQty マージ対応）', () => {
+  it('同じ item の連打は ts 最大のみ残し、途中数(shippedQty)とステータスを統合する', () => {
     const out = collapseOutbox([
-      e('a', 'packed', 1, 100),
-      e('a', 'shipped', 2, 200),
+      { itemId: 'a', shippedQty: 40, version: 1, ts: 100 },
+      { itemId: 'a', fieldStatus: 'packed', version: 1, ts: 200 },
       e('b', 'packed', 1, 150),
     ])
     expect(out).toHaveLength(2)
     const a = out.find((x) => x.itemId === 'a')!
-    expect(a.fieldStatus).toBe('shipped')
+    expect(a.fieldStatus).toBe('packed')
+    expect(a.shippedQty).toBe(40)
   })
 
   it('ts 昇順で返す（送信順の安定化）', () => {
@@ -27,8 +28,12 @@ describe('collapseOutbox — 同一itemは最終状態に畳み込み', () => {
 })
 
 describe('toPatchPayload', () => {
-  it('field_status と version を取り出す', () => {
+  it('指定された field_status / shipped_qty と version を取り出す', () => {
     expect(toPatchPayload(e('a', 'shipped', 3, 1))).toEqual({ field_status: 'shipped', version: 3 })
+    expect(toPatchPayload({ itemId: 'a', shippedQty: 60, version: 2, ts: 10 })).toEqual({
+      shipped_qty: 60,
+      version: 2,
+    })
   })
 })
 

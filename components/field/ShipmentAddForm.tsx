@@ -2308,7 +2308,7 @@ export function ShipmentAddForm({
                       placeholder="例: 30"
                       value={inputCases}
                       onChange={(e) => handleCasesChange(e.target.value)}
-                      className="w-full h-10 rounded-lg border-2 border-forest-400 bg-forest-50/30 px-3 font-black text-lg text-forest-900 focus:border-forest-600 focus:outline-none"
+                      className="w-full h-12 rounded-xl border-2 border-forest-500 bg-forest-50/30 px-3 font-mono tabular-nums font-black text-xl text-forest-900 focus:border-forest-600 focus:outline-none"
                     />
                     <div className="flex items-center gap-1 pt-0.5">
                       {[5, 10, 20, 30].map((n) => (
@@ -2319,7 +2319,7 @@ export function ShipmentAddForm({
                             const cur = Number(inputCases) || 0
                             handleCasesChange(String(cur + n))
                           }}
-                          className="flex-1 text-[10px] font-bold py-0.5 rounded bg-sand-100 hover:bg-forest-100 text-ink active:scale-95 transition"
+                          className="flex-1 h-9 text-xs font-black rounded-lg border border-line bg-sand-100 hover:bg-forest-100 text-ink active:scale-95 transition"
                         >
                           +{n}
                         </button>
@@ -2339,7 +2339,7 @@ export function ShipmentAddForm({
                       placeholder="例: 300"
                       value={inputTotalPacks}
                       onChange={(e) => handleTotalPacksChange(e.target.value)}
-                      className="w-full h-10 rounded-lg border-2 border-emerald-400 bg-emerald-50/30 px-3 font-black text-lg text-emerald-950 focus:border-emerald-600 focus:outline-none"
+                      className="w-full h-12 rounded-xl border-2 border-emerald-500 bg-emerald-50/30 px-3 font-mono tabular-nums font-black text-xl text-emerald-950 focus:border-emerald-600 focus:outline-none"
                     />
                     <div className="flex items-center gap-1 pt-0.5">
                       {[50, 100, 200].map((n) => (
@@ -2350,7 +2350,7 @@ export function ShipmentAddForm({
                             const cur = Number(inputTotalPacks) || 0
                             handleTotalPacksChange(String(cur + n))
                           }}
-                          className="flex-1 text-[10px] font-bold py-0.5 rounded bg-sand-100 hover:bg-emerald-100 text-ink active:scale-95 transition"
+                          className="flex-1 h-9 text-xs font-black rounded-lg border border-line bg-sand-100 hover:bg-emerald-100 text-ink active:scale-95 transition"
                         >
                           +{n}
                         </button>
