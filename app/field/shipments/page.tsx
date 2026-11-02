@@ -676,7 +676,7 @@ export default async function ShipmentsPage({
       {/* ナビゲーションバー */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h1 className="font-display text-xl font-black text-ink">収穫・パックボード</h1>
+          <h1 className="hidden sm:block font-display text-lg font-black text-ink">収穫・パックボード</h1>
           <FieldViewSwitch active="day" date={date} product={selectedProductId} />
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
@@ -749,6 +749,7 @@ export default async function ShipmentsPage({
       {/* ④ スマート追加フォーム */}
       <ShipmentAddForm
         deliveryDate={date}
+        defaultProductId={selectedProductId}
         customers={allCustomers.map((c) => ({ id: c.id, name: c.name }))}
         products={allProducts.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
         destinations={allDestinations.map((d) => ({

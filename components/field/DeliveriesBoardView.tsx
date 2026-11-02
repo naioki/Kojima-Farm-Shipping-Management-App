@@ -6,7 +6,6 @@ import { CheckCircle2, RotateCw, Printer, Clock, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
-import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { parseDeparturePriority, cleanShippingRouteName } from '@/lib/field/shipment-sort'
 import { getThaiDepartureTime } from '@/lib/field/thai-dict'
@@ -31,10 +30,10 @@ function isUserTypingInInput(): boolean {
 }
 
 /**
- * 便別積込・配送リストのメインボード（v5.1.9 視認性・重複排除版）
- * - 1行スリム・スティッキー進捗バーでモバイル画面の圧迫を解消
- * - セクションヘッダーでの絵文字重複（⏰ ⏰ / 🌅 🌅）と時刻二重表記を完全排除
- * - 同一取引先でも出発便・時間が異なる納入先は便ごとに分割配置し積込ミスを防止
+ * 便別積込・配送リストのメインボード（v5.1.10 重複完全排除版）。
+ * - 【#05 解消】MobileNav側に言語切替を統合し、スティッキー進捗バーの横幅圧迫を解消。
+ * - 【#15 解消】「便・時間順（route）」モードでは、グループ見出しに出発時間が表示されているため、
+ *   各カードに `hideParentTimeChip={true}` を渡して同じ「当日18:00迄」がカードごとに繰り返される重複を排除。
  */
 export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewProps) {
   const router = useRouter()
@@ -122,7 +121,6 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
   const visibleCards =
     filterMode === 'incomplete' ? cards.filter((c) => !c.isCompleted) : cards
 
-  // 便・時間帯ごとの正確なグルーピング（絵文字・時刻の重複表記を完全に排除）
   const routeGroups = (() => {
     const map = new Map<
       string,
@@ -256,7 +254,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
       {/* 1行スリム・スティッキー積込コックピットバー */}
       <div
         className={cn(
-          'sticky top-14 z-20 -mx-1 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200 print:hidden',
+          'sticky top-13 z-20 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200 print:hidden',
           isToday
             ? 'bg-[#0c2e4e] border-sky-600'
             : isTomorrow
@@ -279,10 +277,10 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               <span>🚚</span>
               <span>
                 {isToday
-                  ? `本日 ${formatJpDateShort(effectiveDate)} 納品`
+                  ? `本日 ${formatJpDateShort(effectiveDate)}納品`
                   : isTomorrow
-                  ? `明日 ${formatJpDateShort(effectiveDate)} 納品`
-                  : `${formatJpDateShort(effectiveDate)} 納品`}
+                  ? `明日 ${formatJpDateShort(effectiveDate)}納品`
+                  : `${formatJpDateShort(effectiveDate)}納品`}
               </span>
             </span>
 
@@ -297,14 +295,13 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               title={`残り積込 ${remainingContainers}箱`}
             >
               {remainingContainers > 0 ? (
-                `残 ${remainingContainers}箱`
+                `残 ${remainingContainers}箱 (${remainingCustomers}社)`
               ) : (
                 <span className="inline-flex items-center gap-1 text-emerald-200">
                   <CheckCircle2 className="h-3 w-3" /> 完了
                 </span>
               )}
             </span>
-            <FieldLangSwitch />
             <button
               type="button"
               onClick={() => window.print()}
@@ -453,6 +450,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                     <CustomerDeliveryCard
                       key={c.sliceKey ?? c.customerId}
                       {...c}
+                      hideParentTimeChip={true}
                       onCompletionChange={handleCompletionChange}
                     />
                   ))}
@@ -467,6 +465,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             <CustomerDeliveryCard
               key={c.customerId}
               {...c}
+              hideParentTimeChip={false}
               onCompletionChange={handleCompletionChange}
             />
           ))}

@@ -86,7 +86,7 @@ export default async function FieldPrintPage({
     <div className="mx-auto max-w-2xl space-y-4 pb-20">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="font-display text-xl sm:text-2xl font-black text-ink">帳票・ラベル印刷</h1>
+          <h1 className="hidden sm:block font-display text-lg sm:text-xl font-black text-ink">帳票・ラベル印刷</h1>
           <FieldViewSwitch active="day" date={date} product={selectedProduct} />
         </div>
         <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProduct} />

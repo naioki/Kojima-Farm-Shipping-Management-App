@@ -12,6 +12,7 @@ import {
   type DestinationDetail,
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
+import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineContainerType } from '@/lib/pipeline/schemas'
@@ -104,7 +105,7 @@ export default async function DeliveriesPage({
     default_container_type?: string | null
   }
 
-  const [custRes, destRes, prodRes, packRes, deliveryRes, rulesRes, routeOverrides] = await Promise.all([
+  const [custRes, destRes, prodRes, packRes, deliveryRes, rulesRes, routeOverrides, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
     customerIds.length
       ? admin.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
@@ -144,6 +145,9 @@ export default async function DeliveriesPage({
         })()
       : Promise.resolve({ data: [] as RuleRow[], error: null }),
     getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    admin.from('customers').select('id, name').eq('is_active', true).order('name'),
+    admin.from('products').select('id, name, unit, category').eq('is_active', true).order('name'),
+    admin.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).order('sort_order'),
   ])
 
   if (custRes.error) return <ErrorState message="取引先名を読み込めませんでした。" detail={custRes.error.message} />
@@ -249,13 +253,13 @@ export default async function DeliveriesPage({
     if (cleanLineNote) {
       cEntry.notesSet.add(cleanLineNote)
     }
-    const deliveryNote = deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.note
-    if (deliveryNote?.trim()) {
-      cEntry.notesSet.add(deliveryNote.trim())
+    const deliveryNote = extractActionableNote(deliveryByKey.get(`${order.customer_id}:${order.destination_id ?? ''}`)?.note)
+    if (deliveryNote) {
+      cEntry.notesSet.add(deliveryNote)
     }
-    const customerDefaultNote = deliveryByKey.get(`${order.customer_id}:`)?.note
-    if (customerDefaultNote?.trim()) {
-      cEntry.notesSet.add(customerDefaultNote.trim())
+    const customerDefaultNote = extractActionableNote(deliveryByKey.get(`${order.customer_id}:`)?.note)
+    if (customerDefaultNote) {
+      cEntry.notesSet.add(customerDefaultNote)
     }
 
     const effectiveDepTime = routeInfo.departureTime
@@ -426,7 +430,7 @@ export default async function DeliveriesPage({
       {/* ① ナビゲーションバー（収穫・パックボードと完全に統一した順序） */}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-2">
-          <h1 className="font-display text-xl font-black text-ink">便別積込・配送リスト</h1>
+          <h1 className="hidden sm:block font-display text-lg font-black text-ink">便別積込・配送リスト</h1>
           <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
         </div>
         <div className="flex items-center gap-2">
@@ -457,6 +461,22 @@ export default async function DeliveriesPage({
       ) : (
         <DeliveriesBoardView date={date} initialCards={customerCards} />
       )}
+
+      {/* 配送リスト画面からも直接新規追加・数量変更が可能（#20） */}
+      <ShipmentAddForm
+        deliveryDate={date}
+        defaultProductId={selectedProduct}
+        customers={(allCustsRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
+        products={(allProdsRes.data ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
+        destinations={(allDestsRes.data ?? []).map((d) => ({
+          id: d.id,
+          customerId: d.customer_id ?? '',
+          label: d.code?.trim() || d.full_name,
+        }))}
+        packsByPair={Object.fromEntries(
+          (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),
+        )}
+      />
     </div>
   )
 }

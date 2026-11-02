@@ -7,121 +7,89 @@ import {
   parseNaturalOrderTextDeterministic,
 } from '@/lib/orders/natural-parser'
 
-describe('natural-parser unit tests', () => {
-  const dummyCustomers = [
-    { id: 'c1', name: '株式会社農業総合研究所（NSK）' },
+describe('natural-parser: findBestMatchingCustomer & findBestMatchingDestination', () => {
+  const customers = [
+    { id: 'c1', name: '株式会社 勘兵衛' },
     { id: 'c2', name: '農事組合法人 和郷園' },
     { id: 'c3', name: '農事組合法人 房総食料センター' },
-    { id: 'c4', name: '寺崎' },
-    { id: 'c5', name: '株式会社ヨーク' },
+    { id: 'c4', name: '農業総合研究所' },
   ]
 
-  const dummyDestinations = [
-    { id: 'd1', customer_id: 'c2', code: '4関東顧客向け', full_name: '4関東顧客向け', aliases: ['関東向け'] },
-    { id: 'd2', customer_id: 'c2', code: '5北海道', full_name: '5北海道', aliases: ['北海道ST'] },
-    { id: 'd3', customer_id: 'c1', code: '岩槻', full_name: '岩槻センター', aliases: ['岩槻ST'] },
+  const destinations = [
+    { id: 'd1', customer_id: 'c1', code: 'イオンタウン', full_name: 'イオンタウン向け', aliases: [] },
+    { id: 'd2', customer_id: 'c2', code: '岩槻', full_name: 'パルシステム 岩槻', aliases: ['パルシステム岩槻'] },
+    { id: 'd3', customer_id: 'c2', code: 'らでぃっしゅ岩槻', full_name: 'らでぃっしゅぼーや 岩槻ST', aliases: ['ラディッシュ岩槻ST'] },
+    { id: 'd4', customer_id: 'c3', code: 'BOX用', full_name: 'BOX用', aliases: [] },
   ]
 
-  const dummyProducts = [
-    { id: 'p1', name: '青梗菜', unit: 'P' },
-    { id: 'p2', name: '小松菜', unit: 'P' },
-  ]
-
-  describe('findBestMatchingCustomer', () => {
-    it('略称 NSK から正式名を解決できる', () => {
-      const hit = findBestMatchingCustomer('NSK出荷分', dummyCustomers)
-      expect(hit?.id).toBe('c1')
-    })
-
-    it('和郷園から正式名を解決できる', () => {
-      const hit = findBestMatchingCustomer('和郷園', dummyCustomers)
-      expect(hit?.id).toBe('c2')
-    })
-
-    it('寺崎を解決できる', () => {
-      const hit = findBestMatchingCustomer('寺崎様', dummyCustomers)
-      expect(hit?.id).toBe('c4')
-    })
-
-    it('存在しない取引先は null を返す', () => {
-      const hit = findBestMatchingCustomer('存在しない架空取引先', dummyCustomers)
-      expect(hit).toBeNull()
-    })
+  it('法人格・空白・括弧差を吸収して取引先を正確に照合する（「農」「合」「社」が文字クラスで消えない）', () => {
+    expect(findBestMatchingCustomer('株式会社勘兵衛', customers)?.id).toBe('c1')
+    expect(findBestMatchingCustomer('勘兵衛', customers)?.id).toBe('c1')
+    expect(findBestMatchingCustomer('農事組合法人和郷園', customers)?.id).toBe('c2')
+    expect(findBestMatchingCustomer('房総食料センター', customers)?.id).toBe('c3')
+    expect(findBestMatchingCustomer('株式会社農業総合研究所（NSK）', customers)?.id).toBe('c4')
+    expect(findBestMatchingCustomer('NSK', customers)?.id).toBe('c4')
   })
 
-  describe('findBestMatchingDestination', () => {
-    it('納入先コードやフルネームで一致する', () => {
-      const hit = findBestMatchingDestination('4関東顧客向け', dummyDestinations, 'c2')
-      expect(hit?.id).toBe('d1')
-    })
-
-    it('別名から納入先を解決できる', () => {
-      const hit = findBestMatchingDestination('岩槻ST', dummyDestinations, 'c1')
-      expect(hit?.id).toBe('d3')
-    })
+  it('宛名「アイプラス」「小島農園」は受託側のため取引先として誤マッチしない', () => {
+    expect(findBestMatchingCustomer('アイプラス', customers)).toBeUndefined()
+    expect(findBestMatchingCustomer('小島農園', customers)).toBeUndefined()
   })
 
-  describe('parseRelativeDateFromText', () => {
-    const baseDate = '2026-11-02'
+  it('ひらがな・カタカナ・空白差を吸収して納入先を照合する', () => {
+    expect(findBestMatchingDestination('パルシステム岩槻', destinations, 'c2')?.id).toBe('d2')
+    expect(findBestMatchingDestination('ラディッシュボーヤ岩槻ST', destinations, 'c2')?.id).toBe('d3')
+    expect(findBestMatchingDestination('イオンタウン向け', destinations, 'c1')?.id).toBe('d1')
+  })
+})
 
-    it('「明日」を基準日の翌日に解決する', () => {
-      const res = parseRelativeDateFromText('明日納品分', baseDate)
-      expect(res.deliveryDate).toBe('2026-11-03')
-      expect(res.dateExpression).toBe('明日')
-    })
-
-    it('「明後日」を2日後に解決する', () => {
-      const res = parseRelativeDateFromText('明後日納品', baseDate)
-      expect(res.deliveryDate).toBe('2026-11-04')
-    })
-
-    it('「11/5」などの日付表記を解決する', () => {
-      const res = parseRelativeDateFromText('11/5 発送分', baseDate)
-      expect(res.deliveryDate).toBe('2026-11-05')
-    })
+describe('natural-parser: parseRelativeDateFromText & parseQuantityFromNaturalText', () => {
+  it('今日・明日・明後日・日付文字列を正しく解決する', () => {
+    expect(parseRelativeDateFromText('明日 勘兵衛 5ケース', '2026-11-01').deliveryDate).toBe('2026-11-02')
+    expect(parseRelativeDateFromText('明後日 房総食料 84P', '2026-11-01').deliveryDate).toBe('2026-11-03')
+    expect(parseRelativeDateFromText('今日 寺崎 50P', '2026-11-01').deliveryDate).toBe('2026-11-01')
+    expect(parseRelativeDateFromText('11/15 和郷園 200P', '2026-11-01').deliveryDate).toBe('2026-11-15')
   })
 
-  describe('parseQuantityFromNaturalText', () => {
-    it('ケース数を正しくパック換算する (20入)', () => {
-      const res = parseQuantityFromNaturalText('10ケース', 20)
-      expect(res.cases).toBe(10)
-      expect(res.totalPacks).toBe(200)
-      expect(res.isCaseInput).toBe(true)
+  it('ケース表記・c記法・和郷園式・パック表記を正しく総数換算する', () => {
+    expect(parseQuantityFromNaturalText('チンゲン菜 5ケース', 20)).toMatchObject({
+      totalPacks: 100,
+      cases: 5,
+      remainderPacks: 0,
+      isCaseInput: true,
     })
-
-    it('ケース+端数を正しく換算する', () => {
-      const res = parseQuantityFromNaturalText('5c+4P', 20)
-      expect(res.cases).toBe(5)
-      expect(res.totalPacks).toBe(104)
-      expect(res.quantityRaw).toBe('5c+4P')
+    expect(parseQuantityFromNaturalText('20c追加', 20)).toMatchObject({
+      totalPacks: 400,
+      cases: 20,
+      remainderPacks: 0,
+      isCaseInput: true,
     })
-
-    it('パック指定を正しく解釈する', () => {
-      const res = parseQuantityFromNaturalText('120パック', 20)
-      expect(res.cases).toBe(6)
-      expect(res.totalPacks).toBe(120)
-      expect(res.isCaseInput).toBe(false)
+    expect(parseQuantityFromNaturalText('300+0 (15-0)', 20)).toMatchObject({
+      totalPacks: 300,
+      cases: 15,
+      remainderPacks: 0,
+    })
+    expect(parseQuantityFromNaturalText('96パック シールあり', 24)).toMatchObject({
+      totalPacks: 96,
+      cases: 4,
+      remainderPacks: 0,
     })
   })
+})
 
-  describe('parseNaturalOrderTextDeterministic', () => {
-    it('Gemini未呼び出し時でもプレーンテキストから決定論的に注文オブジェクトを生成できる', () => {
-      const text = `
-        11/3 和郷園 4関東顧客向け チンゲン菜 10ケース
-        11/4 寺崎 チンゲン菜 5c
-      `
-      const result = parseNaturalOrderTextDeterministic(text, {
-        customers: dummyCustomers,
-        destinations: dummyDestinations,
-        products: dummyProducts,
-      })
-
-      expect(result.is_order).toBe(true)
-      expect(result.orders.length).toBe(2)
-      expect(result.orders[0]?.customer_name).toContain('和郷園')
-      expect(result.orders[0]?.destination_name).toBe('4関東顧客向け')
-      expect(result.orders[0]?.delivery_date).toBe('2026-11-03')
-      expect(result.orders[0]?.items[0]?.quantity).toBe('10c')
-    })
+describe('natural-parser: parseNaturalOrderTextDeterministic', () => {
+  it('クイック注文サンプル文から決定論的に注文構造を生成できる', () => {
+    const res = parseNaturalOrderTextDeterministic(
+      '明日 勘兵衛 イオンタウン向け チンゲン菜 5ケース',
+      undefined,
+      '2026-11-01',
+    )
+    expect(res.is_order).toBe(true)
+    expect(res.orders).toHaveLength(1)
+    expect(res.orders[0]?.customer_name).toBe('株式会社勘兵衛')
+    expect(res.orders[0]?.destination_name).toBe('イオンタウン向け')
+    expect(res.orders[0]?.delivery_date).toBe('2026-11-02')
+    expect(res.orders[0]?.items[0]?.quantity).toBe('100')
+    expect(res.orders[0]?.items[0]?.cases).toBe(5)
   })
 })

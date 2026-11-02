@@ -169,7 +169,7 @@ export default async function MatrixPage({
     <div className="mx-auto max-w-5xl space-y-4 pb-20">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <h1 className="font-display text-xl sm:text-2xl font-black text-ink">週の管理</h1>
+          <h1 className="hidden sm:block font-display text-lg sm:text-xl font-black text-ink">週の管理</h1>
           <FieldViewSwitch active="week" date={week} product={selected.id} />
         </div>
         <div className="flex items-center gap-1.5">

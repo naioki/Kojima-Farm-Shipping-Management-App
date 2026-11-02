@@ -1,3 +1,5 @@
+import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { redirect } from 'next/navigation'
 import { ScanLine } from 'lucide-react'
 import { getAuthedUser } from '@/lib/supabase/server'
@@ -42,6 +44,9 @@ export default async function FieldOcrPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      <div className="flex items-center justify-between gap-2 pb-1">
+        <FieldViewSwitch active="day" date={shiftDateStr(jstTodayStr(), 1)} />
+      </div>
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-earth-100 p-2">
           <ScanLine className="h-5 w-5 text-earth-700" aria-hidden />

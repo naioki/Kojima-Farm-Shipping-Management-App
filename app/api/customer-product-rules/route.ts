@@ -70,11 +70,10 @@ export async function PUT(req: Request) {
   )
   if (error || !rule) return NextResponse.json({ error: error?.message ?? '保存に失敗しました' }, { status: 500 })
 
-  const savedRule = rule as unknown as { id: string }
   // 履歴（旧→新）。失敗は握りつぶさない（CLAUDE.md）
   await writeAudit(supabase, {
     entityType: 'customer_product_rules',
-    entityId: savedRule.id,
+    entityId: (rule as unknown as { id: string }).id,
     action: oldRule ? 'UPDATE' : 'INSERT',
     oldValues: oldRule ?? null,
     newValues: rule,

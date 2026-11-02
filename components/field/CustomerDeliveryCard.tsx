@@ -66,14 +66,14 @@ export interface CustomerDeliveryCardProps {
   shippingRouteName?: string | null
   departureTime?: string | null
   earliestDepartureTime?: string | null
+  /** 便・時間順グループ表示時にセクション見出しとの時刻二重表示を避けるフラグ（#15） */
+  hideParentTimeChip?: boolean
   onCompletionChange?: (customerId: string, isCompleted: boolean) => void
 }
 
 /**
- * 便別積込・配送リストの1カードコンポーネント（v5.1.9 視認性・重複排除版）
- * - システム自動付与タグ（★新規追加、数量変更: 等）を特記事項バナーから自動除去し、本当に必要な現場連絡のみを表示
- * - 複数納品先がある場合は納品先ごとに出荷時間チップを表示し、親カード上部の重複表示を抑制
- * - 積込完了（isCompleted）カードは1行のスリム完了バーに自動折りたたみ
+ * 便別積込・配送リストの1カードコンポーネント（v5.1.10 重複完全排除版）。
+ * - 【#15 解消】「便・時間順」モードでセクション見出しに時刻が出ている場合は、カード内の時刻チップをスリムな「⏰ 出荷時間」ボタンにして同じ時刻文字列の反復を排除。
  */
 export function CustomerDeliveryCard({
   customerId,
@@ -89,13 +89,13 @@ export function CustomerDeliveryCard({
   destinations: initialDestinations,
   routeSummaries = [],
   earliestDepartureTime,
+  hideParentTimeChip = false,
   onCompletionChange,
 }: CustomerDeliveryCardProps) {
   const router = useRouter()
   const { isThaiMode } = useFieldLang()
   const [isCompleted, setIsCompleted] = useState<boolean>(initialIsCompleted)
   const [destinations, setDestinations] = useState<DestinationDetail[]>(initialDestinations)
-  // 複数納入先がある取引先は初期状態で内訳を展開（積込完了時は折りたたむ）
   const [open, setOpen] = useState<boolean>(() => initialDestinations.length > 1 && !initialIsCompleted)
   const [expandedWhenDone, setExpandedWhenDone] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
@@ -141,7 +141,6 @@ export function CustomerDeliveryCard({
     setDestinations(initialDestinations)
   }, [initialDestinations])
 
-  // システム自動タグ（★新規追加 等）を除いた純粋な現場連絡メモのみ抽出
   const cleanedInitialNotes = useMemo(
     () =>
       Array.from(
@@ -384,7 +383,7 @@ export function CustomerDeliveryCard({
                   )}
                 </div>
 
-                {/* 時間指定（単一納品先または内訳閉時のみ表示し、複数展開時の重複を排除） ＆ パック進捗連動バッジ */}
+                {/* 時間指定（便・時間順モード時はグループヘッダーと時刻が重複しないようコンパクトボタン化 #15） ＆ パック進捗連動バッジ */}
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ink-soft">
                   {(destinations.length <= 1 || !open) && (
                     <QuickDepartureTimeEditor
@@ -395,7 +394,7 @@ export function CustomerDeliveryCard({
                       destinationName={destinations[0]?.destinationName ?? null}
                       currentDepartureTime={earliestDepartureTime ?? (destinations[0]?.departureTime || null)}
                       currentShippingRouteName={destinations[0]?.shippingRouteName || (routeSummaries[0]?.title ?? null)}
-                      variant="chip"
+                      variant={hideParentTimeChip ? 'button' : 'chip'}
                     />
                   )}
 
@@ -488,7 +487,7 @@ export function CustomerDeliveryCard({
               </div>
             </div>
 
-            {/* ② 中段: 特記事項・メモ（実務連絡がある場合のみ表示） */}
+            {/* ② 中段: 特記事項・メモ */}
             {hasNote && !editingNote && (
               <div
                 onClick={() => setEditingNote(true)}

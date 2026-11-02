@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
+import { determineContainerType } from '@/lib/pipeline/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export const runtime = 'nodejs'
 
 /**
- * 週間マトリックスの1セル更新（#25 destination_id 対応）。
+ * 週間マトリックスの1セル更新（#21 決定論的荷姿・規格・コンテナ補完 ＆ writeDroppingMissingColumns 対応）。
  * (取引先 × 納入先(任意) × 品目 × 出荷日) を1セルとして upsert / 削除する。
  */
 export async function PUT(req: Request) {
@@ -28,35 +30,39 @@ export async function PUT(req: Request) {
   const { customer_id, destination_id, product_id, delivery_date, quantity_raw } = parsed.data
   const supabase = createAdminClient()
 
-  // 商品マスタ ＆ 取引先名
-  const [{ data: product, error: prodErr }, { data: cust }] = await Promise.all([
+  // 商品マスタ ＆ 取引先名 ＆ 納入先名
+  const [{ data: product, error: prodErr }, { data: cust }, destRes] = await Promise.all([
     supabase
       .from('products')
       .select('id, name, unit, default_unit_price, default_tax_rate, container_capacity')
       .eq('id', product_id)
       .maybeSingle(),
     supabase.from('customers').select('name').eq('id', customer_id).maybeSingle(),
+    destination_id
+      ? supabase.from('delivery_destinations').select('id, code, full_name').eq('id', destination_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
   if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 })
   if (!product) return NextResponse.json({ error: 'unknown_product' }, { status: 400 })
 
-  // P/C ルール
-  const { data: rule, error: ruleErr } = await supabase
+  // P/C ルール（全カラム取得で0026差異を吸収）
+  const { data: ruleRaw, error: ruleErr } = await supabase
     .from('customer_product_rules')
-    .select('id, packs_per_case, spec, container_type, has_card')
+    .select('*')
     .eq('customer_id', customer_id)
     .eq('product_id', product_id)
     .maybeSingle()
   if (ruleErr) console.error('[api/shipments/cell] P/Cルールの取得に失敗:', ruleErr.message)
+  const rule = ruleRaw as Record<string, unknown> | null
 
   const custName = cust?.name ?? ''
+  const destName = destRes.data?.code || destRes.data?.full_name || ''
+  const isNsk = custName.includes('農業総合研究所') || custName.toUpperCase().includes('NSK')
+  const rulePacks = typeof rule?.packs_per_case === 'number' && rule.packs_per_case > 0 ? rule.packs_per_case : null
   const defaultPpc =
-    rule?.packs_per_case ??
-    (custName.includes('農業総合研究所') || custName.toUpperCase().includes('NSK')
-      ? 24
-      : product.container_capacity ?? 20)
+    rulePacks ??
+    (isNsk ? 24 : product.container_capacity ?? 20)
 
-  // #25 destination_id が指定されている場合はその納入先の注文に正確に絞り込む
   let orderQuery = supabase
     .from('orders')
     .select('id')
@@ -88,8 +94,8 @@ export async function PUT(req: Request) {
 
   const result = parseQuantity(quantity_raw, { packsPerCase: defaultPpc })
 
-  // 空欄＝削除
-  if (result.type === 'delete') {
+  // 空欄または0＝削除
+  if (result.type === 'delete' || (result.type === 'ok' && result.total.toNumber() <= 0)) {
     if (existingItem) {
       await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
       const { error: delErr } = await supabase.from('order_items').delete().eq('id', existingItem.id)
@@ -132,9 +138,8 @@ export async function PUT(req: Request) {
       ? existingItem.shipped_qty
       : null
 
-    const { data: updated, error: updErr } = await supabase
-      .from('order_items')
-      .update({
+    const { data: updated, error: updErr } = await writeDroppingMissingColumns(
+      {
         quantity,
         quantity_raw: quantity_raw.trim() || String(quantity),
         version: (Number(existingItem.version) || 1) + 1,
@@ -144,10 +149,9 @@ export async function PUT(req: Request) {
               shipped_qty: preservedPartialQty,
             }
           : {}),
-      })
-      .eq('id', existingItem.id)
-      .select()
-      .single()
+      },
+      (p) => supabase.from('order_items').update(p).eq('id', existingItem.id).select().single(),
+    )
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
     try {
@@ -187,9 +191,42 @@ export async function PUT(req: Request) {
     orderId = newOrder.id
   }
 
-  const { data: item, error: itemErr } = await supabase
-    .from('order_items')
-    .insert({
+  // 決定論的規格・コンテナ・シール補完
+  const ruleSpec =
+    (typeof rule?.spec === 'string' && rule.spec) ||
+    (typeof rule?.label_spec === 'string' && rule.label_spec) ||
+    ''
+  const baseSpec =
+    ruleSpec ||
+    (isNsk
+      ? destName.includes('北海道')
+        ? '200g'
+        : '200gUP'
+      : product.name.includes('小松菜')
+      ? '200g'
+      : product.name.includes('青梗菜') || product.name.includes('チンゲン')
+      ? '2〜3株'
+      : '')
+  const effectiveSpec =
+    baseSpec && !baseSpec.includes('入数')
+      ? `${baseSpec} (入数${defaultPpc})`
+      : baseSpec || `入数${defaultPpc}`
+
+  const effectiveContainer =
+    (typeof rule?.default_container_type === 'string' && rule.default_container_type) ||
+    (typeof rule?.container_type === 'string' && rule.container_type) ||
+    determineContainerType(custName, destName)
+
+  const effectiveHasCard = typeof rule?.has_card === 'boolean' ? rule.has_card : true
+  const effectiveHasSeal =
+    typeof rule?.has_seal === 'boolean'
+      ? rule.has_seal
+      : isNsk
+      ? !destName.includes('北海道') && !effectiveSpec.startsWith('200g (')
+      : null
+
+  const { data: item, error: itemErr } = await writeDroppingMissingColumns<Record<string, unknown>, { code?: string; message?: string }>(
+    {
       order_id: orderId,
       product_id,
       product_name: product.name,
@@ -198,20 +235,21 @@ export async function PUT(req: Request) {
       unit: product.unit,
       unit_price: product.default_unit_price ?? 0,
       tax_rate: product.default_tax_rate,
-      rule_id: rule?.id ?? null,
+      rule_id: typeof rule?.id === 'string' ? rule.id : null,
       confidence: 1.0,
       field_status: 'not_started',
-      spec: rule?.spec ?? null,
-      container_type: rule?.container_type ?? null,
-      has_card: rule?.has_card ?? null,
-    })
-    .select()
-    .single()
-  if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
+      spec: effectiveSpec,
+      container_type: effectiveContainer,
+      has_card: effectiveHasCard,
+      has_seal: effectiveHasSeal,
+    },
+    (p) => supabase.from('order_items').insert(p as never).select().single(),
+  )
+  if (itemErr || !item) return NextResponse.json({ error: itemErr?.message ?? 'insert failed' }, { status: 500 })
 
   await writeAudit(supabase, {
     entityType: 'order_items',
-    entityId: item.id,
+    entityId: String(item.id),
     action: 'INSERT',
     oldValues: null,
     newValues: item,
@@ -222,7 +260,7 @@ export async function PUT(req: Request) {
     const harvestDate = shiftDateStr(delivery_date, -1)
     await supabase.from('harvest_tasks').insert({
       product_id,
-      order_item_id: item.id,
+      order_item_id: String(item.id),
       required_qty: quantity,
       task_date: harvestDate,
       status: 'not_started',

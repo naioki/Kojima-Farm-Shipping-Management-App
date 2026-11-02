@@ -7,14 +7,16 @@ import { Menu, X, LogOut, ChevronDown, Leaf, UserRound, MessageSquarePlus } from
 import { cn } from '@/lib/cn'
 import { navFor, buildPreservedFieldHref } from '@/components/layouts/nav-items'
 import { useNavState } from '@/components/layouts/use-nav'
+import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import type { SidebarUser } from '@/components/layouts/Sidebar'
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /**
- * モバイル用ナビ（lg 未満）。上部バー＋ハンバーガー → スライドドロワー。
- * 現場画面間の遷移では URL の ?date= / ?week= と ?product= を自動的に維持する（#01）。
+ * モバイル・現場共通ナビバー。
+ * - 現場画面間の遷移では URL の ?date= / ?week= と ?product= を自動的に維持する（#01）。
+ * - ヘッダー右端に言語切替スイッチ（🇯🇵/🇹🇭）を統合し、下のスティッキーバーの横幅圧迫を解消（#05）。
  */
 export function MobileNav({
   role,
@@ -83,29 +85,42 @@ export function MobileNav({
   }, [open])
 
   const current = nav.find((n) => n.href === activeHref)
+  const isFieldSurface = pathname?.startsWith('/field')
 
   return (
     <>
       <header
         className={cn(
-          'sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg-soft px-4 shadow-2xs print:hidden',
+          'sticky top-0 z-30 flex h-13 items-center justify-between gap-2 border-b border-line bg-bg-soft px-3 sm:px-4 shadow-2xs print:hidden',
           !persistent && 'lg:hidden',
         )}
       >
-        <button
-          ref={menuButtonRef}
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="メニューを開く"
-          className="flex h-11 w-11 items-center justify-center rounded text-ink hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
-        >
-          <Menu className="h-6 w-6" aria-hidden />
-        </button>
-        <span className="inline-flex items-center gap-1.5 font-display text-lg font-bold text-forest-700">
-          <Leaf className="h-5 w-5" aria-hidden />
-          小島農園
-        </span>
-        {current && <span className="truncate text-sm text-ink-soft">／ {current.label}</span>}
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="メニューを開く"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </button>
+          <span className="inline-flex items-center gap-1 font-display text-base sm:text-lg font-black text-forest-700 shrink-0">
+            <Leaf className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+            小島農園
+          </span>
+          {current && (
+            <span className="truncate text-xs sm:text-sm font-bold text-ink-soft">
+              ／ {current.label}
+            </span>
+          )}
+        </div>
+
+        {isFieldSurface && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <FieldLangSwitch />
+          </div>
+        )}
       </header>
 
       {open && (

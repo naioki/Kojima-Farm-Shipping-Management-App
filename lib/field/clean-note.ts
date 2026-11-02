@@ -1,6 +1,6 @@
 /**
- * AI取込やシステム自動生成で `orders.note` / `order_items.line_note` に付与される
- * 内部メタ情報（★新規追加・数量変更ログ・伝票No・数量表記・規格・容器・箱数など）を除去し、
+ * AI取込やシステム自動生成で `orders.note` / `order_items.line_note` / `deliveries.note` に付与される
+ * 内部メタ情報（★新規追加・数量変更ログ・伝票No・数量表記・規格・容器・箱数・単なる便名など）を除去し、
  * 現場スタッフやドライバーが本当に読むべき伝達事項のみを抽出するユーティリティ。
  */
 export function extractActionableNote(rawNote: string | null | undefined): string {
@@ -14,7 +14,7 @@ export function extractActionableNote(rawNote: string | null | undefined): strin
   const actionable: string[] = []
 
   for (const part of parts) {
-    // 1. 純粋なシステムメタ情報・自動生成フラグは現場メモ欄から除外
+    // 1. 純粋なシステムメタ情報・自動生成フラグ・便名単体は現場メモ欄から除外
     if (/^★?新規追加$/i.test(part)) continue
     if (/^★$/i.test(part)) continue
     if (/^【?新規追加】?$/i.test(part)) continue
@@ -31,6 +31,7 @@ export function extractActionableNote(rawNote: string | null | undefined): strin
     if (/^総数\d+点（\d+ケース[＋+]\s*端数\d+点）$/.test(part)) continue
     if (/^【納入先[:：][^】]+】$/.test(part)) continue
     if (/^(?:納入先|お届け先|配送先)\s*[:：]/i.test(part)) continue
+    if (/^(?:NSK|和郷園|農業総研|岩槻|戸田|松戸|柏|相模|川越|直売所|一般|午前|午後)便$/.test(part)) continue
 
     // 2. 重複しやすい定型プレフィックスを整形
     const cleaned = part
@@ -46,6 +47,62 @@ export function extractActionableNote(rawNote: string | null | undefined): strin
   }
 
   return actionable.join(' / ')
+}
+
+/**
+ * `line_note` 内のシステム履歴トークン（数量変更:... / 🚨パック済... / ★新規追加 / 手書き修正(...) 等）のみを抽出し、
+ * 人間が現場メモを編集・保存した際にも差分バッジが消えないように保持するユーティリティ。
+ */
+export function extractSystemTokensFromNote(rawNote: string | null | undefined): string[] {
+  if (!rawNote) return []
+  const parts = rawNote
+    .split(/\r?\n|\s+\/\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const tokens: string[] = []
+  for (const part of parts) {
+    if (
+      /^★?新規追加$/i.test(part) ||
+      /^数量変更\s*[:：]/i.test(part) ||
+      /^🚨パック済/i.test(part) ||
+      /^手書き修正[（(][^）)]+[）)]$/.test(part) ||
+      /^入数変更[（(][^）)]+[）)]$/.test(part)
+    ) {
+      if (!tokens.includes(part)) tokens.push(part)
+    }
+  }
+  return tokens
+}
+
+/**
+ * システム履歴トークンを維持したまま、人間が入力した現場メモを `line_note` 用に合成する。
+ */
+export function mergeUserMemoWithSystemTokens(
+  existingLineNote: string | null | undefined,
+  userMemo: string | null | undefined,
+): string | null {
+  const sysTokens = extractSystemTokensFromNote(existingLineNote)
+  const cleanUser = extractActionableNote(userMemo)
+  const combined = [...sysTokens, ...(cleanUser ? [cleanUser] : [])]
+  return combined.length > 0 ? combined.join(' / ') : null
+}
+
+/**
+ * 規格文字列（例: "2〜3株 (入数20)", "入数24"）から冗長な "(入数20)" 等を除去し、
+ * カード表面の規格バッジに純粋な規格名のみを表示するためのヘルパー。
+ */
+export function formatCleanSpecBadge(
+  spec: string | null | undefined,
+  masterLabelSpec?: string | null,
+): string {
+  const raw = (spec || masterLabelSpec || '').trim()
+  if (!raw) return '標準規格'
+  const stripped = raw
+    .replace(/[（(]\s*(?:入数|1箱|1ケース)\s*\d+\s*[Pパック入]*\s*[）)]/gi, '')
+    .replace(/^(?:入数|1箱|1ケース)\s*\d+\s*[Pパック入]*$/gi, '')
+    .trim()
+  return stripped || '標準規格'
 }
 
 /**

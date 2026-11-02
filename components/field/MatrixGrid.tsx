@@ -35,11 +35,10 @@ const mmdd = formatJpDateShort
 type CellState = 'idle' | 'saving' | 'saved' | 'error'
 
 /**
- * 週の管理（週間マトリックス）。
- * - #24: 普段は取引先ごとの合計1行で全体のイメージを掴め、『▶ 内訳』1タップで納入先ごとのサブ行がアコーディオン展開されて個別に確認・編集可能。
- * - #25: 納入先サブ行ごとに destination_id を指定して PUT /api/shipments/cell で正確に保存。
- * - #26: 『📦 箱数表示 ⇄ 🥬 パック数表示』を1タップで切り替え可能（箱数表示時はメインに「60箱」等をわかりやすく表示）。
- * - #27: 日付列ヘッダー（11/3(火) 等）をタップすると、その日の「収穫・パックボード」へ1タップでジャンプ。
+ * 週の管理（週間マトリックス v5.1.10 表示単位・入力単位完全一致版）。
+ * - 【#22 解消】「📦 箱数メイン表示」モードのときは、セルをタップして数字（例: `30`）を入力したらそのまま「30箱（`30c` ＝ `30 × 入数` パック）」として解釈・保存する（パック数で入れたい時は `30p` または「🥬 パック数表示」モードで入力）。
+ * - 普段は取引先ごとの合計1行で全体のイメージを掴め、『▶ 内訳』1タップで納入先ごとのサブ行がアコーディオン展開されて個別に確認・編集可能。
+ * - 日付列ヘッダー（11/3(火) 等）をタップすると、その日の「収穫・パックボード」へ1タップでジャンプ。
  */
 export function MatrixGrid({
   productId,
@@ -52,9 +51,7 @@ export function MatrixGrid({
   initialByDest = {},
   packsByCustomer,
 }: MatrixGridProps) {
-  // #26 表示単位モード（デフォルトは直感的な「boxes（箱数メイン）」、1タップで「packs（パック数）」に切替可能）
   const [unitMode, setUnitMode] = useState<'boxes' | 'packs'>('boxes')
-  // #24 納入先内訳を展開中の取引先IDセット
   const [expandedCustomers, setExpandedCustomers] = useState<Set<string>>(new Set())
 
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -69,7 +66,6 @@ export function MatrixGrid({
   })
   const [saved, setSaved] = useState<Record<string, string>>(() => ({ ...values }))
 
-  // 納入先サブ行の値（key: `${customerId}|${destId}|${date}`）
   const [destValues, setDestValues] = useState<Record<string, string>>(() => {
     const dv: Record<string, string> = {}
     for (const c of customers) {
@@ -107,6 +103,27 @@ export function MatrixGrid({
       return 24
     }
     return 20
+  }
+
+  /**
+   * 【#22】現在の unitMode に応じて、セル入力文字列を API 送信用の正規化文字列へ変換する。
+   * - `unitMode === 'boxes'` のとき、純粋な数値（例: "30"）が入力されたら「30箱（"30c"）」として扱う。
+   * - 明示的に "150p" / "150P" と入力された場合はパック数（"150"）として扱う。
+   */
+  const normalizeRawForUnitMode = (rawInput: string, prevPacksStr: string, _ppc: number): string => {
+    const trimmed = rawInput.trim().normalize('NFKC')
+    if (!trimmed) return ''
+    if (/^\d+\s*[pPパック点]$/.test(trimmed)) {
+      return trimmed.replace(/[^\d]/g, '')
+    }
+    if (unitMode === 'boxes' && /^\d+$/.test(trimmed)) {
+      // 既存のパック数そのもの（フォーカスして何も変えずにブラーした場合）ならそのまま維持
+      if (trimmed === prevPacksStr) return trimmed
+      const n = Number(trimmed)
+      if (n === 0) return '0'
+      return `${n}c`
+    }
+    return trimmed
   }
 
   // 取引先ごとの週間合計数量（パック数）
@@ -179,7 +196,7 @@ export function MatrixGrid({
   }
 
   /**
-   * 親行または納入先サブ行のセル保存（#25 destination_id 対応）
+   * 親行または納入先サブ行のセル保存（#22 箱数モード直感入力 ＆ #25 destination_id 対応）
    */
   async function saveCell(customerId: string, date: string, destinationId?: string | null) {
     const isDestRow = Boolean(destinationId)
@@ -189,13 +206,14 @@ export function MatrixGrid({
     if (raw === prevSaved) return
 
     const ppc = getCustomerPpc(customerId)
-    // 箱数モードで純粋な数字（例: "60"）が入力され、その数値がパック入数より小さいまたは箱数として自然な場合のスマート変換ではなく、
-    // 入力欄では常にパック数または "60c"（ケース記法）を受け付ける安全設計
-    if (raw.trim() !== '') {
-      const pre = parseQuantity(raw, { packsPerCase: ppc })
+    const effectiveRaw = normalizeRawForUnitMode(raw, prevSaved, ppc)
+    if (effectiveRaw === prevSaved) return
+
+    if (effectiveRaw.trim() !== '') {
+      const pre = parseQuantity(effectiveRaw, { packsPerCase: ppc })
       if (pre.type === 'error') {
         setState(k, 'error')
-        toast.error('数量を解釈できません（例: 60c または 1440）')
+        toast.error('数量を解釈できません（例: 30 または 30c）')
         return
       }
     }
@@ -210,7 +228,7 @@ export function MatrixGrid({
           destination_id: destinationId ?? null,
           product_id: productId,
           delivery_date: date,
-          quantity_raw: raw,
+          quantity_raw: effectiveRaw,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as {
@@ -219,13 +237,12 @@ export function MatrixGrid({
         error?: string
       }
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
-      const normalized = json.deleted ? '' : json.item != null ? String(json.item.quantity) : raw
+      const normalized = json.deleted ? '' : json.item != null ? String(json.item.quantity) : effectiveRaw
 
       if (isDestRow) {
         const nextDestVals = { ...destValues, [k]: normalized }
         setDestValues(nextDestVals)
         setDestSaved((prev) => ({ ...prev, [k]: normalized }))
-        // 親行（取引先合計）も全納入先の合算値で即時更新
         const dests = destinationsByCustomer[customerId] ?? []
         const newParentSum = dests.reduce((acc, dItem) => {
           const v = Number(nextDestVals[destKey(customerId, dItem.id, date)] || 0)
@@ -239,7 +256,12 @@ export function MatrixGrid({
         setSaved((prev) => ({ ...prev, [k]: normalized }))
       }
       setState(k, 'saved')
-      toast.success('保存しました', { id: 'matrix-cell-save', duration: 1500 })
+      const savedPacks = Number(normalized) || 0
+      const savedBoxes = savedPacks > 0 ? Math.ceil(savedPacks / ppc) : 0
+      toast.success(
+        savedPacks > 0 ? `${savedBoxes}箱（${savedPacks}P）で保存しました` : 'クリアしました',
+        { id: 'matrix-cell-save', duration: 1500 },
+      )
     } catch (e) {
       setState(k, 'error')
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))
@@ -279,10 +301,9 @@ export function MatrixGrid({
 
   return (
     <div className="space-y-3">
-      {/* 上部コントロールバー（#26 箱数 ⇄ パック数 ワンタップ切替 ＋ フィルタ ＋ CSV） */}
+      {/* 上部コントロールバー */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          {/* #26 ワンタップ 箱数 ⇄ パック数 切替スイッチ */}
           <div className="inline-flex items-center rounded-xl border border-forest-300 bg-forest-50/70 p-1 shadow-2xs">
             <button
               type="button"
@@ -295,7 +316,7 @@ export function MatrixGrid({
               )}
             >
               <Box className="h-3.5 w-3.5" />
-              <span>📦 箱数メイン表示</span>
+              <span>📦 箱数モード（数字＝箱数）</span>
             </button>
             <button
               type="button"
@@ -308,11 +329,10 @@ export function MatrixGrid({
               )}
             >
               <Layers className="h-3.5 w-3.5" />
-              <span>🥬 パック数表示</span>
+              <span>🥬 パック数モード</span>
             </button>
           </div>
 
-          {/* 発注ありのみトグル */}
           <button
             type="button"
             onClick={() => setOnlyWithOrders(!onlyWithOrders)}
@@ -389,7 +409,6 @@ export function MatrixGrid({
                         : 'bg-bg-soft text-ink-soft hover:bg-slate-200/70',
                     )}
                   >
-                    {/* #27 日付ヘッダー1タップでその日の収穫・パックボードへ移動 */}
                     <Link
                       href={`/field/shipments?date=${d}&product=${productId}`}
                       className="block px-2 py-2 w-full h-full group"
@@ -436,7 +455,6 @@ export function MatrixGrid({
 
                 return (
                   <Fragment key={c.id}>
-                    {/* 親行：取引先トータル（全体のイメージを1行で把握） */}
                     <tr
                       className={cn(
                         'transition-colors',
@@ -488,7 +506,6 @@ export function MatrixGrid({
                         const isCellFocused =
                           focused?.customerId === c.id && !focused?.destId && focused?.date === d
 
-                        // 複数納入先がある親行は、タップしたら安全のため内訳サブ行を展開して編集させる（#24, #25）
                         if (hasMultipleDests) {
                           return (
                             <td
@@ -527,13 +544,16 @@ export function MatrixGrid({
                           )
                         }
 
-                        // 単一納入先の取引先はそのままセルで直接入力・編集可能
                         return (
                           <td key={d} className="border border-line p-0 relative">
                             {!isCellFocused && numPacks > 0 && unitMode === 'boxes' ? (
                               <button
                                 type="button"
                                 onClick={() => {
+                                  // 箱数モードでセルをタップした際、綺麗な箱数割り切れなら箱数（例: "30"）を初期入力値にセットして直感編集を可能にする
+                                  if (numPacks > 0 && numPacks % ppc === 0) {
+                                    setCell(k, `${numPacks / ppc}c`)
+                                  }
                                   setFocused({ customerId: c.id, date: d })
                                   setTimeout(() => {
                                     const el = document.querySelector<HTMLInputElement>(
@@ -578,7 +598,7 @@ export function MatrixGrid({
                                     prev && prev.customerId === c.id && !prev.destId && prev.date === d ? null : prev,
                                   )
                                 }}
-                                placeholder={unitMode === 'boxes' ? '例:30c' : ''}
+                                placeholder={unitMode === 'boxes' ? '箱数' : 'P数'}
                                 aria-label={`${c.name} ${mmdd(d)}`}
                                 className={cn(
                                   'num h-12 w-full min-w-[68px] bg-transparent px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-[10px] placeholder:font-normal placeholder:text-ink-faint',
@@ -614,7 +634,6 @@ export function MatrixGrid({
                       </td>
                     </tr>
 
-                    {/* #24 子行：折りたたみ展開された納入先別サブ行（個別確認・個別セル編集対応） */}
                     {hasMultipleDests &&
                       isExpanded &&
                       custDests.map((dest) => {
@@ -653,6 +672,9 @@ export function MatrixGrid({
                                     <button
                                       type="button"
                                       onClick={() => {
+                                        if (dPacks > 0 && dPacks % ppc === 0) {
+                                          setDestCell(dk, `${dPacks / ppc}c`)
+                                        }
                                         setFocused({ customerId: c.id, destId: dest.id, date: d })
                                         setTimeout(() => {
                                           const el = document.querySelector<HTMLInputElement>(
@@ -703,7 +725,7 @@ export function MatrixGrid({
                                             : prev,
                                         )
                                       }}
-                                      placeholder="例:20c"
+                                      placeholder={unitMode === 'boxes' ? '箱数' : 'P数'}
                                       aria-label={`${c.name} ${dest.label} ${mmdd(d)}`}
                                       className={cn(
                                         'num h-10 w-full min-w-[68px] bg-white/60 px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-[10px] placeholder:font-normal placeholder:text-ink-faint',
@@ -740,7 +762,6 @@ export function MatrixGrid({
               })
             )}
           </tbody>
-          {/* 日別合計行（フッター） */}
           <tfoot>
             <tr className="border-t-2 border-line bg-bg-soft/80 font-semibold">
               <th className="sticky left-0 z-10 border border-line bg-bg-soft px-3 py-2 text-left font-black text-ink">
@@ -812,6 +833,7 @@ export function MatrixGrid({
           }
           packsPerCase={getCustomerPpc(focused.customerId)}
           unit={productUnit}
+          unitMode={unitMode}
         />
       )}
     </div>
@@ -822,32 +844,42 @@ function QuantityPreviewBar({
   raw,
   packsPerCase,
   unit,
+  unitMode,
 }: {
   raw: string
   packsPerCase: number | null
   unit: string
+  unitMode: 'boxes' | 'packs'
 }) {
-  if (raw.trim() === '') return null
-  const result = parseQuantity(raw, { packsPerCase })
+  const trimmed = raw.trim().normalize('NFKC')
+  if (trimmed === '') return null
+  const ppc = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
+  const effectiveRaw =
+    /^\d+\s*[pPパック点]$/.test(trimmed)
+      ? trimmed.replace(/[^\d]/g, '')
+      : unitMode === 'boxes' && /^\d+$/.test(trimmed)
+      ? `${trimmed}c`
+      : trimmed
+  const result = parseQuantity(effectiveRaw, { packsPerCase: ppc })
 
-  if (result.type === 'error') {
+  if (result.type === 'error' || result.type === 'delete') {
     return null
   }
-  if (result.type === 'delete') return null
 
   const totalNum = result.total.toNumber()
-  const ppc = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
   const boxes = Math.floor(totalNum / ppc)
   const rem = totalNum % ppc
 
   return (
-    <p className="num flex items-center gap-2 rounded-xl border border-forest-300 bg-forest-50 px-3.5 py-2 text-xs font-bold text-forest-900">
+    <p className="num flex flex-wrap items-center gap-2 rounded-xl border border-forest-300 bg-forest-50 px-3.5 py-2 text-xs font-bold text-forest-900">
       <span>📦 入力プレビュー:</span>
       <span className="text-sm font-black">
         {boxes}箱{rem > 0 ? `＋端数${rem}${unit}` : ''}（計 {totalNum.toLocaleString()} {unit} ／ 1箱{ppc}入）
       </span>
-      <span className="text-ink-muted ml-auto hidden sm:inline">
-        ※「30c」で30箱分、またはパック数を直接入力できます
+      <span className="text-ink-muted ml-auto text-[11px]">
+        {unitMode === 'boxes'
+          ? '※ 箱数モード中：数字（例: 30）で30箱として保存されます（パック指定は 150p）'
+          : '※ パック数モード中：数字（例: 600）で600P、または 30c で30箱として保存'}
       </span>
     </p>
   )

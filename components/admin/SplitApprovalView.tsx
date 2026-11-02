@@ -33,6 +33,7 @@ import { ChannelBadge } from '@/components/admin/InboxBadges'
 import type { PendingOrder, PendingOrderItem } from '@/lib/orders/pending-types'
 import { pendingReasons } from '@/lib/orders/pending-types'
 import { formatJpDateShort } from '@/lib/dates'
+import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import {
   determineContainerType,
   formatQuantityCaseText,
@@ -303,9 +304,11 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   }
 
   async function saveQuantity(order: PendingOrder, row: EditableRow) {
-    const n = Number(row.draftQty)
+    const bd = calcBoxBreakdown(row.quantity, order.customerName, order.destinationName, row.spec)
+    const parsedQty = parseQuantity(row.draftQty, { packsPerCase: bd.packsPerCase })
+    const n = parsedQty.type === 'ok' ? parsedQty.total.toNumber() : Number(row.draftQty)
     if (row.draftQty.trim() === '' || !Number.isFinite(n) || n < 0) {
-      toast.error('数量は0以上の数字で入力してください')
+      toast.error('数量は0以上の数字または「30c（箱数）」で入力してください')
       patchRow(order.id, row.id, { draftQty: String(row.quantity) })
       return
     }

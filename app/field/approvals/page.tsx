@@ -1,3 +1,5 @@
+import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { redirect } from 'next/navigation'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { getAuthedUser } from '@/lib/supabase/server'
@@ -51,6 +53,9 @@ export default async function FieldApprovalsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      <div className="flex items-center justify-between gap-2 pb-1">
+        <FieldViewSwitch active="day" date={shiftDateStr(jstTodayStr(), 1)} />
+      </div>
       <div className="flex items-center gap-2">
         <CheckCircle2 className="h-5 w-5 text-earth-700" aria-hidden />
         <h1 className="font-display text-2xl font-bold text-ink">承認（しょうにん）</h1>

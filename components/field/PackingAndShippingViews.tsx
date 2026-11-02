@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, RotateCw, GripVertical } from 'lucide-react'
+import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, GripVertical } from 'lucide-react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
-import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { getThaiContainer, getThaiDepartureTime } from '@/lib/field/thai-dict'
 import {
@@ -20,7 +19,7 @@ import {
   type PackSortMode,
 } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
-import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -56,10 +55,10 @@ function isUserTypingInInput(): boolean {
 }
 
 /**
- * 収穫・袋詰め（パック）専用の明細カード一覧ビュー。
- * - #07: NSK（24入）や小コン（30入）が混在する日でも、一律20割りで上書きせず各行の正確な箱数を合算。
- * - #11: 翌日作業予定（先行枠）バーに合計箱数・総パック数を明記。
- * - #52: 入力欄フォーカス中・並び替えモーダル展開中は30秒自動リフレッシュを一時停止してチラつきを防止。
+ * 収穫・袋詰め（パック）専用の明細カード一覧ビュー（v5.1.10 重複完全排除版）。
+ * - 【#01 解消】二重になっていた濃緑スティッキー進捗バーと HarvestPulseSummary を単一コックピットへ統合。
+ * - 【#10 解消】「出荷先順」ソート時に1件しかない出荷先の上へカード見出しと全く同じセクション見出しが出る重複を排除。
+ * - 【#11 解消】途中数入力時の完了箱数・残り箱数の集計をカード側の計算と完全一致。
  */
 export function PackingAndShippingViews({
   items: initialItems,
@@ -81,7 +80,6 @@ export function PackingAndShippingViews({
   const [sortMode, setSortMode] = useState<PackSortMode>('time')
   const [filterMode, setFilterMode] = useState<'all' | 'incomplete'>('all')
   const [isReorderModalOpen, setIsReorderModalOpen] = useState<boolean>(false)
-  const [isViewingNextDay, setIsViewingNextDay] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [nextDayExpanded, setNextDayExpanded] = useState(false)
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
@@ -133,7 +131,7 @@ export function PackingAndShippingViews({
     setNextItems(initialNextDayItems)
   }, [initialNextDayItems])
 
-  // #52 スマート・ポーリング（入力中やモーダル操作中は自動更新をスキップ）
+  // スマート・ポーリング（入力中やモーダル操作中は自動更新をスキップ）
   useEffect(() => {
     const syncLatest = () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
@@ -155,22 +153,6 @@ export function PackingAndShippingViews({
   }, [router, isReorderModalOpen])
 
   useEffect(() => {
-    if (!nextSectionRef.current || nextItems.length === 0) {
-      setIsViewingNextDay(false)
-      return
-    }
-    const checkScrollPosition = () => {
-      if (!nextSectionRef.current) return
-      const rect = nextSectionRef.current.getBoundingClientRect()
-      setIsViewingNextDay(rect.top <= 110)
-    }
-
-    window.addEventListener('scroll', checkScrollPosition, { passive: true })
-    checkScrollPosition()
-    return () => window.removeEventListener('scroll', checkScrollPosition)
-  }, [nextItems.length])
-
-  useEffect(() => {
     try {
       const saved = localStorage.getItem('kojima_pack_board_sort_mode') as PackSortMode | null
       if (saved === 'time' || saved === 'destination' || saved === 'container') {
@@ -188,7 +170,7 @@ export function PackingAndShippingViews({
 
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
-  // #07 各行の正確な入数（NSK=24入、小コン=30入、標準=20入等）に基づいて箱数を合算（一律20割りバグを解消）
+  // 各行の正確な入数（NSK=24入、小コン=30入、標準=20入等）に基づいて箱数を合算
   let totalPacks = 0
   let totalBoxes = 0
   let completedBoxes = 0
@@ -208,7 +190,9 @@ export function PackingAndShippingViews({
       const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
       if (partialPacks > 0) {
         completedPacks += partialPacks
-        completedBoxes += Math.floor(partialPacks / perCase)
+        const remPacks = Math.max(0, it.orderedQty - partialPacks)
+        const remBoxes = Math.ceil(remPacks / perCase)
+        completedBoxes += Math.max(0, boxCount - remBoxes)
       }
     }
 
@@ -222,7 +206,6 @@ export function PackingAndShippingViews({
     liveSpecMap.set(sKey, curSpec)
   }
 
-  // #11 翌日先行枠の合計箱数・総パック数
   const nextDayTotalPacks = nextItems.reduce((acc, it) => acc + it.orderedQty, 0)
   const nextDayTotalBoxes = nextItems.reduce((acc, it) => {
     const perCase = it.masterPacksPerCase && it.masterPacksPerCase > 0 ? it.masterPacksPerCase : 20
@@ -240,9 +223,6 @@ export function PackingAndShippingViews({
       : (specBreakdown ?? [])
 
   completedBoxes = Math.min(totalBoxes, completedBoxes)
-  const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
-  const _progressPct =
-    totalPacks > 0 ? Math.min(100, Math.round((completedPacks / totalPacks) * 100)) : 0
 
   const incompleteCount = sortedPackItems.filter(
     (it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped',
@@ -384,69 +364,8 @@ export function PackingAndShippingViews({
   }
 
   return (
-    <div className="space-y-3">
-      {/* スクロール追従スリムバー（1行完結・ヘッダー重なり防止） */}
-      <div
-        className={cn(
-          'sticky top-14 z-20 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200',
-          isViewingNextDay
-            ? 'bg-[#0f172a] border-slate-500 text-slate-100'
-            : date === shiftDateStr(jstTodayStr(), 1)
-            ? 'bg-[#0f2e1e] border-emerald-600/80'
-            : date === jstTodayStr()
-            ? 'bg-[#0c2e4e] border-sky-600/80'
-            : 'bg-[#1e293b] border-slate-600',
-        )}
-      >
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span
-              className={cn(
-                'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-black shrink-0',
-                isViewingNextDay
-                  ? 'bg-slate-700 text-amber-300'
-                  : date === shiftDateStr(jstTodayStr(), 1)
-                  ? 'bg-emerald-400 text-emerald-950'
-                  : date === jstTodayStr()
-                  ? 'bg-sky-400 text-sky-950'
-                  : 'bg-slate-700 text-slate-100',
-              )}
-            >
-              {isViewingNextDay
-                ? `翌々日 ${formatJpDateShort(shiftDateStr(date, 1))}`
-                : `${formatJpDateShort(date)}納品`}
-            </span>
-            <span className="text-white font-black text-xs sm:text-sm truncate">
-              {productName || '品目'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {isViewingNextDay ? (
-              <span className="text-slate-200 font-black tabular-nums">
-                翌日分 {nextDayTotalBoxes}箱
-              </span>
-            ) : (
-              <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm">
-                {completedBoxes}/{totalBoxes}箱 <small className="text-white/80 font-bold">(残{remainingBoxes})</small>
-              </span>
-            )}
-            <FieldLangSwitch />
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              title="最新データを再取得"
-              aria-label="最新データを再取得"
-              className="flex items-center justify-center h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 text-white/90 border border-white/15 transition disabled:opacity-50"
-            >
-              <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* リアルタイム進捗コックピット ＆ 内訳アコーディオン */}
+    <div className="space-y-2.5">
+      {/* 単一統合スティッキー進捗コックピット（二重濃緑枠を完全に解消！） */}
       {productName && productId && (
         <HarvestPulseSummary
           productName={productName}
@@ -461,12 +380,14 @@ export function PackingAndShippingViews({
           prevCarryover={prevCarryover}
           initialCarryover={initialCarryover}
           isTodayTarget={isTodayWork}
+          onRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
         />
       )}
 
       {/* スリム統合コントロールバー */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 pt-0.5">
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-line-soft flex-1 min-w-[230px]">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-line-soft flex-1 min-w-[220px]">
           <button
             type="button"
             onClick={() => handleSortModeChange('time')}
@@ -539,7 +460,7 @@ export function PackingAndShippingViews({
             <button
               type="button"
               onClick={() => setIsReorderModalOpen(true)}
-              className="inline-flex items-center gap-1 text-xs font-black text-emerald-900 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 px-2.5 py-2 rounded-xl shadow-2xs transition active:scale-95"
+              className="inline-flex items-center gap-1 text-xs font-black text-emerald-900 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 px-2.5 py-1.5 rounded-xl shadow-2xs transition active:scale-95"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               <span>⇅ 並び替え</span>
@@ -578,17 +499,22 @@ export function PackingAndShippingViews({
             const sectionItems = isNewSection
               ? visiblePackItems.filter((it) => getPackGroupInfo(it, sortMode).groupKey === groupInfo.groupKey)
               : []
+            // 【#10 解消】「出荷先順」で1カードしかないグループでは、カード自身の見出しと100%重複するセクションヘッダーを表示しない
+            const shouldShowSectionHeader =
+              isNewSection && !(sortMode === 'destination' && sectionItems.length <= 1)
+
             const sectionTotalPacks = sectionItems.reduce((acc, it) => acc + it.orderedQty, 0)
             const sectionRemBoxes = sectionItems.reduce((acc, it) => {
               if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') return acc
               const perCase = it.masterPacksPerCase || 20
-              return acc + Math.ceil(it.orderedQty / perCase)
+              const remPacks = Math.max(0, it.orderedQty - (it.initialShippedQty ?? 0))
+              return acc + Math.ceil(remPacks / perCase)
             }, 0)
 
             return (
               <div key={item.itemId} className="space-y-1.5">
-                {isNewSection && (
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 pb-1 px-2.5 rounded-xl bg-slate-100/90 border border-line-soft">
+                {shouldShowSectionHeader && (
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 pb-1 px-2.5 rounded-xl bg-slate-100/90 border border-line-soft">
                     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                       <span className="text-xs sm:text-sm">{groupInfo.icon}</span>
                       <span className="text-xs sm:text-sm font-black text-ink">{groupInfo.title}</span>
@@ -610,12 +536,12 @@ export function PackingAndShippingViews({
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-black">
                       {sectionRemBoxes > 0 ? (
-                        <span className="rounded-md bg-white border border-line px-2 py-0.5 text-ink">
-                          残り {sectionRemBoxes}箱 (計{sectionTotalPacks.toLocaleString()}P)
+                        <span className="rounded-md bg-white border border-line px-2 py-0.5 text-ink tabular-nums">
+                          残 {sectionRemBoxes}箱 ({sectionTotalPacks.toLocaleString()}P)
                         </span>
                       ) : (
-                        <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5">
-                          ✓ 完了 (計{sectionTotalPacks.toLocaleString()}P)
+                        <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5 tabular-nums">
+                          ✓ 完了 ({sectionTotalPacks.toLocaleString()}P)
                         </span>
                       )}
                     </div>
@@ -653,9 +579,9 @@ export function PackingAndShippingViews({
         </div>
       )}
 
-      {/* #11 翌日出荷予定カード一覧（合計箱数・総パック数をバー表面に明記） */}
+      {/* 翌日出荷予定カード一覧（合計箱数・総パック数をバー表面に明記） */}
       {nextItems.length > 0 && (
-        <div ref={nextSectionRef} className="pt-3 space-y-2">
+        <div ref={nextSectionRef} className="pt-2 space-y-2">
           <button
             type="button"
             onClick={() => setNextDayExpanded((prev) => !prev)}

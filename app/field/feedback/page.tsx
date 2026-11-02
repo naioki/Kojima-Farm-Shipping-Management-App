@@ -1,3 +1,5 @@
+import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -15,6 +17,9 @@ export default async function FieldFeedbackPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-12">
+      <div className="flex items-center justify-between gap-2 pb-1">
+        <FieldViewSwitch active="day" date={shiftDateStr(jstTodayStr(), 1)} />
+      </div>
       <div className="space-y-1">
         <h1 className="font-display text-2xl font-black text-ink">💬 改善要望・バグ報告フォーム</h1>
         <p className="text-sm font-medium text-ink-soft">

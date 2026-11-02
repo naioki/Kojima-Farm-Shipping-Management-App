@@ -17,7 +17,12 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { useOutbox } from '@/hooks/useOutbox'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-import { extractActionableNote, extractChangeDiffBadge } from '@/lib/field/clean-note'
+import {
+  extractActionableNote,
+  extractChangeDiffBadge,
+  formatCleanSpecBadge,
+  mergeUserMemoWithSystemTokens,
+} from '@/lib/field/clean-note'
 import { useFieldLang } from '@/lib/field/lang-context'
 import {
   getThaiContainer,
@@ -92,10 +97,11 @@ function buildUnifiedMemo(lineNote?: string | null, fieldNote?: string | null): 
 }
 
 /**
- * 収穫・パックボードの1カードコンポーネント（v5.1.9 世界最高峰・超スリム1シート統合版）。
- * - 「詳細 ▼」を開いた際の4色ボックス＆4つの段落ち茶色ボタンを完全廃止し、白ベースの清潔な1シートに統合。
- * - ①途中数は「箱数」メインで横1行に収まり、②メモも横1行に収まる省スペース設計。
- * - ③注文数の変更・規格・コンテナ・シール・袋・順序移動は「⚙️ 注文数・仕様・順序を変更」の折りたたみ内に集約し、1つの保存ボタンで一括保存。
+ * 収穫・パックボードの1カードコンポーネント（v5.1.10 重複・不整合完全排除版）。
+ * - 【#06 解消】規格バッジから冗長な `(入数20)` を除去し、数量バーの `(20入)` との重複を排除。
+ * - 【#07 解消】詳細欄の `<PackInstructions>` でカード表面のバッジが二重描画される問題を排除。
+ * - 【#08 解消】端数箱がある注文での総箱数・途中数ステッパー上限の不整合を修正。
+ * - 【#09 解消】メモ保存時に `line_note` 内のシステム差分履歴（`165→150P`・`★新規追加`）が消去されるバグを修正。
  */
 export function ShipmentRow({
   itemId,
@@ -144,6 +150,7 @@ export function ShipmentRow({
   const [status, setStatus] = useState<FieldStatus>(initialStatus)
   const [version, setVersion] = useState(initialVersion)
   const [orderedQty, setOrderedQty] = useState<number>(initialOrderedQty)
+  const [currentLineNote, setCurrentLineNote] = useState<string | null>(initialLineNote)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [offlinePending, setOfflinePending] = useState(false)
@@ -186,11 +193,17 @@ export function ShipmentRow({
     return ppc ?? 20
   })()
 
-  // 途中数は「箱数」メインで操作・表示（内部保存時に packsPerCase を掛けてパック数に換算）
+  const totalBoxes = Math.ceil(orderedQty / packsPerCase)
+  const fullCases = Math.floor(orderedQty / packsPerCase)
+  const loosePacks = orderedQty % packsPerCase
+  const casesText = String(fullCases)
+  const looseText = String(loosePacks)
+
+  // 途中数は「箱数」メインで操作・表示
   const [shippedPacks, setShippedPacks] = useState<number | null>(initialShippedQty)
   const [partialBoxesStr, setPartialBoxesStr] = useState<string>(() =>
     initialShippedQty != null && initialShippedQty > 0
-      ? String(Math.floor(initialShippedQty / packsPerCase))
+      ? String(Math.ceil(initialShippedQty / packsPerCase))
       : '',
   )
   const [memoText, setMemoText] = useState(() => buildUnifiedMemo(initialLineNote, initialFieldNote))
@@ -206,16 +219,13 @@ export function ShipmentRow({
 
   const meta = FIELD_STATUS_META[status]
   const isDone = status === 'packed' || status === 'shipped'
-  const changeDiffBadge = extractChangeDiffBadge(initialLineNote ?? '')
+  const changeDiffBadge = extractChangeDiffBadge(currentLineNote ?? '')
+  const cleanSpecLabel = formatCleanSpecBadge(spec, masterLabelSpec)
   const isPartial = shippedPacks != null && shippedPacks > 0 && shippedPacks < orderedQty
 
-  const fullCases = Math.floor(orderedQty / packsPerCase)
-  const loosePacks = orderedQty % packsPerCase
-  const casesText = String(fullCases)
-  const looseText = String(loosePacks)
-  const partialCases = shippedPacks != null && packsPerCase > 0 ? Math.floor(shippedPacks / packsPerCase) : 0
   const remainingPacks = shippedPacks != null ? Math.max(0, orderedQty - shippedPacks) : orderedQty
   const remainingCases = packsPerCase > 0 ? Math.ceil(remainingPacks / packsPerCase) : 0
+  const partialCases = Math.max(0, totalBoxes - remainingCases)
 
   useEffect(() => {
     if (!busy && !undoGrace) {
@@ -234,12 +244,13 @@ export function ShipmentRow({
     setShippedPacks(initialShippedQty)
     setPartialBoxesStr(
       initialShippedQty != null && initialShippedQty > 0
-        ? String(Math.floor(initialShippedQty / packsPerCase))
+        ? String(Math.ceil(initialShippedQty / packsPerCase))
         : '',
     )
   }, [initialShippedQty, packsPerCase])
 
   useEffect(() => {
+    setCurrentLineNote(initialLineNote)
     setMemoText(buildUnifiedMemo(initialLineNote, initialFieldNote))
   }, [initialLineNote, initialFieldNote])
 
@@ -466,17 +477,18 @@ export function ShipmentRow({
     }
   }
 
-  /** 一本化メモの即時保存 */
+  /** 一本化メモの即時保存（#09 システム履歴トークンを維持して差分バッジ消滅を防止） */
   async function saveUnifiedMemo() {
     setSavingNote(true)
     const trimmed = memoText.trim() || null
+    const mergedLineNote = mergeUserMemoWithSystemTokens(currentLineNote, trimmed)
     try {
       const res = await fetch(`/api/order-items/${itemId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           field_note: trimmed,
-          line_note: trimmed,
+          line_note: mergedLineNote,
           version,
         }),
       })
@@ -488,6 +500,7 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
+      setCurrentLineNote(mergedLineNote)
       toast.success(trimmed ? 'メモを保存しました' : 'メモをクリアしました')
       router.refresh()
     } catch (e) {
@@ -497,7 +510,7 @@ export function ShipmentRow({
     }
   }
 
-  /** 注文数・荷姿・規格・シール・袋の一括統合保存（ボタン1つで完結！） */
+  /** 注文数・荷姿・規格・シール・袋の一括統合保存（#09 システム履歴トークンを維持） */
   async function executeSaveAllSpecsAndQty() {
     const newPacks = Math.max(0, parseInt(editOrderPacks, 10) || 0)
     if (newPacks <= 0) {
@@ -506,6 +519,7 @@ export function ShipmentRow({
     }
     setSavingDetails(true)
     const trimmedMemo = memoText.trim() || null
+    const mergedLineNote = mergeUserMemoWithSystemTokens(currentLineNote, trimmedMemo)
     try {
       const res = await fetch(`/api/order-items/${itemId}`, {
         method: 'PATCH',
@@ -518,7 +532,7 @@ export function ShipmentRow({
           has_seal: hasSeal,
           seal_text: sealText.trim() || null,
           bag_type: bagType.trim() || null,
-          line_note: trimmedMemo,
+          line_note: mergedLineNote,
           field_note: trimmedMemo,
           version,
         }),
@@ -530,9 +544,14 @@ export function ShipmentRow({
       }
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as {
-        item: { version: number; field_status: FieldStatus; shipped_qty: number | null }
+        item: { version: number; field_status: FieldStatus; shipped_qty: number | null; line_note?: string | null }
       }
       setVersion(json.item.version)
+      if (json.item.line_note !== undefined) {
+        setCurrentLineNote(json.item.line_note)
+      } else {
+        setCurrentLineNote(mergedLineNote)
+      }
       if (newPacks !== orderedQty) {
         setOrderedQty(newPacks)
         setStatus(json.item.field_status)
@@ -736,16 +755,16 @@ export function ShipmentRow({
               </div>
             </div>
 
-            {/* 規格 ＋ 資材レシピタグ */}
+            {/* 規格 ＋ 資材レシピタグ（#06 規格バッジから冗長な (入数20) を除去し、数量バーの (20入) との重複を解消） */}
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-slate-300">
                 {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) ? (
                   <>
                     <span>📐 {getThaiSpec(spec || masterLabelSpec, masterPacksPerCase)}</span>
-                    <span className="text-[11px] font-bold text-ink-muted">({spec || masterLabelSpec || '標準規格'})</span>
+                    <span className="text-[11px] font-bold text-ink-muted">({cleanSpecLabel})</span>
                   </>
                 ) : (
-                  <span>📐 {spec || masterLabelSpec || '標準規格'}</span>
+                  <span>📐 {cleanSpecLabel}</span>
                 )}
               </span>
 
@@ -813,7 +832,7 @@ export function ShipmentRow({
               </button>
             )}
 
-            {/* 📝 本当の伝達事項がある時のみ表示（★新規追加などのメタ文字は clean-note で完全除外済） */}
+            {/* 📝 本当の伝達事項がある時のみ表示 */}
             {(memoText || masterPackingNotes) && (
               <button
                 type="button"
@@ -852,7 +871,7 @@ export function ShipmentRow({
               </span>
               {loosePacks > 0 && (
                 <span className="rounded-lg bg-amber-300 text-amber-950 px-2 py-0.5 text-xs sm:text-sm font-black shadow-2xs">
-                  ＋端数 {looseText}P (1箱)
+                  ＋端数 {looseText}P (計{totalBoxes}箱)
                 </span>
               )}
             </div>
@@ -993,7 +1012,7 @@ export function ShipmentRow({
       )}
 
       {/* ===================================================================== */}
-      {/* ▼ 世界最高峰・超スリム1シート統合型「詳細パネル」（4色の箱やボタンの段落ちを完全排除！） */}
+      {/* ▼ 超スリム1シート統合型「詳細パネル」（4色の箱やボタンの段落ちを完全排除！） */}
       {/* ===================================================================== */}
       {open && (
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2.5 animate-in fade-in duration-150">
@@ -1004,10 +1023,10 @@ export function ShipmentRow({
                 <span>⏳ 途中数（いまできた箱数）</span>
               </span>
               <span className="font-bold text-ink-soft tabular-nums">
-                目標 {casesText}箱（{orderedQty}P）
+                目標 {totalBoxes}箱（{orderedQty}P）
                 {partialBoxesStr !== '' && Number(partialBoxesStr) > 0 && (
                   <span className="text-emerald-800 font-black ml-1">
-                    ／ 現在 {partialBoxesStr}箱（{Number(partialBoxesStr) * packsPerCase}P）
+                    ／ 現在 {partialBoxesStr}箱（{Math.min(orderedQty, Number(partialBoxesStr) * packsPerCase)}P）
                   </span>
                 )}
               </span>
@@ -1031,7 +1050,7 @@ export function ShipmentRow({
                   type="number"
                   inputMode="numeric"
                   min={0}
-                  max={fullCases}
+                  max={totalBoxes}
                   value={partialBoxesStr}
                   onChange={(e) => setPartialBoxesStr(e.target.value)}
                   onKeyDown={(e) => {
@@ -1050,7 +1069,7 @@ export function ShipmentRow({
                 type="button"
                 onClick={() => {
                   const cur = parseInt(partialBoxesStr, 10) || 0
-                  const next = Math.min(fullCases, cur + 1)
+                  const next = Math.min(totalBoxes, cur + 1)
                   setPartialBoxesStr(String(next))
                 }}
                 className="h-9 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs font-black text-white shrink-0 active:scale-95 transition shadow-2xs"
@@ -1138,7 +1157,7 @@ export function ShipmentRow({
             <PackInstructions values={packInstructions} photos={packPhotos ?? []} variant="field" />
           )}
 
-          {/* ③ 3段目：⚙️ 注文数の変更・規格・コンテナ・シール・作業順（普段は1行に折りたたんで画面をスッキリ保つ） */}
+          {/* ③ 3段目：⚙️ 注文数の変更・規格・コンテナ・シール・作業順 */}
           <div className="border-t border-slate-200/80 pt-2">
             <div className="flex items-center justify-between gap-2">
               <button
@@ -1151,7 +1170,6 @@ export function ShipmentRow({
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', specSectionOpen && 'rotate-180')} />
               </button>
 
-              {/* 作業順の移動ボタン（1行で右端に配置） */}
               {(onMoveToTop || onMoveUp || onMoveDown) && (
                 <div className="flex items-center gap-1">
                   {onMoveToTop && !isNextUp && !isDone && (
@@ -1193,7 +1211,6 @@ export function ShipmentRow({
 
             {specSectionOpen && (
               <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 space-y-3 animate-in fade-in duration-150">
-                {/* 注文数の直接変更（横1行） */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-line/60">
                   <span className="text-xs font-black text-ink">📦 注文数の変更（1箱＝{packsPerCase}P）</span>
                   <div className="flex items-center gap-1.5">
@@ -1232,7 +1249,6 @@ export function ShipmentRow({
                   </div>
                 </div>
 
-                {/* 容器・規格 */}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-[11px] font-bold text-ink-soft">容器・コンテナ</span>
@@ -1254,7 +1270,6 @@ export function ShipmentRow({
                   </label>
                 </div>
 
-                {/* シール・袋・カード */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
@@ -1334,7 +1349,7 @@ export function ShipmentRow({
           await advanceTo('packed')
         }}
         title="⚠️ 途中数が記録されています。全数パック済にしますか？"
-        message={`受注数 ${orderedQty}P（${casesText}箱）に対し、現在 途中数 ${shippedPacks ?? 0}P が記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`}
+        message={`受注数 ${orderedQty}P（${totalBoxes}箱）に対し、現在 途中数 ${shippedPacks ?? 0}P が記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`}
         confirmLabel={`全${orderedQty}P完了としてパック済にする`}
         isLoading={busy}
       />
@@ -1357,7 +1372,7 @@ export function ShipmentRow({
         onClose={() => setConfirmOpen(false)}
         onConfirm={reset}
         title="ステータスを未完了に戻しますか？"
-        message={`「${customerName} / ${casesText}箱 (${orderedQty}P)」を ${meta.label} から1段戻します。`}
+        message={`「${customerName} / ${totalBoxes}箱 (${orderedQty}P)」を ${meta.label} から1段戻します。`}
         confirmLabel="戻す"
         isLoading={busy}
       />
@@ -1367,7 +1382,7 @@ export function ShipmentRow({
         onClose={() => setDeleteOpen(false)}
         onConfirm={deleteItem}
         title="この明細を削除しますか？"
-        message={`「${customerName} / ${casesText}箱 (${orderedQty}P)」を削除します。この操作は取り消せません。`}
+        message={`「${customerName} / ${totalBoxes}箱 (${orderedQty}P)」を削除します。この操作は取り消せません。`}
         confirmLabel="削除する"
         isLoading={deleting}
       />

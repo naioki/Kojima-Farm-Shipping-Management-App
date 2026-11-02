@@ -112,7 +112,7 @@ export default async function DeliveriesReportPage({
     }
     s.total++
     const status = d.status as DeliveryStatus
-    if (status === 'delivered') s.delivered++
+    if (status === 'delivered' || status === 'loaded') s.delivered++
     if (d.checked_at) s.checked++
     if (d.checked_at && d.delivered_at) {
       s.leadSumMin += (new Date(d.delivered_at).getTime() - new Date(d.checked_at).getTime()) / 60_000
@@ -133,7 +133,7 @@ export default async function DeliveriesReportPage({
     .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'ja'))
   const totals = {
     total: deliveries.length,
-    delivered: deliveries.filter((d) => d.status === 'delivered').length,
+    delivered: deliveries.filter((d) => d.status === 'delivered' || d.status === 'loaded').length,
     reverts: [...revertsByDelivery.values()].reduce((a, b) => a + b, 0),
     issues: issueList.length,
   }

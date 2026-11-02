@@ -35,7 +35,6 @@ export interface PackInstructionPhoto {
   kind: PackPhotoKind
 }
 
-/** true/false/未設定（null）を「あり／なし／表示しない」に振り分ける。NULL=未設定は行を出さない。 */
 function boolBadge(
   value: boolean | null | undefined,
   onLabel: string,
@@ -46,10 +45,10 @@ function boolBadge(
 }
 
 /**
- * 荷姿の作業指示（値駆動表示）。値が入っている項目だけをバッジ/行として出す。
- * - variant='field'    … 現場画面（field_memo を表示、standing_notes も表示）
- * - variant='document' … 帳票・admin（standing_notes を表示、field_memo は出さない）
- * 写真は横スクロールのサムネイル帯＋タップで拡大モーダル（複数枚でも縦に伸びない）。
+ * 荷姿の作業指示（#07 現場カード表面と重複するバッジの再描画を排除）。
+ * - variant='field'    … カード表面に既に表示されている「ラベル規格・テープ色・カード有無・シール有無」は重複させず、
+ *                        値札・通い箱返却・品質注意・見本写真のみを表示する。
+ * - variant='document' … 帳票・admin（すべてのチップと standing_notes を表示）。
  */
 export function PackInstructions({
   values,
@@ -70,11 +69,13 @@ export function PackInstructions({
   const returnable = boolBadge(values.returnable_container, '通い箱（返却）', '返却なし')
 
   const chips: { key: string; icon: typeof Tag; text: string; alert?: boolean }[] = []
-  if (values.label_spec) chips.push({ key: 'label', icon: Tag, text: `ラベル: ${values.label_spec}` })
-  if (values.tape_color) chips.push({ key: 'tape', icon: Pin, text: `テープ: ${values.tape_color}` })
-  if (values.spec_note) chips.push({ key: 'spec', icon: Ruler, text: values.spec_note })
-  if (card) chips.push({ key: 'card', icon: IdCard, text: card.text, alert: !card.on })
-  if (seal) chips.push({ key: 'seal', icon: Sticker, text: seal.text, alert: !seal.on })
+  if (variant === 'document') {
+    if (values.label_spec) chips.push({ key: 'label', icon: Tag, text: `ラベル: ${values.label_spec}` })
+    if (values.tape_color) chips.push({ key: 'tape', icon: Pin, text: `テープ: ${values.tape_color}` })
+    if (values.spec_note) chips.push({ key: 'spec', icon: Ruler, text: values.spec_note })
+    if (card) chips.push({ key: 'card', icon: IdCard, text: card.text, alert: !card.on })
+    if (seal) chips.push({ key: 'seal', icon: Sticker, text: seal.text, alert: !seal.on })
+  }
   if (priceTag) chips.push({ key: 'ptag', icon: Ticket, text: priceTag.text })
   if (returnable) chips.push({ key: 'ret', icon: RefreshCw, text: returnable.text })
 
@@ -86,7 +87,7 @@ export function PackInstructions({
   if (!hasAnything) return null
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-1.5', className)}>
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {chips.map((c) => {

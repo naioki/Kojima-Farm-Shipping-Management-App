@@ -895,7 +895,7 @@ export function OrderNewForm({
         // 1. 取引先解決（無ければ現在選択中または自動作成）
         let matchedCust = findBestMatchingCustomer(ord.customer_name, currentCusts)
         if (!matchedCust && customerId) {
-          matchedCust = currentCusts.find((c) => c.id === customerId) ?? null
+          matchedCust = currentCusts.find((c) => c.id === customerId)
         }
         if (!matchedCust && ord.customer_name?.trim()) {
           const cr = await fetch('/api/customers/quick', {

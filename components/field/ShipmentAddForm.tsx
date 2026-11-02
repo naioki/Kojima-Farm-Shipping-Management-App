@@ -37,6 +37,7 @@ import { useOutbox } from '@/hooks/useOutbox'
 
 export interface ShipmentAddFormProps {
   deliveryDate: string
+  defaultProductId?: string | null
   customers: { id: string; name: string }[]
   products: { id: string; name: string; unit: string; category?: string | null }[]
   /** 取引先配下の納入先（届け先） */
@@ -151,6 +152,7 @@ function extractBreakdownParts(
  */
 export function ShipmentAddForm({
   deliveryDate,
+  defaultProductId,
   customers: initialCustomers,
   products: initialProducts,
   destinations = [],
@@ -259,12 +261,21 @@ export function ShipmentAddForm({
   useEffect(() => setProducts(initialProducts), [initialProducts])
   useEffect(() => setAllDestinations(destinations), [destinations])
   useEffect(() => setLocalPacksByPair(packsByPair), [packsByPair])
+  const [manualFormOpen, setManualFormOpen] = useState(true)
+
   useEffect(() => {
     if (isOpen) {
       setStep('input')
       setTargetDate(deliveryDate)
+      if (defaultProductId) {
+        const matchedP = products.find((p) => p.id === defaultProductId)
+        if (matchedP) {
+          setProductId(matchedP.id)
+          setSelectedCategory(resolveProductCategory(matchedP))
+        }
+      }
     }
-  }, [isOpen, deliveryDate])
+  }, [isOpen, deliveryDate, defaultProductId, products])
 
   // クイック日付用（日本時間 JST 基準）
   const todayStr = useMemo(() => jstTodayStr(), [])
@@ -808,6 +819,7 @@ export function ShipmentAddForm({
     setDateScopeMode('all')
     setParsedCandidates(entries)
     setActiveCandidateIdx(0)
+    if (entries.length > 0) setManualFormOpen(false)
     setUncertainItems([])
 
     if (entries.length === 0) {
@@ -1808,7 +1820,7 @@ export function ShipmentAddForm({
           if (!submitting) setIsOpen(false)
         }}
         title={step === 'confirm' ? '出荷登録・変更の最終確認' : '新規出荷の追加 / 変更'}
-        className="max-w-xl max-h-[92vh] overflow-y-auto"
+        className="max-w-xl"
         footer={
           step === 'confirm' ? (
             <div className="flex w-full items-center justify-between gap-3">
@@ -2517,12 +2529,16 @@ export function ShipmentAddForm({
               )}
             </div>
 
-            {/* ② 構造化直接入力フォーム（常時操作可能・1件ずつの手入力や詳細微修正も即座にOK） */}
-            <div className="space-y-3.5 pt-1">
+            {/* ② 構造化直接入力フォーム（AI候補一覧がある時は1行に折りたたんで画面をスッキリ保ち、タップでいつでも展開可能 #18） */}
+            <div className="space-y-3 pt-1 border-t border-line">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-ink-muted uppercase tracking-wide">
-                  ▼ 個別出荷内容の入力・微修正
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setManualFormOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-xs font-black text-forest-900 bg-forest-50 hover:bg-forest-100 border border-forest-200 px-2.5 py-1.5 rounded-lg transition"
+                >
+                  <span>{manualFormOpen ? '▲ 手動入力・個別微修正フォームをたたむ' : '▼ 1件ずつ手動入力・個別微修正する（タップで開く）'}</span>
+                </button>
                 {/* 操作モード選択 */}
                 <div className="flex items-center gap-1 text-xs font-bold">
                   <span className="text-ink-muted">操作:</span>
@@ -2538,6 +2554,9 @@ export function ShipmentAddForm({
                   </select>
                 </div>
               </div>
+
+              {manualFormOpen && (
+              <div className="space-y-3.5">
 
               {/* 納品日 ＆ 時間帯指定（重複していた朝/昼ボタンとセレクトを1行ずつに整理） */}
               <div className="space-y-1.5">
@@ -3182,6 +3201,8 @@ export function ShipmentAddForm({
                   className="mt-1 w-full rounded-xl border border-line bg-white p-2.5 text-xs text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none"
                 />
               </div>
+              </div>
+              )}
             </div>
           </div>
         )}

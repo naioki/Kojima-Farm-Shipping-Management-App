@@ -1,87 +1,52 @@
-import { describe, expect, it } from 'vitest'
-import { extractActionableNote, extractChangeDiffBadge } from './clean-note'
-import { collapseStrikethroughSplitOrders, type ParsedOrder } from '@/lib/gemini/analyze'
+import { describe, it, expect } from 'vitest'
+import {
+  extractActionableNote,
+  extractChangeDiffBadge,
+  formatCleanSpecBadge,
+  mergeUserMemoWithSystemTokens,
+} from './clean-note'
 
 describe('extractActionableNote', () => {
-  it('AIメタ情報や自動タグ（伝票No・規格・数量表記・手書き修正タグ）を除外し、現場伝達事項のみを残す', () => {
-    const raw = `伝票No: 2126
-入数変更です。
-規格:200g (入数30) / 数量表記:総数150点（5ケース＋端数0点） / 容器:小コン / 箱数:5箱 / 手書き修正（150点） / 【要返答】入数変更です。`
-    expect(extractActionableNote(raw)).toBe('入数変更です。')
-  })
-
-  it('純粋なメタ情報のみの場合は空文字を返す', () => {
-    const raw = `伝票No: 3339
-規格:2〜3株 / 数量表記:総数494点（24ケース＋端数14点） / 容器:青コン / 箱数:25箱`
+  it('システム自動メタ文字列・★新規追加・便名単体を除外し、現場への実質的な伝達事項のみを残す', () => {
+    const raw =
+      '伝票No: 1024 / 規格: 200gUP / 容器: 農業総研専用折りたたみコンテナ / 箱数: 60 / ★新規追加 / 数量変更: 120→150P / 手書き修正（150点） / NSK便'
     expect(extractActionableNote(raw)).toBe('')
   })
 
-  it('現場の手動メモ（空コンテナ持参など）はそのまま残す', () => {
+  it('実際の現場指示や店舗内訳メモはそのまま保持する', () => {
     expect(extractActionableNote('空コンテナ20個持参 / 手前に積むこと')).toBe(
       '空コンテナ20個持参 / 手前に積むこと',
+    )
+    expect(extractActionableNote('★新規追加 / 内訳: ライフ近畿40箱 / サンプラザ20箱')).toBe(
+      '内訳: ライフ近畿40箱 / サンプラザ20箱',
     )
   })
 })
 
-describe('extractChangeDiffBadge', () => {
-  it('旧数値→新数値の変更履歴バッジを抽出する', () => {
-    expect(extractChangeDiffBadge('手書き修正（165→150P） / 入数変更です。')).toBe('165→150P')
-    expect(extractChangeDiffBadge('数量変更:10/25 15:41 204→201P')).toBe('204→201P')
-    expect(extractChangeDiffBadge('★新規追加 / 空コンテナ持参')).toBe('新規追加')
-  })
-
-  it('変更表記がない場合は null を返す', () => {
-    expect(extractChangeDiffBadge('空コンテナ20個持参')).toBeNull()
+describe('mergeUserMemoWithSystemTokens', () => {
+  it('現場メモを更新・クリアしてもシステム履歴トークン（数量変更・★新規追加）を破壊せず保持する', () => {
+    const existing = '★新規追加 / 数量変更:100→120P / 旧メモ'
+    expect(mergeUserMemoWithSystemTokens(existing, '新しい現場メモ')).toBe(
+      '★新規追加 / 数量変更:100→120P / 新しい現場メモ',
+    )
+    expect(mergeUserMemoWithSystemTokens(existing, '')).toBe(
+      '★新規追加 / 数量変更:100→120P',
+    )
   })
 })
 
-describe('collapseStrikethroughSplitOrders', () => {
-  it('同一出荷日で二重線旧数値（約表記）と手書き確定値が2列に分裂した場合、手書き確定値1件に統合する', () => {
-    const splitOrders: ParsedOrder[] = [
-      {
-        customer_name: '農事組合法人 房総食料センター',
-        destination_name: 'BOX用',
-        delivery_date: '2026-10-27',
-        slip_no: '2126',
-        note: null,
-        items: [
-          {
-            raw_name: 'チンゲン菜',
-            product_name: 'チンゲン菜',
-            quantity: '170',
-            unit: 'P',
-            confidence: 0.5,
-            is_approximate: true,
-            is_handwritten_modified: false,
-            needs_review_reason: '約表記（暫定値・要確認）',
-          },
-        ],
-      },
-      {
-        customer_name: '農事組合法人 房総食料センター',
-        destination_name: 'ちばセット用',
-        delivery_date: '2026-10-27',
-        slip_no: '2126',
-        note: null,
-        items: [
-          {
-            raw_name: 'チンゲン菜',
-            product_name: 'チンゲン菜',
-            quantity: '157',
-            unit: 'P',
-            confidence: 0.95,
-            is_approximate: false,
-            is_handwritten_modified: true,
-            note: '手書き修正（157点）',
-          },
-        ],
-      },
-    ]
+describe('formatCleanSpecBadge', () => {
+  it('規格バッジから冗長な (入数20) 等を除去して純粋な規格名を返す', () => {
+    expect(formatCleanSpecBadge('2〜3株 (入数20)')).toBe('2〜3株')
+    expect(formatCleanSpecBadge('200gUP (入数24)')).toBe('200gUP')
+    expect(formatCleanSpecBadge('入数20')).toBe('標準規格')
+  })
+})
 
-    const result = collapseStrikethroughSplitOrders(splitOrders)
-    expect(result).toHaveLength(1)
-    expect(result[0]?.destination_name).toBe('ちばセット用')
-    expect(result[0]?.items[0]?.quantity).toBe('157')
-    expect(result[0]?.items[0]?.note).toContain('170→157P')
+describe('extractChangeDiffBadge', () => {
+  it('矢印による数量変更・入数変更・★新規追加を抽出する', () => {
+    expect(extractChangeDiffBadge('数量変更: 165→150P')).toBe('165→150P')
+    expect(extractChangeDiffBadge('入数 30→20')).toBe('入数 30→20')
+    expect(extractChangeDiffBadge('★新規追加')).toBe('新規追加')
   })
 })

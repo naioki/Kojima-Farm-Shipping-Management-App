@@ -13,6 +13,8 @@ import { RejectOrderButton } from '@/components/admin/RejectOrderButton'
 import { ReceiptOriginalTrigger } from '@/components/admin/ReceiptOriginalViewer'
 import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { formatJpDateShort } from '@/lib/dates'
+import { extractActionableNote } from '@/lib/field/clean-note'
+import { parseQuantity } from '@/lib/calculations/parse-quantity'
 
 export interface PackConfigOption {
   id: string
@@ -171,9 +173,11 @@ export function EditableOrderCard({
   }
 
   async function saveQty(row: Row) {
-    const n = Number(row.draft)
+    const ppc = resolveCardPacksPerCase(customerName, row.spec, row.containerType)
+    const parsedQty = parseQuantity(row.draft, { packsPerCase: ppc })
+    const n = parsedQty.type === 'ok' ? parsedQty.total.toNumber() : Number(row.draft)
     if (row.draft.trim() === '' || !Number.isFinite(n) || n < 0) {
-      toast.error('数量は0以上の数字で入れてください')
+      toast.error('数量は0以上の数字または「30c（箱数）」で入れてください')
       patch(row.id, { draft: String(row.quantity) })
       return
     }
@@ -318,11 +322,11 @@ export function EditableOrderCard({
         </div>
       </div>
 
-      {/* 注文備考・FAXメモ表示 */}
-      {notes && (
+      {/* 注文備考・FAXメモ表示（システムタグを除去した純粋な伝達事項のみ表示 #23） */}
+      {extractActionableNote(notes) && (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-950">
           <span className="font-bold">📝 注文備考・OCR情報: </span>
-          <span>{notes}</span>
+          <span>{extractActionableNote(notes)}</span>
         </div>
       )}
 
@@ -374,7 +378,7 @@ export function EditableOrderCard({
             {rows.map((row) => {
               const low = row.confidence == null || row.confidence < 0.7
               const needsPack = (row.packConfigOptions?.length ?? 0) > 0 && !row.packConfigId
-              const itemDetails = [row.spec, row.containerType, row.lineNote].filter(Boolean).join(' ・ ')
+              const itemDetails = [row.spec, row.containerType, extractActionableNote(row.lineNote)].filter(Boolean).join(' ・ ')
               return (
                 <li key={row.id} className="space-y-2 px-3.5 py-3 hover:bg-bg-soft/30 transition-colors">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -399,8 +403,9 @@ export function EditableOrderCard({
                       </span>
                     )}
                     <input
-                      type="number"
-                      inputMode="numeric"
+                      type="text"
+                      inputMode="text"
+                      placeholder="例:30c"
                       min={0}
                       value={row.draft}
                       disabled={row.saving}

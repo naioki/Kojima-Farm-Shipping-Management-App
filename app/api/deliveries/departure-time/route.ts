@@ -7,6 +7,7 @@ import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
+import { cleanShippingRouteName } from '@/lib/field/shipment-sort'
 
 export const runtime = 'nodejs'
 
@@ -27,11 +28,9 @@ const bodySchema = z.object({
 })
 
 /**
- * 配送リストから出荷時間・便名をワンタップで設定・変更するエンドポイント。
- * - scope === 'master'（既定）: マスタ（全日程共通）として保存し、今日・明日以降も毎回入力不要にする。
- * - scope === 'date_only': この日（deliveryDate）だけの特別変更として保存し、翌日以降のマスタは汚さない。
- * - 特定納品先（destinationId または destinationName）がある場合は `cust:${customerId}:default` を上書きせず、
- *   同一取引先の他納品先（岩槻便と戸田便など）が巻き添えで変わるバグを完全防止する。
+ * 配送リストから出荷時間・便名をワンタップで設定・変更するエンドポイント（v5.1.10 修正版）。
+ * - 【#12 解消】deliveries.note に便名（NSK便・和郷園便等）を追記して特記事項バナーに重複表示させていた処理を削除。
+ * - 【#13 解消】特定納品先（destinationId）が既に指定されている場合は、その納品先の注文のみを更新し、destination_id IS NULL の別注文を巻き添えにしない。
  */
 export async function POST(req: Request) {
   const user = await getAuthedUser()
@@ -53,17 +52,17 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
 
   const cleanTime = departureTime?.trim() || null
-  const cleanRoute = shippingRouteName?.trim() || null
+  const cleanRoute = cleanShippingRouteName(shippingRouteName) || null
 
   try {
     let targetDestId = destinationId
+    const wasExplicitDestId = Boolean(destinationId)
 
     // 1. 納入先IDの特定・作成
     if (!targetDestId) {
       const destFullName = destinationName?.trim() || '標準納入先'
       const norm = normalizeOrgName(destFullName)
 
-      // 同一取引先配下の既存を検索
       const { data: siblings } = await admin
         .from('delivery_destinations')
         .select('id, full_name')
@@ -79,7 +78,6 @@ export async function POST(req: Request) {
           full_name: destFullName,
         }
 
-        // カラムが存在し、かつ master スコープの場合は departure_time / shipping_route_name も一緒に登録
         let insRes = await admin
           .from('delivery_destinations')
           .insert(
@@ -95,7 +93,6 @@ export async function POST(req: Request) {
           .maybeSingle()
 
         if (insRes.error && isMissingColumnError(insRes.error)) {
-          // 列が存在しない環境向けフォールバック（PGRST204 / 42703 両対応）
           insRes = await admin
             .from('delivery_destinations')
             .insert(basePayload)
@@ -126,9 +123,9 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. 当日の orders テーブルの destination_id を更新（shipping_timeは CHECK (shipping_time IN ('am', 'pm')) 制約があるため am/pm/null のみ反映）
+    // 3. 当日の orders テーブル更新（#13 特定 destinationId が指定されていた場合は該当注文のみ更新し、別注文の巻き添えを防止）
     const orderUpdatePayload: Record<string, unknown> = {}
-    if (targetDestId) {
+    if (targetDestId && !wasExplicitDestId) {
       orderUpdatePayload.destination_id = targetDestId
     }
     if (cleanTime === 'am' || cleanTime === 'pm' || cleanTime === null) {
@@ -143,8 +140,10 @@ export async function POST(req: Request) {
         .eq('customer_id', customerId)
         .neq('status', 'cancelled')
 
-      if (targetDestId) {
-        orderQuery = orderQuery.or(`destination_id.eq.${targetDestId},destination_id.is.null`)
+      if (wasExplicitDestId && targetDestId) {
+        orderQuery = orderQuery.eq('destination_id', targetDestId)
+      } else if (targetDestId) {
+        orderQuery = orderQuery.is('destination_id', null)
       }
 
       const { error: orderErr } = await orderQuery
@@ -153,27 +152,24 @@ export async function POST(req: Request) {
       }
     }
 
-    // 4. app_settings に RouteOverride を保存（0026未適用環境・CHECK制約環境でも100%確実に永続化）
+    // 4. app_settings に RouteOverride を保存
     try {
       const overrideKeys: string[] = []
       const cleanDestName = destinationName?.trim() || ''
       const isGenericDest = !cleanDestName || cleanDestName === '直接納品' || cleanDestName === '標準納入先'
 
       if (scope === 'date_only') {
-        // この日（deliveryDate）だけのオーバーライドキー
         if (targetDestId) overrideKeys.push(`date:${deliveryDate}:dest:${targetDestId}`)
         if (cleanDestName) overrideKeys.push(`date:${deliveryDate}:cust:${customerId}:${cleanDestName}`)
         if (!targetDestId && isGenericDest) {
           overrideKeys.push(`date:${deliveryDate}:cust:${customerId}:default`)
         }
       } else {
-        // 全日程共通（マスタ）キー（他の納品先を汚染しないよう、特定納品先がある場合は cust:default を上書きしない）
         if (targetDestId) overrideKeys.push(`dest:${targetDestId}`)
         if (cleanDestName) overrideKeys.push(`cust:${customerId}:${cleanDestName}`)
         if (!targetDestId && isGenericDest) {
           overrideKeys.push(`cust:${customerId}:default`)
         }
-        // 過去にこの日だけのオーバーライドが設定されていた場合、マスタ変更を即反映できるよう当日キーも同期
         if (targetDestId) overrideKeys.push(`date:${deliveryDate}:dest:${targetDestId}`)
         if (cleanDestName) overrideKeys.push(`date:${deliveryDate}:cust:${customerId}:${cleanDestName}`)
       }
@@ -184,30 +180,6 @@ export async function POST(req: Request) {
       })
     } catch (saveErr) {
       console.warn('[departure-time] saveRouteOverride エラー:', saveErr)
-    }
-
-    // 5. deliveries テーブルの status / note も同期（存在する場合、limit(1) で複数行エラーを回避）
-    try {
-      const { data: existingRows } = await admin
-        .from('deliveries')
-        .select('id, note')
-        .eq('delivery_date', deliveryDate)
-        .eq('customer_id', customerId)
-        .limit(1)
-
-      const existingDelivery = existingRows?.[0]
-      if (existingDelivery) {
-        let note = existingDelivery.note || ''
-        if (cleanRoute && !note.includes(cleanRoute)) {
-          note = note ? `${note} / ${cleanRoute}` : cleanRoute
-        }
-        await admin
-          .from('deliveries')
-          .update({ note: note || null })
-          .eq('id', existingDelivery.id)
-      }
-    } catch {
-      // deliveries テーブルの更新は補助的なので失敗しても握りつぶす
     }
 
     return NextResponse.json({
