@@ -430,7 +430,7 @@ export default async function DeliveriesPage({
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-2">
           <h1 className="font-display text-xl font-black text-ink">便別積込・配送リスト</h1>
-          <FieldViewSwitch active="day" date={date} />
+          <FieldViewSwitch active="delivery" date={date} />
         </div>
         <div className="flex items-center gap-2">
           <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="本日パック・積込対象" />

@@ -8,6 +8,7 @@ import type { FieldStatus } from '@/types/database'
 import { nextFieldStatus, canAdvance, FIELD_STATUS_META } from '@/lib/field/tap-loop'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { fieldStatusStyle } from '@/lib/field/status-style'
+import { useOutbox } from '@/hooks/useOutbox'
 
 const ICONS = { circle: Circle, check: Check, truck: Truck } as const
 
@@ -45,6 +46,7 @@ export function MatrixCell({
   const [version, setVersion] = useState(initialVersion)
   const [conflict, setConflict] = useState(false)
   const [busy, setBusy] = useState(false)
+  const { enqueue } = useOutbox()
 
   const meta = FIELD_STATUS_META[status]
   const Icon = ICONS[meta.icon]
@@ -73,6 +75,14 @@ export function MatrixCell({
       setVersion(json.item.version)
       setConflict(false)
     } catch (e) {
+      const isOffline = (typeof navigator !== 'undefined' && !navigator.onLine) || e instanceof TypeError
+      if (isOffline) {
+        try {
+          await enqueue({ itemId, fieldStatus: target, version, ts: Date.now() })
+          toast('圏外のため一時保存しました（復帰時に自動送信）', { icon: '📡' })
+          return
+        } catch {}
+      }
       setStatus(prev) // ロールバック
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))
     } finally {

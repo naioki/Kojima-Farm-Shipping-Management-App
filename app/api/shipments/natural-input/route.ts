@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
-import { DEFAULT_MAIN_GEMINI_MODEL } from '@/lib/gemini/models'
+import { DEFAULT_MAIN_GEMINI_MODEL, modelTryOrder } from '@/lib/gemini/models'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineUnitCount } from '@/lib/pipeline/schemas'
 import {
@@ -176,26 +176,37 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // 1. マスタ情報を取得（取引先・納入先・品目）
-  const [custRes, destRes, prodRes] = await Promise.all([
+  // 1. マスタ情報とAPI設定を完全並列で一括取得（直列DB往復の遅延をゼロ化）
+  const [custRes, destRes, prodRes, apiKey, configuredModel] = await Promise.all([
     admin.from('customers').select('id, name').eq('is_active', true),
     admin.from('delivery_destinations').select('id, customer_id, code, full_name, aliases').eq('is_active', true),
     admin.from('products').select('id, name, unit').eq('is_active', true),
+    getSetting('GEMINI_API_KEY'),
+    getSetting('GEMINI_MODEL'),
   ])
 
   const customers = custRes.data || []
   const destinations = destRes.data || []
   const products = prodRes.data || []
 
-  // 2. Gemini API クライアント初期化（未設定・エラー時は決定論的パーサーに自動フォールバック）
-  const apiKey = await getSetting('GEMINI_API_KEY')
+  // ⚡ 超高速ハイブリッド解析：まず決定論的ローカルパーサー（0.01秒）を実行し、
+  // 取引先と数量（箱数またはパック数）が明確に特定できた定型指示なら、LLM通信を待たず即座に返す！
+  const fastDeterministic = buildDeterministicNaturalResult(text, referenceDate, customers, destinations, products)
+  const isClearlyResolved =
+    Boolean(fastDeterministic.customer_id) &&
+    Boolean(
+      (fastDeterministic.cases != null && fastDeterministic.cases > 0) ||
+      (fastDeterministic.quantity_number != null && fastDeterministic.quantity_number > 0),
+    ) &&
+    text.length <= 80
+
   let parsed: NaturalParseResult
 
-  if (!apiKey) {
-    parsed = buildDeterministicNaturalResult(text, referenceDate, customers, destinations, products)
+  if (isClearlyResolved || !apiKey) {
+    parsed = fastDeterministic
   } else {
     const genAI = new GoogleGenerativeAI(apiKey)
-    const modelName = (await getSetting('GEMINI_MODEL')) || DEFAULT_MAIN_GEMINI_MODEL
+    const tryModels = modelTryOrder(configuredModel || DEFAULT_MAIN_GEMINI_MODEL)
 
     const custListStr = customers.map((c) => `- ID:${c.id} 名称:${c.name}`).join('\n')
     const prodListStr = products.map((p) => `- ID:${p.id} 名称:${p.name} (単位:${p.unit})`).join('\n')
@@ -261,22 +272,29 @@ ${prodListStr}
 "${text}"
 `
 
-    try {
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      })
-
-      const res = await model.generateContent(prompt)
-      const rawText = res.response.text()
-      parsed = extractJson<NaturalParseResult>(rawText)
-    } catch (err) {
-      console.warn('[natural-input] Geminiエラーのため決定論的パーサーへフォールバック:', err)
-      parsed = buildDeterministicNaturalResult(text, referenceDate, customers, destinations, products)
+    let aiParsed: NaturalParseResult | null = null
+    for (const mName of tryModels) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: mName,
+          generationConfig: {
+            temperature: 0.0,
+            responseMimeType: 'application/json',
+          },
+        })
+        const res = await model.generateContent(prompt)
+        aiParsed = extractJson<NaturalParseResult>(res.response.text())
+        break
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
+          continue // 0msで次の有効モデルへフォールバック
+        }
+        console.warn('[natural-input] Geminiエラーのため決定論的パーサーへフォールバック:', err)
+        break
+      }
     }
+    parsed = aiParsed ?? fastDeterministic
   }
 
   // 顧客ID・納入先ID・品目IDの確実な名寄せ補正（normalizeOrgName / foldKana 使用）

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
-import { formatJpDateShort } from '@/lib/dates'
+import { formatJpDateShort, jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 
 export interface MatrixGridProps {
@@ -261,11 +261,27 @@ export function MatrixGrid({
               <th className="sticky left-0 z-10 border border-line bg-bg-soft px-3 py-2 text-left font-medium text-ink-soft">
                 取引先・店舗
               </th>
-              {dates.map((d) => (
-                <th key={d} className="num min-w-[64px] border border-line bg-bg-soft px-2 py-2 text-center font-medium text-ink-soft">
-                  {mmdd(d)}
-                </th>
-              ))}
+              {dates.map((d) => {
+                const isTodayCol = d === jstTodayStr()
+                const isTomorrowCol = d === shiftDateStr(jstTodayStr(), 1)
+                return (
+                  <th
+                    key={d}
+                    className={cn(
+                      'num min-w-[72px] border border-line px-2 py-2 text-center font-bold',
+                      isTomorrowCol
+                        ? 'bg-emerald-100/80 text-forest-900'
+                        : isTodayCol
+                        ? 'bg-sky-100/80 text-sky-900'
+                        : 'bg-bg-soft text-ink-soft',
+                    )}
+                  >
+                    <span className="block">{mmdd(d)}</span>
+                    {isTomorrowCol && <span className="block text-[10px] font-black text-forest-700">明日納品</span>}
+                    {isTodayCol && <span className="block text-[10px] font-black text-sky-700">今日納品</span>}
+                  </th>
+                )
+              })}
               <th className="num min-w-[64px] border border-line bg-bg-soft px-2 py-2 text-center font-semibold text-trust-800">
                 週合計
               </th>
@@ -294,16 +310,40 @@ export function MatrixGrid({
                           <input
                             type="text"
                             inputMode="text"
+                            data-matrix-cell={`${c.id}|${d}`}
                             value={values[k] ?? ''}
                             onChange={(e) => setCell(k, e.target.value)}
                             onFocus={() => setFocused({ customerId: c.id, date: d })}
+                            onKeyDown={(e) => {
+                              if (e.nativeEvent.isComposing) return
+                              const rowIdx = visibleCustomers.findIndex((vc) => vc.id === c.id)
+                              if (e.key === 'Enter' || e.key === 'ArrowDown') {
+                                e.preventDefault()
+                                const nextCust = visibleCustomers[rowIdx + 1]
+                                if (nextCust) {
+                                  const el = document.querySelector<HTMLInputElement>(`input[data-matrix-cell="${nextCust.id}|${d}"]`)
+                                  el?.focus()
+                                  el?.select()
+                                } else {
+                                  e.currentTarget.blur()
+                                }
+                              } else if (e.key === 'ArrowUp') {
+                                e.preventDefault()
+                                const prevCust = visibleCustomers[rowIdx - 1]
+                                if (prevCust) {
+                                  const el = document.querySelector<HTMLInputElement>(`input[data-matrix-cell="${prevCust.id}|${d}"]`)
+                                  el?.focus()
+                                  el?.select()
+                                }
+                              }
+                            }}
                             onBlur={() => {
                               saveCell(c.id, d)
                               setFocused((prev) => (prev && prev.customerId === c.id && prev.date === d ? null : prev))
                             }}
                             aria-label={`${c.name} ${mmdd(d)}`}
                             className={cn(
-                              'num h-11 w-full min-w-[60px] bg-transparent px-2 text-center tabular-nums text-ink',
+                              'num h-12 w-full min-w-[68px] bg-transparent px-2 text-center font-bold tabular-nums text-ink',
                               'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-trust-100',
                               st === 'saving' && 'bg-trust-50',
                               st === 'saved' && 'bg-harvest-50',
@@ -329,9 +369,17 @@ export function MatrixGrid({
               </th>
               {dates.map((d) => {
                 const daySum = dateTotals[d] ?? 0
+                const dayBoxes = daySum > 0 ? Math.ceil(daySum / 20) : 0
                 return (
                   <td key={d} className="num border border-line px-2 py-2 text-center font-bold tabular-nums text-trust-800">
-                    {daySum > 0 ? daySum : '—'}
+                    {daySum > 0 ? (
+                      <div>
+                        <span className="block text-sm font-black">{daySum}</span>
+                        <span className="block text-[10px] font-bold text-ink-soft">({dayBoxes}箱)</span>
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                 )
               })}

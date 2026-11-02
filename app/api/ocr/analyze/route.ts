@@ -38,24 +38,13 @@ const bodySchema = z
  * 万一 GEMINI_API_KEY 未設定または AI 過負荷時でも、テキスト・Excel・CSV入力は決定論的ローカルパーサーに自動フォールバックし業務を止めない。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
+  const [user, rawBody] = await Promise.all([
+    getAuthedUser(),
+    req.json().catch(() => null),
+  ])
   if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
 
-  const admin = createAdminClient()
-  const { data: profile, error: profileErr } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileErr) console.error('[app/api/ocr/analyze/route.ts] ロールの取得に失敗:', profileErr.message)
-
-  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
-  const role = profile?.role ?? jwtRole
-  if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
-  }
-
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const parsed = bodySchema.safeParse(rawBody)
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? '入力値が不正です' },
@@ -63,10 +52,11 @@ export async function POST(req: Request) {
     )
   }
 
-  const { imageBase64, mimeType, fileName, text, clientNameHint, modelOverride } = parsed.data
+  const admin = createAdminClient()
 
-  // DBマスタを取得（名寄せ・質問カード生成・決定論的フォールバックで共用）
-  const [custRes, destRes, prodRes] = await Promise.all([
+  // ロール確認とDBマスタ取得を完全並列で1往復に集約（直列DB往復の遅延を削減）
+  const [profileRes, custRes, destRes, prodRes] = await Promise.all([
+    admin.from('users').select('role').eq('id', user.id).maybeSingle(),
     admin.from('customers').select('id, name').eq('is_active', true),
     admin
       .from('delivery_destinations')
@@ -74,6 +64,15 @@ export async function POST(req: Request) {
       .eq('is_active', true),
     admin.from('products').select('id, name, unit, aliases').eq('is_active', true),
   ])
+  if (profileRes.error) console.error('[app/api/ocr/analyze/route.ts] ロールの取得に失敗:', profileRes.error.message)
+
+  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
+  const role = profileRes.data?.role ?? jwtRole
+  if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
+    return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
+  }
+
+  const { imageBase64, mimeType, fileName, text, clientNameHint, modelOverride } = parsed.data
 
   const customers = custRes.data ?? []
   const destinations = destRes.data ?? []
@@ -104,25 +103,40 @@ export async function POST(req: Request) {
 
   try {
     let result: OrdersResult
-    try {
-      result = await analyzeOrders(
-        analyzeInput,
-        'manual',
-        undefined,
-        clientNameHint,
-        modelOverride,
-      )
-    } catch (aiErr) {
-      // テキスト入力またはExcel/CSV展開テキストがある場合は、Gemini未設定・503障害時でも決定論パーサーで即時救済する
-      if (analyzeInput.text && analyzeInput.text.trim()) {
-        console.warn('[api/ocr/analyze] Gemini解析失敗のため決定論的パーサーへフォールバック:', aiErr)
-        result = parseNaturalOrderTextDeterministic(analyzeInput.text, {
-          customers,
-          destinations,
-          products,
-        })
-      } else {
-        throw aiErr
+    // ⚡ 短文テキストのみの入力で決定論的パーサーが取引先・数量を完全特定できる場合はLLM通信をバイパスして0.01秒で即返却
+    const isShortTextOnly = !analyzeInput.imageBase64 && Boolean(analyzeInput.text && analyzeInput.text.trim().length <= 120)
+    const fastDet = isShortTextOnly && analyzeInput.text
+      ? parseNaturalOrderTextDeterministic(analyzeInput.text, { customers, destinations, products })
+      : null
+    const detFullyResolved =
+      fastDet &&
+      fastDet.is_order &&
+      fastDet.orders.length > 0 &&
+      fastDet.orders.every((o) => Boolean(o.customer_name) && o.items.length > 0 && o.items.every((it) => Number(it.quantity) > 0))
+
+    if (detFullyResolved && fastDet) {
+      result = fastDet
+    } else {
+      try {
+        result = await analyzeOrders(
+          analyzeInput,
+          'manual',
+          undefined,
+          clientNameHint,
+          modelOverride,
+        )
+      } catch (aiErr) {
+        // テキスト入力またはExcel/CSV展開テキストがある場合は、Gemini未設定・503障害時でも決定論パーサーで即時救済する
+        if (analyzeInput.text && analyzeInput.text.trim()) {
+          console.warn('[api/ocr/analyze] Gemini解析失敗のため決定論的パーサーへフォールバック:', aiErr)
+          result = parseNaturalOrderTextDeterministic(analyzeInput.text, {
+            customers,
+            destinations,
+            products,
+          })
+        } else {
+          throw aiErr
+        }
       }
     }
 

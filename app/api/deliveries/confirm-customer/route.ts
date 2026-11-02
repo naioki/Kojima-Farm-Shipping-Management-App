@@ -89,6 +89,43 @@ export async function POST(req: Request) {
       before: { status: existing?.status ?? 'planned' },
       after: { status: nextStatus },
     })
+
+    // 収穫・パックボード / 週間マトリックスとの完全連動：
+    // 積込OK ('loaded') 時は該当する order_items の field_status を 'shipped' へ、
+    // 戻し ('revert') 時は 'packed' へ同期する（手動変更時も version を +1 する）
+    try {
+      let ordQuery = admin
+        .from('orders')
+        .select('id')
+        .eq('customer_id', customer_id)
+        .eq('delivery_date', delivery_date)
+        .in('status', ['approved', 'shipped', 'invoiced'])
+      ordQuery = destId ? ordQuery.eq('destination_id', destId) : ordQuery.is('destination_id', null)
+      const { data: matchingOrders } = await ordQuery
+      const ordIds = (matchingOrders ?? []).map((o) => o.id)
+      if (ordIds.length > 0) {
+        const targetFieldStatus = action === 'loaded' ? 'shipped' : 'packed'
+        const { data: itemsToSync } = await admin
+          .from('order_items')
+          .select('id, version, field_status')
+          .in('order_id', ordIds)
+        for (const it of itemsToSync ?? []) {
+          if (action === 'loaded' && it.field_status !== 'shipped') {
+            await admin
+              .from('order_items')
+              .update({ field_status: targetFieldStatus, version: (Number(it.version) || 1) + 1 })
+              .eq('id', it.id)
+          } else if (action === 'revert' && it.field_status === 'shipped') {
+            await admin
+              .from('order_items')
+              .update({ field_status: 'packed', version: (Number(it.version) || 1) + 1 })
+              .eq('id', it.id)
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[confirm-customer] order_items.field_status 同期警告:', syncErr)
+    }
   }
 
   return NextResponse.json({ ok: true, action })

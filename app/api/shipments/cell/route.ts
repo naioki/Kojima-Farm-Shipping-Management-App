@@ -50,13 +50,14 @@ export async function PUT(req: Request) {
   // P/C は換算の補助（未設定でも動く）。取得失敗しても続行するが無言にはしない。
   if (ruleErr) console.error('[api/shipments/cell] P/Cルールの取得に失敗:', ruleErr.message)
 
-  // 既存の注文（取引先×出荷日×manual）と当該明細
+  // 既存の注文（取引先×出荷日：FAX/メール取込等の承認済み注文も含めて検索し、二重注文の発生を防止）
   const { data: order, error: orderErr } = await supabase
     .from('orders')
     .select('id')
     .eq('customer_id', customer_id)
     .eq('delivery_date', delivery_date)
-    .eq('source', 'manual')
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
   // 既存注文判定のDBエラーを「既存なし」に化けさせない（重複注文の作成を防ぐ）。
@@ -108,11 +109,33 @@ export async function PUT(req: Request) {
 
   const quantity = result.total.toNumber()
 
-  // 既存はUPDATE
+  // 既存はUPDATE（数量変更時は quantity_raw 更新＋パック済からの増量時は未完了へ戻して欠品を防止）
   if (existingItem) {
+    const oldQty = Number(existingItem.quantity) || 0
+    const qtyChanged = quantity !== oldQty
+    const wasPackedAndIncreased =
+      qtyChanged &&
+      quantity > oldQty &&
+      (existingItem.field_status === 'packed' || existingItem.field_status === 'shipped')
+    const preservedPartialQty = wasPackedAndIncreased
+      ? oldQty
+      : existingItem.shipped_qty && existingItem.shipped_qty > 0 && existingItem.shipped_qty < quantity
+      ? existingItem.shipped_qty
+      : null
+
     const { data: updated, error: updErr } = await supabase
       .from('order_items')
-      .update({ quantity, version: existingItem.version + 1 })
+      .update({
+        quantity,
+        quantity_raw: quantity_raw.trim() || String(quantity),
+        version: (Number(existingItem.version) || 1) + 1,
+        ...(qtyChanged
+          ? {
+              field_status: 'not_started',
+              shipped_qty: preservedPartialQty,
+            }
+          : {}),
+      })
       .eq('id', existingItem.id)
       .select()
       .single()
@@ -163,6 +186,7 @@ export async function PUT(req: Request) {
       product_id,
       product_name: product.name,
       quantity,
+      quantity_raw: quantity_raw.trim() || String(quantity),
       unit: product.unit,
       unit_price: product.default_unit_price ?? 0,
       tax_rate: product.default_tax_rate,

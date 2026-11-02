@@ -77,26 +77,29 @@ async function generateWithFallback(
       },
     })
 
-    // 同一モデルで最大2回試行（初回失敗が過負荷/レート制限の場合は800msバックオフ待機して再試行）
+    // 404（モデル未提供）は待機や同一モデル再試行をせず0msで即座に次のモデルへ切替。503/429のみ短時間再試行。
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const result = await model.generateContent(parts)
         return { result, usedModel: modelName }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        const lower = msg.toLowerCase()
+        const isNotFound = msg.includes('404') || lower.includes('not found')
         const isTransient =
+          isNotFound ||
           msg.includes('503') ||
           msg.includes('429') ||
-          msg.includes('404') ||
-          msg.toLowerCase().includes('unavailable') ||
-          msg.toLowerCase().includes('not found') ||
-          msg.toLowerCase().includes('high demand') ||
-          msg.toLowerCase().includes('quota') ||
-          msg.toLowerCase().includes('resource_exhausted')
+          lower.includes('unavailable') ||
+          lower.includes('high demand') ||
+          lower.includes('quota') ||
+          lower.includes('resource_exhausted')
         if (!isTransient) throw e
         lastError = e
+        // 404 は再試行しても必ず 404 になるため即 break して次のモデルへ
+        if (isNotFound) break
         if (attempt === 0) {
-          await new Promise((r) => setTimeout(r, 800))
+          await new Promise((r) => setTimeout(r, 250))
         }
       }
     }
@@ -694,7 +697,7 @@ export async function analyzeOrders(
     const { result: res, usedModel } = await generateWithFallback(parts, systemInstruction, modelOverride)
     const json = extractJson(res.response.text())
     const parsed = ordersResultSchema.parse(json)
-    await logUsage('orders', channel, true, res.response.usageMetadata?.totalTokenCount)
+    void logUsage('orders', channel, true, res.response.usageMetadata?.totalTokenCount)
 
     if (!parsed.is_order || parsed.orders.length === 0) {
       return {
@@ -813,20 +816,17 @@ export async function analyzeOrders(
     // 自動的に旧数値側のゴースト注文を除去し、手書き確定値側に「手書き修正（旧165→150P）」の履歴を引き継ぐ。
     const deduplicatedOrders = collapseStrikethroughSplitOrders(normalizedOrders)
 
-    // ── 重要箇所（低確信・手書き修正・入数検算不一致・日付/取引先不明）のみ高精度モデル(GEMINI_MODEL_HIGH: gemini-3.8-flash等)で自動再検証 ──
+    // ── 重要箇所（画像OCRで手書き修正または極端な低確信がある場合のみ）高精度モデルで自動再検証 ──
+    // ※テキスト入力時や日付未記載時は不要な2回目呼び出し（数秒の遅延）を行わず即座に確認カードを返す
     const needsEscalation =
       !modelOverride &&
-      deduplicatedOrders.some(
-        (o) =>
-          !o.customer_name ||
-          !o.delivery_date ||
-          o.items.some(
-            (it) =>
-              it.confidence < 0.75 ||
-              Boolean(it.is_handwritten_modified) ||
-              Boolean(it.has_reply_required) ||
-              Boolean(it.needs_review_reason && !it.needs_review_reason.includes('約表記')),
-          ),
+      Boolean(input.imageBase64) &&
+      deduplicatedOrders.some((o) =>
+        o.items.some(
+          (it) =>
+            it.confidence < 0.65 ||
+            Boolean(it.is_handwritten_modified),
+        ),
       )
 
     let finalUsedModel = usedModel
@@ -881,7 +881,7 @@ export async function analyzeOrders(
       applied_rules_count: activeRules.length,
     }
   } catch (e) {
-    await logUsage('orders', channel, false)
+    void logUsage('orders', channel, false)
     throw e
   }
 }

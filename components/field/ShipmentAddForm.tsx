@@ -555,7 +555,7 @@ export function ShipmentAddForm({
       reader.onload = (e) => {
         const img = new Image()
         img.onload = () => {
-          const MAX_DIM = 1600
+          const MAX_DIM = 1280
           let { width, height } = img
           if (width > MAX_DIM || height > MAX_DIM) {
             if (width > height) {
@@ -576,7 +576,7 @@ export function ShipmentAddForm({
             return
           }
           ctx.drawImage(img, 0, 0, width, height)
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8)
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.72)
           resolve({ dataUrl: compressedDataUrl, base64: compressedDataUrl.split(',')[1] || '', mime: 'image/jpeg' })
         }
         img.onerror = () => {
@@ -1457,15 +1457,46 @@ export function ShipmentAddForm({
               >
                 キャンセル
               </Button>
-              <Button
-                type="button"
-                onClick={proceedToConfirm}
-                disabled={analyzingNatural || !customerId || !productId || !qtyRaw.trim()}
-                className="bg-forest-600 hover:bg-forest-700 text-white font-black px-6 flex items-center gap-2"
-              >
-                <span>内容を確認する</span>
-                <ArrowRight className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={proceedToConfirm}
+                  disabled={analyzingNatural || !customerId || !productId || !qtyRaw.trim()}
+                  className="font-bold px-3.5 text-xs flex items-center gap-1"
+                >
+                  <span>差分を確認</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!customerId) {
+                      toast.error('取引先を選択してください')
+                      return
+                    }
+                    if (!productId) {
+                      toast.error('品目を選択してください')
+                      return
+                    }
+                    if (!qtyRaw.trim() || previewText?.kind === 'error') {
+                      toast.error('有効な数量を入力してください')
+                      return
+                    }
+                    if (destinationRequired && !destinationId) {
+                      toast.error('納入先を選択してください')
+                      return
+                    }
+                    void submitFinal()
+                  }}
+                  isLoading={submitting}
+                  disabled={analyzingNatural || !customerId || !productId || !qtyRaw.trim() || (destinationRequired && !destinationId)}
+                  className="bg-forest-600 hover:bg-forest-700 text-white font-black px-5 flex items-center gap-1.5 shadow-md"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>即登録する</span>
+                </Button>
+              </div>
             </div>
           )
         }
@@ -1932,10 +1963,32 @@ export function ShipmentAddForm({
                 </div>
               </div>
 
-              {/* 取引先セレクト */}
-              <div className="space-y-1">
+              {/* 取引先セレクト（ワンタップ主要取引先チップ ＋ 全件セレクト） */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-ink">取引先（ワンタップ選択）</label>
+                </div>
+                {customers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {customers.slice(0, 8).map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setCustomerId(c.id)}
+                        className={cn(
+                          'min-h-[40px] rounded-xl border px-3 py-1.5 text-xs font-black transition-all active:scale-95',
+                          customerId === c.id
+                            ? 'border-forest-700 bg-forest-700 text-white shadow-xs ring-2 ring-forest-300'
+                            : 'border-line bg-white text-ink hover:bg-bg-soft',
+                        )}
+                      >
+                        {c.name.replace(/^株式会社|^（株）|^㈱|^農事組合法人\s*/, '')}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Select
-                  label="取引先"
+                  label="全取引先リストから選択"
                   required
                   placeholder="取引先を選択..."
                   value={customerId}
