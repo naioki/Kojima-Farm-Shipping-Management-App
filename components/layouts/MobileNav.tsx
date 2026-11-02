@@ -88,7 +88,7 @@ export function MobileNav({
     <>
       <header
         className={cn(
-          'sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg-soft/95 px-4 backdrop-blur print:hidden',
+          'sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-bg-soft px-4 shadow-2xs print:hidden',
           !persistent && 'lg:hidden',
         )}
       >

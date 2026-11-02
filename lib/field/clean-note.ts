@@ -1,12 +1,11 @@
 /**
  * AI取込やシステム自動生成で `orders.note` / `order_items.line_note` に付与される
- * 内部メタ情報（伝票No・数量表記・規格・容器・箱数など）を除去し、
+ * 内部メタ情報（★新規追加・数量変更ログ・伝票No・数量表記・規格・容器・箱数など）を除去し、
  * 現場スタッフやドライバーが本当に読むべき伝達事項のみを抽出するユーティリティ。
  */
 export function extractActionableNote(rawNote: string | null | undefined): string {
   if (!rawNote) return ''
 
-  // 改行または「 / 」で分割してトークン単位で検査
   const parts = rawNote
     .split(/\r?\n|\s+\/\s+/)
     .map((s) => s.trim())
@@ -15,7 +14,14 @@ export function extractActionableNote(rawNote: string | null | undefined): strin
   const actionable: string[] = []
 
   for (const part of parts) {
-    // 1. 純粋なシステムメタ情報は除外
+    // 1. 純粋なシステムメタ情報・自動生成フラグは現場メモ欄から除外
+    if (/^★?新規追加$/i.test(part)) continue
+    if (/^★$/i.test(part)) continue
+    if (/^【?新規追加】?$/i.test(part)) continue
+    if (/^数量変更\s*[:：]/i.test(part)) continue
+    if (/^🚨パック済/i.test(part)) continue
+    if (/^手書き修正[（(][^）)]+[）)]$/.test(part)) continue
+    if (/^入数変更[（(][^）)]+[）)]$/.test(part)) continue
     if (/^伝票No\s*[:：]/i.test(part)) continue
     if (/^規格\s*[:：]/i.test(part)) continue
     if (/^数量表記\s*[:：]/i.test(part)) continue
@@ -28,6 +34,7 @@ export function extractActionableNote(rawNote: string | null | undefined): strin
 
     // 2. 重複しやすい定型プレフィックスを整形
     const cleaned = part
+      .replace(/^★?新規追加\s*[\/・,、:]?\s*/g, '')
       .replace(/^【要返答】\s*/, '')
       .replace(/(?:納入先|お届け先|配送先)[^\n,、・\]】]+[\]】]?/g, '')
       .trim()
@@ -42,7 +49,7 @@ export function extractActionableNote(rawNote: string | null | undefined): strin
 }
 
 /**
- * 備考・明細メモから「165→150P」「204→201P」「入数30→20」のような
+ * 備考・明細メモから「165→150P」「入数30→20」「新規追加」のような
  * 最新FAX更新や手書き修正による変更履歴バッジ文字列（1行・短文）を抽出する。
  */
 export function extractChangeDiffBadge(rawNote: string | null | undefined): string | null {
@@ -52,7 +59,6 @@ export function extractChangeDiffBadge(rawNote: string | null | undefined): stri
   // 1. 「165→150P」や「数量変更: 10/25 15:41 165→150P」「手書き修正（165→150P）」
   const arrowMatch = text.match(/(\d+)\s*P?\s*(?:→|->|⇒)\s*(\d+)\s*P?(?:点|パック)?/)
   if (arrowMatch && arrowMatch[1] !== arrowMatch[2]) {
-    // 直前（または直後の単位）が「入数」「入」かどうかで判定
     const prefix = text.slice(Math.max(0, (arrowMatch.index ?? 0) - 6), arrowMatch.index ?? 0)
     const suffix = text.slice(
       (arrowMatch.index ?? 0) + arrowMatch[0].length,
@@ -74,6 +80,11 @@ export function extractChangeDiffBadge(rawNote: string | null | undefined): stri
   const handMatch = text.match(/手書き修正[（(](\d+)(?:点|P|パック)?[）)]/)
   if (handMatch) {
     return `手書き確定(${handMatch[1]}P)`
+  }
+
+  // 4. ★新規追加フラグ（メモ欄ではなく右上の控えめなバッジとして表示）
+  if (text.includes('★新規追加')) {
+    return '新規追加'
   }
 
   return null

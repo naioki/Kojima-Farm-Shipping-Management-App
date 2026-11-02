@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import { useFieldLang } from '@/lib/field/lang-context'
-import { parseDeparturePriority } from '@/lib/field/shipment-sort'
+import { parseDeparturePriority, cleanShippingRouteName } from '@/lib/field/shipment-sort'
 import { getThaiDepartureTime } from '@/lib/field/thai-dict'
 import {
   CustomerDeliveryCard,
@@ -31,10 +31,10 @@ function isUserTypingInInput(): boolean {
 }
 
 /**
- * 便別積込・配送リストのメインボード。
- * - #17: 重複していた2段の進捗ヘッダーを1つの統合コックピットバーに集約。
- * - #18: 「便・時間順（route）」モードでは、同一取引先でも出発便・時間が異なる納入先（例：16:00発と翌午前発）があれば便ごとに正確に分割表示し、トラック積込ミスを防止。
- * - #52: メモ入力中は30秒自動更新を一時停止してフォーカス外れを防止。
+ * 便別積込・配送リストのメインボード（v5.1.9 視認性・重複排除版）
+ * - 1行スリム・スティッキー進捗バーでモバイル画面の圧迫を解消
+ * - セクションヘッダーでの絵文字重複（⏰ ⏰ / 🌅 🌅）と時刻二重表記を完全排除
+ * - 同一取引先でも出発便・時間が異なる納入先は便ごとに分割配置し積込ミスを防止
  */
 export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewProps) {
   const router = useRouter()
@@ -67,7 +67,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
     prevSignatureRef.current = sig
   }, [initialCards])
 
-  // #52 スマート・ポーリング（入力中は自動更新を一時停止）
+  // スマート・ポーリング（入力中は自動更新を一時停止）
   useEffect(() => {
     const syncLatest = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -122,7 +122,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
   const visibleCards =
     filterMode === 'incomplete' ? cards.filter((c) => !c.isCompleted) : cards
 
-  // #18 便・時間帯ごとの正確なグルーピング（同一取引先内で便・出発時刻が異なる納入先は、その便のグループに分割配置）
+  // 便・時間帯ごとの正確なグルーピング（絵文字・時刻の重複表記を完全に排除）
   const routeGroups = (() => {
     const map = new Map<
       string,
@@ -136,7 +136,6 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
     >()
 
     for (const c of visibleCards) {
-      // 取引先内の納入先を出発時間・便ごとにバケット分け
       const destByRoute = new Map<
         string,
         {
@@ -150,15 +149,22 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
 
       for (const d of c.destinations) {
         const depTime = d.departureTime || c.earliestDepartureTime || null
-        const rawRoute = d.shippingRouteName || c.routeSummaries?.[0]?.title || '一般配送・時間未指定'
-        const isUnassigned = !depTime && (rawRoute === '一般配送・時間未指定' || !rawRoute)
+        const rawRoute = d.shippingRouteName || c.routeSummaries?.[0]?.title || null
+        const cleanRoute = cleanShippingRouteName(rawRoute)
+        const isUnassigned = !depTime && (!cleanRoute || cleanRoute === '一般配送・時間未指定')
+
         const groupTitle = isUnassigned
           ? '時間指定なし（一般便）'
-          : depTime && !rawRoute.includes(depTime)
+          : depTime && cleanRoute
           ? depTime.startsWith('翌')
-            ? `🌅 ${depTime}迄 ${rawRoute}`
-            : `⏰ 当日${depTime}迄 ${rawRoute}`
-          : rawRoute
+            ? `${depTime}迄 ・ ${cleanRoute}`
+            : `当日 ${depTime}迄 ・ ${cleanRoute}`
+          : depTime
+          ? depTime.startsWith('翌')
+            ? `${depTime}迄に出荷`
+            : `当日 ${depTime}迄に出荷`
+          : cleanRoute || '時間指定なし（一般便）'
+
         const groupKey = isUnassigned ? '__unassigned__' : `${depTime ?? '99:99'}:${groupTitle}`
 
         let bucket = destByRoute.get(groupKey)
@@ -247,22 +253,22 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
         </div>
       </div>
 
-      {/* #17 統合スティッキー・積込コックピットバー（重複していた2段枠を1つに統合しスッキリ！） */}
+      {/* 1行スリム・スティッキー積込コックピットバー */}
       <div
         className={cn(
-          'sticky top-14 z-20 -mx-1 px-3 py-2 text-white backdrop-blur shadow-md rounded-2xl border transition-colors duration-200 print:hidden space-y-2',
+          'sticky top-14 z-20 -mx-1 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200 print:hidden',
           isToday
-            ? 'bg-[#0c2e4e]/95 border-sky-600/80'
+            ? 'bg-[#0c2e4e] border-sky-600'
             : isTomorrow
-            ? 'bg-[#0f2e1e]/95 border-emerald-600/80'
-            : 'bg-[#1e293b]/95 border-slate-600',
+            ? 'bg-[#0f2e1e] border-emerald-600'
+            : 'bg-[#1e293b] border-slate-600',
         )}
       >
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black shadow-2xs shrink-0',
+                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black shrink-0',
                 isToday
                   ? 'bg-sky-400 text-sky-950'
                   : isTomorrow
@@ -273,30 +279,28 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               <span>🚚</span>
               <span>
                 {isToday
-                  ? `本日 ${formatJpDateShort(effectiveDate)} 納品分`
+                  ? `本日 ${formatJpDateShort(effectiveDate)} 納品`
                   : isTomorrow
-                  ? `明日 ${formatJpDateShort(effectiveDate)} 納品分（本日パック・積込）`
-                  : `${formatJpDateShort(effectiveDate)} 納品分`}
+                  ? `明日 ${formatJpDateShort(effectiveDate)} 納品`
+                  : `${formatJpDateShort(effectiveDate)} 納品`}
               </span>
+            </span>
+
+            <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm truncate">
+              {completedContainers}/{totalContainers}箱済 ({progressPct}%)
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
-            <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm">
-              {completedContainers}/{totalContainers} 箱済
-            </span>
-            <span className="text-[11px] text-slate-300 font-bold tabular-nums">
-              ({completedCustomers}/{totalCustomers}社・{progressPct}%)
-            </span>
+          <div className="flex items-center gap-1.5 shrink-0">
             <span
-              className="hidden xs:inline-block rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
+              className="rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
               title={`残り積込 ${remainingContainers}箱`}
             >
               {remainingContainers > 0 ? (
-                `残り ${remainingContainers}箱 (${remainingCustomers}社)`
+                `残 ${remainingContainers}箱`
               ) : (
                 <span className="inline-flex items-center gap-1 text-emerald-200">
-                  <CheckCircle2 className="h-3 w-3" /> 全{totalContainers}箱完了
+                  <CheckCircle2 className="h-3 w-3" /> 完了
                 </span>
               )}
             </span>
@@ -306,10 +310,9 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               onClick={() => window.print()}
               title="積込リストを印刷"
               aria-label="積込リストを印刷"
-              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-0.5 text-xs text-white/90 border border-white/15 transition"
+              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-1 text-xs text-white/90 border border-white/15 transition"
             >
               <Printer className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline text-[11px] font-bold">印刷</span>
             </button>
             <button
               type="button"
@@ -317,7 +320,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               disabled={isRefreshing}
               title="最新データを再取得"
               aria-label="最新データを再取得"
-              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-0.5 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
+              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-1 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
             </button>
@@ -410,7 +413,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               <div key={grp.key} className="space-y-2">
                 <div
                   className={cn(
-                    'flex flex-wrap items-center justify-between gap-2 rounded-xl px-3.5 py-2 border shadow-2xs',
+                    'flex items-center justify-between gap-2 rounded-xl px-3.5 py-2 border shadow-2xs',
                     grpAllDone
                       ? 'border-slate-300 bg-slate-100 text-slate-600'
                       : grp.isUnassigned
@@ -418,26 +421,28 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                       : 'border-earth-300 bg-earth-100/90 text-earth-950',
                   )}
                 >
-                  <div className="flex items-center gap-2 font-black text-sm flex-wrap">
-                    <span>{grp.isUnassigned ? '📦' : grp.departureTime?.startsWith('翌') ? '🌅' : '⏰'}</span>
-                    <span>{grp.title}</span>
+                  <div className="flex items-center gap-1.5 font-black text-sm min-w-0">
+                    <span className="shrink-0">
+                      {grp.isUnassigned ? '📦' : grp.departureTime?.startsWith('翌') ? '🌅' : '⏰'}
+                    </span>
+                    <span className="truncate">{grp.title}</span>
                     {isThaiMode && grp.departureTime && getThaiDepartureTime(grp.departureTime) && (
-                      <span className="text-xs font-bold text-earth-700 print:hidden">
+                      <span className="text-xs font-bold text-earth-700 print:hidden shrink-0">
                         ({getThaiDepartureTime(grp.departureTime)})
                       </span>
                     )}
-                    <span className="text-xs font-bold opacity-80">
-                      （{grp.cards.length}社）
+                    <span className="text-xs font-bold opacity-75 shrink-0">
+                      ({grp.cards.length}社)
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-black">
+                  <div className="flex items-center gap-1.5 text-xs font-black shrink-0">
                     {grpAllDone ? (
                       <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5">
-                        ✓ 全{grpTotalBoxes}箱 積込済
+                        ✓ 全{grpTotalBoxes}箱済
                       </span>
                     ) : (
-                      <span className="rounded-md bg-white/90 border border-earth-300 px-2.5 py-0.5 text-earth-900">
-                        残り {grpRemBoxes} 箱 ／ 計 {grpTotalBoxes} 箱
+                      <span className="rounded-md bg-white/90 border border-earth-300 px-2 py-0.5 text-earth-900 tabular-nums">
+                        残 {grpRemBoxes} / {grpTotalBoxes}箱
                       </span>
                     )}
                   </div>

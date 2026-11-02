@@ -13,10 +13,9 @@ import {
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { formatQty } from '@/lib/calculations/format-qty'
-import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { determineContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
-import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -421,8 +420,6 @@ export default async function DeliveriesPage({
   })
 
   const globalTotalCustomers = customerCards.length
-  const todayStr = jstTodayStr()
-  const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-24">
@@ -437,44 +434,7 @@ export default async function DeliveriesPage({
         </div>
       </div>
 
-      {/* ② 現場業務ナビゲーション（🥬 収穫・袋詰めボード ⇋ 🚚 便別積込・配送リスト：同じ対象日のまま1タップで行き来） */}
-      <div className="grid grid-cols-2 rounded-xl bg-bg-soft p-1 border border-line text-xs sm:text-sm font-bold shadow-xs print:hidden">
-        <Link
-          href={`/field/shipments?date=${date}${selectedProduct ? `&product=${selectedProduct}` : ''}`}
-          className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-ink-soft hover:text-ink hover:bg-white/60 transition"
-        >
-          🥬 収穫・袋詰めボード
-        </Link>
-        <span className="flex items-center justify-center gap-1.5 rounded-lg bg-forest-700 py-2 text-white shadow-xs">
-          🚚 便別積込・配送リスト
-        </span>
-      </div>
 
-      {/* ③ 「🚚 本日パック・夕方〜翌朝積込分」と「📅 前日パック分」のワンタップ切替バー */}
-      <div className="grid grid-cols-2 gap-2 print:hidden">
-        <Link
-          href={`/field/deliveries?date=${tomorrowStr}`}
-          className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs sm:text-sm font-black border-2 transition shadow-2xs',
-            date === tomorrowStr
-              ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
-              : 'border-line bg-white text-ink hover:bg-emerald-50 hover:border-emerald-300',
-          )}
-        >
-          <span>🚚 本日パック・積込分 ({formatJpDateShort(tomorrowStr)}納品)</span>
-        </Link>
-        <Link
-          href={`/field/deliveries?date=${todayStr}`}
-          className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs sm:text-sm font-black border-2 transition shadow-2xs',
-            date === todayStr
-              ? 'border-sky-600 bg-sky-600 text-white shadow-sm'
-              : 'border-line bg-white text-ink hover:bg-sky-50 hover:border-sky-300',
-          )}
-        >
-          <span>📅 昨日パック分 ({formatJpDateShort(todayStr)}納品)</span>
-        </Link>
-      </div>
 
       {/* 未承認データがある場合の控えめな通知バー */}
       {pendingReviewCount > 0 && (

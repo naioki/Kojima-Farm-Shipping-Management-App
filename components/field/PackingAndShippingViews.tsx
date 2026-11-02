@@ -241,7 +241,7 @@ export function PackingAndShippingViews({
 
   completedBoxes = Math.min(totalBoxes, completedBoxes)
   const remainingBoxes = Math.max(0, totalBoxes - completedBoxes)
-  const progressPct =
+  const _progressPct =
     totalPacks > 0 ? Math.min(100, Math.round((completedPacks / totalPacks) * 100)) : 0
 
   const incompleteCount = sortedPackItems.filter(
@@ -385,62 +385,51 @@ export function PackingAndShippingViews({
 
   return (
     <div className="space-y-3">
-      {/* スクロール追従スリムバー */}
+      {/* スクロール追従スリムバー（1行完結・ヘッダー重なり防止） */}
       <div
         className={cn(
-          'sticky top-14 z-20 -mx-1 px-3 py-1.5 text-white backdrop-blur shadow-md rounded-b-xl border-b transition-colors duration-200',
+          'sticky top-14 z-20 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200',
           isViewingNextDay
-            ? 'bg-[#0f172a]/95 border-slate-500 shadow-lg text-slate-100'
+            ? 'bg-[#0f172a] border-slate-500 text-slate-100'
             : date === shiftDateStr(jstTodayStr(), 1)
-            ? 'bg-[#0f2e1e]/95 border-emerald-600/80 shadow-md'
+            ? 'bg-[#0f2e1e] border-emerald-600/80'
             : date === jstTodayStr()
-            ? 'bg-[#0c2e4e]/95 border-sky-600/80 shadow-md'
-            : 'bg-[#1e293b]/95 border-slate-600',
+            ? 'bg-[#0c2e4e] border-sky-600/80'
+            : 'bg-[#1e293b] border-slate-600',
         )}
       >
-        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
+        <div className="flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black shrink-0',
+                'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-black shrink-0',
                 isViewingNextDay
-                  ? 'bg-slate-700 text-amber-300 border border-slate-500'
+                  ? 'bg-slate-700 text-amber-300'
                   : date === shiftDateStr(jstTodayStr(), 1)
                   ? 'bg-emerald-400 text-emerald-950'
                   : date === jstTodayStr()
                   ? 'bg-sky-400 text-sky-950'
-                  : 'bg-slate-700 text-slate-100 border border-slate-500',
+                  : 'bg-slate-700 text-slate-100',
               )}
             >
-              <span>
-                {isViewingNextDay
-                  ? `📅 翌々日 ${formatJpDateShort(shiftDateStr(date, 1))} 納品分`
-                  : date === shiftDateStr(jstTodayStr(), 1)
-                  ? `🥬 明日 ${formatJpDateShort(date)} 納品分（本日パック）`
-                  : date === jstTodayStr()
-                  ? `🚚 本日 ${formatJpDateShort(date)} 納品分`
-                  : `📅 ${formatJpDateShort(date)} 納品分`}
-              </span>
+              {isViewingNextDay
+                ? `翌々日 ${formatJpDateShort(shiftDateStr(date, 1))}`
+                : `${formatJpDateShort(date)}納品`}
             </span>
             <span className="text-white font-black text-xs sm:text-sm truncate">
               {productName || '品目'}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+          <div className="flex items-center gap-1.5 shrink-0">
             {isViewingNextDay ? (
               <span className="text-slate-200 font-black tabular-nums">
-                翌日分: {nextDayTotalBoxes}箱 ({nextDayTotalPacks.toLocaleString()}P)
+                翌日分 {nextDayTotalBoxes}箱
               </span>
             ) : (
-              <>
-                <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm">
-                  {completedBoxes}/{totalBoxes} 箱
-                </span>
-                <span className="text-[11px] text-slate-300 font-bold tabular-nums">
-                  ({progressPct}%・あと{remainingBoxes}箱)
-                </span>
-              </>
+              <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm">
+                {completedBoxes}/{totalBoxes}箱 <small className="text-white/80 font-bold">(残{remainingBoxes})</small>
+              </span>
             )}
             <FieldLangSwitch />
             <button
@@ -449,7 +438,7 @@ export function PackingAndShippingViews({
               disabled={isRefreshing}
               title="最新データを再取得"
               aria-label="最新データを再取得"
-              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-0.5 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
+              className="flex items-center justify-center h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 text-white/90 border border-white/15 transition disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
             </button>

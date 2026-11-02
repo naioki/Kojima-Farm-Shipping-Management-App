@@ -1779,37 +1779,25 @@ export function ShipmentAddForm({
 
   return (
     <>
-      {/* ボード内明示ボタン ＋ フローティング追加ボタン */}
-      <div className="print:hidden pt-1">
+      {/* ボード内明示ボタン（右下のカードボタン被りを防ぐためフローティングFABを廃止し、押しやすいインラインバーに統一） */}
+      <div className="print:hidden pt-0.5">
         <button
           type="button"
           onClick={() => {
             setIsOpen(true)
             setStep('input')
           }}
-          className="w-full rounded-2xl border-2 border-dashed border-forest-300 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
+          className="w-full rounded-xl border-2 border-forest-600/30 bg-forest-50/90 hover:bg-forest-100 px-3.5 py-2.5 text-forest-950 font-black text-xs sm:text-sm flex items-center justify-between gap-2 transition active:scale-[0.99] shadow-2xs"
         >
-          <Plus className="h-4 w-4 stroke-[2.8] text-forest-700" />
-          <span>＋ 新規注文の追加・数量変更（手入力 / 写真 / FAX・Excel）</span>
-        </button>
-      </div>
-
-      <div
-        className="fixed right-5 z-40 print:hidden"
-        style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            setIsOpen(true)
-            setStep('input')
-          }}
-          className="flex h-12 px-4 items-center justify-center gap-1.5 rounded-full bg-forest-600 text-white font-black text-xs shadow-2xl hover:bg-forest-700 active:scale-95 transition-transform focus:outline-none focus:ring-4 focus:ring-forest-300/50"
-          aria-label="出荷を追加・変更"
-          title="出荷を追加・変更"
-        >
-          <Plus className="h-5 w-5 stroke-[2.8]" aria-hidden />
-          <span>注文追加・変更</span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-forest-600 text-white">
+              <Plus className="h-4 w-4 stroke-[2.8]" />
+            </span>
+            <span>新規注文の追加・数量変更（AI読取 / 写真 / FAX / 手入力）</span>
+          </span>
+          <span className="rounded-md bg-white border border-forest-200 px-2 py-0.5 text-[11px] font-bold text-forest-800 shrink-0">
+            開く
+          </span>
         </button>
       </div>
 
@@ -2551,73 +2539,66 @@ export function ShipmentAddForm({
                 </div>
               </div>
 
-              {/* 納品日 ＆ 時間帯指定 */}
+              {/* 納品日 ＆ 時間帯指定（重複していた朝/昼ボタンとセレクトを1行ずつに整理） */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-ink">納品日 ＆ 出荷時間</label>
+                  <label className="text-xs font-black text-ink">納品日 ＆ 便時間帯</label>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => {
-                        setTargetDate(tomorrowStr)
-                        setShippingTime('am')
-                      }}
+                      onClick={() => setTargetDate(todayStr)}
                       className={cn(
-                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
-                        targetDate === tomorrowStr && shippingTime === 'am'
+                        'rounded-md px-2.5 py-0.5 text-xs font-bold transition-colors',
+                        targetDate === todayStr
                           ? 'bg-forest-600 text-white shadow-2xs'
                           : 'bg-sand-100 text-ink hover:bg-sand-200',
                       )}
                     >
-                      🌅 明日朝
+                      今日 ({todayStr.slice(5)})
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setTargetDate(tomorrowStr)
-                        setShippingTime('pm')
-                      }}
+                      onClick={() => setTargetDate(tomorrowStr)}
                       className={cn(
-                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
-                        targetDate === tomorrowStr && shippingTime === 'pm'
+                        'rounded-md px-2.5 py-0.5 text-xs font-bold transition-colors',
+                        targetDate === tomorrowStr
                           ? 'bg-forest-600 text-white shadow-2xs'
                           : 'bg-sand-100 text-ink hover:bg-sand-200',
                       )}
                     >
-                      ☀️ 明日昼
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTargetDate(todayStr)
-                        setShippingTime('')
-                      }}
-                      className={cn(
-                        'rounded-md px-2 py-0.5 text-xs font-bold transition-colors',
-                        targetDate === todayStr ? 'bg-forest-600 text-white' : 'bg-sand-100 text-ink hover:bg-sand-200',
-                      )}
-                    >
-                      🚚 今日
+                      明日 ({tomorrowStr.slice(5)})
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-12 gap-2">
                   <Input
                     type="date"
                     value={targetDate}
                     onChange={(e) => setTargetDate(e.target.value)}
-                    className="col-span-3 h-9 text-xs"
+                    className="col-span-5 h-9 text-xs"
                   />
-                  <select
-                    value={shippingTime}
-                    onChange={(e) => setShippingTime(e.target.value as 'am' | 'pm' | '')}
-                    className="col-span-2 h-9 rounded-md border border-line bg-white px-2 text-xs font-bold text-ink"
-                  >
-                    <option value="">指定なし</option>
-                    <option value="am">🌅 朝便 (am)</option>
-                    <option value="pm">☀️ 昼便 (pm)</option>
-                  </select>
+                  <div className="col-span-7 grid grid-cols-3 rounded-lg border border-line bg-sand-50 p-0.5 text-xs font-bold">
+                    {([
+                      { val: '', label: '指定なし' },
+                      { val: 'am', label: '🌅 午前' },
+                      { val: 'pm', label: '☀️ 午後' },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setShippingTime(opt.val)}
+                        className={cn(
+                          'rounded-md py-1 text-[11px] font-black transition',
+                          shippingTime === opt.val
+                            ? 'bg-white text-forest-900 shadow-2xs ring-1 ring-forest-600/20'
+                            : 'text-ink-muted hover:text-ink',
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

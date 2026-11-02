@@ -69,13 +69,6 @@ export interface PackGroupInfo {
   icon: string
 }
 
-/**
- * 出荷・締切時刻文字列を時系列の分単位スコアに変換する（小さいほど優先度が高い・早い便）。
- * - 当日便 ('06:00', '16:00', '18:00' 等): 0 〜 1439
- * - 翌日午前・翌日便 ('翌午前', '翌09:00', '翌11:00' 等): 1440 〜 2879
- *   👉 これにより「当日16:00 (NSK) ➜ 当日18:00 (和郷園) ➜ 翌午前 (農業総研)」の順が100%保証される。
- * - 未設定 (null / ''): 9999（最後尾）
- */
 export function parseDeparturePriority(departureTime: string | null | undefined): number {
   if (!departureTime) return 9999
   const raw = departureTime.trim()
@@ -102,24 +95,19 @@ export function parseDeparturePriority(departureTime: string | null | undefined)
 }
 
 /**
- * 便名に含まれる重複時刻プレフィックス（例: "11:30発 岩槻便" の "11:30発 "）を除去してクリーンな便名を返す
+ * 便名に含まれる重複時刻プレフィックスや絵文字（例: "⏰ 当日18:00迄 岩槻便", "11:30発 岩槻便"）を除去して純粋な便名のみを返す
  */
 export function cleanShippingRouteName(routeName: string | null | undefined): string | null {
   if (!routeName) return null
   const cleaned = routeName
-    .replace(/^(?:(?:翌(?:日)?(?:午前|\d{1,2}:\d{2}|\d{1,2}時)|当日|\d{1,2}:\d{2}|\d{1,2}時)(?:発|出荷|迄|まで)?\s*)+/, '')
+    .replace(/^[⏰🌅🚚📦⏳\s]+/g, '')
+    .replace(/^(?:(?:翌(?:日)?(?:午前|\d{1,2}:\d{2}|\d{1,2}時)|当日\s*(?:\d{1,2}:\d{2}|\d{1,2}時)?|\d{1,2}:\d{2}|\d{1,2}時)(?:発|出荷|迄に出荷|迄|まで)?[\s・:：]*)+/g, '')
     .replace(/^一般配送・時間未指定$/, '')
+    .replace(/^時間指定なし（一般便）$/, '')
     .trim()
   return cleaned || null
 }
 
-/**
- * 取引先・納入先・マスタオーバーライドから、出荷時刻と便名の初期値・表示タイトルを決定論的に解決する。
- * （収穫・パックボードと便別積込・配送ボードの双方で単一の正として使用）
- * - 和郷園（岩槻・戸田・松戸・柏・相模・川越等）: 当日 18:00 締切
- * - NSK（16時指定・センター便）: 当日 16:00 締切
- * - 農業総研（翌朝・午前中便）: 翌午前 締切
- */
 export function resolveDefaultRouteInfo(params: {
   destName: string | null | undefined
   customerName: string | null | undefined
@@ -138,13 +126,13 @@ export function resolveDefaultRouteInfo(params: {
   const formatTitle = (time: string | null, route: string | null): string => {
     const cleanRoute = cleanShippingRouteName(route)
     if (time && cleanRoute) {
-      return time.startsWith('翌') ? `🌅 ${time}迄 ${cleanRoute}` : `⏰ 当日${time}迄 ${cleanRoute}`
+      return time.startsWith('翌') ? `${time}迄（${cleanRoute}）` : `当日 ${time}迄（${cleanRoute}）`
     }
     if (time) {
-      return time.startsWith('翌') ? `🌅 ${time}迄に出荷` : `⏰ 当日${time}迄に出荷`
+      return time.startsWith('翌') ? `${time}迄に出荷` : `当日 ${time}迄に出荷`
     }
     if (cleanRoute) return cleanRoute
-    return '一般配送・時間未指定'
+    return '時間指定なし（一般便）'
   }
 
   if (override && (cleanShippingRouteName(override.shippingRouteName) || isValidTime(override.departureTime))) {
@@ -170,7 +158,6 @@ export function resolveDefaultRouteInfo(params: {
   const d = (destName ?? '').trim()
   const c = (customerName ?? '').trim()
 
-  // 1. 和郷園（パック当日の午後6時＝18:00まで）
   if (
     c.includes('和郷園') ||
     d.includes('岩槻') ||
@@ -191,9 +178,7 @@ export function resolveDefaultRouteInfo(params: {
     }
   }
 
-  // 2. NSK / 農業総合研究所
   if (c.includes('農業総') || c.toUpperCase().includes('NSK') || d.toUpperCase().includes('NSK')) {
-    // 納入先名や取引先名が明示的にNSK単独・または16時指定の場合
     if (
       d.toUpperCase().includes('NSK') ||
       d.includes('16時') ||
@@ -207,7 +192,6 @@ export function resolveDefaultRouteInfo(params: {
         shippingRouteName: subRoute,
       }
     }
-    // 農業総研（パック翌日の午前中までに出荷）
     const subRoute = '農業総研便'
     return {
       title: formatTitle('翌午前', subRoute),
@@ -226,11 +210,11 @@ export function resolveDefaultRouteInfo(params: {
     return { title: formatTitle('14:00', '午後便'), departureTime: '14:00', shippingRouteName: '午後便' }
   }
 
-  return { title: '一般配送・時間未指定', departureTime: null, shippingRouteName: null }
+  return { title: '時間指定なし（一般便）', departureTime: null, shippingRouteName: null }
 }
 
 /**
- * ソートモードに応じたグループ境界ヘッダー情報の生成
+ * ソートモードに応じたグループ境界ヘッダー情報の生成（絵文字や時刻の二重表示を完全排除）
  */
 export function getPackGroupInfo(item: PackSortableItem, mode: PackSortMode = 'time'): PackGroupInfo {
   if (mode === 'time') {
@@ -241,44 +225,39 @@ export function getPackGroupInfo(item: PackSortableItem, mode: PackSortMode = 't
       groupKey: `time:${time || 'unset'}`,
       title: time
         ? isNextDayTime
-          ? `🌅 ${time}迄に出荷（翌日午前中迄）`
-          : `⏰ 当日 ${time}迄に出荷`
-        : '⏳ 時間指定なし（一般便）',
-      subtitle: route ? `便: ${route}` : undefined,
-      badge: time ? (isNextDayTime ? '翌日午前迄' : `当日${time}迄`) : '時間未指定',
-      icon: time ? (isNextDayTime ? '🌅' : '⏰') : '⏳',
+          ? `${time}迄に出荷`
+          : `当日 ${time}迄に出荷`
+        : '時間指定なし（一般便）',
+      badge: route || undefined,
+      icon: time ? (isNextDayTime ? '🌅' : '⏰') : '📦',
     }
   }
 
   if (mode === 'container') {
-    const container = item.initialContainer || '通常コンテナ'
+    const rawCont = item.initialContainer || '通常コンテナ'
+    const container = rawCont === '農業総研専用折りたたみコンテナ' ? 'NSKオリコン' : rawCont
     return {
-      groupKey: `container:${container}`,
-      title: `📦 ${container}`,
+      groupKey: `container:${rawCont}`,
+      title: container,
       icon: '📦',
     }
   }
 
-  // mode === 'destination' (出荷先まとめ順)
+  // mode === 'destination'
   const normDest = normalizeDestinationGroupName(item.customerName, item.destinationName)
-  const destName = normDest ? ` ➜ ${normDest}` : ''
+  const destName = normDest ? ` ▶ ${normDest}` : ''
   return {
     groupKey: `dest:${item.customerName}__${normDest}`,
     title: `${item.customerName}${destName}`,
-    subtitle: item.departureTime
+    badge: item.departureTime
       ? item.departureTime.startsWith('翌')
-        ? `🌅 ${item.departureTime}迄`
-        : `⏰ 当日${item.departureTime}迄`
-      : undefined,
-    badge: cleanShippingRouteName(item.shippingRouteName) || undefined,
+        ? `${item.departureTime}迄`
+        : `当日${item.departureTime}迄`
+      : cleanShippingRouteName(item.shippingRouteName) || undefined,
     icon: '🏢',
   }
 }
 
-/**
- * 納入先名の表記ゆれ（例：「パルシステム 岩槻」「青コン岩槻」「岩槻」や「ちばコープ グリーンボックス(戸田)」「戸田」）を正規化し、
- * 同一納入先のカードが別グループに分裂するのを防ぐヘルパー。
- */
 export function normalizeDestinationGroupName(
   customerName: string | null | undefined,
   destinationName: string | null | undefined,
@@ -299,19 +278,11 @@ export function normalizeDestinationGroupName(
   return raw
 }
 
-/**
- * 収穫・パックボード用ソート（3つのモードに対応）.
- * - 'time'（早い便順・デフォルト）: 出荷時刻が早い順 ➜ 納品先まとめ ➜ 規格順
- * - 'destination'（出荷先順）: 出荷時刻優先（16:00 NSK ➜ 18:00 和郷園 ➜ 翌午前 農総研） ➜ 納品先デフォルト順 ➜ 出荷先まとめ ➜ 規格順
- * - 'container'（コンテナ順）: コンテナ種別 ➜ 出荷時刻順（16:00 ➜ 18:00 ➜ 翌午前） ➜ 納品先まとめ ➜ 規格順
- * ※いずれのモードでも管理者の当日手動ソート（dailyPackSortOrder）は最優先。
- */
 export function comparePackItems(
   a: PackSortableItem,
   b: PackSortableItem,
   mode: PackSortMode = 'time',
 ): number {
-  // 1. 管理者当日手動ソート（最優先）
   const manualA = a.dailyPackSortOrder
   const manualB = b.dailyPackSortOrder
   if (manualA != null && manualB != null && manualA !== manualB) {
@@ -320,13 +291,11 @@ export function comparePackItems(
   if (manualA != null && manualB == null) return -1
   if (manualA == null && manualB != null) return 1
 
-  // 納品先キー（表記ゆれを吸収して同一出荷先に集約）
   const normDestA = normalizeDestinationGroupName(a.customerName, a.destinationName)
   const normDestB = normalizeDestinationGroupName(b.customerName, b.destinationName)
   const keyA = `${a.customerName}__${normDestA}`
   const keyB = `${b.customerName}__${normDestB}`
 
-  // 規格
   const specA = a.initialSpec || ''
   const specB = b.initialSpec || ''
 
@@ -334,60 +303,24 @@ export function comparePackItems(
   const prioB = parseDeparturePriority(b.departureTime)
 
   if (mode === 'time') {
-    // 2. 出発時刻順（当日16:00 ➜ 当日18:00 ➜ 翌午前 ➜ 未設定 の順）
-    if (prioA !== prioB) {
-      return prioA - prioB
-    }
-
-    // 3. 同一便内の出荷先集約
-    if (keyA !== keyB) {
-      return keyA.localeCompare(keyB, 'ja')
-    }
-
-    // 4. 同一出荷先内の規格順
+    if (prioA !== prioB) return prioA - prioB
+    if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
     return specA.localeCompare(specB, 'ja')
   }
 
   if (mode === 'container') {
-    // 2. コンテナ種別順
     const contA = a.initialContainer || '通常コンテナ'
     const contB = b.initialContainer || '通常コンテナ'
-    if (contA !== contB) {
-      return contA.localeCompare(contB, 'ja')
-    }
-
-    // 3. 同一コンテナ内は必ず早い便順（16:00 ➜ 18:00 ➜ 翌午前）を優先
-    if (prioA !== prioB) {
-      return prioA - prioB
-    }
-
-    // 4. 同一コンテナ・同一時間帯内の出荷先集約
-    if (keyA !== keyB) {
-      return keyA.localeCompare(keyB, 'ja')
-    }
-
-    // 5. 規格順
+    if (contA !== contB) return contA.localeCompare(contB, 'ja')
+    if (prioA !== prioB) return prioA - prioB
+    if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
     return specA.localeCompare(specB, 'ja')
   }
 
-  // mode === 'destination' (出荷先順)
-  // 2. まず出荷時刻優先（16:00 NSK ➜ 18:00 和郷園 ➜ 翌午前 農総研）で大きな順序を守る
-  if (prioA !== prioB) {
-    return prioA - prioB
-  }
-
-  // 3. 納品先デフォルト順
+  if (prioA !== prioB) return prioA - prioB
   const defaultA = a.defaultPackSortOrder ?? 100
   const defaultB = b.defaultPackSortOrder ?? 100
-  if (defaultA !== defaultB) {
-    return defaultA - defaultB
-  }
-
-  // 4. 出荷先キー集約
-  if (keyA !== keyB) {
-    return keyA.localeCompare(keyB, 'ja')
-  }
-
-  // 5. 規格順
+  if (defaultA !== defaultB) return defaultA - defaultB
+  if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
   return specA.localeCompare(specB, 'ja')
 }

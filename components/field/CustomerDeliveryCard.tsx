@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Truck,
@@ -19,6 +19,7 @@ import { ConfirmModal } from '@/components/ui/Modal'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { getContainerColorStyle } from '@/lib/field/container-style'
 import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
+import { extractActionableNote } from '@/lib/field/clean-note'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { getThaiContainer, getContainerColorEmoji, THAI_LABELS } from '@/lib/field/thai-dict'
 
@@ -69,10 +70,10 @@ export interface CustomerDeliveryCardProps {
 }
 
 /**
- * 便別積込・配送リストの1カードコンポーネント。
- * - #19: 納入先が複数ある取引先（和郷園・日本生協連など）は最初から納入先別内訳を展開表示し、タップ不要でセンター別の箱数・個別積込が可能。
- * - #20: 端数がない通常注文での冗長な「（満杯 ◯ケース）」や重複パック数を排除し、端数がある時のみアンバーバッジで強調。
- * - #21: 積込完了（isCompleted）カードは1行のスリム完了バーに自動折りたたみ（タップでいつでも展開・取消可能）。
+ * 便別積込・配送リストの1カードコンポーネント（v5.1.9 視認性・重複排除版）
+ * - システム自動付与タグ（★新規追加、数量変更: 等）を特記事項バナーから自動除去し、本当に必要な現場連絡のみを表示
+ * - 複数納品先がある場合は納品先ごとに出荷時間チップを表示し、親カード上部の重複表示を抑制
+ * - 積込完了（isCompleted）カードは1行のスリム完了バーに自動折りたたみ
  */
 export function CustomerDeliveryCard({
   customerId,
@@ -94,7 +95,7 @@ export function CustomerDeliveryCard({
   const { isThaiMode } = useFieldLang()
   const [isCompleted, setIsCompleted] = useState<boolean>(initialIsCompleted)
   const [destinations, setDestinations] = useState<DestinationDetail[]>(initialDestinations)
-  // #19 複数納入先がある取引先は初期状態で内訳を展開（積込完了時は折りたたむ）
+  // 複数納入先がある取引先は初期状態で内訳を展開（積込完了時は折りたたむ）
   const [open, setOpen] = useState<boolean>(() => initialDestinations.length > 1 && !initialIsCompleted)
   const [expandedWhenDone, setExpandedWhenDone] = useState<boolean>(false)
   const [busy, setBusy] = useState<boolean>(false)
@@ -140,15 +141,28 @@ export function CustomerDeliveryCard({
     setDestinations(initialDestinations)
   }, [initialDestinations])
 
-  const [notes, setNotes] = useState<string[]>(initialNotes)
+  // システム自動タグ（★新規追加 等）を除いた純粋な現場連絡メモのみ抽出
+  const cleanedInitialNotes = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          initialNotes
+            .map((n) => extractActionableNote(n))
+            .filter((n): n is string => Boolean(n && n.trim())),
+        ),
+      ),
+    [initialNotes],
+  )
+
+  const [notes, setNotes] = useState<string[]>(cleanedInitialNotes)
   const [editingNote, setEditingNote] = useState<boolean>(false)
-  const [noteInput, setNoteInput] = useState<string>(notes.join(' / '))
+  const [noteInput, setNoteInput] = useState<string>(cleanedInitialNotes.join(' / '))
   const [savingNote, setSavingNote] = useState<boolean>(false)
 
   useEffect(() => {
-    setNotes(initialNotes)
-    setNoteInput(initialNotes.join(' / '))
-  }, [initialNotes])
+    setNotes(cleanedInitialNotes)
+    setNoteInput(cleanedInitialNotes.join(' / '))
+  }, [cleanedInitialNotes])
 
   const destinationIds = destinations.map((d) => d.destinationId)
 
@@ -275,7 +289,7 @@ export function CustomerDeliveryCard({
           : 'border-slate-300 bg-white shadow-md border-l-4 border-l-emerald-600',
       )}
     >
-      {/* #21 積込済1行スリム表示（タップで展開、または「戻す」で1タップ解除） */}
+      {/* 積込済1行スリム表示 */}
       {isCollapsedDone ? (
         <div
           onClick={() => setExpandedWhenDone(true)}
@@ -340,7 +354,7 @@ export function CustomerDeliveryCard({
       ) : (
         <>
           <div className="p-3.5 space-y-2.5">
-            {/* ① 上段: 取引先名 & 特大表示の総積込数（#20 冗長な「満杯◯ケース」と重複パック数を解消） */}
+            {/* ① 上段: 取引先名 & 特大表示の総積込数 */}
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1.5 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -370,18 +384,20 @@ export function CustomerDeliveryCard({
                   )}
                 </div>
 
-                {/* 時間指定・所属便設定 ＆ パック進捗連動バッジ */}
+                {/* 時間指定（単一納品先または内訳閉時のみ表示し、複数展開時の重複を排除） ＆ パック進捗連動バッジ */}
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ink-soft">
-                  <QuickDepartureTimeEditor
-                    deliveryDate={deliveryDate}
-                    customerId={customerId ?? ''}
-                    destinationId={destinations[0]?.destinationId ?? null}
-                    customerName={customerName}
-                    destinationName={destinations[0]?.destinationName ?? null}
-                    currentDepartureTime={earliestDepartureTime ?? (destinations[0]?.departureTime || null)}
-                    currentShippingRouteName={destinations[0]?.shippingRouteName || (routeSummaries[0]?.title ?? null)}
-                    variant="chip"
-                  />
+                  {(destinations.length <= 1 || !open) && (
+                    <QuickDepartureTimeEditor
+                      deliveryDate={deliveryDate}
+                      customerId={customerId ?? ''}
+                      destinationId={destinations[0]?.destinationId ?? null}
+                      customerName={customerName}
+                      destinationName={destinations[0]?.destinationName ?? null}
+                      currentDepartureTime={earliestDepartureTime ?? (destinations[0]?.departureTime || null)}
+                      currentShippingRouteName={destinations[0]?.shippingRouteName || (routeSummaries[0]?.title ?? null)}
+                      variant="chip"
+                    />
+                  )}
 
                   {allDeliveryItems.length > 0 && (
                     unpackedItemCount > 0 ? (
@@ -445,7 +461,7 @@ export function CustomerDeliveryCard({
                 )}
               </div>
 
-              {/* #20 右側: 特大フォントの総積込箱数 ＋ 総パック数（端数がある時だけ琥珀色バッジで強調） */}
+              {/* 右側: 特大フォントの総積込箱数 ＋ 総パック数 */}
               <div className="text-right shrink-0">
                 <div className="text-[11px] font-bold text-ink-muted">
                   {isThaiMode ? THAI_LABELS.totalLoadBoxes : '総積込箱数'}
@@ -467,12 +483,12 @@ export function CustomerDeliveryCard({
                   </div>
                 )}
                 <div className="text-xs font-bold text-ink-soft tabular-nums">
-                  総数 {totalQty.toLocaleString()} P
+                  ({totalQty.toLocaleString()} P)
                 </div>
               </div>
             </div>
 
-            {/* ② 中段: 特記事項・メモ */}
+            {/* ② 中段: 特記事項・メモ（実務連絡がある場合のみ表示） */}
             {hasNote && !editingNote && (
               <div
                 onClick={() => setEditingNote(true)}
@@ -591,7 +607,7 @@ export function CustomerDeliveryCard({
             </div>
           </div>
 
-          {/* ④ 納品先・便別 内訳一覧（#19 複数納入先の場合はデフォルト展開、印刷時は常時展開） */}
+          {/* ④ 納品先・便別 内訳一覧 */}
           <div
             className={cn(
               'bg-bg-soft/50 border-t border-line/60 p-3 space-y-2.5 animate-fadeIn',
@@ -704,26 +720,29 @@ export function CustomerDeliveryCard({
                       <div className="space-y-1 border-t border-line/40 pt-1.5 text-xs">
                         {dest.items
                           .filter((it) => (Number(it.quantity) || 0) > 0)
-                          .map((it) => (
-                            <div
-                              key={it.id}
-                              className="flex items-center justify-between text-ink-soft py-0.5"
-                            >
-                              <span className="font-bold text-ink truncate pr-2">
-                                {it.productName}
-                              </span>
-                              <div className="flex items-center gap-2 shrink-0">
-                                {it.noteText !== '—' && (
-                                  <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
-                                    {it.noteText}
-                                  </span>
-                                )}
-                                <span className="num font-black text-ink tabular-nums">
-                                  {it.quantityText}
+                          .map((it) => {
+                            const cleanedItemNote = extractActionableNote(it.noteText === '—' ? null : it.noteText)
+                            return (
+                              <div
+                                key={it.id}
+                                className="flex items-center justify-between text-ink-soft py-0.5"
+                              >
+                                <span className="font-bold text-ink truncate pr-2">
+                                  {it.productName}
                                 </span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {cleanedItemNote && (
+                                    <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
+                                      {cleanedItemNote}
+                                    </span>
+                                  )}
+                                  <span className="num font-black text-ink tabular-nums">
+                                    {it.quantityText}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          })}
                       </div>
                     )}
                   </div>

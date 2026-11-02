@@ -135,7 +135,7 @@ describe('getPackGroupInfo (ヘッダー情報の生成)', () => {
   it('destination モード: 納品先名のヘッダーが生成される', () => {
     const item: PackSortableItem = { itemId: '1', customerName: '和郷園', destinationName: '岩槻' }
     const info = getPackGroupInfo(item, 'destination')
-    expect(info.title).toContain('和郷園 ➜ 岩槻')
+    expect(info.title).toContain('和郷園 ▶ 岩槻')
     expect(info.groupKey).toBe('dest:和郷園__岩槻')
   })
 

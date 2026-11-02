@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronDown, Check, AlertTriangle, ShieldCheck, Trash2, Undo2, ArrowUpToLine, ChevronUp } from 'lucide-react'
+import { ChevronDown, Check, AlertTriangle, ShieldCheck, Trash2, Undo2, ArrowUpToLine, ChevronUp, SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import type { FieldStatus, SpecWarning } from '@/types/database'
@@ -82,7 +82,7 @@ export interface ShipmentRowProps {
 
 function buildUnifiedMemo(lineNote?: string | null, fieldNote?: string | null): string {
   const cleanLine = extractActionableNote(lineNote ?? '')
-  const cleanField = (fieldNote ?? '').trim()
+  const cleanField = extractActionableNote(fieldNote ?? '')
   if (cleanField && cleanLine) {
     if (cleanField.includes(cleanLine)) return cleanField
     if (cleanLine.includes(cleanField)) return cleanLine
@@ -91,6 +91,12 @@ function buildUnifiedMemo(lineNote?: string | null, fieldNote?: string | null): 
   return cleanField || cleanLine || ''
 }
 
+/**
+ * 収穫・パックボードの1カードコンポーネント（v5.1.9 世界最高峰・超スリム1シート統合版）。
+ * - 「詳細 ▼」を開いた際の4色ボックス＆4つの段落ち茶色ボタンを完全廃止し、白ベースの清潔な1シートに統合。
+ * - ①途中数は「箱数」メインで横1行に収まり、②メモも横1行に収まる省スペース設計。
+ * - ③注文数の変更・規格・コンテナ・シール・袋・順序移動は「⚙️ 注文数・仕様・順序を変更」の折りたたみ内に集約し、1つの保存ボタンで一括保存。
+ */
 export function ShipmentRow({
   itemId,
   customerName,
@@ -142,7 +148,6 @@ export function ShipmentRow({
   const [conflict, setConflict] = useState(false)
   const [offlinePending, setOfflinePending] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [specConfirmOpen, setSpecConfirmOpen] = useState(false)
   const [partialPackConfirmOpen, setPartialPackConfirmOpen] = useState(false)
   const [nextDayPackConfirmOpen, setNextDayPackConfirmOpen] = useState(false)
   const [undoGrace, setUndoGrace] = useState<{ from: FieldStatus } | null>(null)
@@ -150,58 +155,66 @@ export function ShipmentRow({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  // 詳細アコーディオン（最上段：途中数 ＆ 一本化メモ、中段：注文数の直接変更、下段：原本 ＆ 荷姿・シール・袋・順序移動）
   const [open, setOpen] = useState(false)
+  const [specSectionOpen, setSpecSectionOpen] = useState(false)
   const [spec, setSpec] = useState(initialSpec ?? '')
   const [container, setContainer] = useState(initialContainer ?? '')
   const [hasCard, setHasCard] = useState(Boolean(initialHasCard))
   const [hasSeal, setHasSeal] = useState<boolean | null>(initialHasSeal ?? null)
   const [sealText, setSealText] = useState<string>(initialSealText ?? (initialHasSeal ? 'シールあり' : ''))
   const [bagType, setBagType] = useState<string>(initialBagType ?? '')
-  const [shippedQty, setShippedQty] = useState(initialShippedQty == null ? '' : String(initialShippedQty))
+
+  const packsPerCase: number = (() => {
+    let ppc = masterPacksPerCase ?? null
+    if (!ppc || ppc <= 0) {
+      const combinedSpec = `${customerName} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
+      const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+      if (match) {
+        const parsedNum = Number(match[1] || match[2])
+        if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+          ppc = parsedNum
+        }
+      }
+      if (!ppc || ppc <= 0) {
+        if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
+          ppc = 24
+        } else {
+          ppc = 20
+        }
+      }
+    }
+    return ppc ?? 20
+  })()
+
+  // 途中数は「箱数」メインで操作・表示（内部保存時に packsPerCase を掛けてパック数に換算）
+  const [shippedPacks, setShippedPacks] = useState<number | null>(initialShippedQty)
+  const [partialBoxesStr, setPartialBoxesStr] = useState<string>(() =>
+    initialShippedQty != null && initialShippedQty > 0
+      ? String(Math.floor(initialShippedQty / packsPerCase))
+      : '',
+  )
   const [memoText, setMemoText] = useState(() => buildUnifiedMemo(initialLineNote, initialFieldNote))
-  const [savingQuick, setSavingQuick] = useState(false)
-  const [savingNote, setSavingNote] = useState(false)
-  const [savingDetails, setSavingDetails] = useState(false)
-  const [savingOrderQty, setSavingOrderQty] = useState(false)
-  const [expandedWhenDone, setExpandedWhenDone] = useState(false)
-
-  const meta = FIELD_STATUS_META[status]
-  const isDone = status === 'packed' || status === 'shipped'
-  const changeDiffBadge = extractChangeDiffBadge(initialLineNote ?? '')
-  const shippedNum = shippedQty.trim() === '' ? null : Number(shippedQty)
-  const isPartial = shippedNum != null && Number.isFinite(shippedNum) && shippedNum > 0 && shippedNum < orderedQty
-
-  let packsPerCase = masterPacksPerCase ?? null
-  if (!packsPerCase || packsPerCase <= 0) {
-    const combinedSpec = `${customerName} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
-    const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
-    if (match) {
-      const parsedNum = Number(match[1] || match[2])
-      if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
-        packsPerCase = parsedNum
-      }
-    }
-    if (!packsPerCase || packsPerCase <= 0) {
-      if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
-        packsPerCase = 24
-      } else {
-        packsPerCase = 20
-      }
-    }
-  }
-
   const [editOrderBoxes, setEditOrderBoxes] = useState<string>(() =>
     String(Math.floor(initialOrderedQty / packsPerCase)),
   )
   const [editOrderPacks, setEditOrderPacks] = useState<string>(() => String(initialOrderedQty))
 
+  const [savingQuick, setSavingQuick] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [expandedWhenDone, setExpandedWhenDone] = useState(false)
+
+  const meta = FIELD_STATUS_META[status]
+  const isDone = status === 'packed' || status === 'shipped'
+  const changeDiffBadge = extractChangeDiffBadge(initialLineNote ?? '')
+  const isPartial = shippedPacks != null && shippedPacks > 0 && shippedPacks < orderedQty
+
   const fullCases = Math.floor(orderedQty / packsPerCase)
   const loosePacks = orderedQty % packsPerCase
   const casesText = String(fullCases)
   const looseText = String(loosePacks)
-  const partialCases = shippedNum != null && packsPerCase > 0 ? Math.floor(shippedNum / packsPerCase) : 0
-  const remainingPacks = shippedNum != null ? Math.max(0, orderedQty - shippedNum) : orderedQty
+  const partialCases = shippedPacks != null && packsPerCase > 0 ? Math.floor(shippedPacks / packsPerCase) : 0
+  const remainingPacks = shippedPacks != null ? Math.max(0, orderedQty - shippedPacks) : orderedQty
   const remainingCases = packsPerCase > 0 ? Math.ceil(remainingPacks / packsPerCase) : 0
 
   useEffect(() => {
@@ -218,8 +231,13 @@ export function ShipmentRow({
   }, [initialOrderedQty, packsPerCase])
 
   useEffect(() => {
-    setShippedQty(initialShippedQty == null ? '' : String(initialShippedQty))
-  }, [initialShippedQty])
+    setShippedPacks(initialShippedQty)
+    setPartialBoxesStr(
+      initialShippedQty != null && initialShippedQty > 0
+        ? String(Math.floor(initialShippedQty / packsPerCase))
+        : '',
+    )
+  }, [initialShippedQty, packsPerCase])
 
   useEffect(() => {
     setMemoText(buildUnifiedMemo(initialLineNote, initialFieldNote))
@@ -237,7 +255,7 @@ export function ShipmentRow({
     undoTimerRef.current = window.setTimeout(() => {
       undoTimerRef.current = null
       setUndoGrace(null)
-      onStatusSettled?.(itemId, rowStatusKey(settled, isPartial ? shippedNum : null, orderedQty))
+      onStatusSettled?.(itemId, rowStatusKey(settled, isPartial ? shippedPacks : null, orderedQty))
       router.refresh()
     }, UNDO_GRACE_MS)
   }
@@ -326,7 +344,7 @@ export function ShipmentRow({
       onStatusChange?.(itemId, graceSnap.from, version)
       onStatusSettled?.(
         itemId,
-        rowStatusKey(graceSnap.from, isPartial ? shippedNum : null, orderedQty),
+        rowStatusKey(graceSnap.from, isPartial ? shippedPacks : null, orderedQty),
       )
       return
     }
@@ -355,7 +373,7 @@ export function ShipmentRow({
       onStatusChange?.(itemId, json.item.field_status, json.item.version)
       onStatusSettled?.(
         itemId,
-        rowStatusKey(json.item.field_status, isPartial ? shippedNum : null, orderedQty),
+        rowStatusKey(json.item.field_status, isPartial ? shippedPacks : null, orderedQty),
       )
       router.refresh()
     } catch (e) {
@@ -386,9 +404,16 @@ export function ShipmentRow({
     }
   }
 
-  async function savePartialQty(overrideVal?: number | null) {
-    const rawVal = overrideVal !== undefined ? overrideVal : shippedNum != null && Number.isFinite(shippedNum) ? shippedNum : null
-    const val = rawVal != null && rawVal > 0 ? Math.min(orderedQty, rawVal) : null
+  /** 途中数（箱数メイン）の保存 */
+  async function savePartialBoxes(overrideBoxes?: number | null) {
+    const bNum =
+      overrideBoxes !== undefined
+        ? overrideBoxes
+        : partialBoxesStr.trim() === ''
+        ? null
+        : Math.max(0, parseInt(partialBoxesStr, 10) || 0)
+    const rawPacks = bNum != null && bNum > 0 ? bNum * packsPerCase : null
+    const val = rawPacks != null && rawPacks > 0 ? Math.min(orderedQty, rawPacks) : null
     setSavingQuick(true)
     try {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -410,8 +435,11 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
+      setShippedPacks(val)
       onShippedQtyChange?.(itemId, val)
-      toast.success(val ? `途中数（${val}P）を記録しました` : '途中数をクリアしました')
+      toast.success(
+        val && bNum ? `途中数 ${bNum}箱（${val}P）を記録しました` : '途中数をクリアしました',
+      )
       router.refresh()
     } catch (e) {
       const isOfflineErr = (typeof navigator !== 'undefined' && !navigator.onLine) || e instanceof TypeError
@@ -424,8 +452,9 @@ export function ShipmentRow({
             ts: Date.now(),
           })
           setOfflinePending(true)
+          setShippedPacks(val)
           onShippedQtyChange?.(itemId, val)
-          toast('電波が弱い場所のため「途中数」を一時保存しました（復帰時に自動反映）', { icon: '📡' })
+          toast('電波が弱い場所のため「途中数」を一時保存しました', { icon: '📡' })
           return
         } catch (enqErr) {
           console.error('Failed to enqueue shipped_qty', enqErr)
@@ -437,6 +466,7 @@ export function ShipmentRow({
     }
   }
 
+  /** 一本化メモの即時保存 */
   async function saveUnifiedMemo() {
     setSavingNote(true)
     const trimmed = memoText.trim() || null
@@ -458,7 +488,7 @@ export function ShipmentRow({
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
-      toast.success(trimmed ? 'メモ・伝達事項を保存しました' : 'メモをクリアしました')
+      toast.success(trimmed ? 'メモを保存しました' : 'メモをクリアしました')
       router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, 'メモの保存に失敗しました'))
@@ -467,70 +497,21 @@ export function ShipmentRow({
     }
   }
 
-  /** #09 注文数（箱数/パック数）のその場直接変更 */
-  async function saveDirectOrderedQty() {
+  /** 注文数・荷姿・規格・シール・袋の一括統合保存（ボタン1つで完結！） */
+  async function executeSaveAllSpecsAndQty() {
     const newPacks = Math.max(0, parseInt(editOrderPacks, 10) || 0)
     if (newPacks <= 0) {
-      toast.error('注文数を0にする場合は下の「削除」ボタンを押してください')
+      toast.error('注文数を0にする場合は「削除」ボタンを押してください')
       return
     }
-    if (newPacks === orderedQty) {
-      toast('注文数は変更されていません', { icon: 'ℹ️' })
-      return
-    }
-    setSavingOrderQty(true)
-    try {
-      const res = await fetch(`/api/order-items/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          quantity: newPacks,
-          version,
-        }),
-      })
-      if (res.status === 409) {
-        setConflict(true)
-        toast.error('競合しました。画面を更新してください')
-        return
-      }
-      if (!res.ok) throw new Error(`注文数の変更に失敗 (${res.status})`)
-      const json = (await res.json()) as { item: { version: number; field_status: FieldStatus; shipped_qty: number | null } }
-      setVersion(json.item.version)
-      setOrderedQty(newPacks)
-      setStatus(json.item.field_status)
-      setShippedQty(json.item.shipped_qty == null ? '' : String(json.item.shipped_qty))
-      onOrderedQtyChange?.(itemId, newPacks)
-      onStatusChange?.(itemId, json.item.field_status, json.item.version)
-      toast.success(
-        packsPerCase
-          ? `注文数を ${Math.floor(newPacks / packsPerCase)}箱（${newPacks}P）に変更しました`
-          : `注文数を ${newPacks}Pに変更しました`
-      )
-      router.refresh()
-    } catch (e) {
-      toast.error(fieldErrorMessage(e, '注文数の変更に失敗しました'))
-    } finally {
-      setSavingOrderQty(false)
-    }
-  }
-
-  function handleSaveDetails() {
-    if (spec !== initialSpec || container !== initialContainer) {
-      setSpecConfirmOpen(true)
-    } else {
-      executeSaveDetails()
-    }
-  }
-
-  async function executeSaveDetails() {
     setSavingDetails(true)
     const trimmedMemo = memoText.trim() || null
-    const valQty = shippedNum != null && Number.isFinite(shippedNum) && shippedNum > 0 ? shippedNum : null
     try {
       const res = await fetch(`/api/order-items/${itemId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          ...(newPacks !== orderedQty ? { quantity: newPacks } : {}),
           spec: spec || null,
           container_type: container || null,
           has_card: hasCard,
@@ -539,7 +520,6 @@ export function ShipmentRow({
           bag_type: bagType.trim() || null,
           line_note: trimmedMemo,
           field_note: trimmedMemo,
-          shipped_qty: valQty,
           version,
         }),
       })
@@ -549,15 +529,19 @@ export function ShipmentRow({
         return
       }
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
-      const json = (await res.json()) as { item: { version: number } }
-      setVersion(json.item.version)
-      onShippedQtyChange?.(itemId, valQty)
-      onDetailsChange?.(itemId, spec || null, container || null)
-      if ((spec && spec !== initialSpec) || (container && container !== initialContainer)) {
-        toast.success('荷姿・規格・シール設定を保存し、学習ルールへ反映しました 💡')
-      } else {
-        toast.success('変更を保存しました')
+      const json = (await res.json()) as {
+        item: { version: number; field_status: FieldStatus; shipped_qty: number | null }
       }
+      setVersion(json.item.version)
+      if (newPacks !== orderedQty) {
+        setOrderedQty(newPacks)
+        setStatus(json.item.field_status)
+        onOrderedQtyChange?.(itemId, newPacks)
+        onStatusChange?.(itemId, json.item.field_status, json.item.version)
+      }
+      onDetailsChange?.(itemId, spec || null, container || null)
+      toast.success('注文数・仕様の変更を保存しました')
+      setSpecSectionOpen(false)
       router.refresh()
     } catch (e) {
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))
@@ -567,7 +551,7 @@ export function ShipmentRow({
   }
 
   const fieldInput =
-    'h-10 w-full rounded-lg border border-line-strong bg-white px-3 text-sm text-ink focus:outline-none focus:border-forest-600 focus:ring-2 focus:ring-forest-100'
+    'h-9 w-full rounded-lg border border-line-strong bg-white px-2.5 text-sm text-ink focus:outline-none focus:border-forest-600 focus:ring-2 focus:ring-forest-100'
 
   const todayStr = jstTodayStr()
   const tomorrowStr = shiftDateStr(todayStr, 1)
@@ -724,8 +708,15 @@ export function ShipmentRow({
 
               <div className="flex items-center gap-1">
                 {changeDiffBadge && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-0.5 text-xs font-black shadow-2xs">
-                    <span>🔄 {changeDiffBadge}</span>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black shadow-2xs',
+                      changeDiffBadge === '新規追加'
+                        ? 'bg-emerald-100 border border-emerald-300 text-emerald-900'
+                        : 'bg-amber-500 text-white',
+                    )}
+                  >
+                    <span>{changeDiffBadge === '新規追加' ? '✨ 新規' : `🔄 ${changeDiffBadge}`}</span>
                   </span>
                 )}
                 {needsManualConfirm && !changeDiffBadge && (
@@ -813,7 +804,7 @@ export function ShipmentRow({
                 <span className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-1.5">
                   <span>⏳ 途中経過:</span>
                   <span className="underline decoration-amber-500">
-                    {partialCases}箱（{shippedNum}P）完了
+                    {partialCases}箱（{shippedPacks}P）完了
                   </span>
                 </span>
                 <span className="rounded-md bg-amber-600 text-white px-2 py-0.5 text-xs font-black shrink-0">
@@ -822,6 +813,7 @@ export function ShipmentRow({
               </button>
             )}
 
+            {/* 📝 本当の伝達事項がある時のみ表示（★新規追加などのメタ文字は clean-note で完全除外済） */}
             {(memoText || masterPackingNotes) && (
               <button
                 type="button"
@@ -1001,84 +993,99 @@ export function ShipmentRow({
       )}
 
       {/* ===================================================================== */}
-      {/* ▼ 詳細アコーディオン（最上段：①途中数 ＆ ②一本化メモ、中段：③注文数の直接変更、下段：④荷姿・シール・袋・順序移動） */}
+      {/* ▼ 世界最高峰・超スリム1シート統合型「詳細パネル」（4色の箱やボタンの段落ちを完全排除！） */}
       {/* ===================================================================== */}
       {open && (
-        <div className="mt-3 space-y-3 border-t-2 border-line pt-3 animate-in fade-in duration-150">
-          {/* 【最上段①】⏳ 途中数（できた数）の記録バー */}
-          <div className="rounded-xl border border-amber-300 bg-amber-50/70 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                <span>⏳ 途中数（いまできた数）の記録</span>
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2.5 animate-in fade-in duration-150">
+          {/* ① 1段目：⏳ 途中数の記録（箱数メイン・横1行で完結・段落ちゼロ） */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-black text-ink flex items-center gap-1">
+                <span>⏳ 途中数（いまできた箱数）</span>
               </span>
-              <span className="text-xs font-bold text-amber-900">
-                目標: {casesText}箱（{orderedQty}P）
+              <span className="font-bold text-ink-soft tabular-nums">
+                目標 {casesText}箱（{orderedQty}P）
+                {partialBoxesStr !== '' && Number(partialBoxesStr) > 0 && (
+                  <span className="text-emerald-800 font-black ml-1">
+                    ／ 現在 {partialBoxesStr}箱（{Number(partialBoxesStr) * packsPerCase}P）
+                  </span>
+                )}
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
+
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
-                  const cur = parseInt(shippedQty, 10) || 0
-                  const step = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
-                  setShippedQty(String(Math.max(0, cur - step)))
+                  const cur = parseInt(partialBoxesStr, 10) || 0
+                  const next = Math.max(0, cur - 1)
+                  setPartialBoxesStr(next === 0 ? '' : String(next))
                 }}
-                className="min-h-[42px] h-10 px-3 rounded-xl bg-white hover:bg-slate-100 text-ink border border-line-strong text-xs font-black active:scale-95 transition"
+                className="h-9 px-2.5 rounded-lg border border-line-strong bg-white hover:bg-slate-100 text-xs font-black text-ink shrink-0 active:scale-95 transition"
               >
-                -1箱 (-{packsPerCase}P)
+                -1箱
               </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                className={cn(fieldInput, 'num h-10 w-24 tabular-nums font-black text-center')}
-                value={shippedQty}
-                onChange={(e) => setShippedQty(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                    e.preventDefault()
-                    savePartialQty()
-                  }
-                }}
-                placeholder="パック数"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const cur = parseInt(shippedQty, 10) || 0
-                  const step = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
-                  setShippedQty(String(Math.min(orderedQty, cur + step)))
-                }}
-                className="min-h-[42px] h-10 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black active:scale-95 transition shadow-2xs"
-              >
-                +1箱 (+{packsPerCase}P)
-              </button>
-              <div className="ml-auto flex items-center gap-1.5">
-                {shippedQty !== '' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShippedQty('')
-                      void savePartialQty(null)
-                    }}
-                    className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs text-ink-soft hover:bg-bg-soft font-bold"
-                  >
-                    クリア
-                  </button>
-                )}
-                <Button size="sm" onClick={() => savePartialQty()} isLoading={savingQuick}>
-                  途中数を保存
-                </Button>
+
+              <div className="flex items-center gap-1 bg-white border border-line-strong rounded-lg px-2 h-9 w-24 shrink-0">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={fullCases}
+                  value={partialBoxesStr}
+                  onChange={(e) => setPartialBoxesStr(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void savePartialBoxes()
+                    }
+                  }}
+                  placeholder="0"
+                  className="num w-full bg-transparent text-center font-black text-sm text-ink focus:outline-none"
+                />
+                <span className="text-xs font-bold text-ink-soft shrink-0">箱</span>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const cur = parseInt(partialBoxesStr, 10) || 0
+                  const next = Math.min(fullCases, cur + 1)
+                  setPartialBoxesStr(String(next))
+                }}
+                className="h-9 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs font-black text-white shrink-0 active:scale-95 transition shadow-2xs"
+              >
+                +1箱
+              </button>
+
+              {partialBoxesStr !== '' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartialBoxesStr('')
+                    void savePartialBoxes(null)
+                  }}
+                  className="h-9 px-2 rounded-lg text-xs font-bold text-ink-soft hover:text-ink underline shrink-0"
+                >
+                  クリア
+                </button>
+              )}
+
+              <Button
+                size="sm"
+                onClick={() => savePartialBoxes()}
+                isLoading={savingQuick}
+                className="ml-auto h-9 px-3 shrink-0 text-xs font-black"
+              >
+                記録
+              </Button>
             </div>
           </div>
 
-          {/* 【最上段②】📝 メモ・伝達事項（1つに一本化！） */}
-          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-blue-950">
-                📝 メモ・伝達事項（現場メモ・内訳・注意事項）
-              </span>
+          {/* ② 2段目：📝 メモ・伝達事項（横1行で完結） */}
+          <div className="space-y-1 border-t border-slate-200/80 pt-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-black text-ink">📝 メモ・伝達事項</span>
               {memoText.trim() !== '' && (
                 <button
                   type="button"
@@ -1089,94 +1096,40 @@ export function ShipmentRow({
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <input
                 type="text"
-                className={cn(fieldInput, 'flex-1 h-10 text-sm font-bold text-ink')}
+                className={cn(fieldInput, 'flex-1 font-bold')}
                 value={memoText}
                 onChange={(e) => setMemoText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                     e.preventDefault()
-                    saveUnifiedMemo()
+                    void saveUnifiedMemo()
                   }
                 }}
-                placeholder="例: ライフ近畿40箱 / サンプラザ20箱、20箱で中断、午前便優先など"
+                placeholder="内訳（ライフ40/サンプラザ20）・欠品注意など"
               />
-              <Button size="sm" onClick={saveUnifiedMemo} isLoading={savingNote} className="shrink-0 h-10 px-3.5">
-                メモ保存
-              </Button>
-            </div>
-          </div>
-
-          {/* 【中段 #09】📦 注文数そのものの直接変更（モーダルを開かずに箱数/パック数を即変更） */}
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-emerald-950">
-                📦 注文数の直接変更（電話変更・減数など）
-              </span>
-              <span className="text-[11px] font-bold text-emerald-800">
-                1箱 ＝ {packsPerCase} P
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={editOrderBoxes}
-                  onChange={(e) => {
-                    const b = e.target.value
-                    setEditOrderBoxes(b)
-                    const bNum = parseInt(b, 10)
-                    if (!isNaN(bNum) && bNum >= 0) {
-                      setEditOrderPacks(String(bNum * packsPerCase))
-                    }
-                  }}
-                  className={cn(fieldInput, 'num h-10 w-20 text-center font-black')}
-                />
-                <span className="text-xs font-black text-ink">箱</span>
-              </div>
-              <span className="text-xs font-bold text-ink-muted">＝</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={editOrderPacks}
-                  onChange={(e) => {
-                    const p = e.target.value
-                    setEditOrderPacks(p)
-                    const pNum = parseInt(p, 10)
-                    if (!isNaN(pNum) && pNum >= 0 && packsPerCase > 0) {
-                      setEditOrderBoxes(String(Math.floor(pNum / packsPerCase)))
-                    }
-                  }}
-                  className={cn(fieldInput, 'num h-10 w-24 text-center font-black')}
-                />
-                <span className="text-xs font-black text-ink">P</span>
-              </div>
               <Button
                 size="sm"
-                onClick={saveDirectOrderedQty}
-                isLoading={savingOrderQty}
-                className="ml-auto h-10 px-3.5"
+                onClick={saveUnifiedMemo}
+                isLoading={savingNote}
+                className="h-9 px-3 shrink-0 text-xs font-black"
               >
-                注文数を変更
+                保存
               </Button>
             </div>
           </div>
 
-          {/* 📄 受注原本 */}
+          {/* 📄 受注原本リンク（ある時のみ1行で表示） */}
           {receipt?.hasOriginal && viewerHref && (
-            <div className="rounded-xl border border-trust-200 bg-trust-50/60 p-2.5 flex items-center justify-between gap-3">
-              <span className="text-xs font-black text-trust-900">📄 受注原本（FAX・注文書画像）</span>
+            <div className="flex items-center justify-between border-t border-slate-200/80 pt-2">
+              <span className="text-xs font-bold text-ink-soft">📄 受注原本（FAX・注文書画像）</span>
               <Link
                 href={viewerHref}
-                className="h-8 px-3 rounded-lg bg-trust-700 text-white text-xs font-black shadow-2xs hover:bg-trust-800 active:scale-95 transition flex items-center gap-1 shrink-0"
+                className="h-8 px-3 rounded-lg bg-trust-700 text-white text-xs font-black shadow-2xs hover:bg-trust-800 active:scale-95 transition inline-flex items-center"
               >
-                <span>原本を見る</span>
+                原本を見る →
               </Link>
             </div>
           )}
@@ -1185,10 +1138,20 @@ export function ShipmentRow({
             <PackInstructions values={packInstructions} photos={packPhotos ?? []} variant="field" />
           )}
 
-          {/* 【下段 #10】🏷️ 荷姿・規格・シール・袋種別の変更 ＆ 作業順移動 ＆ 明細削除 */}
-          <div className="rounded-xl border border-line bg-bg-soft/40 p-3 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-black text-ink-soft">🏷️ 荷姿・規格・シール・袋 ／ 作業順の移動</span>
+          {/* ③ 3段目：⚙️ 注文数の変更・規格・コンテナ・シール・作業順（普段は1行に折りたたんで画面をスッキリ保つ） */}
+          <div className="border-t border-slate-200/80 pt-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setSpecSectionOpen((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-soft hover:text-ink py-1"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 text-forest-700" />
+                <span>注文数の変更・規格・コンテナ・シール設定</span>
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', specSectionOpen && 'rotate-180')} />
+              </button>
+
+              {/* 作業順の移動ボタン（1行で右端に配置） */}
               {(onMoveToTop || onMoveUp || onMoveDown) && (
                 <div className="flex items-center gap-1">
                   {onMoveToTop && !isNextUp && !isDone && (
@@ -1196,10 +1159,10 @@ export function ShipmentRow({
                       type="button"
                       onClick={() => onMoveToTop()}
                       disabled={busy}
-                      className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1 shadow-2xs"
+                      className="h-7 px-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black flex items-center gap-0.5 shadow-2xs"
                     >
-                      <ArrowUpToLine className="h-3.5 w-3.5" />
-                      <span>最上段へ</span>
+                      <ArrowUpToLine className="h-3 w-3" />
+                      <span>最上段</span>
                     </button>
                   )}
                   {onMoveUp && (
@@ -1207,10 +1170,10 @@ export function ShipmentRow({
                       type="button"
                       onClick={() => onMoveUp()}
                       disabled={busy}
-                      className="h-7 px-2 rounded-lg border border-line bg-white text-xs font-bold text-ink hover:bg-bg-soft flex items-center gap-0.5"
+                      className="h-7 w-7 rounded-md border border-line bg-white text-ink hover:bg-bg-soft flex items-center justify-center"
+                      title="上へ移動"
                     >
                       <ChevronUp className="h-3.5 w-3.5" />
-                      <span>上へ</span>
                     </button>
                   )}
                   {onMoveDown && (
@@ -1218,124 +1181,147 @@ export function ShipmentRow({
                       type="button"
                       onClick={() => onMoveDown()}
                       disabled={busy}
-                      className="h-7 px-2 rounded-lg border border-line bg-white text-xs font-bold text-ink hover:bg-bg-soft flex items-center gap-0.5"
+                      className="h-7 w-7 rounded-md border border-line bg-white text-ink hover:bg-bg-soft flex items-center justify-center"
+                      title="下へ移動"
                     >
                       <ChevronDown className="h-3.5 w-3.5" />
-                      <span>下へ</span>
                     </button>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-[11px] font-bold text-ink-soft">容器・コンテナ</span>
-                <input
-                  className={fieldInput}
-                  value={container}
-                  onChange={(e) => setContainer(e.target.value)}
-                  placeholder="青コン / 茶コン / 段ボール / NSKオリコン"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[11px] font-bold text-ink-soft">規格</span>
-                <input
-                  className={fieldInput}
-                  value={spec}
-                  onChange={(e) => setSpec(e.target.value)}
-                  placeholder="200gUP (入数24) / 2〜3株 (入数20)"
-                />
-              </label>
-            </div>
-
-            {/* #10 シール有無・表記 ＆ 袋種別のワンタップ切替 */}
-            <div className="grid gap-2 sm:grid-cols-2 pt-0.5">
-              <div className="space-y-1">
-                <span className="text-[11px] font-bold text-ink-soft block">シール有無・表記</span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = !hasSeal
-                      setHasSeal(next)
-                      setSealText(next ? (sealText && sealText !== 'シールなし' ? sealText : 'シールあり') : 'シールなし')
-                    }}
-                    className={cn(
-                      'h-9 px-2.5 rounded-lg border text-xs font-black shrink-0 transition',
-                      hasSeal
-                        ? 'border-rose-400 bg-rose-50 text-rose-900'
-                        : 'border-line bg-white text-ink-muted',
-                    )}
-                  >
-                    {hasSeal ? '🏷️ シールあり' : 'シールなし'}
-                  </button>
-                  <input
-                    className={cn(fieldInput, 'h-9 text-xs')}
-                    value={sealText}
-                    onChange={(e) => {
-                      setSealText(e.target.value)
-                      if (e.target.value.trim() && e.target.value !== 'シールなし') {
-                        setHasSeal(true)
-                      }
-                    }}
-                    placeholder="シール表記（任意）"
-                  />
+            {specSectionOpen && (
+              <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 space-y-3 animate-in fade-in duration-150">
+                {/* 注文数の直接変更（横1行） */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-line/60">
+                  <span className="text-xs font-black text-ink">📦 注文数の変更（1箱＝{packsPerCase}P）</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={editOrderBoxes}
+                      onChange={(e) => {
+                        const b = e.target.value
+                        setEditOrderBoxes(b)
+                        const bNum = parseInt(b, 10)
+                        if (!isNaN(bNum) && bNum >= 0) {
+                          setEditOrderPacks(String(bNum * packsPerCase))
+                        }
+                      }}
+                      className={cn(fieldInput, 'num w-18 text-center font-black')}
+                    />
+                    <span className="text-xs font-bold text-ink">箱 ＝</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={editOrderPacks}
+                      onChange={(e) => {
+                        const p = e.target.value
+                        setEditOrderPacks(p)
+                        const pNum = parseInt(p, 10)
+                        if (!isNaN(pNum) && pNum >= 0 && packsPerCase > 0) {
+                          setEditOrderBoxes(String(Math.floor(pNum / packsPerCase)))
+                        }
+                      }}
+                      className={cn(fieldInput, 'num w-22 text-center font-black')}
+                    />
+                    <span className="text-xs font-bold text-ink">P</span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <span className="text-[11px] font-bold text-ink-soft block">袋種別</span>
-                <div className="flex flex-wrap items-center gap-1">
-                  {['印字袋(FG)', '無地袋', '指定なし'].map((bt) => {
-                    const val = bt === '指定なし' ? '' : bt
-                    const active = bagType === val
-                    return (
+                {/* 容器・規格 */}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-bold text-ink-soft">容器・コンテナ</span>
+                    <input
+                      className={fieldInput}
+                      value={container}
+                      onChange={(e) => setContainer(e.target.value)}
+                      placeholder="青コン / 茶コン / 段ボール / NSKオリコン"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-bold text-ink-soft">規格</span>
+                    <input
+                      className={fieldInput}
+                      value={spec}
+                      onChange={(e) => setSpec(e.target.value)}
+                      placeholder="200gUP (入数24) / 2〜3株 (入数20)"
+                    />
+                  </label>
+                </div>
+
+                {/* シール・袋・カード */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !hasSeal
+                        setHasSeal(next)
+                        setSealText(next ? (sealText && sealText !== 'シールなし' ? sealText : 'シールあり') : 'シールなし')
+                      }}
+                      className={cn(
+                        'h-8 px-2.5 rounded-lg border text-xs font-black transition',
+                        hasSeal
+                          ? 'border-rose-400 bg-rose-50 text-rose-900'
+                          : 'border-line bg-white text-ink-muted',
+                      )}
+                    >
+                      {hasSeal ? '🏷️ シールあり' : 'シールなし'}
+                    </button>
+
+                    {['印字袋(FG)', '無地袋'].map((bt) => {
+                      const active = bagType === bt
+                      return (
+                        <button
+                          key={bt}
+                          type="button"
+                          onClick={() => setBagType(active ? '' : bt)}
+                          className={cn(
+                            'h-8 px-2.5 rounded-lg border text-xs font-bold transition',
+                            active
+                              ? 'border-amber-500 bg-amber-50 text-amber-950 font-black'
+                              : 'border-line bg-white text-ink-soft',
+                          )}
+                        >
+                          {bt}
+                        </button>
+                      )
+                    })}
+
+                    <label className="inline-flex items-center gap-1.5 px-2 py-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasCard}
+                        onChange={(e) => setHasCard(e.target.checked)}
+                        className="h-4 w-4 accent-forest-600 rounded"
+                      />
+                      <span className="text-xs font-bold text-ink">カード有</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-auto">
+                    {!isThaiMode && (
                       <button
-                        key={bt}
                         type="button"
-                        onClick={() => setBagType(val)}
-                        className={cn(
-                          'h-9 px-2.5 rounded-lg border text-xs font-bold transition',
-                          active
-                            ? 'border-amber-500 bg-amber-50 text-amber-950 font-black'
-                            : 'border-line bg-white text-ink-soft hover:bg-bg-soft',
-                        )}
+                        onClick={() => setDeleteOpen(true)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-alert hover:bg-alert/10"
                       >
-                        {bt}
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        <span>削除</span>
                       </button>
-                    )
-                  })}
+                    )}
+                    <Button size="sm" onClick={executeSaveAllSpecsAndQty} isLoading={savingDetails}>
+                      ✓ 変更を保存
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 pt-1">
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={hasCard}
-                    onChange={(e) => setHasCard(e.target.checked)}
-                    className="h-4 w-4 accent-forest-600 rounded"
-                  />
-                  <span className="text-xs font-bold text-ink">カード同梱</span>
-                </label>
-                {!isThaiMode && (
-                  <button
-                    type="button"
-                    onClick={() => setDeleteOpen(true)}
-                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-bold text-alert hover:bg-alert/10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    <span>削除</span>
-                  </button>
-                )}
-              </div>
-              <Button size="sm" onClick={handleSaveDetails} isLoading={savingDetails}>
-                荷姿・規格を保存
-              </Button>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1348,7 +1334,7 @@ export function ShipmentRow({
           await advanceTo('packed')
         }}
         title="⚠️ 途中数が記録されています。全数パック済にしますか？"
-        message={`受注数 ${orderedQty}P（${casesText}箱）に対し、現在 途中数 ${shippedNum ?? 0}P が記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`}
+        message={`受注数 ${orderedQty}P（${casesText}箱）に対し、現在 途中数 ${shippedPacks ?? 0}P が記録されています。全数（${orderedQty}P）の袋詰めが完了した場合のみ「パック済にする」を押してください。`}
         confirmLabel={`全${orderedQty}P完了としてパック済にする`}
         isLoading={busy}
       />
@@ -1364,19 +1350,6 @@ export function ShipmentRow({
         message={`このカードは「${deliveryDate ?? '翌日以降'} 出荷分」の先行枠です。本日の出荷分と間違えていないか確認のうえ確定してください。`}
         confirmLabel="先行分をパック済にする"
         isLoading={busy}
-      />
-
-      <ConfirmModal
-        open={specConfirmOpen}
-        onClose={() => setSpecConfirmOpen(false)}
-        onConfirm={async () => {
-          setSpecConfirmOpen(false)
-          await executeSaveDetails()
-        }}
-        title="規格・荷姿を変更しますか？"
-        message="規格や荷姿を変更すると、パック進捗や出荷集計に直接影響します。変更して保存しますか？"
-        confirmLabel="変更して保存"
-        isLoading={savingDetails}
       />
 
       <ConfirmModal

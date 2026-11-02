@@ -3,11 +3,11 @@ import { extractActionableNote, extractChangeDiffBadge } from './clean-note'
 import { collapseStrikethroughSplitOrders, type ParsedOrder } from '@/lib/gemini/analyze'
 
 describe('extractActionableNote', () => {
-  it('AIメタ情報（伝票No・規格・数量表記・容器・箱数）を除外し、手書き修正や入数変更のみを残す', () => {
+  it('AIメタ情報や自動タグ（伝票No・規格・数量表記・手書き修正タグ）を除外し、現場伝達事項のみを残す', () => {
     const raw = `伝票No: 2126
 入数変更です。
 規格:200g (入数30) / 数量表記:総数150点（5ケース＋端数0点） / 容器:小コン / 箱数:5箱 / 手書き修正（150点） / 【要返答】入数変更です。`
-    expect(extractActionableNote(raw)).toBe('入数変更です。 / 手書き修正（150点）')
+    expect(extractActionableNote(raw)).toBe('入数変更です。')
   })
 
   it('純粋なメタ情報のみの場合は空文字を返す', () => {
@@ -27,6 +27,7 @@ describe('extractChangeDiffBadge', () => {
   it('旧数値→新数値の変更履歴バッジを抽出する', () => {
     expect(extractChangeDiffBadge('手書き修正（165→150P） / 入数変更です。')).toBe('165→150P')
     expect(extractChangeDiffBadge('数量変更:10/25 15:41 204→201P')).toBe('204→201P')
+    expect(extractChangeDiffBadge('★新規追加 / 空コンテナ持参')).toBe('新規追加')
   })
 
   it('変更表記がない場合は null を返す', () => {
