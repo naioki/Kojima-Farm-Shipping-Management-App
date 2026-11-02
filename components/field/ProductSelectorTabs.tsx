@@ -42,7 +42,7 @@ export function ProductSelectorTabs({
 
   return (
     <div className="w-full space-y-2 overflow-hidden">
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+      <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-none">
         {products.map((p) => {
           const isActive = p.id === selectedProductId
           const incomplete = p.incompleteCount ?? 0

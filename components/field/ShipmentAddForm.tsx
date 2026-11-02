@@ -1791,25 +1791,37 @@ export function ShipmentAddForm({
 
   return (
     <>
-      {/* ボード内明示ボタン（右下のカードボタン被りを防ぐためフローティングFABを廃止し、押しやすいインラインバーに統一） */}
-      <div className="print:hidden pt-0.5">
+      {/* ボード内明示ボタン ＋ 右下の新規追加丸ボタン（＋） */}
+      <div className="print:hidden pt-1">
         <button
           type="button"
           onClick={() => {
             setIsOpen(true)
             setStep('input')
           }}
-          className="w-full rounded-xl border-2 border-forest-600/30 bg-forest-50/90 hover:bg-forest-100 px-3.5 py-2.5 text-forest-950 font-black text-xs sm:text-sm flex items-center justify-between gap-2 transition active:scale-[0.99] shadow-2xs"
+          className="w-full rounded-2xl border-2 border-dashed border-forest-300 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
         >
-          <span className="flex items-center gap-1.5">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-forest-600 text-white">
-              <Plus className="h-4 w-4 stroke-[2.8]" />
-            </span>
-            <span>新規注文の追加・数量変更（AI読取 / 写真 / FAX / 手入力）</span>
-          </span>
-          <span className="rounded-md bg-white border border-forest-200 px-2 py-0.5 text-[11px] font-bold text-forest-800 shrink-0">
-            開く
-          </span>
+          <Plus className="h-4 w-4 stroke-[2.8] text-forest-700" />
+          <span>＋ 新規注文の追加・数量変更（手入力 / 写真 / FAX・Excel）</span>
+        </button>
+      </div>
+
+      {/* 右下フローティング新規追加丸ボタン（＋） */}
+      <div
+        className="fixed right-5 z-40 print:hidden"
+        style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setIsOpen(true)
+            setStep('input')
+          }}
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-2xl ring-4 ring-white/90 hover:bg-forest-700 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-forest-300"
+          aria-label="新規注文の追加・数量変更"
+          title="新規注文の追加・数量変更"
+        >
+          <Plus className="h-7 w-7 stroke-[3]" aria-hidden />
         </button>
       </div>
 

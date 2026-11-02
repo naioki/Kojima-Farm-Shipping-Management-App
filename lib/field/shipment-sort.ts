@@ -278,6 +278,14 @@ export function normalizeDestinationGroupName(
   return raw
 }
 
+/**
+ * パック作業カードの比較関数（v5.1.11 グループ分裂防止版）。
+ * - `mode === 'time'`（早い便順）のときは、必ず「出発時刻（16:00 ➔ 18:00 ➔ 翌午前）」を第1優先にして同じ時間帯グループが分裂するのを防ぎ、
+ *   同一時間帯グループの中で `dailyPackSortOrder`（手動並び替え順）を適用する。
+ * - `mode === 'container'`（コンテナ順）のときは、必ず「コンテナ種別」を第1優先にして同じコンテナグループが分裂するのを防ぎ、
+ *   同一コンテナグループの中で `dailyPackSortOrder` を適用する。
+ * - `mode === 'destination'`（出荷先順・カスタム順）のときは、`dailyPackSortOrder` を第1優先とし、未設定同士は出荷先・時刻順で並べる。
+ */
 export function comparePackItems(
   a: PackSortableItem,
   b: PackSortableItem,
@@ -285,11 +293,14 @@ export function comparePackItems(
 ): number {
   const manualA = a.dailyPackSortOrder
   const manualB = b.dailyPackSortOrder
-  if (manualA != null && manualB != null && manualA !== manualB) {
-    return manualA - manualB
+  const compareManual = (): number => {
+    if (manualA != null && manualB != null && manualA !== manualB) {
+      return manualA - manualB
+    }
+    if (manualA != null && manualB == null) return -1
+    if (manualA == null && manualB != null) return 1
+    return 0
   }
-  if (manualA != null && manualB == null) return -1
-  if (manualA == null && manualB != null) return 1
 
   const normDestA = normalizeDestinationGroupName(a.customerName, a.destinationName)
   const normDestB = normalizeDestinationGroupName(b.customerName, b.destinationName)
@@ -304,6 +315,8 @@ export function comparePackItems(
 
   if (mode === 'time') {
     if (prioA !== prioB) return prioA - prioB
+    const m = compareManual()
+    if (m !== 0) return m
     if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
     return specA.localeCompare(specB, 'ja')
   }
@@ -312,11 +325,16 @@ export function comparePackItems(
     const contA = a.initialContainer || '通常コンテナ'
     const contB = b.initialContainer || '通常コンテナ'
     if (contA !== contB) return contA.localeCompare(contB, 'ja')
+    const m = compareManual()
+    if (m !== 0) return m
     if (prioA !== prioB) return prioA - prioB
     if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
     return specA.localeCompare(specB, 'ja')
   }
 
+  // mode === 'destination'
+  const m = compareManual()
+  if (m !== 0) return m
   if (prioA !== prioB) return prioA - prioB
   const defaultA = a.defaultPackSortOrder ?? 100
   const defaultB = b.defaultPackSortOrder ?? 100

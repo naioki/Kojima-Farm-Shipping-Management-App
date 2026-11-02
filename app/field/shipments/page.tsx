@@ -673,14 +673,16 @@ export default async function ShipmentsPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-28">
-      {/* ナビゲーションバー */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h1 className="hidden sm:block font-display text-lg font-black text-ink">収穫・パックボード</h1>
-          <FieldViewSwitch active="day" date={date} product={selectedProductId} />
+      {/* ナビゲーションバー（1段目：画面切替タブ＋ガイド、2段目：全幅バランス日付バー） */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+          <div className="flex items-center gap-2">
+            <h1 className="hidden sm:block font-display text-lg font-black text-ink">収穫・パックボード</h1>
+            <FieldViewSwitch active="day" date={date} product={selectedProductId} />
+          </div>
           <GuideTourLauncher tour={SHIPMENTS_TOUR} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center w-full sm:w-auto">
           <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProductId} />
         </div>
       </div>

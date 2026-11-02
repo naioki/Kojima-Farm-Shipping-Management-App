@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, GripVertical } from 'lucide-react'
+import { ArrowUpToLine, ChevronUp, ChevronDown, SlidersHorizontal, X, GripVertical, RotateCw } from 'lucide-react'
 import { ShipmentRow, type ShipmentRowProps } from '@/components/field/ShipmentRow'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { getThaiContainer, getThaiDepartureTime } from '@/lib/field/thai-dict'
@@ -365,7 +365,7 @@ export function PackingAndShippingViews({
 
   return (
     <div className="space-y-2.5">
-      {/* 単一統合スティッキー進捗コックピット（二重濃緑枠を完全に解消！） */}
+      {/* 2カラム中央揃え進捗コックピット ＆ 詳細内訳アコーディオン */}
       {productName && productId && (
         <HarvestPulseSummary
           productName={productName}
@@ -380,22 +380,21 @@ export function PackingAndShippingViews({
           prevCarryover={prevCarryover}
           initialCarryover={initialCarryover}
           isTodayTarget={isTodayWork}
-          onRefresh={handleRefresh}
-          isRefreshing={isRefreshing}
         />
       )}
 
-      {/* スリム統合コントロールバー */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-line-soft flex-1 min-w-[220px]">
+      {/* 100%全幅バランス設計のソート＆フィルターバー（右側の不自然な余白・段落ちを完全解消） */}
+      <div className="space-y-1.5 pt-0.5">
+        {/* 上段：3等分フルワイドのソート切替タブ */}
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-200/80 border border-line w-full">
           <button
             type="button"
             onClick={() => handleSortModeChange('time')}
             className={cn(
-              'flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
+              'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'time'
-                ? 'bg-white text-emerald-800 shadow-2xs ring-1 ring-emerald-600/20'
-                : 'text-ink-muted hover:text-ink',
+                ? 'bg-white text-emerald-900 shadow-2xs ring-1 ring-emerald-600/20'
+                : 'text-ink-soft hover:text-ink',
             )}
           >
             <span>⏰</span>
@@ -405,10 +404,10 @@ export function PackingAndShippingViews({
             type="button"
             onClick={() => handleSortModeChange('destination')}
             className={cn(
-              'flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
+              'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'destination'
-                ? 'bg-white text-emerald-800 shadow-2xs ring-1 ring-emerald-600/20'
-                : 'text-ink-muted hover:text-ink',
+                ? 'bg-white text-emerald-900 shadow-2xs ring-1 ring-emerald-600/20'
+                : 'text-ink-soft hover:text-ink',
             )}
           >
             <span>🏢</span>
@@ -418,10 +417,10 @@ export function PackingAndShippingViews({
             type="button"
             onClick={() => handleSortModeChange('container')}
             className={cn(
-              'flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
+              'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'container'
-                ? 'bg-white text-emerald-800 shadow-2xs ring-1 ring-emerald-600/20'
-                : 'text-ink-muted hover:text-ink',
+                ? 'bg-white text-emerald-900 shadow-2xs ring-1 ring-emerald-600/20'
+                : 'text-ink-soft hover:text-ink',
             )}
           >
             <span>📦</span>
@@ -429,13 +428,14 @@ export function PackingAndShippingViews({
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 border border-line text-xs font-bold">
+        {/* 下段：左に「全件 / 未完」セグメント、右に「並び替え ＋ 最新更新」を両端揃えで整然と配置 */}
+        <div className="flex items-center justify-between gap-2 w-full">
+          <div className="inline-flex items-center rounded-xl bg-slate-200/80 p-1 border border-line text-xs font-bold">
             <button
               type="button"
               onClick={() => setFilterMode('all')}
               className={cn(
-                'px-2 py-1 rounded-lg transition',
+                'px-3 py-1 rounded-lg transition tabular-nums',
                 filterMode === 'all'
                   ? 'bg-white text-ink shadow-2xs font-black'
                   : 'text-ink-muted hover:text-ink',
@@ -447,7 +447,7 @@ export function PackingAndShippingViews({
               type="button"
               onClick={() => setFilterMode('incomplete')}
               className={cn(
-                'px-2 py-1 rounded-lg transition',
+                'px-3 py-1 rounded-lg transition tabular-nums',
                 filterMode === 'incomplete'
                   ? 'bg-emerald-700 text-white shadow-2xs font-black'
                   : 'text-ink-muted hover:text-ink',
@@ -456,16 +456,30 @@ export function PackingAndShippingViews({
               未完 ({incompleteCount})
             </button>
           </div>
-          {sortedPackItems.length > 1 && (
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {sortedPackItems.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setIsReorderModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-black text-emerald-900 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 rounded-xl shadow-2xs transition active:scale-95"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+                <span>並び替え</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setIsReorderModalOpen(true)}
-              className="inline-flex items-center gap-1 text-xs font-black text-emerald-900 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 px-2.5 py-1.5 rounded-xl shadow-2xs transition active:scale-95"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="最新データを再取得"
+              aria-label="最新データを再取得"
+              className="inline-flex items-center justify-center gap-1 h-8 px-2.5 rounded-xl border border-line bg-white hover:bg-bg-soft text-xs font-bold text-ink-soft transition active:scale-95 disabled:opacity-50"
             >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>⇅ 並び替え</span>
+              <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+              <span className="hidden sm:inline">更新</span>
             </button>
-          )}
+          </div>
         </div>
       </div>
 
@@ -514,7 +528,7 @@ export function PackingAndShippingViews({
             return (
               <div key={item.itemId} className="space-y-1.5">
                 {shouldShowSectionHeader && (
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 pb-1 px-2.5 rounded-xl bg-slate-100/90 border border-line-soft">
+                  <div className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-xl bg-earth-100/90 border border-earth-300 border-l-4 border-l-emerald-700 shadow-2xs">
                     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                       <span className="text-xs sm:text-sm">{groupInfo.icon}</span>
                       <span className="text-xs sm:text-sm font-black text-ink">{groupInfo.title}</span>

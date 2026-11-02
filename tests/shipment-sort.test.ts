@@ -99,16 +99,26 @@ describe('comparePackItems (3つのソートモードの検証)', () => {
     expect(blueIndices[1]! - blueIndices[0]!).toBe(1)
   })
 
-  it('どのモードでも管理者の当日手動ソート（dailyPackSortOrder）は最優先される', () => {
+  it('destination モード（出荷先・カスタム順）では管理者の当日手動ソート（dailyPackSortOrder）が最優先される', () => {
     const items: PackSortableItem[] = [
       { itemId: '1', customerName: '和郷園', destinationName: '定期便', departureTime: '06:00', dailyPackSortOrder: null },
       { itemId: '2', customerName: '勘兵衛', destinationName: '緊急手動先頭', departureTime: '14:00', dailyPackSortOrder: 10 },
     ]
 
-    for (const mode of ['time', 'destination', 'container'] as const) {
-      const sorted = [...items].sort((a, b) => comparePackItems(a, b, mode))
-      expect(sorted[0]?.itemId).toBe('2') // dailyPackSortOrder = 10 が最優先
-    }
+    const sortedDest = [...items].sort((a, b) => comparePackItems(a, b, 'destination'))
+    expect(sortedDest[0]?.itemId).toBe('2') // dailyPackSortOrder = 10 が最優先
+
+    // time モードでは便グループ（06:00 vs 14:00）の分裂を防ぐため出発時刻が第1優先
+    const sortedTime = [...items].sort((a, b) => comparePackItems(a, b, 'time'))
+    expect(sortedTime[0]?.itemId).toBe('1')
+
+    // 同一便グループ内では dailyPackSortOrder が適用される
+    const sameTimeItems: PackSortableItem[] = [
+      { itemId: 'a', customerName: '和郷園', departureTime: '14:00', dailyPackSortOrder: null },
+      { itemId: 'b', customerName: '勘兵衛', departureTime: '14:00', dailyPackSortOrder: 5 },
+    ]
+    const sortedSameTime = [...sameTimeItems].sort((a, b) => comparePackItems(a, b, 'time'))
+    expect(sortedSameTime[0]?.itemId).toBe('b')
   })
 })
 
