@@ -6,6 +6,7 @@ import { getSetting } from '@/lib/settings'
 import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
 import { writeAudit } from '@/lib/audit/log'
 import { isSameNoteSnapshot } from '@/lib/delivery-notes/snapshot'
+import { reviseDeliveryNote } from '@/lib/delivery-notes/revise'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
@@ -114,9 +115,9 @@ export async function POST(req: Request) {
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
   )
 
-  // スナップショット凍結（CLAUDE.md）: 発行済みの納品書は書き換えない。
-  // - 同じ取引先・納品日の直近の納品書と内容（明細・金額・発行元）が完全に同じ → それを返す（再印刷。番号を増やさない）
-  // - 内容が変わっている → 新しい番号で発行し直す（過去の納品書はそのまま残る）
+  // 同じ取引先・納品日の直近の納品書がある場合:
+  // - 内容（明細・金額・発行元）が完全に同じ → それを返す（再印刷。番号を増やさない）
+  // - 内容が変わっている → 同じ番号の「訂正版」にする。旧内容は audit_log に丸ごと保存（lib/delivery-notes/revise.ts）
   const { data: existingNote, error: existingErr } = await supabase
     .from('delivery_notes')
     .select('id, note_number, amount_mode, issuer_name, issuer_address, issuer_tel, total_amount')
@@ -152,6 +153,34 @@ export async function POST(req: Request) {
     if (sameContent) {
       return NextResponse.json({ id: existingNote.id, note_number: existingNote.note_number, reused: true }, { status: 200 })
     }
+
+    const rev = await reviseDeliveryNote(supabase, {
+      noteId: existingNote.id,
+      header: {
+        amount_mode,
+        issuer_name: issuerName ?? null,
+        issuer_address: issuerAddress ?? null,
+        issuer_tel: issuerTel ?? null,
+        subtotal_8: t.reduced.subtotal.toNumber(),
+        subtotal_10: t.standard.subtotal.toNumber(),
+        total_amount: t.total.toNumber(),
+      },
+      items: items.map((it, i) => ({
+        product_name: it.product_name,
+        quantity: it.quantity,
+        unit: it.unit,
+        unit_price: Number(it.unit_price ?? 0),
+        tax_rate: it.tax_rate,
+        subtotal: Number(it.subtotal ?? 0),
+        sort_order: i,
+      })),
+      userId: user.id,
+    })
+    if (!rev.ok) return NextResponse.json({ error: rev.message }, { status: 500 })
+    return NextResponse.json(
+      { id: existingNote.id, note_number: existingNote.note_number, revised: true, revision: rev.revision },
+      { status: 200 },
+    )
   }
 
   const monthKey = deliveryNoteMonthKey(delivery_date)

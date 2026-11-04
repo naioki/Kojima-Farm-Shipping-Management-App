@@ -2,6 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/supabase'
 import { writeAudit } from '@/lib/audit/log'
+import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { shiftDateStr } from '@/lib/dates'
 import { getSetting } from '@/lib/settings'
 import { getStaffFeatures } from '@/lib/field/features'
@@ -186,7 +187,7 @@ export async function approveOrder(
     if (targetExistingOrder) {
       const { data: existingItems } = await admin
         .from('order_items')
-        .select('id, product_id, product_name, quantity, version, field_status')
+        .select('id, product_id, product_name, quantity, version, field_status, line_note, shipped_qty')
         .eq('order_id', targetExistingOrder.id)
 
       let tasksCreated = 0
@@ -204,28 +205,60 @@ export async function approveOrder(
               (!it.product_id && ex.product_name === it.product_name)),
         )
         if (matchExisting) {
+          // 追加FAX（丸ごと再送）は数量を「上書き」する。変更履歴は2か所に残す:
+          //  - audit_log（旧値→新値。Undo で元に戻せる）
+          //  - 明細メモ（現場カードに「数量変更:50→58P」と表示。通常の数量変更と同じ表記）
           const newQty = Number(it.quantity) || 0
-          const updRes = await admin
-            .from('order_items')
-            .update({
-              quantity: newQty,
-              quantity_raw: String(newQty),
-              spec: it.spec ?? undefined,
-              container_type: it.container_type ?? undefined,
-              line_note: it.line_note ?? undefined,
-              field_status: 'not_started',
-              version: (Number(matchExisting.version) || 1) + 1,
-            })
-            .eq('id', matchExisting.id)
+          const oldQty = Number(matchExisting.quantity) || 0
+          const qtyChanged = newQty !== oldQty
+          const wasPacked = matchExisting.field_status === 'packed'
+          const baseNote = (it.line_note ?? matchExisting.line_note ?? '')
+            .split(/\s*\/\s*/)
+            .filter((t: string) => t && !/^(?:数量変更:|🚨パック済|★?新規追加)/.test(t.trim()))
+            .join(' / ')
+          const changeToken = !qtyChanged
+            ? null
+            : wasPacked && newQty > oldQty
+              ? `🚨パック済(${oldQty}P)→${newQty}P(+${newQty - oldQty}P追加必要)`
+              : `数量変更:${oldQty}→${newQty}P`
+          const nextLineNote = [changeToken, baseNote].filter(Boolean).join(' / ') || null
+          const mergePatch: Record<string, unknown> = {
+            quantity: newQty,
+            quantity_raw: String(newQty),
+            spec: it.spec ?? undefined,
+            container_type: it.container_type ?? undefined,
+            line_note: nextLineNote,
+            version: (Number(matchExisting.version) || 1) + 1,
+          }
+          // 数量が変わったときだけ作業状態を戻す（同じ内容の再送で梱包済みの進捗を消さない）
+          if (qtyChanged) {
+            mergePatch.field_status = 'not_started'
+            mergePatch.shipped_qty = wasPacked && newQty > oldQty ? oldQty : null
+            mergePatch.snap_total_packs = oldQty
+          }
+          const updRes = await writeDroppingMissingColumns(mergePatch, (p) =>
+            admin.from('order_items').update(p).eq('id', matchExisting.id),
+          )
           check(`明細更新(${it.product_name})`, updRes)
-          if (!updRes.error) {
-            // 上書き前の数量を監査に残す（Undo・事後確認の手がかり）
+          if (!updRes.error && qtyChanged) {
             await writeAudit(admin, {
               entityType: 'order_items',
               entityId: matchExisting.id,
               action: 'UPDATE',
-              oldValues: { quantity: matchExisting.quantity, field_status: matchExisting.field_status },
-              newValues: { quantity: newQty, field_status: 'not_started', merged_from_order_id: order.id },
+              oldValues: {
+                quantity: matchExisting.quantity,
+                field_status: matchExisting.field_status,
+                shipped_qty: matchExisting.shipped_qty,
+                line_note: matchExisting.line_note,
+              },
+              newValues: {
+                quantity: newQty,
+                field_status: mergePatch.field_status,
+                shipped_qty: mergePatch.shipped_qty,
+                line_note: nextLineNote,
+                reason: '追加FAX（再送）による数量上書き',
+                merged_from_order_id: order.id,
+              },
               userId,
             }).catch((e) => console.error('[approve] 統合の監査記録に失敗', e))
           }

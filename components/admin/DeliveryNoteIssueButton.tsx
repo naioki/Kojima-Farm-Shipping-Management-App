@@ -43,11 +43,13 @@ export function DeliveryNoteIssueButton({
         const j = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(j.error ?? `発行に失敗 (${res.status})`)
       }
-      const j = (await res.json()) as { id: string; note_number: string; reused?: boolean }
+      const j = (await res.json()) as { id: string; note_number: string; reused?: boolean; revised?: boolean; revision?: number }
       toast.success(
         j.reused
           ? `内容に変更がないため、発行済みの納品書 ${j.note_number} を開きます`
-          : `納品書 ${j.note_number} を発行しました`,
+          : j.revised
+            ? `納品書 ${j.note_number} を訂正しました（第${j.revision ?? 1}訂正・旧内容は履歴に保存）`
+            : `納品書 ${j.note_number} を発行しました`,
       )
       router.push(`/admin/delivery-notes/${j.id}`)
     } catch (e) {

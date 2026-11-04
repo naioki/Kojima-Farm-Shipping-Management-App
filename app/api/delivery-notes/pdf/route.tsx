@@ -19,6 +19,7 @@ import {
 import { shiftDateStr } from '@/lib/dates'
 import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
 import { isSameNoteSnapshot } from '@/lib/delivery-notes/snapshot'
+import { reviseDeliveryNote } from '@/lib/delivery-notes/revise'
 
 export const runtime = 'nodejs'
 
@@ -62,7 +63,7 @@ async function autoUpsertDeliveryNoteSnapshot(params: {
     } = params
     if (items.length === 0) return
 
-    // スナップショット凍結: 発行済みの納品書は書き換えない。内容が同じなら何もしない、違えば新しい番号で発行。
+    // 既存の納品書があれば: 内容が同じなら何もしない。違えば同じ番号の「訂正版」にする（旧内容は audit_log に保存）。
     const { data: existing, error: existingErr } = await supabase
       .from('delivery_notes')
       .select('id, note_number, amount_mode, issuer_name, issuer_address, issuer_tel, total_amount')
@@ -101,6 +102,31 @@ async function autoUpsertDeliveryNoteSnapshot(params: {
         },
       )
       if (same) return
+
+      const rev = await reviseDeliveryNote(supabase, {
+        noteId: existing.id,
+        header: {
+          amount_mode: amountMode,
+          issuer_name: issuerName,
+          issuer_address: issuerAddress,
+          issuer_tel: issuerTel,
+          subtotal_8: subtotal8,
+          subtotal_10: subtotal10,
+          total_amount: totalAmount,
+        },
+        items: items.map((it, idx) => ({
+          product_name: it.product_name,
+          quantity: it.quantity,
+          unit: it.unit,
+          unit_price: it.unit_price,
+          tax_rate: it.tax_rate,
+          subtotal: it.subtotal,
+          sort_order: idx,
+        })),
+        userId,
+      })
+      if (!rev.ok) console.error('[delivery-notes/pdf] 納品書の訂正に失敗:', rev.message)
+      return
     }
 
     let noteId: string | null = null
