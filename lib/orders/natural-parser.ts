@@ -40,6 +40,7 @@ export interface MasterProduct {
 export function normalizeCustomerMatchKey(raw?: string | null): string {
   if (!raw) return ''
   return foldKana(normalizeOrgName(raw))
+    .replace(/農事組合法人|生活協同組合|農業協同組合|株式会社|有限会社|合同会社/g, '')
     .replace(/[（(][^）)]*[）)]/g, '')
     .replace(/[\s　・]/g, '')
     .toLowerCase()

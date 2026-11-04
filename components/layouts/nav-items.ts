@@ -40,7 +40,13 @@ export interface NavGroup {
  * 4. 設定・マスタ管理: 取引先・納品先, 品目設定, 単価・荷姿マスタ, AI学習ルール, システム設定
  */
 export const ADMIN_GROUPS: NavGroup[] = [
-  { label: null, items: [{ href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard }] },
+  {
+    label: null,
+    items: [
+      { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/field/concierge', label: '🤖 AI総合相談窓口（おまかせ設定・追加）', icon: Sparkles },
+    ],
+  },
   {
     label: '日常の出荷・現場',
     items: [
@@ -84,6 +90,7 @@ export const STAFF_GROUPS: NavGroup[] = [
   {
     label: null,
     items: [
+      { href: '/field/concierge', label: '🤖 AI総合相談窓口（おまかせ設定・追加）', icon: Sparkles },
       { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck },
       { href: '/field/deliveries', label: '便別積込・配送リスト', icon: Truck },
       { href: '/field/matrix', label: '週の管理（マトリックス）', icon: Sprout },

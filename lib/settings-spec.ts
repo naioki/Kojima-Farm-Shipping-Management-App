@@ -206,8 +206,53 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   },
 
   // ──────────────────────────────────────────
-  // ④ 高度なシステム設定（通常は変更不要）
+  // ④ スタッフ権限・高度なシステム設定（通常は変更不要）
   // ──────────────────────────────────────────
+  {
+    key: 'STAFF_CAN_OCR',
+    label: '現場スタッフの写真・FAX自動読取（OCR）を許可',
+    section: 'advanced',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: 'ONにすると、現場スタッフも注文書やメモをカメラ・写真で読み取って注文追加できます。',
+  },
+  {
+    key: 'STAFF_CAN_CREATE_ORDER',
+    label: '現場スタッフの新規注文追加・変更を許可',
+    section: 'advanced',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: 'ONにすると、現場スタッフも収穫・パックボードから注文追加や数量変更を行えます。',
+  },
+  {
+    key: 'STAFF_CAN_APPROVE',
+    label: '現場スタッフの注文承認（未確認注文の確定）を許可',
+    section: 'advanced',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: 'ONにすると、現場スタッフもAI読取後の未確認注文を確認・承認できます。',
+  },
+  {
+    key: 'STAFF_CAN_PRINT_DOCS',
+    label: '現場スタッフの帳票・ラベル印刷を許可',
+    section: 'advanced',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: 'ONにすると、現場スタッフも出荷指示書やラベルの印刷画面を利用できます。',
+  },
+  {
+    key: 'STAFF_CAN_REPORT_SPEC',
+    label: '現場スタッフの規格変更・現場報告を許可',
+    section: 'advanced',
+    secret: false,
+    kind: 'toggle',
+    toggleDefault: 'on',
+    hint: 'ONにすると、現場スタッフも現場での規格変更や報告を送信できます。',
+  },
   {
     key: 'CRON_SECRET',
     label: 'cron 共有シークレット',

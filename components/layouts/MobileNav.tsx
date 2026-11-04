@@ -118,6 +118,19 @@ export function MobileNav({
 
         {isFieldSurface && (
           <div className="flex items-center gap-1.5 shrink-0">
+            <Link
+              href={buildPreservedFieldHref('/field/concierge', currentDate, currentProduct)}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-lg border px-2 sm:px-2.5 py-1 text-xs font-black transition active:scale-95 shadow-2xs',
+                pathname === '/field/concierge'
+                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                  : 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-950',
+              )}
+              title="AIに話しかけて注文追加・品目追加・設定変更を頼む"
+            >
+              <span>🤖</span>
+              <span>AI相談</span>
+            </Link>
             <FieldLangSwitch />
           </div>
         )}
