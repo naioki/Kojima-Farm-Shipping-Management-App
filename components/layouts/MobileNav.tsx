@@ -224,9 +224,11 @@ export function MobileNav({
                 )
               })}
             </div>
+            {/* 管理者はメニューの「振り返り・記録」に同じリンクがあるため、スタッフにだけ出す（重複させない） */}
+            {role !== 'admin' && (
             <div className="pt-2 border-t border-forest-700/60">
               <Link
-                href={role === 'admin' ? '/admin/settings' : '/field/feedback'}
+                href="/field/feedback"
                 onClick={() => setOpen(false)}
                 className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-emerald-300 hover:bg-forest-700 hover:text-white transition-colors"
               >
@@ -234,6 +236,7 @@ export function MobileNav({
                 改善・バグ報告 (5W1H)
               </Link>
             </div>
+            )}
             <form action="/auth/signout" method="post" className="pt-1">
               <button
                 type="submit"

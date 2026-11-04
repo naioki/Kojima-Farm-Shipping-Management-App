@@ -17,6 +17,11 @@ import {
   Coins,
   Tag,
   Gauge,
+  BarChart3,
+  Layers,
+  Ruler,
+  MessageSquarePlus,
+  Camera,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -33,24 +38,20 @@ export interface NavGroup {
 }
 
 /**
- * 管理（経営）サーフェスのナビ。業務フェーズでグルーピングして俯瞰しやすくする。
- *
- * 1. 日常の出荷・現場: 当日出荷・袋詰め, 便別積込・配送リスト, 週間マトリックス, 帳票・ラベル印刷
- * 2. 受注・AI承認: 新規注文入力, 受信ボックス（AI解析）, スプリット承認・確認, 受注履歴・台帳
- * 3. 納品書・請求・単価: 納品書発行, 単価確定（出荷後）, 請求書作成・確定
- * 4. 設定・マスタ管理: 取引先・納品先, 品目設定, 単価・荷姿マスタ, AI学習ルール, システム設定
+ * 管理（経営）サーフェスのナビ。毎日の仕事の順（出荷 → 受注 → 請求）に並べ、
+ * 振り返り（数字・記録・現場の声）とマスタ・設定を最後に置く。
+ * 同じ画面へのリンクを2か所に置かない（重複禁止）。画面を追加したら必ずどこかのグループに載せる。
  */
 export const ADMIN_GROUPS: NavGroup[] = [
   {
     label: null,
     items: [
       { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
-      { href: '/admin/metrics', label: '評価指標（処理時間・ミス・紙の卒業）', icon: Gauge },
-      { href: '/field/concierge', label: '🤖 AI総合相談窓口（おまかせ設定・追加）', icon: Sparkles },
+      { href: '/field/concierge', label: 'AI相談窓口', icon: Sparkles },
     ],
   },
   {
-    label: '日常の出荷・現場',
+    label: '毎日の出荷',
     items: [
       { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck },
       { href: '/field/deliveries', label: '便別積込・配送リスト', icon: Truck },
@@ -59,30 +60,41 @@ export const ADMIN_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: '受注・AI承認',
+    label: '受注',
     items: [
       { href: '/admin/orders/new', label: '注文の受付（電話・LINE・紙・写真）', icon: PlusCircle },
-      { href: '/admin/inbox', label: '受信ボックス (FAX/AI)', icon: Inbox },
-      { href: '/admin/approvals', label: 'AI注文の承認・確認', icon: CheckSquare },
-      { href: '/admin/orders', label: '受注履歴・台帳', icon: ClipboardList },
+      { href: '/admin/inbox', label: '受信ボックス（FAX・メール）', icon: Inbox },
+      { href: '/admin/approvals', label: '承認待ち（原本と見比べ）', icon: CheckSquare },
+      { href: '/admin/orders', label: '受注台帳', icon: ClipboardList },
     ],
   },
   {
-    label: '納品書・請求・単価',
+    label: '納品書・請求',
     items: [
       { href: '/admin/delivery-notes', label: '納品書の発行', icon: FileCheck2 },
-      { href: '/admin/pricing', label: '単価確定（請求前確認）', icon: Coins },
-      { href: '/admin/invoices', label: '請求書作成・確定', icon: FileText },
+      { href: '/admin/pricing', label: '単価の確定（請求前）', icon: Coins },
+      { href: '/admin/invoices', label: '請求書の作成・確定', icon: FileText },
     ],
   },
   {
-    label: '設定・マスタ管理',
+    label: '振り返り・記録',
     items: [
-      { href: '/admin/customers', label: '取引先・納品先', icon: Users },
-      { href: '/admin/products', label: '品目マスタ設定', icon: Carrot },
+      { href: '/admin/metrics', label: '評価指標（処理時間・ミス・紙の卒業）', icon: Gauge },
+      { href: '/admin/deliveries-report', label: '配送実績', icon: BarChart3 },
+      { href: '/admin/lots', label: 'ロット管理（トレーサビリティ）', icon: Layers },
+      { href: '/admin/spec-reports', label: '現場からの規格報告', icon: Ruler },
+      { href: '/field/feedback', label: '改善要望・バグ報告', icon: MessageSquarePlus },
+    ],
+  },
+  {
+    label: 'マスタ・設定',
+    items: [
+      { href: '/admin/customers', label: '取引先・納入先', icon: Users },
+      { href: '/admin/products', label: '品目', icon: Carrot },
       { href: '/admin/pricing-master', label: '単価・荷姿マスタ', icon: Tag },
       { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles },
-      { href: '/admin/settings', label: 'システム設定', icon: Settings },
+      { href: '/admin/master-import', label: '写真でマスタ登録', icon: Camera },
+      { href: '/admin/settings', label: '設定', icon: Settings },
     ],
   },
 ]
@@ -92,7 +104,7 @@ export const STAFF_GROUPS: NavGroup[] = [
   {
     label: null,
     items: [
-      { href: '/field/concierge', label: '🤖 AI総合相談窓口（おまかせ設定・追加）', icon: Sparkles },
+      { href: '/field/concierge', label: 'AI相談窓口', icon: Sparkles },
       { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck },
       { href: '/field/deliveries', label: '便別積込・配送リスト', icon: Truck },
       { href: '/field/matrix', label: '週の管理（マトリックス）', icon: Sprout },

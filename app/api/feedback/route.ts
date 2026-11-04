@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
     title: '💬【現場からの改善要望・バグ報告】',
     message: `【投稿者】${userName}\n【内容(What)】${what}${newReport.where ? `\n【場所】${newReport.where}` : ''}${newReport.when ? `\n【いつ】${newReport.when}` : ''}`,
     urgent: false,
-    url: '/admin/settings',
+    url: '/field/feedback',
   }).catch((err) => console.warn('[feedback] 通知スキップ:', err))
 
   return NextResponse.json({ ok: true, report: newReport }, { status: 201 })

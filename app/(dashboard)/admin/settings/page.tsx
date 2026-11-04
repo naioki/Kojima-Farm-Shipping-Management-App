@@ -1,17 +1,13 @@
-import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { SettingsForm, type SettingItem } from '@/components/admin/SettingsForm'
-import { FeedbackReportSection } from '@/components/admin/FeedbackReportSection'
 import { SETTINGS_SPEC } from '@/lib/settings-spec'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * 設定（自社情報 / AI / LINE WORKS通知 / 高度な設定）。
+ * 設定（自社情報 / 現場スタッフ / AI / 通知 / 外部連携のキー / 上級者向け）。区分は lib/settings-spec.ts。
  * admin 限定。秘密情報は値を表示せず「設定済み/未設定」のみ（書き込み専用）。
  * 解決順は DB（app_settings）→ 環境変数。
  */
@@ -59,46 +55,11 @@ export default async function SettingsPage() {
       <div>
         <h1 className="font-display text-2xl sm:text-3xl font-black text-ink">設定</h1>
         <p className="mt-1 text-base text-ink-soft">
-          伝票印字・AI読取・LINE WORKS通知の基本設定。秘密情報は保存後に非表示（「設定済み」）となります。
+          上から順に、ふだんよく触る項目です。取引先・品目はメニューの「マスタ・設定」、改善要望は「振り返り・記録」にあります。
         </p>
       </div>
 
-      {/* マスタ管理クイックカード（視認性を向上） */}
-      <div className="rounded-2xl border-2 border-forest-200 bg-forest-50/50 p-5 space-y-3">
-        <div>
-          <h2 className="font-display text-lg font-black text-forest-950">マスタ管理（取引先・品目）</h2>
-          <p className="mt-0.5 text-sm text-forest-800">
-            新規出荷や請求書で利用する取引先・品目の追加、使わない項目の非表示（削除）はこちらから管理できます。
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 pt-1">
-          <Link
-            href="/admin/customers"
-            className="flex items-center justify-between p-4 rounded-xl border border-forest-300 bg-white hover:bg-forest-50/80 transition-all shadow-xs group"
-          >
-            <div>
-              <p className="font-black text-base text-ink group-hover:text-forest-800">🏢 取引先・納品先設定</p>
-              <p className="mt-0.5 text-xs font-bold text-ink-soft">取引先の追加・納品先・不要な取引先の非表示</p>
-            </div>
-            <ChevronRight className="h-5 w-5 text-forest-600 shrink-0" />
-          </Link>
-          <Link
-            href="/admin/products"
-            className="flex items-center justify-between p-4 rounded-xl border border-forest-300 bg-white hover:bg-forest-50/80 transition-all shadow-xs group"
-          >
-            <div>
-              <p className="font-black text-base text-ink group-hover:text-forest-800">🥬 品目（商品）設定</p>
-              <p className="mt-0.5 text-xs font-bold text-ink-soft">品目の追加・単位・不要な品目の非表示</p>
-            </div>
-            <ChevronRight className="h-5 w-5 text-forest-600 shrink-0" />
-          </Link>
-        </div>
-      </div>
-
       <SettingsForm items={items} />
-
-      {/* 現場からの改善要望・バグ報告（5W1H） */}
-      <FeedbackReportSection />
     </div>
   )
 }
