@@ -33,9 +33,9 @@ export interface NavState {
   toggleGroup: (label: string) => void
 }
 
-export function useNavState(role: 'admin' | 'staff'): NavState {
+export function useNavState(role: 'admin' | 'staff', hiddenHrefs: readonly string[] = []): NavState {
   const pathname = usePathname()
-  const groups = navGroupsFor(role)
+  const groups = navGroupsFor(role, hiddenHrefs)
   const activeHref = findActiveHref(
     pathname,
     groups.flatMap((g) => g.items.map((it) => it.href)),

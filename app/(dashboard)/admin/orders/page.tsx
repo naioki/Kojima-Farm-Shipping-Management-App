@@ -5,7 +5,6 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { OrderStatusBadge, sourceLabel, ORDER_STATUS_OPTIONS } from '@/components/admin/OrderStatusBadge'
-import { QuickOrderModal } from '@/components/admin/QuickOrderModal'
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -30,9 +29,8 @@ const inputCls =
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ''
 
 /**
- * 受注一覧（管理者）。状態・取引先・期間で絞り込み、各行から受注詳細へ遷移する。
- * 自然言語テキスト（「明日 勘兵衛 イオンタウン向け チンゲン菜 5ケース」等）から
- * 即座にAI解析して注文化できる「+ テキストからクイック注文」モーダルを搭載。
+ * 受注台帳（管理者）。状態・取引先・期間で絞り込み、各行から受注詳細へ遷移する。
+ * 新しい注文の入力は「注文の受付」（/admin/orders/new）に一本化（旧クイック注文モーダルは廃止）。
  */
 export default async function AdminOrdersPage({
   searchParams,
@@ -69,31 +67,15 @@ export default async function AdminOrdersPage({
 
   let orders
   let customers: { id: string; name: string }[] = []
-  let products: { id: string; name: string; category?: string | null }[] = []
-  let destinations: { id: string; customer_id: string; code: string | null; full_name: string; aliases: string[] }[] = []
 
   try {
-    const [ordersData, custRes, prodRes, destRes] = await Promise.all([
+    const [ordersData, custRes] = await Promise.all([
       getOrdersList(filter),
       supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
-      supabase.from('products').select('id, name, category').eq('is_active', true).order('name'),
-      supabase
-        .from('delivery_destinations')
-        .select('id, customer_id, code, full_name, aliases')
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('full_name'),
     ])
+    if (custRes.error) throw new Error(`取引先の取得に失敗しました: ${custRes.error.message}`)
     orders = ordersData
     customers = (custRes.data ?? []) as { id: string; name: string }[]
-    products = (prodRes.data ?? []) as { id: string; name: string; category?: string | null }[]
-    destinations = (destRes.data ?? []).map((d) => ({
-      id: d.id as string,
-      customer_id: d.customer_id as string,
-      code: (d.code as string | null) ?? null,
-      full_name: d.full_name as string,
-      aliases: (d.aliases as string[] | null) ?? [],
-    }))
   } catch (e) {
     const message = e instanceof Error ? e.message : '受注一覧の取得に失敗しました'
     return <ErrorState message={message} />
@@ -104,20 +86,15 @@ export default async function AdminOrdersPage({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-5 w-5 text-earth-700" aria-hidden />
-          <h1 className="font-display text-2xl font-bold text-ink">受注一覧</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">受注台帳</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <QuickOrderModal
-            customers={customers}
-            products={products}
-            destinations={destinations}
-          />
           <Link
             href="/admin/orders/new"
             className="inline-flex h-10 items-center gap-2 rounded-lg bg-earth-600 px-3 text-sm font-medium text-white transition-colors hover:bg-earth-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-earth-400"
           >
             <Plus className="h-4 w-4" aria-hidden />
-            新規受注
+            注文の受付
           </Link>
           <a
             href={csvHref}

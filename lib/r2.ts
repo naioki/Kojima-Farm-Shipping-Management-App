@@ -7,7 +7,7 @@ import { extractGoogleDriveFileId, toGoogleDrivePreviewUrl, toGoogleDriveViewUrl
  * 【アーキテクチャ方針】
  * FAX原本のPDF化とGoogle Driveへの保存は農園のLinux FAXサーバー（`Kojima-FAX` の `drive_backup.py`）で完結しているため、
  * Cloud Run側では Cloudflare R2 や Supabase Storage への重複アップロードは行わない。
- * 既存の他画面（`/admin/ocr` 等）からの import 互換性を保ちつつ、Google Drive URL を扱う。
+ * 既存の他画面からの import 互換性を保ちつつ、Google Drive URL を扱う。
  */
 
 export async function putReceiptOriginal(

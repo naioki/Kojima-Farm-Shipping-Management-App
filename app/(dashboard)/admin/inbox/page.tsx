@@ -80,9 +80,9 @@ export default async function InboxPage({
 
       <InboxFilterChips active={filter === 'pending' ? 'all' : filter} counts={counts} />
 
-      {/* 手動でファイルを読み取る（読み取りフォーム本体は /admin/ocr に一本化。ここは導線のみ） */}
+      {/* 手動でファイルを読み取る（AI 読み取りは「注文の受付」に一本化。ここは導線のみ） */}
       <Link
-        href="/admin/ocr"
+        href="/admin/orders/new"
         className="flex items-center gap-2 rounded-lg border border-line bg-bg-card px-4 py-3 text-sm font-medium text-ink hover:bg-bg-soft"
       >
         <ScanLine className="h-4 w-4 text-earth-700" aria-hidden />

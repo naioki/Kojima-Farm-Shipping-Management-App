@@ -572,7 +572,7 @@ export const shipmentAddSchema = z.object({
   /** 出荷時間帯（am: 朝便・午前, pm: 昼便・午後） */
   shipping_time: z.enum(['am', 'pm']).optional(),
   /** 受注経路の内訳（電話・LINE・紙・その他）。評価指標「紙の卒業」の計測用。未指定は不明。 */
-  intake_channel: z.enum(['phone', 'line', 'paper', 'other']).optional(),
+  intake_channel: z.enum(['phone', 'line', 'paper', 'other', 'fax', 'email']).optional(),
   /** 現場メモ・備考 */
   note: z.string().optional(),
   /** AI解析時の初回読取結果（ユーザー修正との差分を学習ループへ蓄積用） */

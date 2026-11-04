@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/ui/States'
 import { ShipmentAddForm, type CustomerProductRuleSummary } from '@/components/field/ShipmentAddForm'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { loadReceiptAttachment } from '@/lib/ocr/receipt-original'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +15,13 @@ export const dynamic = 'force-dynamic'
  * - 写真・画像の貼り付け（Ctrl+V）・ドラッグ＆ドロップ・LINE文面の貼り付けを AI で読み取り
  * - 受注経路（電話・LINE・紙）は入力の種類から自動推定し、画面上部で選び直せる
  */
-export default async function OrderNewPage() {
+export default async function OrderNewPage({ searchParams }: { searchParams: { receipt?: string } }) {
   const guard = await requireAdmin('注文入力は管理者のみアクセスできます。')
   if (guard) return guard
+
+  // 受信ボックスの「読み取る」から来た場合は、その受信の原本を添付した状態で開く
+  const receiptId = /^[0-9a-f-]{36}$/i.test(searchParams.receipt ?? '') ? searchParams.receipt! : null
+  const fromReceipt = receiptId ? await loadReceiptAttachment(receiptId) : null
 
   // RLSによるマスタ取得漏れを防ぐため createAdminClient() を使用（GEMINI.md §1）
   const admin = createAdminClient()
@@ -72,6 +77,11 @@ export default async function OrderNewPage() {
           受注一覧を見る →
         </Link>
       </div>
+      {receiptId && !fromReceipt?.attachment && (
+        <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          受信ボックスの原本を取り出せませんでした。お手数ですが、原本の画像・PDFを下の欄に貼り付けるかドロップしてください。
+        </p>
+      )}
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">注文の受付</h1>
         <p className="text-sm text-ink-soft">
@@ -93,6 +103,8 @@ export default async function OrderNewPage() {
         }))}
         packsByPair={packsByPair}
         rulesByPair={rulesByPair}
+        initialAttachment={fromReceipt?.attachment ?? null}
+        fixedIntakeChannel={fromReceipt?.channel ?? null}
       />
     </div>
   )

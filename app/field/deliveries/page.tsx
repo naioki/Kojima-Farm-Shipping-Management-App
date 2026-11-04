@@ -19,6 +19,7 @@ import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
+import { getStaffFeatures } from '@/lib/field/features'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -48,6 +49,7 @@ export default async function DeliveriesPage({
   const admin = createAdminClient()
   const { data: profile } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
   const isAdmin = profile?.role === 'admin'
+  const allowAiRead = isAdmin || (await getStaffFeatures()).ocr
 
   // その日の出荷対象注文（承認済み・出荷済み・請求済みのみ表示、未承認pending_reviewは有効な明細(quantity > 0)がある注文のみカウント）
   const [ordersRes, pendingRes] = await Promise.all([
@@ -472,6 +474,7 @@ export default async function DeliveriesPage({
       <ShipmentAddForm
         deliveryDate={date}
         defaultProductId={selectedProduct}
+        allowAiRead={allowAiRead}
         customers={(allCustsRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
         products={(allProdsRes.data ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
         destinations={(allDestsRes.data ?? []).map((d) => ({

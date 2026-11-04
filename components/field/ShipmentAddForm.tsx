@@ -60,6 +60,15 @@ export interface ShipmentAddFormProps {
   packsByPair: Record<string, number | null>
   /** `${customer_id}:${product_id}` → 登録済みルール一式（入数・容器・規格・シール・カード・袋） */
   rulesByPair?: Record<string, CustomerProductRuleSummary>
+  /**
+   * 開いた時点で添付しておく原本（受信ボックスの「読み取る」から、FAX・メールの原本を引き継ぐ）。
+   * 指定するとフォームを自動で開き、そのまま AI 読み取りを始める。
+   */
+  initialAttachment?: { base64: string; mimeType: string; fileName: string } | null
+  /** 受注経路を固定する（受信ボックスから来た FAX・メールは経路が確定しているので選ばせない） */
+  fixedIntakeChannel?: 'fax' | 'email' | null
+  /** 写真・ファイルの AI 読み取りを使えるか（現場スタッフは設定「写真・FAX自動読取を許可」に従う） */
+  allowAiRead?: boolean
 }
 
 type LocalCustomer = { id: string; name: string; aliases?: string[] | null }
@@ -178,6 +187,9 @@ export function ShipmentAddForm({
   destinations = EMPTY_DESTINATIONS,
   packsByPair,
   rulesByPair = EMPTY_RULES_BY_PAIR,
+  initialAttachment = null,
+  fixedIntakeChannel = null,
+  allowAiRead = true,
 }: ShipmentAddFormProps) {
   const router = useRouter()
   const { enqueueShipment } = useOutbox()
@@ -1529,7 +1541,7 @@ export function ShipmentAddForm({
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
       const data = e.clipboardData
       if (!data) return
-      const imageFile = Array.from(data.files).find((f) => f.type.startsWith('image/'))
+      const imageFile = allowAiRead ? Array.from(data.files).find((f) => f.type.startsWith('image/')) : undefined
       if (imageFile) {
         e.preventDefault()
         void handlePhotoFileRef.current(imageFile, { fromClipboard: true })
@@ -1548,7 +1560,23 @@ export function ShipmentAddForm({
       if (focusTimer) window.clearTimeout(focusTimer)
       document.removeEventListener('paste', onPaste)
     }
-  }, [isOpen, step])
+  }, [isOpen, step, allowAiRead])
+
+  // 受信ボックスの「読み取る」から来た場合: 原本を添付した状態でフォームを開き、そのまま AI 読み取りを始める（1回だけ）
+  const initialAttachmentHandledRef = useRef(false)
+  const runOcrRef = useRef(runOcrAnalyzeWithPayload)
+  runOcrRef.current = runOcrAnalyzeWithPayload
+  const openCleanRef = useRef<() => void>(() => {})
+  openCleanRef.current = openCleanAddModal
+  useEffect(() => {
+    if (!initialAttachment || initialAttachmentHandledRef.current) return
+    initialAttachmentHandledRef.current = true
+    openCleanRef.current()
+    const { base64, mimeType, fileName } = initialAttachment
+    setAttachedFilePayload({ base64, mime: mimeType, fileName })
+    setPhotoPreview(mimeType.startsWith('image/') ? `data:${mimeType};base64,${base64}` : null)
+    void runOcrRef.current({ base64, mime: mimeType, fileName })
+  }, [initialAttachment])
 
   // 📍 既存取引先への新規納入先クイック追加
   async function handleCreateDestinationForExisting() {
@@ -1916,7 +1944,7 @@ export function ShipmentAddForm({
           has_seal: cand.has_seal ?? ruleObj?.hasSeal ?? undefined,
           seal_text: cand.seal_text ?? ruleObj?.sealText ?? undefined,
           bag_type: cand.bag_type ?? ruleObj?.bagType ?? undefined,
-          intake_channel: intakeChannel ?? undefined,
+          intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
@@ -2011,7 +2039,7 @@ export function ShipmentAddForm({
       product_id: productId,
       delivery_date: targetDate,
       shipping_time: shippingTime || undefined,
-      intake_channel: intakeChannel ?? undefined,
+      intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
       quantity_raw: qtyRaw,
       packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
       spec: spec.trim() || undefined,
@@ -2407,14 +2435,14 @@ export function ShipmentAddForm({
             {/* ① スマート入力エリア（ボトムアクションシート起動 ＋ 自然言語・画像統合解析） */}
             <div
               onDragOver={(e) => {
-                if (Array.from(e.dataTransfer.types).includes('Files')) {
+                if (allowAiRead && Array.from(e.dataTransfer.types).includes('Files')) {
                   e.preventDefault()
                   setDragOver(true)
                 }
               }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => {
-                const file = e.dataTransfer.files?.[0]
+                const file = allowAiRead ? e.dataTransfer.files?.[0] : undefined
                 setDragOver(false)
                 if (file) {
                   e.preventDefault()
@@ -2427,7 +2455,13 @@ export function ShipmentAddForm({
               )}
             >
               {/* 受注経路（電話・LINE・紙）— 評価指標「紙の卒業」の計測用。AI読み取りの入力から自動推定し、前回の選択も記憶 */}
-              <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
+              {fixedIntakeChannel ? (
+                <p className="text-xs font-bold text-forest-900">
+                  受注経路: {fixedIntakeChannel === 'fax' ? 'FAX' : 'メール'}（受信ボックスの原本から読み取り）
+                </p>
+              ) : (
+                <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
+              )}
 
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs font-black text-forest-900">
@@ -2441,6 +2475,8 @@ export function ShipmentAddForm({
                 )}
               </div>
 
+              {allowAiRead && (
+              <>
               {/* 1タップで下から開く読み込みアクションボタン */}
               <button
                 type="button"
@@ -2455,6 +2491,8 @@ export function ShipmentAddForm({
                   カメラ / 写真 / PDF / Excel ➜
                 </span>
               </button>
+              </>
+              )}
 
               {/* 📷 添付中の画像・ファイルプレビュー */}
               {(photoPreview || attachedFilePayload) && (
@@ -2501,7 +2539,9 @@ export function ShipmentAddForm({
                   }}
                   onPaste={(e) => {
                     // 画像（スクリーンショット・コピーした写真）の貼り付け → そのまま読み取り
-                    const imageFile = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+                    const imageFile = allowAiRead
+                      ? Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+                      : undefined
                     if (imageFile) {
                       e.preventDefault()
                       void handlePhotoFile(imageFile, { fromClipboard: true })

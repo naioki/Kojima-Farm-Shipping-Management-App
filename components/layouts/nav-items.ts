@@ -110,20 +110,28 @@ export const STAFF_GROUPS: NavGroup[] = [
       { href: '/field/matrix', label: '週の管理（マトリックス）', icon: Sprout },
       { href: '/field/print', label: '帳票・ラベル印刷', icon: Printer },
       { href: '/field/approvals', label: '未確認注文の承認', icon: CheckSquare },
+      { href: '/field/report-spec', label: '規格の報告', icon: Ruler },
     ],
   },
 ]
 
-export function navGroupsFor(role: 'admin' | 'staff'): NavGroup[] {
-  return role === 'admin' ? ADMIN_GROUPS : STAFF_GROUPS
+/**
+ * ロールのナビ。hiddenHrefs は設定「現場スタッフに任せること」でオフの機能（使えない画面は出さない）。
+ */
+export function navGroupsFor(role: 'admin' | 'staff', hiddenHrefs: readonly string[] = []): NavGroup[] {
+  const groups = role === 'admin' ? ADMIN_GROUPS : STAFF_GROUPS
+  if (hiddenHrefs.length === 0) return groups
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((it) => !hiddenHrefs.includes(it.href)) }))
+    .filter((g) => g.items.length > 0)
 }
 
 /** 後方互換・現在地判定用のフラット配列。 */
 export const ADMIN_NAV: NavItem[] = ADMIN_GROUPS.flatMap((g) => g.items)
 export const STAFF_NAV: NavItem[] = STAFF_GROUPS.flatMap((g) => g.items)
 
-export function navFor(role: 'admin' | 'staff'): NavItem[] {
-  return role === 'admin' ? ADMIN_NAV : STAFF_NAV
+export function navFor(role: 'admin' | 'staff', hiddenHrefs: readonly string[] = []): NavItem[] {
+  return navGroupsFor(role, hiddenHrefs).flatMap((g) => g.items)
 }
 
 /**

@@ -858,6 +858,7 @@ export default async function ShipmentsPage({
         }))}
         packsByPair={packsByPair}
         rulesByPair={rulesByPair}
+        allowAiRead={canStaffUse('ocr', role, staffFeatures)}
       />
     </div>
   )
