@@ -355,21 +355,21 @@ export function CustomerDeliveryCard({
           <div className="p-3.5 space-y-2.5">
             {/* ① 上段: 取引先名 & 特大表示の総積込数 */}
             <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1.5 min-w-0">
+              <div className="space-y-2 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <ColorDot color={customerColor} name={customerName} size="md" />
                   <h2
                     className={cn(
-                      'font-display text-lg sm:text-xl font-black truncate',
+                      'font-display text-lg sm:text-xl font-black leading-snug',
                       isCompleted ? 'text-slate-600' : 'text-ink',
                     )}
                   >
                     {customerName}
                   </h2>
                   {destinations.length === 1 && destinations[0]?.destinationName && destinations[0].destinationName !== customerName && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm tracking-tight">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm tracking-tight leading-snug shadow-2xs">
                       <span className="text-emerald-700 text-xs">▶</span>
-                      {destinations[0].destinationName}
+                      <span>{destinations[0].destinationName}</span>
                     </span>
                   )}
                   {isCompleted && (

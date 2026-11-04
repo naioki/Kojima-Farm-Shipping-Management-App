@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   // ロール確認とDBマスタ取得を完全並列で1往復に集約（直列DB往復の遅延を削減）
   const [profileRes, custRes, destRes, prodRes] = await Promise.all([
     admin.from('users').select('role').eq('id', user.id).maybeSingle(),
-    admin.from('customers').select('id, name').eq('is_active', true),
+    admin.from('customers').select('id, name, channel_identifiers').eq('is_active', true),
     admin
       .from('delivery_destinations')
       .select('id, customer_id, code, full_name, aliases')
@@ -74,7 +74,14 @@ export async function POST(req: Request) {
 
   const { imageBase64, mimeType, fileName, text, clientNameHint, modelOverride } = parsed.data
 
-  const customers = custRes.data ?? []
+  const customers = (custRes.data ?? []).map((c) => {
+    const ch = (c as { channel_identifiers?: { aliases?: string[] } | null }).channel_identifiers
+    return {
+      id: c.id as string,
+      name: c.name as string,
+      aliases: Array.isArray(ch?.aliases) ? ch.aliases : undefined,
+    }
+  })
   const destinations = destRes.data ?? []
   const products = prodRes.data ?? []
 

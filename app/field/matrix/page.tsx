@@ -180,28 +180,32 @@ export default async function MatrixPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 pb-20">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <h1 className="hidden sm:block font-display text-lg sm:text-xl font-black text-ink">週の管理</h1>
-          <FieldViewSwitch active="week" date={week} product={selected.id} />
+    <div className="mx-auto max-w-5xl space-y-3.5 pb-20">
+      <div className="space-y-2 print:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <h1 className="hidden sm:block font-display text-lg sm:text-xl font-black text-ink shrink-0">週の管理</h1>
+            <div className="flex-1 sm:flex-initial min-w-0">
+              <FieldViewSwitch active="week" date={week} product={selected.id} />
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="grid grid-cols-3 sm:inline-flex items-center gap-1.5 w-full sm:w-auto">
           <Link
             href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-white px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft"
+            className="h-10 rounded-xl border border-line bg-white px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
           >
             ← 前週
           </Link>
           <Link
             href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-forest-300 bg-forest-50 px-3 text-xs sm:text-sm font-black leading-10 text-forest-900 hover:bg-forest-100"
+            className="h-10 rounded-xl border border-forest-300 bg-forest-50 px-3 text-xs sm:text-sm font-black leading-10 text-forest-900 hover:bg-forest-100 text-center"
           >
             今日〜1週間
           </Link>
           <Link
             href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-white px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft"
+            className="h-10 rounded-xl border border-line bg-white px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
           >
             翌週 →
           </Link>

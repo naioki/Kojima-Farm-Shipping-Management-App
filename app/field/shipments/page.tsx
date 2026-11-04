@@ -247,9 +247,16 @@ export default async function ShipmentsPage({
     default_container_type?: string | null
   }
 
-  // マスタ取得（RLS遮断防止のためすべて admin クライアントで取得）
+  // マスタ取得（RLS遮断防止のためすべて admin クライアントで取得・非アクティブ化した過去取引先も注文表示用に名前を引けるよう全件取得）
   const [custRes, prodCapRes, destRows, rulesRes, routeOverrides, packSortMap] = await Promise.all([
-    admin.from('customers').select('id, name, display_color, aliases').eq('is_active', true).order('name'),
+    (async () => {
+      const r1 = await admin
+        .from('customers')
+        .select('id, name, display_color, is_active, channel_identifiers')
+        .order('name')
+      if (!r1.error) return r1
+      return await admin.from('customers').select('id, name, is_active').order('name')
+    })(),
     productIds.length
       ? admin.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
@@ -284,10 +291,17 @@ export default async function ShipmentsPage({
 
   const ruleRows = rulesRes.data
 
-  const allCustomers = custRes.data ?? []
+  const allCustomers = (custRes.data ?? []) as Array<{
+    id: string
+    name: string
+    display_color?: string | null
+    is_active?: boolean
+    channel_identifiers?: { aliases?: string[] } | null
+  }>
+  const activeCustomers = allCustomers.filter((c) => c.is_active !== false)
   const allDestinations = destRows
   const customerName = new Map(allCustomers.map((c) => [c.id, c.name]))
-  const customerColor = new Map(allCustomers.map((c) => [c.id, c.display_color]))
+  const customerColor = new Map(allCustomers.map((c) => [c.id, c.display_color ?? null]))
   const capacityById = new Map((prodCapRes.data ?? []).map((p) => [p.id, p.container_capacity]))
   const destinationMap = new Map(allDestinations.map((d) => [d.id, d]))
 
@@ -748,19 +762,21 @@ export default async function ShipmentsPage({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3.5 pb-28">
-      {/* ナビゲーションバー（1段目：画面切替タブ＋ガイド、2段目：全幅バランス日付バー） */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center justify-between w-full sm:w-auto gap-2">
-          <div className="flex items-center gap-2">
-            <h1 className="hidden sm:block font-display text-lg font-black text-ink">収穫・パックボード</h1>
-            <FieldViewSwitch active="day" date={date} product={selectedProductId} />
+    <div className="mx-auto max-w-2xl space-y-3 pb-28">
+      {/* ナビゲーションバー（1段目：3画面切替＋操作ガイド、2段目：日付バーを独立配置しスマホ右端見切れを完全防止） */}
+      <div className="space-y-2 print:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <h1 className="hidden sm:block font-display text-lg font-black text-ink shrink-0">収穫・パックボード</h1>
+            <div className="flex-1 sm:flex-initial min-w-0">
+              <FieldViewSwitch active="day" date={date} product={selectedProductId} />
+            </div>
           </div>
-          <GuideTourLauncher tour={SHIPMENTS_TOUR} />
+          <div className="shrink-0">
+            <GuideTourLauncher tour={SHIPMENTS_TOUR} />
+          </div>
         </div>
-        <div className="flex items-center w-full sm:w-auto">
-          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProductId} />
-        </div>
+        <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProductId} />
       </div>
 
 
@@ -828,10 +844,10 @@ export default async function ShipmentsPage({
       <ShipmentAddForm
         deliveryDate={date}
         defaultProductId={selectedProductId}
-        customers={allCustomers.map((c) => ({
+        customers={activeCustomers.map((c) => ({
           id: c.id,
           name: c.name,
-          aliases: (c as { aliases?: string[] | null }).aliases ?? null,
+          aliases: Array.isArray(c.channel_identifiers?.aliases) ? c.channel_identifiers.aliases : null,
         }))}
         products={allProducts.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
         destinations={allDestinations.map((d) => ({

@@ -799,30 +799,30 @@ export function ShipmentRow({
             </div>
           )}
 
-          {/* ① 見出し情報 */}
-          <div className="space-y-1.5 pb-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
+          {/* ① 見出し情報（薄い区切り線と十分な余白を設け、直下の規格・コンテナバッジとの衝突を完全解消） */}
+          <div className="space-y-2.5 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
                 {isNextUp && !isDone && !isFutureOrNextDay && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-700 px-2 py-0.5 text-[11px] font-black text-white shadow-2xs">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-700 px-2 py-0.5 text-[11px] font-black text-white shadow-2xs shrink-0">
                     <span>🔥 次</span>
                   </span>
                 )}
                 <ColorDot color={customerColor} name={customerName} size="md" />
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="font-black text-ink text-lg sm:text-xl tracking-tight">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
+                  <span className="font-black text-ink text-base sm:text-xl tracking-tight leading-snug">
                     {customerName}
                   </span>
                   {destinationName && customerName !== destinationName && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm sm:text-base tracking-tight shadow-2xs">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm sm:text-base tracking-tight leading-snug shadow-2xs">
                       <span className="text-emerald-700 text-xs">▶</span>
-                      {destinationName}
+                      <span>{destinationName}</span>
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {changeDiffBadge && (
                   <span
                     className={cn(
@@ -853,7 +853,7 @@ export function ShipmentRow({
             </div>
 
             {/* 規格 ＋ 資材レシピタグ（#06 規格バッジから冗長な (入数20) を除去し、数量バーの (20入) との重複を解消） */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
               <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-slate-300">
                 {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) ? (
                   <>

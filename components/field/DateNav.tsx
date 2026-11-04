@@ -50,84 +50,99 @@ export function DateNav({
     'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100 active:scale-95 transition shadow-2xs'
 
   return (
-    <div className="flex items-center gap-1.5 w-full sm:w-auto">
-      <Link href={hrefFor(shiftDateStr(date, -1))} aria-label="前の日" className={btn}>
-        <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
-      </Link>
+    <div className="w-full space-y-1.5">
+      <div className="flex items-center gap-1.5 w-full">
+        <Link href={hrefFor(shiftDateStr(date, -1))} aria-label="前の日" className={btn}>
+          <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+        </Link>
 
-      {/* 1ボタン統合カレンダーピッカー（モバイルでは中央伸縮して左右の矢印と美しく1行に整列） */}
-      <div
-        onClick={() => {
-          try {
-            dateInputRef.current?.showPicker?.()
-          } catch {
-            dateInputRef.current?.focus()
-          }
-        }}
-        className={cn(
-          'relative flex flex-1 sm:flex-initial items-center justify-center gap-2 rounded-xl border px-3 h-10 shadow-2xs cursor-pointer transition select-none',
-          isTodayPackWork
-            ? 'border-emerald-600 bg-emerald-50/90 hover:bg-emerald-100/80'
-            : isTodayDelivery
-            ? 'border-sky-500 bg-sky-50/90 hover:bg-sky-100/80'
-            : 'border-line-strong bg-bg-card hover:bg-bg-soft',
-        )}
-        title="タップしてカレンダーから日付を選択"
-      >
-        <Calendar
-          className={cn(
-            'h-4 w-4 shrink-0',
-            isTodayPackWork ? 'text-emerald-700' : isTodayDelivery ? 'text-sky-700' : 'text-ink-soft',
-          )}
-          aria-hidden
-        />
-        <div className="flex items-center gap-2 leading-none">
-          <span className="num text-sm sm:text-base font-black tabular-nums text-ink whitespace-nowrap">
-            {formatJpDateShort(date)} 納品
-          </span>
-          <span
-            className={cn(
-              'rounded-md px-2 py-1 text-[11px] font-black whitespace-nowrap',
-              isTodayPackWork
-                ? 'bg-emerald-700 text-white'
-                : isTodayDelivery
-                ? 'bg-sky-600 text-white'
-                : 'bg-slate-200 text-slate-700',
-            )}
-          >
-            {isTodayPackWork
-              ? `本日 ${shortWorkMd} 作業`
-              : isTodayDelivery
-              ? '本日納品'
-              : `前日 ${shortWorkMd} 作業`}
-          </span>
-        </div>
-        <input
-          ref={dateInputRef}
-          type="date"
-          value={date}
-          onChange={(e) => {
-            if (!e.target.value) return
-            router.push(hrefFor(e.target.value))
-            router.refresh()
+        {/* 1ボタン統合カレンダーピッカー（左右矢印の間に100%収まり右端見切れを完全防止） */}
+        <div
+          onClick={() => {
+            try {
+              dateInputRef.current?.showPicker?.()
+            } catch {
+              dateInputRef.current?.focus()
+            }
           }}
-          aria-label="表示日を選択"
-          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-        />
+          className={cn(
+            'relative flex flex-1 min-w-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border px-2 sm:px-3 h-10 shadow-2xs cursor-pointer transition select-none overflow-hidden',
+            isTodayPackWork
+              ? 'border-emerald-600 bg-emerald-50/90 hover:bg-emerald-100/80'
+              : isTodayDelivery
+              ? 'border-sky-500 bg-sky-50/90 hover:bg-sky-100/80'
+              : 'border-line-strong bg-bg-card hover:bg-bg-soft',
+          )}
+          title="タップしてカレンダーから日付を選択"
+        >
+          <Calendar
+            className={cn(
+              'h-4 w-4 shrink-0',
+              isTodayPackWork ? 'text-emerald-700' : isTodayDelivery ? 'text-sky-700' : 'text-ink-soft',
+            )}
+            aria-hidden
+          />
+          <div className="flex items-center gap-1.5 sm:gap-2 leading-none min-w-0">
+            <span className="num text-sm sm:text-base font-black tabular-nums text-ink whitespace-nowrap">
+              {formatJpDateShort(date)} 納品
+            </span>
+            <span
+              className={cn(
+                'rounded-md px-1.5 sm:px-2 py-1 text-[11px] font-black whitespace-nowrap shrink-0',
+                isTodayPackWork
+                  ? 'bg-emerald-700 text-white'
+                  : isTodayDelivery
+                  ? 'bg-sky-600 text-white'
+                  : 'bg-slate-200 text-slate-700',
+              )}
+            >
+              {isTodayPackWork
+                ? `本日 ${shortWorkMd} 作業`
+                : isTodayDelivery
+                ? '本日納品'
+                : `前日 ${shortWorkMd} 作業`}
+            </span>
+          </div>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={date}
+            onChange={(e) => {
+              if (!e.target.value) return
+              router.push(hrefFor(e.target.value))
+              router.refresh()
+            }}
+            aria-label="表示日を選択"
+            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+          />
+        </div>
+
+        <Link href={hrefFor(shiftDateStr(date, 1))} aria-label="次の日" className={btn}>
+          <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+        </Link>
+
+        {/* PC・タブレット幅（sm以上）では右横に配置 */}
+        {!isDefaultSelected && (
+          <Link
+            href={hrefFor(targetDate)}
+            className="hidden sm:inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-forest-600 bg-forest-700 px-3 text-xs font-black text-white shadow-2xs transition hover:bg-forest-800 active:scale-95"
+            title="明日納品（本日パック作業）へ戻る"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>{label === '明日納品（本日作業）' ? '本日作業へ戻る' : label}</span>
+          </Link>
+        )}
       </div>
 
-      <Link href={hrefFor(shiftDateStr(date, 1))} aria-label="次の日" className={btn}>
-        <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
-      </Link>
-
+      {/* スマホ幅（sm未満）で別日を見ている時は、見切れを防ぐため直下にフル幅ボタンとして表示 */}
       {!isDefaultSelected && (
         <Link
           href={hrefFor(targetDate)}
-          className="inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-forest-600 bg-forest-700 px-2.5 text-xs font-black text-white shadow-2xs transition hover:bg-forest-800 active:scale-95"
+          className="flex sm:hidden h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-forest-600 bg-forest-700 px-3 text-xs font-black text-white shadow-2xs transition hover:bg-forest-800 active:scale-[0.99]"
           title="明日納品（本日パック作業）へ戻る"
         >
-          <RotateCcw className="h-3.5 w-3.5" />
-          <span>{label === '明日納品（本日作業）' ? '本日作業へ' : label}</span>
+          <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+          <span>{label === '明日納品（本日作業）' ? `本日作業（${formatJpDateShort(targetDate)}納品分）へ戻る` : label}</span>
         </Link>
       )}
     </div>

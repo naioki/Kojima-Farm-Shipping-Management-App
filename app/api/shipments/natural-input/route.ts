@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
 
   // 1. マスタ情報とAPI設定を完全並列で一括取得（直列DB往復の遅延をゼロ化）
   const [custRes, destRes, prodRes, apiKey, configuredModel, aiRules] = await Promise.all([
-    admin.from('customers').select('id, name').eq('is_active', true),
+    admin.from('customers').select('id, name, channel_identifiers').eq('is_active', true),
     admin.from('delivery_destinations').select('id, customer_id, code, full_name, aliases').eq('is_active', true),
     admin.from('products').select('id, name, unit').eq('is_active', true),
     getSetting('GEMINI_API_KEY'),
@@ -191,7 +191,14 @@ export async function POST(req: NextRequest) {
     fetchActiveAiRules(null).catch(() => []),
   ])
 
-  const customers = custRes.data || []
+  const customers = (custRes.data || []).map((c) => {
+    const ch = (c as { channel_identifiers?: { aliases?: string[] } | null }).channel_identifiers
+    return {
+      id: c.id as string,
+      name: c.name as string,
+      aliases: Array.isArray(ch?.aliases) ? ch.aliases : undefined,
+    }
+  })
   const destinations = destRes.data || []
   const products = prodRes.data || []
 

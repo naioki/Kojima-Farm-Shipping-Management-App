@@ -430,18 +430,18 @@ export default async function DeliveriesPage({
   const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3.5 pb-24">
-      {/* ① ナビゲーションバー（収穫・パックボードと完全に統一した順序・全幅整列） */}
-      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <div className="flex items-center justify-between w-full sm:w-auto gap-2">
-          <div className="flex items-center gap-2">
-            <h1 className="hidden sm:block font-display text-lg font-black text-ink">便別積込・配送リスト</h1>
-            <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
+    <div className="mx-auto max-w-2xl space-y-3 pb-24">
+      {/* ① ナビゲーションバー（収穫・パックボードと完全に統一した2段構成・右端見切れ防止） */}
+      <div className="space-y-2 print:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <h1 className="hidden sm:block font-display text-lg font-black text-ink shrink-0">便別積込・配送リスト</h1>
+            <div className="flex-1 sm:flex-initial min-w-0">
+              <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
+            </div>
           </div>
         </div>
-        <div className="flex items-center w-full sm:w-auto">
-          <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProduct} />
-        </div>
+        <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProduct} />
       </div>
 
 
