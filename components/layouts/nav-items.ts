@@ -61,7 +61,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
   {
     label: '受注・AI承認',
     items: [
-      { href: '/admin/orders/new', label: '新規注文入力', icon: PlusCircle },
+      { href: '/admin/orders/new', label: '注文の受付（電話・LINE・紙・写真）', icon: PlusCircle },
       { href: '/admin/inbox', label: '受信ボックス (FAX/AI)', icon: Inbox },
       { href: '/admin/approvals', label: 'AI注文の承認・確認', icon: CheckSquare },
       { href: '/admin/orders', label: '受注履歴・台帳', icon: ClipboardList },

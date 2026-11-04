@@ -11,6 +11,7 @@ import {
   UserPlus,
   Sparkles,
   Loader2,
+  History,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
@@ -30,6 +31,7 @@ import { Modal } from '@/components/ui/Modal'
 import { OrderSmartResolver, type ResolvedOrderData } from '@/components/admin/OrderSmartResolver'
 import type { ParsedOrder } from '@/lib/gemini/analyze'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
+import { suggestIntakeChannel } from '@/lib/orders/intake-suggest'
 
 export interface CustomerOption {
   id: string
@@ -177,11 +179,17 @@ export function OrderNewForm({
   const [deliveryDate, setDeliveryDate] = useState(tomorrow)
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('am')
   const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
+  // AI読み取りのコールバック内で最新の経路を参照するための写し（コールバックの依存を増やさない）
+  const intakeChannelRef = useRef<ManualIntakeChannel | null>(null)
+  useEffect(() => {
+    intakeChannelRef.current = intakeChannel
+  }, [intakeChannel])
   const [note, setNote] = useState('')
   const [items, setItems] = useState<FormItem[]>([])
   const [stats, setStats] = useState<Record<string, ProductStats>>({})
   const [step, setStep] = useState<'entry' | 'confirm'>('entry')
   const [saving, setSaving] = useState(false)
+  const [copyingLast, setCopyingLast] = useState(false)
   const [showAddProduct, setShowAddProduct] = useState(false)
   const [addProductId, setAddProductId] = useState('')
   const [originalFile, setOriginalFile] = useState<{
@@ -389,6 +397,51 @@ export function OrderNewForm({
     }
   }
 
+  // 電話で「いつもの」「前回と同じ」と言われたとき: 直近の確定注文の明細を1タップで写す。
+  // 規格・荷姿・カード有無も前回の値を引き継ぐ。数量は必ず目で確認してもらう（トーストで促す）。
+  async function copyLastOrder() {
+    if (!customerId) return
+    setCopyingLast(true)
+    try {
+      const qs = new URLSearchParams({ customer_id: customerId })
+      if (destinationId) qs.set('destination_id', destinationId)
+      const res = await fetch(`/api/orders/last?${qs.toString()}`)
+      const json = (await res.json().catch(() => ({}))) as {
+        order?: { delivery_date: string | null; destination_id: string | null; shipping_time: 'am' | 'pm' | null } | null
+        items?: { product_id: string; quantity: number; spec: string | null; container_type: string | null; has_card: boolean | null }[]
+        error?: string
+      }
+      if (!res.ok) throw new Error(json.error ?? `前回の注文の取得に失敗 (${res.status})`)
+      if (!json.order || !json.items?.length) {
+        toast('この取引先の過去の確定注文がありません', { icon: 'ℹ️' })
+        return
+      }
+      const destId = destinationId || json.order.destination_id || ''
+      if (!destinationId && json.order.destination_id) setDestinationId(json.order.destination_id)
+      if (json.order.shipping_time) setShippingTime(json.order.shipping_time)
+      const next = json.items
+        .map((it) => {
+          const p = productById.get(it.product_id)
+          return p
+            ? buildDefaultFormItem(p, customerId, destId, it.quantity, null, it.spec, it.container_type, it.has_card)
+            : null
+        })
+        .filter((x): x is FormItem => x !== null)
+      if (next.length === 0) {
+        toast.error('前回の品目が品目マスタに見つかりません')
+        return
+      }
+      setItems(next)
+      toast.success(
+        `${json.order.delivery_date ? formatJpDateShort(json.order.delivery_date) : '前回'} の注文（${next.length}品目）を写しました。数量を確認してください`,
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '前回の注文の取得に失敗しました')
+    } finally {
+      setCopyingLast(false)
+    }
+  }
+
   // 納入先変更時にコンテナ種別等を自動更新
   function handleDestinationChange(newDestId: string) {
     setDestinationId(newDestId)
@@ -455,6 +508,13 @@ export function OrderNewForm({
       if (data.note !== undefined) setNote(data.note)
       if (data.originalFile) setOriginalFile(data.originalFile)
       if (data.allParsedOrders) setAllParsedOrders(data.allParsedOrders)
+      // 読み取りの入力種類から受注経路を推定（テキスト→LINE、写真→紙）。違えば画面で選び直せる
+      const suggested = data.inputKind ? suggestIntakeChannel(data.inputKind) : null
+      if (suggested && intakeChannelRef.current !== suggested) {
+        intakeChannelRef.current = suggested
+        setIntakeChannel(suggested)
+        toast(`受注経路を「${suggested === 'line' ? 'LINE' : '紙・口頭'}」にしました（違えば選び直してください）`, { icon: '📮' })
+      }
 
       // 未登録の取引先名が検出された場合、インライン新規取引先登録枠にプリセット
       if (!data.customerId && data.customerNameHint) {
@@ -1265,6 +1325,17 @@ export function OrderNewForm({
                 </span>
               )}
             </div>
+            {customerId && (
+              <button
+                type="button"
+                onClick={copyLastOrder}
+                disabled={copyingLast}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-line bg-bg-card px-3 text-sm font-bold text-ink hover:bg-bg-soft focus:outline-none focus:ring-2 focus:ring-trust-500 focus:ring-offset-2 disabled:opacity-60"
+              >
+                {copyingLast ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <History className="h-4 w-4" aria-hidden />}
+                前回と同じ内容を入れる
+              </button>
+            )}
           </div>
 
           {/* 出荷日 */}

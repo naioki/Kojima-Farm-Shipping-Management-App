@@ -20,6 +20,7 @@ import {
 } from '@/lib/orders/natural-parser'
 import type { ClarificationQuestion, ClarificationOption } from '@/lib/orders/clarifications'
 import type { ParsedOrder } from '@/lib/gemini/analyze'
+import { inputKindOf, type ResolverInputKind } from '@/lib/orders/intake-suggest'
 
 export interface ResolvedOrderData {
   customerId?: string
@@ -53,6 +54,8 @@ export interface ResolvedOrderData {
   }
   allParsedOrders?: ParsedOrder[]
   activeOrderIndex?: number
+  /** 読み取りに使った入力の種類（受注経路の推定に使う） */
+  inputKind?: ResolverInputKind
 }
 
 interface OrderSmartResolverProps {
@@ -295,6 +298,7 @@ export function OrderSmartResolver({
       originalFile: currentFile ?? undefined,
       allParsedOrders: allOrders,
       activeOrderIndex: orderIdx,
+      inputKind: inputKindOf(currentFile),
     })
   }
 
