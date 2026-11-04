@@ -127,41 +127,21 @@ export async function generateInvoiceForCustomer(
     .maybeSingle()
   if (customerErr) return { ok: false, reason: 'error', message: `取引先の取得に失敗しました: ${customerErr.message}` }
 
-  // 請求書番号は検証がすべて終わってから最後に採番する（欠番の発生源を最小化・tax.md）
-  const { data: seq, error: seqErr } = await supabase.rpc('get_next_invoice_number', {
-    p_month: billingMonth.replace('-', ''),
-  })
-  if (seqErr) return { ok: false, reason: 'error', message: seqErr.message }
-  const invoiceNumber = formatInvoiceNumber(billingMonth, seq as number)
-
-  const { data: invoice, error: invErr } = await supabase
-    .from('invoices')
-    .insert({
-      invoice_number: invoiceNumber,
-      customer_id: customerId,
-      billing_month: billingMonth,
-      period_start: periodStart,
-      period_end: periodEnd,
-      issue_date: jstTodayStr(),
-      invoice_reg_num: customer?.invoice_reg_num ?? null,
-      subtotal_8: totals.reduced.subtotal.toNumber(),
-      tax_8: totals.reduced.tax.toNumber(),
-      subtotal_10: totals.standard.subtotal.toNumber(),
-      tax_10: totals.standard.tax.toNumber(),
-      total_amount: totals.total.toNumber(),
-      status: 'draft',
-      created_by: userId,
-    })
-    .select('id')
-    .single()
-  if (invErr) {
-    // 採番済みの番号が欠番になる。税務上の追跡のため番号を必ずログに残す。
-    console.error(`[invoices/generate] 請求書 ${invoiceNumber} の作成に失敗（欠番）:`, invErr.message)
-    return { ok: false, reason: 'error', message: `請求書 ${invoiceNumber} の作成に失敗しました: ${invErr.message}` }
+  const header = {
+    customerId,
+    billingMonth,
+    periodStart,
+    periodEnd,
+    issueDate: jstTodayStr(),
+    invoiceRegNum: customer?.invoice_reg_num ?? null,
+    subtotal8: totals.reduced.subtotal.toNumber(),
+    tax8: totals.reduced.tax.toNumber(),
+    subtotal10: totals.standard.subtotal.toNumber(),
+    tax10: totals.standard.tax.toNumber(),
+    total: totals.total.toNumber(),
+    userId,
   }
-
-  const invoiceItems = resolvedRows.map((r) => ({
-    invoice_id: invoice.id,
+  const items = resolvedRows.map((r) => ({
     order_item_id: r.id,
     product_name: r.product_name,
     quantity: billableQty(r),
@@ -169,28 +149,25 @@ export async function generateInvoiceForCustomer(
     unit_price: r.resolvedUnitPrice,
     tax_rate: r.tax_rate,
   }))
-  const { error: iiErr } = await supabase.from('invoice_items').insert(invoiceItems)
-  if (iiErr) {
-    // 明細の無い請求書を「下書き」で残さない。番号は欠番にせず void（無効）として記録を残す。
-    const { error: voidErr } = await supabase.from('invoices').update({ status: 'void' }).eq('id', invoice.id)
-    if (voidErr) console.error(`[invoices/generate] 請求書 ${invoiceNumber} の無効化に失敗:`, voidErr.message)
-    await writeAudit(supabase, {
-      entityType: 'invoices',
-      entityId: invoice.id,
-      action: 'UPDATE',
-      oldValues: { status: 'draft' },
-      newValues: { status: 'void', reason: `明細の保存に失敗: ${iiErr.message}` },
-      userId,
-    }).catch(() => {})
-    return { ok: false, reason: 'error', message: `請求書 ${invoiceNumber} の明細保存に失敗したため無効にしました: ${iiErr.message}` }
-  }
 
-  // 請求書に取り込んだ明細の price_status を confirmed に同期
-  const { error: psErr } = await supabase
-    .from('order_items')
-    .update({ price_status: 'confirmed' })
-    .in('id', resolvedRows.map((r) => r.id))
-  if (psErr) console.error('[invoices/generate] price_status の同期に失敗:', psErr.message)
+  // 採番・請求書・明細・単価確定を1トランザクションで（失敗時は採番も巻き戻る＝欠番なし。二重請求もDB側で拒否）
+  const atomic = await createInvoiceAtomic(supabase, header, items)
+  let invoice: { id: string }
+  let invoiceNumber: string
+  if (atomic.kind === 'ok') {
+    invoice = { id: atomic.invoiceId }
+    invoiceNumber = atomic.invoiceNumber
+  } else if (atomic.kind === 'already_billed') {
+    return { ok: false, reason: 'error', message: '同じ明細がすでに別の請求書に載っています。請求書一覧を確認してください' }
+  } else if (atomic.kind === 'error') {
+    return { ok: false, reason: 'error', message: `請求書の作成に失敗しました: ${atomic.message}` }
+  } else {
+    // migrations/0032 未適用の環境のみ: 旧方式（逐次実行）で作成する
+    const legacy = await createInvoiceLegacy(supabase, header, items)
+    if (!legacy.ok) return { ok: false, reason: 'error', message: legacy.message }
+    invoice = { id: legacy.invoiceId }
+    invoiceNumber = legacy.invoiceNumber
+  }
 
   await writeAudit(supabase, {
     entityType: 'invoices',
@@ -201,4 +178,130 @@ export async function generateInvoiceForCustomer(
   })
 
   return { ok: true, invoice_id: invoice.id, invoice_number: invoiceNumber, total: totals.total.toNumber() }
+}
+
+interface InvoiceHeaderInput {
+  customerId: string
+  billingMonth: string
+  periodStart: string
+  periodEnd: string
+  issueDate: string
+  invoiceRegNum: string | null
+  subtotal8: number
+  tax8: number
+  subtotal10: number
+  tax10: number
+  total: number
+  userId: string | null
+}
+interface InvoiceItemInput {
+  order_item_id: string
+  product_name: string
+  quantity: number
+  unit: string
+  unit_price: number
+  tax_rate: number
+}
+
+/** PostgREST が「関数が無い」と返したか（migrations/0032 未適用） */
+function isMissingFunction(err: { code?: string; message?: string }): boolean {
+  return err.code === 'PGRST202' || /could not find the function/i.test(err.message ?? '')
+}
+
+/** 1トランザクションで請求書を作る（migrations/0032 の create_invoice_atomic） */
+export async function createInvoiceAtomic(
+  supabase: SupabaseClient,
+  h: InvoiceHeaderInput,
+  items: InvoiceItemInput[],
+): Promise<
+  | { kind: 'ok'; invoiceId: string; invoiceNumber: string }
+  | { kind: 'already_billed' }
+  | { kind: 'missing_function' }
+  | { kind: 'error'; message: string }
+> {
+  const { data, error } = await supabase.rpc('create_invoice_atomic', {
+    p_customer_id: h.customerId,
+    p_billing_month: h.billingMonth,
+    p_period_start: h.periodStart,
+    p_period_end: h.periodEnd,
+    p_issue_date: h.issueDate,
+    p_invoice_reg_num: h.invoiceRegNum,
+    p_subtotal_8: h.subtotal8,
+    p_tax_8: h.tax8,
+    p_subtotal_10: h.subtotal10,
+    p_tax_10: h.tax10,
+    p_total_amount: h.total,
+    p_created_by: h.userId,
+    p_items: items,
+  })
+  if (error) {
+    if (isMissingFunction(error)) return { kind: 'missing_function' }
+    if (/already_billed/.test(error.message ?? '')) return { kind: 'already_billed' }
+    return { kind: 'error', message: error.message }
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { invoice_id?: string; invoice_number?: string } | null
+  if (!row?.invoice_id || !row.invoice_number) return { kind: 'error', message: '請求書の作成結果を受け取れませんでした' }
+  return { kind: 'ok', invoiceId: row.invoice_id, invoiceNumber: row.invoice_number }
+}
+
+/** 旧方式（逐次実行）。0032 未適用の環境でだけ使う。明細保存に失敗したら void にして番号の記録を残す */
+async function createInvoiceLegacy(
+  supabase: SupabaseClient,
+  h: InvoiceHeaderInput,
+  items: InvoiceItemInput[],
+): Promise<{ ok: true; invoiceId: string; invoiceNumber: string } | { ok: false; message: string }> {
+  const { data: seq, error: seqErr } = await supabase.rpc('get_next_invoice_number', {
+    p_month: h.billingMonth.replace('-', ''),
+  })
+  if (seqErr) return { ok: false, message: seqErr.message }
+  const invoiceNumber = formatInvoiceNumber(h.billingMonth, seq as number)
+
+  const { data: invoice, error: invErr } = await supabase
+    .from('invoices')
+    .insert({
+      invoice_number: invoiceNumber,
+      customer_id: h.customerId,
+      billing_month: h.billingMonth,
+      period_start: h.periodStart,
+      period_end: h.periodEnd,
+      issue_date: h.issueDate,
+      invoice_reg_num: h.invoiceRegNum,
+      subtotal_8: h.subtotal8,
+      tax_8: h.tax8,
+      subtotal_10: h.subtotal10,
+      tax_10: h.tax10,
+      total_amount: h.total,
+      status: 'draft',
+      created_by: h.userId,
+    })
+    .select('id')
+    .single()
+  if (invErr || !invoice) {
+    console.error(`[invoices/generate] 請求書 ${invoiceNumber} の作成に失敗（欠番）:`, invErr?.message)
+    return { ok: false, message: `請求書 ${invoiceNumber} の作成に失敗しました: ${invErr?.message ?? 'unknown'}` }
+  }
+
+  const { error: iiErr } = await supabase
+    .from('invoice_items')
+    .insert(items.map((it) => ({ ...it, invoice_id: invoice.id })))
+  if (iiErr) {
+    const { error: voidErr } = await supabase.from('invoices').update({ status: 'void' }).eq('id', invoice.id)
+    if (voidErr) console.error(`[invoices/generate] 請求書 ${invoiceNumber} の無効化に失敗:`, voidErr.message)
+    await writeAudit(supabase, {
+      entityType: 'invoices',
+      entityId: invoice.id,
+      action: 'UPDATE',
+      oldValues: { status: 'draft' },
+      newValues: { status: 'void', reason: `明細の保存に失敗: ${iiErr.message}` },
+      userId: h.userId,
+    }).catch(() => {})
+    return { ok: false, message: `請求書 ${invoiceNumber} の明細保存に失敗したため無効にしました: ${iiErr.message}` }
+  }
+
+  const { error: psErr } = await supabase
+    .from('order_items')
+    .update({ price_status: 'confirmed' })
+    .in('id', items.map((it) => it.order_item_id))
+  if (psErr) console.error('[invoices/generate] price_status の同期に失敗:', psErr.message)
+  return { ok: true, invoiceId: invoice.id, invoiceNumber }
 }
