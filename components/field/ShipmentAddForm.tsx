@@ -37,6 +37,7 @@ import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
+import { inputKindOf, suggestIntakeChannel } from '@/lib/orders/intake-suggest'
 
 export interface CustomerProductRuleSummary {
   packsPerCase?: number | null
@@ -211,6 +212,19 @@ export function ShipmentAddForm({
   const [mode, setMode] = useState<'create' | 'increase' | 'decrease' | 'set'>('create')
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('')
   const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
+  const intakeChannelRef = useRef<ManualIntakeChannel | null>(null)
+  useEffect(() => {
+    intakeChannelRef.current = intakeChannel
+  }, [intakeChannel])
+  /** AI読み取りの入力から受注経路を推定して初期値にする（違えば画面で選び直せる） */
+  function applyIntakeSuggestion(suggested: ManualIntakeChannel | null) {
+    if (!suggested || intakeChannelRef.current === suggested) return
+    intakeChannelRef.current = suggested
+    setIntakeChannel(suggested)
+    toast(`受注経路を「${suggested === 'line' ? 'LINE' : '紙・口頭'}」にしました（違えば上で選び直してください）`, {
+      icon: '📮',
+    })
+  }
   const [note, setNote] = useState('')
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const fileSelectorRef = useRef<HTMLInputElement | null>(null)
@@ -234,6 +248,9 @@ export function ShipmentAddForm({
   const [analyzingNatural, setAnalyzingNatural] = useState(false)
   const [streamStep, setStreamStep] = useState<number>(0) // 1: 読取, 2: 照合, 3: まとめ
   const abortControllerRef = useRef<AbortController | null>(null)
+  // テキスト欄に「貼り付け」で入れたか（貼り付け＝LINE の転記。手打ちの指示は経路を推定しない）
+  const textPastedRef = useRef(false)
+  const [dragOver, setDragOver] = useState(false)
 
   // AI解析結果・確認事項
   const [aiExplanation, setAiExplanation] = useState<string | null>(null)
@@ -319,6 +336,7 @@ export function ShipmentAddForm({
     setShippingTime('')
     setNote('')
     setNaturalText('')
+    textPastedRef.current = false
     setPhotoPreview(null)
     setAttachedFilePayload(null)
     setConfirmedBadges([])
@@ -670,6 +688,7 @@ export function ShipmentAddForm({
 
       const data = json.data
       const badges: string[] = []
+      if (textPastedRef.current) applyIntakeSuggestion(suggestIntakeChannel('text'))
 
       // 1. 取引先の反映
       if (data.customer_id) {
@@ -1376,6 +1395,8 @@ export function ShipmentAddForm({
     mime: string
     fileName?: string
     instructionText?: string
+    /** 受注経路を推定するか（クリップボードから貼った画像は LINE のスクショか紙か判別できないので推定しない） */
+    suggestChannel?: boolean
   }) {
     setAnalyzingPhoto(true)
     setStreamStep(1)
@@ -1409,6 +1430,11 @@ export function ShipmentAddForm({
         data.applied_rules_count,
       )
       toast.success('画像と事前指示書から注文内容をすべて読み取りました！一覧を確認してください')
+      if (params.suggestChannel) {
+        applyIntakeSuggestion(
+          suggestIntakeChannel(inputKindOf({ mimeType: params.mime, fileName: params.fileName ?? '' })),
+        )
+      }
     } catch (err: unknown) {
       if ((err as Error)?.name === 'AbortError') {
         toast('解析を中断しました', { icon: 'ℹ️' })
@@ -1424,7 +1450,7 @@ export function ShipmentAddForm({
     }
   }
 
-  async function handlePhotoFile(file: File) {
+  async function handlePhotoFile(file: File, opts: { fromClipboard?: boolean } = {}) {
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (galleryInputRef.current) galleryInputRef.current.value = ''
     if (fileSelectorRef.current) fileSelectorRef.current.value = ''
@@ -1442,6 +1468,7 @@ export function ShipmentAddForm({
         mime,
         fileName: file.name,
         instructionText: cleanedHint || undefined,
+        suggestChannel: !opts.fromClipboard,
       })
     } catch (err: unknown) {
       toast.error((err as Error)?.message || '画像の処理に失敗しました')
@@ -1914,6 +1941,7 @@ export function ShipmentAddForm({
         setPhotoPreview(null)
         setAttachedFilePayload(null)
         setNaturalText('')
+        textPastedRef.current = false
         if (registeredDates.length > 0 && !registeredDates.includes(deliveryDate)) {
           const jumpDate = registeredDates[0]
           router.push(`/field/shipments?date=${jumpDate}${productId ? `&product=${productId}` : ''}`)
@@ -2043,6 +2071,7 @@ export function ShipmentAddForm({
       setStep('input')
       setQtyRaw('')
       setNaturalText('')
+      textPastedRef.current = false
       setPhotoPreview(null)
       setAttachedFilePayload(null)
       setConfirmedBadges([])
@@ -2334,7 +2363,30 @@ export function ShipmentAddForm({
             />
 
             {/* ① スマート入力エリア（ボトムアクションシート起動 ＋ 自然言語・画像統合解析） */}
-            <div className="rounded-2xl border-2 border-forest-200 bg-gradient-to-br from-forest-50/70 to-emerald-50/40 p-4 space-y-3 shadow-2xs">
+            <div
+              onDragOver={(e) => {
+                if (Array.from(e.dataTransfer.types).includes('Files')) {
+                  e.preventDefault()
+                  setDragOver(true)
+                }
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                const file = e.dataTransfer.files?.[0]
+                setDragOver(false)
+                if (file) {
+                  e.preventDefault()
+                  void handleGenericFile(file)
+                }
+              }}
+              className={cn(
+                'rounded-2xl border-2 bg-gradient-to-br from-forest-50/70 to-emerald-50/40 p-4 space-y-3 shadow-2xs',
+                dragOver ? 'border-dashed border-forest-600' : 'border-forest-200',
+              )}
+            >
+              {/* 受注経路（電話・LINE・紙）— 評価指標「紙の卒業」の計測用。AI読み取りの入力から自動推定し、前回の選択も記憶 */}
+              <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
+
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs font-black text-forest-900">
                   <Sparkles className="h-4 w-4 text-forest-600" />
@@ -2400,7 +2452,20 @@ export function ShipmentAddForm({
                 <textarea
                   id="shipment-natural-text-area"
                   value={naturalText}
-                  onChange={(e) => setNaturalText(e.target.value)}
+                  onChange={(e) => {
+                    setNaturalText(e.target.value)
+                    if (!e.target.value.trim()) textPastedRef.current = false
+                  }}
+                  onPaste={(e) => {
+                    // 画像（スクリーンショット・コピーした写真）の貼り付け → そのまま読み取り
+                    const imageFile = Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+                    if (imageFile) {
+                      e.preventDefault()
+                      void handlePhotoFile(imageFile, { fromClipboard: true })
+                      return
+                    }
+                    if (e.clipboardData.getData('text').trim()) textPastedRef.current = true
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault()
@@ -2408,7 +2473,7 @@ export function ShipmentAddForm({
                     }
                   }}
                   rows={2}
-                  placeholder="例:「明日の和郷園に20c追加」「寺崎 50P」または添付画像への補足指示（例:「5北海道は35箱に変更して」）"
+                  placeholder="LINEの文面や画像をここに貼り付け（Ctrl+V）／例:「明日の和郷園に20c追加」「寺崎 50P」／画像への補足指示"
                   className="w-full rounded-xl border border-forest-300/80 bg-white p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-200"
                 />
               </div>
@@ -2947,9 +3012,6 @@ export function ShipmentAddForm({
                   </div>
                 </div>
               </div>
-
-              {/* 受注経路（電話・LINE・紙）— 評価指標「紙の卒業」の計測用。前回の選択を記憶 */}
-              <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
 
               {/* 取引先セレクト（ワンタップ主要取引先チップ ＋ 全件セレクト） */}
               <div className="space-y-2">
