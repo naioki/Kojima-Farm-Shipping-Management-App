@@ -1,6 +1,7 @@
 import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatSupplyDestination } from '@/lib/format/destination'
+import { resolveContainerType } from '@/lib/pipeline/schemas'
 import {
   aggregateEntries,
   decomposeQty,
@@ -35,10 +36,10 @@ function resolveDocUnitsPerBox(
   defaultCap: number | null | undefined,
 ): number {
   const combinedSpec = `${customerName} ${spec || ''}`.normalize('NFKC')
-  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
   if (specMatch) {
     const parsedNum = Number(specMatch[1] || specMatch[2])
-    if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+    if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) {
       return parsedNum
     }
   }
@@ -89,7 +90,7 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
     await Promise.all([
       supabase.from('customers').select('id, name').in('id', customerIds),
       destinationIds.length
-        ? supabase.from('delivery_destinations').select('id, code, full_name, sort_order').in('id', destinationIds)
+        ? supabase.from('delivery_destinations').select('*').in('id', destinationIds)
         : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string; sort_order: number }[] }),
       supabase.from('products').select('id, container_capacity').in('id', productIds),
       packIds.length
@@ -100,7 +101,7 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
       customerIds.length
         ? supabase
             .from('customer_product_rules')
-            .select('customer_id, product_id, packs_per_case, label_spec')
+            .select('*')
             .in('customer_id', customerIds)
         : Promise.resolve({
             data: [] as { customer_id: string; product_id: string; packs_per_case: number | null; label_spec?: string | null }[],
@@ -148,7 +149,14 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
       spec: [it.spec ?? rule?.label_spec ?? '', pack?.standing_notes ?? ''].filter(Boolean).join(' / '),
       unitsPerBox,
       unitLabel: it.unit || 'P',
-      boxLabel: it.container_type || pack?.selling_unit_label || 'ケース',
+      boxLabel: resolveContainerType({
+        explicitContainer: it.container_type,
+        ruleContainer: (rule as { container_type?: string | null } | undefined)?.container_type ?? null,
+        destDefaultContainer: (dest as { default_container_type?: string | null } | null)?.default_container_type ?? null,
+        clientName: cust,
+        destination: storeName,
+        rawText: it.spec,
+      }),
       boxes,
       remainder,
       totalQty: it.quantity,

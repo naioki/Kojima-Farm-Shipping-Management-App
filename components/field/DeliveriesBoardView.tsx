@@ -107,9 +107,13 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
   const remainingCustomers = totalCustomers - completedCustomers
 
   const totalContainers = cards.reduce((acc, c) => acc + c.grandTotalContainers, 0)
-  const completedContainers = cards
-    .filter((c) => c.isCompleted)
-    .reduce((acc, c) => acc + c.grandTotalContainers, 0)
+  const completedContainers = cards.reduce((acc, c) => {
+    if (c.isCompleted) return acc + c.grandTotalContainers
+    const destDoneBoxes = c.destinations
+      .filter((d) => d.status === 'loaded' || d.status === 'delivered')
+      .reduce((sum, d) => sum + d.totalBoxes, 0)
+    return acc + Math.min(c.grandTotalContainers, destDoneBoxes)
+  }, 0)
   const remainingContainers = Math.max(0, totalContainers - completedContainers)
   const progressPct =
     totalContainers > 0 ? Math.min(100, Math.round((completedContainers / totalContainers) * 100)) : 0

@@ -175,21 +175,70 @@ export function generateOrderKey(params: {
 /**
  * 取引先・品目・規格から1ケースあたりの入数を判定する（チンゲン菜: 通常20/NSK24、他品目: 明示指定または品目標準）.
  */
+export function isSampleOrderText(
+  ...texts: Array<string | null | undefined>
+): boolean {
+  const joined = texts.filter(Boolean).join(' ').normalize('NFKC')
+  return joined.includes('サンプル')
+}
+
+/**
+ * 容器文字列が「段ボール・ケース・箱・マテハン・コンテナ」等の単位誤認または汎用語かどうかを判定する（#2-01）.
+ */
+export function isGenericOrInvalidContainer(raw?: string | null): boolean {
+  if (!raw) return true
+  const s = raw.normalize('NFKC').trim().toLowerCase()
+  if (!s) return true
+  return (
+    s === 'マテハン' ||
+    s === 'コンテナ' ||
+    s === '通常コンテナ' ||
+    s === '段ボール' ||
+    s === 'ダンボール' ||
+    s === 'ケース' ||
+    s === 'c/s' ||
+    s === 'cs' ||
+    s === '箱' ||
+    s === 'オリコン' ||
+    s === 'プラスチックコンテナ' ||
+    s === 'carton' ||
+    s === 'cardboard'
+  )
+}
+
+/**
+ * 取引先・品目・規格から1ケースあたりの入数を判定する（チンゲン菜: 通常20/NSK24、他品目: 明示指定または品目標準）.
+ * - 【#11-02 解消】「2パック」「2P」「2PK」等の数量表記を「入数2」と誤認しないよう、「入」「入数」「1箱」「1ケース」を伴う表記のみを抽出。
+ * - チンゲン菜・葉物野菜で explicitUnitCount < 10（例: @75×2pk 由来の 2）は異常値として棄却し、標準入数（20/24）へフォールバック。
+ */
 export function determineUnitCount(
   clientName?: string | null,
   spec?: string | null,
   explicitUnitCount?: number | null,
   itemName?: string | null,
 ): number {
-  if (explicitUnitCount && explicitUnitCount > 0) {
-    return explicitUnitCount
+  const normItem = (itemName ?? '').normalize('NFKC')
+  const isTomato = normItem.includes('トマト')
+  const isHakusai = normItem.includes('白菜')
+  const minValidUnitCount = isTomato ? 1 : isHakusai ? 4 : 10
+
+  if (
+    explicitUnitCount &&
+    Number.isFinite(explicitUnitCount) &&
+    explicitUnitCount >= minValidUnitCount &&
+    explicitUnitCount <= 200
+  ) {
+    return Math.trunc(explicitUnitCount)
   }
+
   const combined = `${clientName ?? ''} ${spec ?? ''}`.normalize('NFKC').toUpperCase()
-  // specや生テキストに「入数24」「24入」「入数:30」「小コン 30」「30束入」等の記載があれば最優先で抽出
-  const match = combined.match(/(?:入数|1箱|1ケース|小コン|大コン|青コン|茶コン|コンテナ)\s*[:：]?\s*(\d+)|(\d+)\s*(?:入|玉|束|本|パック|P)/i)
+  // specや生テキストに「入数24」「24入」「20P入」「入数:30」「小コン 30」「30束入」等の記載があれば最優先で抽出（「入」のない単なる「2P」「2パック」は除外）
+  const match = combined.match(
+    /(?:入数|1箱|1ケース|小コン|大コン|青コン|茶コン|コンテナ)\s*[:：]?\s*(\d+)|(\d+)\s*(?:P入|PK入|パック入|袋入|束入|玉入|本入|入)/i,
+  )
   if (match) {
     const n = Number(match[1] || match[2])
-    if (Number.isFinite(n) && n > 0 && n <= 200) return n
+    if (Number.isFinite(n) && n >= minValidUnitCount && n <= 200) return Math.trunc(n)
   }
 
   if (
@@ -201,14 +250,21 @@ export function determineUnitCount(
     return 24
   }
 
-  const normItem = (itemName ?? '').normalize('NFKC')
-  if (normItem.includes('トマト')) {
+  if (combined.includes('オレンジ') || combined.includes('25入')) {
+    return 25
+  }
+
+  if (combined.includes('やなぎさわ') && (combined.includes('10入') || combined.includes('入数10'))) {
+    return 10
+  }
+
+  if (isTomato) {
     return 1 // トマトは通常1箱（ケース＝総数）
   }
   if (normItem.includes('ネギ') || normItem.includes('ねぎ')) {
     return 30 // 長ネギ標準30束
   }
-  if (normItem.includes('白菜')) {
+  if (isHakusai) {
     return 6 // ミニ白菜標準6玉
   }
 
@@ -224,7 +280,7 @@ export function formatQuantityCaseText(totalPacks: number, cases: number, remain
 }
 
 /**
- * 第4.5章のルールに従いコンテナ種別を判定する.
+ * 第4.5章のルールに従いコンテナ種別を判定する（#2-04 段ボールハードコードを撤去し実際のコンテナへ統一）.
  */
 export function determineContainerType(
   clientName?: string | null,
@@ -249,10 +305,93 @@ export function determineContainerType(
   if (normClient.includes('房総食料')) {
     return '房総青コン'
   }
-  if (normClient.includes('勘兵衛')) {
-    return '段ボール'
+  if (normClient.includes('和郷園')) {
+    return '青コン'
   }
-  return '通常コンテナ'
+  return '青コン'
+}
+
+/**
+ * 全API・全画面共通のコンテナ種別解決関数（#2-01〜#2-03, #9-10）.
+ * 明示指定（段ボール・ケース等の単位誤認は除外）→ 納入先既定コンテナ → 取引先ルール → 決定論ルールの順で解決する。
+ */
+export function resolveContainerType(params: {
+  itemContainer?: string | null
+  explicitContainer?: string | null
+  destDefaultContainer?: string | null
+  ruleContainer?: string | null
+  clientName?: string | null
+  destinationName?: string | null
+  destination?: string | null
+  rawText?: string | null
+}): string {
+  const rawItem = (params.explicitContainer ?? params.itemContainer ?? '').trim()
+  if (rawItem && !isGenericOrInvalidContainer(rawItem)) {
+    return rawItem
+  }
+  const rawDest = (params.destDefaultContainer ?? '').trim()
+  if (rawDest && !isGenericOrInvalidContainer(rawDest)) {
+    return rawDest
+  }
+  const rawRule = (params.ruleContainer ?? '').trim()
+  if (rawRule && !isGenericOrInvalidContainer(rawRule)) {
+    return rawRule
+  }
+  return determineContainerType(params.clientName, params.destination ?? params.destinationName)
+}
+
+/**
+ * 全API・全画面共通の「生産者カード（品名カード）有無」決定論関数（#1-01〜#1-05, #9-10）.
+ * - 原則は `false`（カードなし）。
+ * - サンプル注文（サンプル依頼書）や NSK（シールのみ運用）は常に `false`。
+ * - 備考・規格に「カード有」「生産者カード」と明記がある場合、または取引先ルール（`ruleHasCard`）/現場明示操作（`explicitHasCard`）で ON にされた場合のみ `true` を返す。
+ */
+export function determineHasCard(params: {
+  clientName?: string | null
+  destinationName?: string | null
+  destination?: string | null
+  spec?: string | null
+  note?: string | null
+  rawText?: string | null
+  ruleHasCard?: boolean | null
+  explicitHasCard?: boolean | null
+}): boolean {
+  const combined = [
+    params.clientName,
+    params.destination ?? params.destinationName,
+    params.spec,
+    params.note,
+    params.rawText,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .normalize('NFKC')
+
+  // 1. サンプル注文は常にカードなし
+  if (combined.includes('サンプル')) return false
+
+  // 2. 明示テキスト指示（カードなし / カードあり）
+  if (/カード\s*(?:なし|無|不要)/.test(combined)) return false
+  if (/生産者カード|カード\s*(?:入れる|あり|有|入|同梱)/.test(combined)) return true
+
+  // 3. NSK（農業総合研究所）は生産者バーコードシール運用のためコンテナカードは原則なし
+  const upperClient = (params.clientName ?? '').normalize('NFKC').toUpperCase()
+  if (upperClient.includes('農業総合研究所') || upperClient.includes('NSK')) {
+    return typeof params.explicitHasCard === 'boolean' ? params.explicitHasCard : false
+  }
+
+  // 4. 現場での明示操作値があれば尊重
+  if (typeof params.explicitHasCard === 'boolean') {
+    return params.explicitHasCard
+  }
+
+  // 5. 取引先×品目ルール（customer_product_rules.has_card）に明示設定があれば尊重
+  if (typeof params.ruleHasCard === 'boolean') {
+    return params.ruleHasCard
+  }
+
+  // 6. デフォルトは false（カードがないものに勝手に「カード有」を出さない）
+  return false
 }
 
 /**

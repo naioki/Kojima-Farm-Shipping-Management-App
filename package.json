@@ -1,6 +1,6 @@
 {
   "name": "kojima-noen",
-  "version": "5.1.12",
+  "version": "5.1.13",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -130,7 +130,9 @@ export async function approveOrder(
   const harvestTaskDate = shiftDateStr(deliveryDate, -1)
 
   // #36 既に同じ (customer_id, destination_id, delivery_date) の承認済み注文があるかチェックし、あれば統合する
-  if (order.customer_id) {
+  // ※ ただしサンプル注文（note に「サンプル」を含む場合）は別口のサンプル依頼または通常大口便と混ざらないよう自動統合しない
+  const isCurrentSample = Boolean(order.note && order.note.includes('サンプル'))
+  if (order.customer_id && !isCurrentSample) {
     let dupQuery = admin
       .from('orders')
       .select('id, note')
@@ -140,7 +142,7 @@ export async function approveOrder(
       .neq('id', order.id)
     dupQuery = destinationId ? dupQuery.eq('destination_id', destinationId) : dupQuery.is('destination_id', null)
     const { data: existingOrders } = await dupQuery.order('created_at', { ascending: false }).limit(1)
-    const targetExistingOrder = existingOrders?.[0]
+    const targetExistingOrder = (existingOrders ?? []).find((eo) => !(eo.note && eo.note.includes('サンプル')))
 
     if (targetExistingOrder) {
       const { data: existingItems } = await admin

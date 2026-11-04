@@ -4,6 +4,7 @@ import { getSetting } from '@/lib/settings'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
+import { shiftDateStr } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
   const curMin = parts.find((p) => p.type === 'minute')?.value || '00'
 
   const todayStr = `${y}-${m}-${d}`
+  const tomorrowStr = shiftDateStr(todayStr, 1)
   const curTimeStr = `${curHour}:${curMin}`
 
   // 今日の納品日、キャンセル以外の注文を取得（0026未適用環境およびRouteOverrideフォールバック対応）
@@ -82,7 +84,7 @@ export async function GET(req: NextRequest) {
             field_status
           )
         `)
-        .eq('delivery_date', todayStr)
+        .in('delivery_date', [todayStr, tomorrowStr])
         .neq('status', 'cancelled')
 
       if (!res1.error) return res1
@@ -104,7 +106,7 @@ export async function GET(req: NextRequest) {
             field_status
           )
         `)
-        .eq('delivery_date', todayStr)
+        .in('delivery_date', [todayStr, tomorrowStr])
         .neq('status', 'cancelled')
     })(),
     getRouteOverrides(supabase).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
@@ -131,16 +133,29 @@ export async function GET(req: NextRequest) {
       departure_time?: string | null
     } | null
 
-    const override = (order.destination_id && overrides[`dest:${order.destination_id}`])
-      || (dest?.full_name ? overrides[`cust:${order.customer_id}:${dest.full_name}`] : null)
-      || overrides[`cust:${order.customer_id}:default`]
-      || null
+    const override =
+      (order.destination_id && overrides[`date:${order.delivery_date}:dest:${order.destination_id}`]) ||
+      (dest?.full_name ? overrides[`date:${order.delivery_date}:cust:${order.customer_id}:${dest.full_name}`] : null) ||
+      overrides[`date:${order.delivery_date}:cust:${order.customer_id}:default`] ||
+      (order.destination_id && overrides[`dest:${order.destination_id}`]) ||
+      (dest?.full_name ? overrides[`cust:${order.customer_id}:${dest.full_name}`] : null) ||
+      overrides[`cust:${order.customer_id}:default`] ||
+      null
 
     const depTime = override?.departureTime ?? dest?.departure_time
     if (!depTime) continue // 出発予定時刻の設定がない場合はスキップ
 
+    // 「翌午前」など当日納品便と、前日夕方出発（16:00, 18:00 等、翌日納品分）を両方カバー
+    const isMorningNextDayDep = /翌/.test(depTime)
+    if (order.delivery_date === tomorrowStr && isMorningNextDayDep) continue
+    if (order.delivery_date === todayStr && !isMorningNextDayDep && /^\d{1,2}:\d{2}$/.test(depTime) && Number(depTime.split(':')[0]) >= 13) {
+      // 13:00以降の出発時刻は前日夕方積込・翌日納品のため、当日納品分では昨日すでに出発対象
+    }
+    const hhmmMatch = depTime.match(/(\d{1,2}):(\d{2})/)
+    const normalizedDepTime = hhmmMatch ? `${hhmmMatch[1]!.padStart(2, '0')}:${hhmmMatch[2]!}` : depTime
+
     // 時間比較 (HH:mm)
-    if (curTimeStr < depTime && !force) continue
+    if (/^\d{2}:\d{2}$/.test(normalizedDepTime) && curTimeStr < normalizedDepTime && !force) continue
 
     // 未出荷の明細があるかチェック
     type OrderItemLite = {

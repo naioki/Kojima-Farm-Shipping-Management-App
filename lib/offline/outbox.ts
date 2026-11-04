@@ -11,6 +11,13 @@ export interface OutboxEntry {
   itemId: string
   fieldStatus?: FieldStatus
   shippedQty?: number | null
+  hasCard?: boolean
+  hasSeal?: boolean | null
+  sealText?: string | null
+  bagType?: string | null
+  containerType?: string | null
+  spec?: string | null
+  lineNote?: string | null
   /** タップ時点で UI が持っていた version（楽観ロック用） */
   version: number
   /** epoch ms。送信順・畳み込みの基準 */
@@ -32,6 +39,9 @@ export interface ShipmentOutboxEntry {
     spec?: string
     container_type?: string
     has_card?: boolean
+    has_seal?: boolean | null
+    seal_text?: string | null
+    bag_type?: string | null
     destination_id?: string | null
     mode: 'create' | 'increase' | 'decrease' | 'set'
     note?: string
@@ -59,6 +69,13 @@ export function collapseOutbox(entries: OutboxEntry[]): OutboxEntry[] {
         ...e,
         fieldStatus: e.fieldStatus !== undefined ? e.fieldStatus : cur.fieldStatus,
         shippedQty: e.shippedQty !== undefined ? e.shippedQty : cur.shippedQty,
+        hasCard: e.hasCard !== undefined ? e.hasCard : cur.hasCard,
+        hasSeal: e.hasSeal !== undefined ? e.hasSeal : cur.hasSeal,
+        sealText: e.sealText !== undefined ? e.sealText : cur.sealText,
+        bagType: e.bagType !== undefined ? e.bagType : cur.bagType,
+        containerType: e.containerType !== undefined ? e.containerType : cur.containerType,
+        spec: e.spec !== undefined ? e.spec : cur.spec,
+        lineNote: e.lineNote !== undefined ? e.lineNote : cur.lineNote,
       })
     }
   }
@@ -68,6 +85,13 @@ export function collapseOutbox(entries: OutboxEntry[]): OutboxEntry[] {
 export interface PatchPayload {
   field_status?: FieldStatus
   shipped_qty?: number | null
+  has_card?: boolean
+  has_seal?: boolean | null
+  seal_text?: string | null
+  bag_type?: string | null
+  container_type?: string | null
+  spec?: string | null
+  line_note?: string | null
   version: number
 }
 
@@ -75,6 +99,13 @@ export function toPatchPayload(entry: OutboxEntry): PatchPayload {
   const payload: PatchPayload = { version: entry.version }
   if (entry.fieldStatus !== undefined) payload.field_status = entry.fieldStatus
   if (entry.shippedQty !== undefined) payload.shipped_qty = entry.shippedQty
+  if (entry.hasCard !== undefined) payload.has_card = entry.hasCard
+  if (entry.hasSeal !== undefined) payload.has_seal = entry.hasSeal
+  if (entry.sealText !== undefined) payload.seal_text = entry.sealText
+  if (entry.bagType !== undefined) payload.bag_type = entry.bagType
+  if (entry.containerType !== undefined) payload.container_type = entry.containerType
+  if (entry.spec !== undefined) payload.spec = entry.spec
+  if (entry.lineNote !== undefined) payload.line_note = entry.lineNote
   return payload
 }
 

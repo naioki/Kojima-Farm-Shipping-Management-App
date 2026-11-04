@@ -117,7 +117,8 @@ function SummaryPage({ entries, dateDisplay }: { entries: ShippingDocEntry[]; da
       {entries.map((e, i) => {
         const firstOfDest = e.destination !== prevDest
         prevDest = e.destination
-        const itemDisplay = e.spec ? `${e.item} ${e.spec}` : e.item
+        const cleanSpec = (e.spec ?? '').replace(/[（(]\s*入数\s*\d+\s*[）)]/g, '').trim()
+        const itemDisplay = cleanSpec ? `${e.item} ${cleanSpec}` : e.item
         return (
           <View key={i} style={[s.tr, ...(i % 2 === 1 ? [s.trAlt] : [])]}>
             <Text style={s.cDest}>{firstOfDest ? e.destination : ''}</Text>

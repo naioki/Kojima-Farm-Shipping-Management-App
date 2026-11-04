@@ -35,7 +35,7 @@ export async function readFallbackInventory(
       .maybeSingle()
     if (!res?.data?.value) return {}
     try {
-      return JSON.parse(res.data.value) as FallbackInventoryRecord
+      return (JSON.parse(res.data.value) as FallbackInventoryRecord) ?? {}
     } catch {
       return {}
     }
@@ -135,7 +135,7 @@ export async function calculateChainInventory(
     .select('id, delivery_date, customer_id')
     .gte('delivery_date', startDateStr)
     .lt('delivery_date', targetDate) // targetDate より前の過去日
-    .neq('status', 'cancelled')
+    .in('status', ['approved', 'shipped', 'invoiced'])
 
   const orderIds = (pastOrders ?? []).map((o) => o.id)
   const orderDateMap = new Map((pastOrders ?? []).map((o) => [o.id, o.delivery_date]))

@@ -52,7 +52,7 @@ export function Modal({ open, onClose, title, children, footer, className }: Mod
       <div
         ref={panelRef}
         className={cn(
-          'animate-grow-in w-full max-w-md max-h-[92vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-line-strong bg-bg-card shadow-2xl overflow-hidden',
+          'animate-grow-in w-full max-w-md max-h-[92dvh] pb-[env(safe-area-inset-bottom)] flex flex-col rounded-t-2xl sm:rounded-2xl border border-line-strong bg-bg-card shadow-2xl overflow-hidden',
           className,
         )}
       >

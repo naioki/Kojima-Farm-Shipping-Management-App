@@ -362,3 +362,39 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     expect(hokkaidoItem.note).not.toContain("75")
   })
 })
+
+describe('v5.1.13 Sample (@75 x 2pk), Container, and Card Normalization', () => {
+  it('rescues AI @75 x 2pk unit-price multiplication into 2 sample packs (0 cases, 2 remainder)', () => {
+    const item = verifyAndNormalizeItem(
+      {
+        raw_name: 'チンゲン菜 @75 x 2pk',
+        product_name: 'チンゲン菜',
+        quantity: '150',
+        cases: 75,
+        packs_per_case: 2,
+        unit: 'P',
+        confidence: 0.9,
+      },
+      '農事組合法人 和郷園',
+      { destinationName: 'ちばコープ グリンBOXサンプル戸田' },
+    )
+    expect(item.quantity).toBe('2')
+    expect(item.cases).toBe(0)
+    expect(item.remainder_packs).toBe(2)
+    expect(item.packs_per_case).toBe(20)
+    expect(item.has_card).toBe(false)
+    expect(item.container_type).toBe('茶コン')
+  })
+
+  it('preserves non-Chibacoop sample destinations like 東北サンネット (サンプル)', () => {
+    const norm = normalizeCustomerAndDestination({
+      customerName: '農事組合法人 和郷園',
+      destinationName: '東北サンネット',
+      spec: '那須荷上げ 11/4 サンプル依頼書 2pk',
+    })
+    expect(norm.customerName).toBe('農事組合法人 和郷園')
+    expect(norm.destinationName).toContain('東北サンネット')
+    expect(norm.destinationName).toContain('サンプル')
+    expect(norm.destinationName).not.toContain('ちばコープ')
+  })
+})

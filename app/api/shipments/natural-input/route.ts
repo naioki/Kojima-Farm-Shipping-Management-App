@@ -69,11 +69,15 @@ function buildDeterministicNaturalResult(
 ): NaturalParseResult {
   const s = text.normalize('NFKC')
 
-  // 1. アクション判定
+  // 1. アクション判定（日付ハイフン 2026-11-04 や規格 2-3株、和郷園 (15-0) をマイナスと誤判定しない）
+  const sWithoutDatesAndSpecs = s
+    .replace(/\b20\d{2}-\d{1,2}-\d{1,2}\b/g, ' ')
+    .replace(/\(\s*\d+\s*-\s*\d+\s*\)/g, ' ')
+    .replace(/\d+\s*-\s*\d+\s*(?:株|玉|本|個|入)/g, ' ')
   let action: NaturalParseResult['action'] = 'create'
-  if (/増や|追加|プラス|\+|増量/.test(s)) action = 'increase'
-  else if (/減ら|マイナス|-|削減|減量|キャンセル/.test(s)) action = 'decrease'
-  else if (/変更|上書き|にする|確定/.test(s)) action = 'set'
+  if (/増や|追加|プラス|(?:^|[\s　])\+\s*\d+|増量/.test(sWithoutDatesAndSpecs)) action = 'increase'
+  else if (/減ら|マイナス|(?:^|[\s　])-\s*\d+|削減|減量|キャンセル/.test(sWithoutDatesAndSpecs)) action = 'decrease'
+  else if (/変更|上書き|にする|確定/.test(sWithoutDatesAndSpecs)) action = 'set'
 
   // 2. 日付判定
   const dateInfo = parseRelativeDateFromText(s, referenceDate)

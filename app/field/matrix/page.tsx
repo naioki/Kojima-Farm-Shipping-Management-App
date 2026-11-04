@@ -164,6 +164,20 @@ export default async function MatrixPage({
     })
     destinationsByCustomer[d.customer_id] = list
   }
+  // 複数納入先を持つ取引先で destination_id 未指定（__direct__）の注文が存在する場合、内訳行に「直接納品（未指定）」を追加して合計不一致を防ぐ
+  for (const c of customers ?? []) {
+    const list = destinationsByCustomer[c.id]
+    if (list && list.length > 1) {
+      const hasDirectOrder = dates.some((d) => (initialByDest[`${c.id}|__direct__|${d}`] ?? 0) > 0)
+      if (hasDirectOrder && !list.some((x) => x.id === '__direct__')) {
+        list.push({
+          id: '__direct__',
+          customerId: c.id,
+          label: '直接納品（納入先未指定）',
+        })
+      }
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 pb-20">

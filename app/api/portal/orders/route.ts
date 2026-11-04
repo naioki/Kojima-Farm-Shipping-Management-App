@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { portalOrderInputSchema } from '@/types/database'
 import { jstTodayStr } from '@/lib/dates'
+import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 
 export const runtime = 'nodejs'
 
@@ -39,17 +40,22 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
 
   // 納入先が指定されている場合は自社配下であることを検証
+  let destRow: { id: string; code?: string | null; full_name?: string | null; default_container_type?: string | null } | null = null
   if (parsed.data.destination_id) {
     const { data: dest } = await admin
       .from('delivery_destinations')
-      .select('id')
+      .select('*')
       .eq('id', parsed.data.destination_id)
       .eq('customer_id', customerId)
       .maybeSingle()
     if (!dest) {
       return NextResponse.json({ error: 'invalid_destination' }, { status: 400 })
     }
+    destRow = dest
   }
+  const { data: custRow } = await admin.from('customers').select('name').eq('id', customerId).maybeSingle()
+  const custName = custRow?.name ?? ''
+  const destName = destRow?.full_name || destRow?.code || ''
 
   // 商品マスタおよび取引ルールから単価・税率・規格・荷姿を確定（税率は注文時に冗長保持・tax.md）
   const productIds = parsed.data.items.map((i) => i.product_id)
@@ -108,8 +114,19 @@ export async function POST(req: Request) {
         confidence: 1.0,
         rule_id: rule?.id ?? null,
         spec: rule?.spec ?? rule?.label_spec ?? null,
-        container_type: rule?.container_type ?? null,
-        has_card: rule?.has_card ?? true,
+        container_type: resolveContainerType({
+          ruleContainer: rule?.container_type ?? null,
+          destDefaultContainer: destRow?.default_container_type ?? null,
+          clientName: custName,
+          destination: destName,
+          rawText: parsed.data.note ?? '',
+        }),
+        has_card: determineHasCard({
+          ruleHasCard: typeof rule?.has_card === 'boolean' ? rule.has_card : null,
+          clientName: custName,
+          destination: destName,
+          rawText: parsed.data.note ?? '',
+        }),
       },
       (payload) => admin.from('order_items').insert(payload as never).select('id').single(),
     )

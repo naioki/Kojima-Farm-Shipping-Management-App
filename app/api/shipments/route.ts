@@ -8,7 +8,8 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
-import { determineContainerType } from '@/lib/pipeline/schemas'
+import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
+import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 
 export const runtime = 'nodejs'
 
@@ -128,16 +129,18 @@ export async function POST(req: Request) {
     mode = 'create',
     shipping_time,
     note: rawNote,
+    original_file,
+    receipt_id: clientReceiptId,
   } = parsed.data
   const note = stripPriceFromNote(rawNote)
   const supabase = createAdminClient()
 
   // 納入先が指定されたら、その取引先の配下（有効）であることを検証
-  let destRow: { id: string; code?: string | null; full_name?: string | null } | null = null
+  let destRow: { id: string; code?: string | null; full_name?: string | null; default_container_type?: string | null } | null = null
   if (destination_id) {
     const { data: dest, error: destErr } = await supabase
       .from('delivery_destinations')
-      .select('id, code, full_name')
+      .select('*')
       .eq('id', destination_id)
       .eq('customer_id', customer_id)
       .eq('is_active', true)
@@ -203,17 +206,22 @@ export async function POST(req: Request) {
       ? `${baseSpec} (入数${effectivePacksPerCase})`
       : baseSpec || `入数${effectivePacksPerCase}`
 
-  const effectiveContainerType =
-    clientContainerType?.trim() ||
-    (typeof rule?.container_type === 'string' ? rule.container_type : '') ||
-    determineContainerType(confirmedCustName, confirmedDestName)
+  const effectiveContainerType = resolveContainerType({
+    explicitContainer: clientContainerType?.trim() || null,
+    ruleContainer: (typeof rule?.container_type === 'string' && rule.container_type) || (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null),
+    destDefaultContainer: destRow?.default_container_type ?? null,
+    clientName: confirmedCustName,
+    destination: confirmedDestName,
+    rawText: `${rawNote ?? ''} ${clientSpec ?? ''}`,
+  })
 
-  const effectiveHasCard =
-    clientHasCard !== undefined && clientHasCard !== null
-      ? clientHasCard
-      : typeof rule?.has_card === 'boolean'
-      ? rule.has_card
-      : true
+  const effectiveHasCard = determineHasCard({
+    explicitHasCard: clientHasCard,
+    ruleHasCard: typeof rule?.has_card === 'boolean' ? rule.has_card : null,
+    clientName: confirmedCustName,
+    destination: confirmedDestName,
+    rawText: `${rawNote ?? ''} ${clientSpec ?? ''}`,
+  })
 
   const effectiveHasSeal =
     clientHasSeal !== undefined && clientHasSeal !== null
@@ -563,5 +571,60 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ item: finalItem, mode, learnedMistake }, { status: 201 })
+  // 📸 現場スマート追加からの添付写真・ファイルを order_receipts に自動保存（複数明細時は1レコード共有）
+  let savedReceiptId: string | null = clientReceiptId ?? null
+  const targetOrderId = (finalItem?.['order_id'] as string | undefined) ?? null
+  if (targetOrderId) {
+    try {
+      if (savedReceiptId) {
+        const { data: existingRec } = await supabase
+          .from('order_receipts')
+          .select('id, order_id, raw_payload')
+          .eq('id', savedReceiptId)
+          .maybeSingle()
+        if (existingRec) {
+          const rp = ((existingRec.raw_payload ?? {}) as Record<string, unknown>)
+          const prevIds = Array.isArray(rp['created_order_ids'])
+            ? (rp['created_order_ids'] as string[])
+            : existingRec.order_id
+            ? [existingRec.order_id]
+            : []
+          const nextIds = Array.from(new Set([...prevIds, targetOrderId]))
+          await supabase
+            .from('order_receipts')
+            .update({
+              order_id: existingRec.order_id ?? targetOrderId,
+              raw_payload: { ...rp, created_order_ids: nextIds },
+            })
+            .eq('id', savedReceiptId)
+        }
+      } else if (original_file?.base64) {
+        const { data: newRec } = await supabase
+          .from('order_receipts')
+          .insert({
+            order_id: targetOrderId,
+            customer_id,
+            delivery_date,
+            channel: 'manual',
+            status: 'approved',
+            received_at: new Date().toISOString(),
+            raw_payload: {
+              filename: original_file.fileName,
+              content_type: original_file.mimeType,
+              file_base64: original_file.base64,
+              created_order_ids: [targetOrderId],
+            },
+          })
+          .select('id')
+          .single()
+        if (newRec?.id) savedReceiptId = newRec.id
+      }
+      // 納品日経過+7日超の古い画像base64を非同期クリーンアップ（DB容量ゼロ維持）
+      purgeOldReceiptBase64(supabase, 7).catch(() => {})
+    } catch (recErr) {
+      console.warn('[api/shipments] order_receipts アーカイブ警告:', recErr)
+    }
+  }
+
+  return NextResponse.json({ item: finalItem, mode, learnedMistake, receiptId: savedReceiptId }, { status: 201 })
 }

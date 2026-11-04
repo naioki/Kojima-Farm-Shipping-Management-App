@@ -69,8 +69,13 @@ function Value({ text, max }: { text: string; max: number }) {
 
 /** 量目テキスト（例: 「スタンドパック　15袋入」）。規格・入数の有無どちらにも対応。 */
 export function volumeText(e: ShippingDocEntry): string {
+  const cleanSpec = (e.spec ?? '')
+    .replace(/[（(]\s*入数\s*\d+\s*[）)]/g, '')
+    .replace(/入数\s*\d+/g, '')
+    .replace(/\d+\s*(?:P|パック|袋|玉|束)?\s*入(?:り)?/gi, '')
+    .trim()
   const parts: string[] = []
-  if (e.spec) parts.push(e.spec)
+  if (cleanSpec) parts.push(cleanSpec)
   if (e.unitsPerBox > 0) parts.push(`${e.unitsPerBox}${e.unitLabel}入`)
   return parts.join('　') || '—'
 }

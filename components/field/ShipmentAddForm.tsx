@@ -29,7 +29,9 @@ import { Modal } from '@/components/ui/Modal'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-import { determineContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
+import { determineContainerType,
+  determineHasCard,
+  resolveContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
 import { matchDestination, resolveBatchDate, createBatchModePlanner } from '@/lib/field/batch-register'
 import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
@@ -190,7 +192,7 @@ export function ShipmentAddForm({
   // 🏷 現場必須荷姿属性（コンテナ種別・規格・カード有無・シール有無）
   const [containerType, setContainerType] = useState<string>('青コン')
   const [spec, setSpec] = useState<string>('2〜3株 (入数20)')
-  const [hasCard, setHasCard] = useState<boolean>(true)
+  const [hasCard, setHasCard] = useState<boolean>(false)
   const [hasSeal, setHasSeal] = useState<boolean | null>(null)
   const [sealText, setSealText] = useState<string>('')
   const [bagType, setBagType] = useState<string>('')
@@ -251,7 +253,7 @@ export function ShipmentAddForm({
   const [newCustomerName, setNewCustomerName] = useState('')
   const [newDestinationName, setNewDestinationName] = useState('')
   const [newPacksPerCase, setNewPacksPerCase] = useState<number>(20)
-  const [newContainerType, setNewContainerType] = useState<'ケース' | 'コンテナ'>('ケース')
+  const [newContainerType, setNewContainerType] = useState<string>('青コン')
   const [newAliases, setNewAliases] = useState('')
   const [creatingCustomer, setCreatingCustomer] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -390,7 +392,8 @@ export function ShipmentAddForm({
     }
 
     if (cName || dName) {
-      setContainerType(determineContainerType(cName, dName))
+      setContainerType(resolveContainerType({ clientName: cName, destination: dName }))
+      setHasCard(determineHasCard({ clientName: cName, destination: dName }))
     }
   }, [customerId, productId, destinationId, localPacksByPair, customers, allDestinations, products])
 
@@ -1142,9 +1145,22 @@ export function ShipmentAddForm({
         setSpec(firstItem.spec)
         badges.push(`規格: ${firstItem.spec}`)
       }
-      if (firstItem.container_type) {
-        setContainerType(firstItem.container_type)
-      }
+      setContainerType(
+        resolveContainerType({
+          explicitContainer: firstItem.container_type,
+          clientName: detectedCustName,
+          destination: parsedOrder.destination_name,
+          rawText: firstItem.note,
+        }),
+      )
+      setHasCard(
+        determineHasCard({
+          explicitHasCard: firstItem.has_card,
+          clientName: detectedCustName,
+          destination: parsedOrder.destination_name,
+          rawText: firstItem.note,
+        }),
+      )
       if (firstItem.has_seal !== undefined && firstItem.has_seal !== null) {
         setHasSeal(firstItem.has_seal)
         setSealText(firstItem.seal_text || (firstItem.has_seal ? 'シールあり' : 'シールなし'))
@@ -1486,6 +1502,7 @@ export function ShipmentAddForm({
 
     setBatchRegistering(true)
     let successCount = 0
+    let sharedReceiptId: string | null = null
     const updatedList = [...parsedCandidates]
     const failures: string[] = []
     const createdDests: Array<{ id: string; label: string; customerId: string }> = []
@@ -1580,8 +1597,18 @@ export function ShipmentAddForm({
               date: cDate,
             })
 
-        const cContainer =
-          cand.container_type || determineContainerType(matchedCust.name, matchedDest?.label || dName)
+        const cContainer = resolveContainerType({
+          explicitContainer: cand.container_type,
+          clientName: matchedCust.name,
+          destination: matchedDest?.label || dName,
+          rawText: cand.note,
+        })
+        const cHasCard = determineHasCard({
+          explicitHasCard: cand.has_card,
+          clientName: matchedCust.name,
+          destination: matchedDest?.label || dName,
+          rawText: cand.note,
+        })
         const isNsk = matchedCust.name.includes('農業総合研究所') || matchedCust.name.toUpperCase().includes('NSK')
         const defaultSpecLabel = isNsk
           ? (matchedDest?.label || dName).includes('北海道')
@@ -1598,13 +1625,24 @@ export function ShipmentAddForm({
           packs_per_case: cPacks,
           spec: cSpec,
           container_type: cContainer,
-          has_card: cand.has_card ?? true,
+          has_card: cHasCard,
           has_seal: cand.has_seal ?? undefined,
           seal_text: cand.seal_text ?? undefined,
           bag_type: cand.bag_type ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
+          ...(sharedReceiptId
+            ? { receipt_id: sharedReceiptId }
+            : attachedFilePayload?.base64
+            ? {
+                original_file: {
+                  base64: attachedFilePayload.base64,
+                  mimeType: attachedFilePayload.mime,
+                  fileName: attachedFilePayload.fileName || 'field_upload.jpg',
+                },
+              }
+            : {}),
         }
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           await enqueueShipment(batchPayload, rowLabel)
@@ -1619,6 +1657,10 @@ export function ShipmentAddForm({
             body: JSON.stringify(batchPayload),
           })
           if (res.ok) {
+            const okJson = await res.json().catch(() => ({}))
+            if (okJson?.receiptId && !sharedReceiptId) {
+              sharedReceiptId = okJson.receiptId as string
+            }
             updatedList[idx] = { ...cand, registered: true }
             successCount++
           } else {
@@ -1683,6 +1725,15 @@ export function ShipmentAddForm({
       mode,
       note: note.trim() || undefined,
       ai_original: aiOriginalParsedRef.current || undefined,
+      ...(attachedFilePayload?.base64
+        ? {
+            original_file: {
+              base64: attachedFilePayload.base64,
+              mimeType: attachedFilePayload.mime,
+              fileName: attachedFilePayload.fileName || 'field_upload.jpg',
+            },
+          }
+        : {}),
     }
     const summaryLabel = `${customers.find((c) => c.id === customerId)?.name ?? '取引先'} / ${products.find((p) => p.id === productId)?.name ?? '品目'} (${qtyRaw})`
 
@@ -2762,11 +2813,13 @@ export function ShipmentAddForm({
                       <label className="font-black text-ink">荷姿・容器種別</label>
                       <select
                         value={newContainerType}
-                        onChange={(e) => setNewContainerType(e.target.value as 'ケース' | 'コンテナ')}
+                        onChange={(e) => setNewContainerType(e.target.value)}
                         className="w-full h-9 rounded-md border border-line bg-white px-2 text-xs font-bold text-ink"
                       >
-                        <option value="ケース">ケース（ダンボール・箱）</option>
-                        <option value="コンテナ">コンテナ（通い箱）</option>
+                        <option value="青コン">🟦 青コン（標準コンテナ）</option>
+                        <option value="茶コン">🟫 茶コン</option>
+                        <option value="房総青コン">🟦 房総青コン</option>
+                        <option value="農業総研専用折りたたみコンテナ">🟩 NSK専用オリコン</option>
                       </select>
                     </div>
 
@@ -3173,7 +3226,7 @@ export function ShipmentAddForm({
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
-                  {['青コン', '茶コン', '房総青コン', '段ボール', '農業総研専用折りたたみコンテナ', '通常コンテナ'].map((ct) => (
+                  {['青コン', '茶コン', '房総青コン', '農業総研専用折りたたみコンテナ', '緑コン'].map((ct) => (
                     <button
                       key={ct}
                       type="button"

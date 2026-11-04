@@ -30,6 +30,11 @@ describe('calculateChainInventory', () => {
           }),
           gte: () => ({
             lt: () => ({
+              in: () => Promise.resolve({
+                data: [
+                  { id: 'ord-1', delivery_date: '2026-10-16' },
+                ],
+              }),
               neq: () => Promise.resolve({
                 data: [
                   { id: 'ord-1', delivery_date: '2026-10-16' },
@@ -72,6 +77,7 @@ describe('calculateChainInventory', () => {
           }),
           gte: () => ({
             lt: () => ({
+              in: () => Promise.resolve({ data: [] }),
               neq: () => Promise.resolve({ data: [] }),
             }),
           }),

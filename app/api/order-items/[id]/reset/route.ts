@@ -50,12 +50,34 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     .from('order_items')
     .update({ ...updates, version: current.version + 1 })
     .eq('id', params.id)
-    .eq('version', parsed.data.version)
     .select()
     .maybeSingle()
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   if (!updated) {
     return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
+  }
+
+  // shipped から戻した場合は orders.status と deliveries.status も planned/approved に整合させる（#9-08）
+  if (current.field_status === 'shipped' && current.order_id) {
+    try {
+      const { data: ord } = await supabase
+        .from('orders')
+        .select('id, customer_id, destination_id, delivery_date, status')
+        .eq('id', current.order_id)
+        .maybeSingle()
+      if (ord) {
+        if (ord.status === 'shipped') {
+          await supabase.from('orders').update({ status: 'approved' }).eq('id', ord.id)
+        }
+        let delQuery = supabase
+          .from('deliveries')
+          .update({ status: 'planned', checked_at: null, checked_by: null })
+          .eq('delivery_date', ord.delivery_date)
+          .eq('customer_id', ord.customer_id)
+        delQuery = ord.destination_id ? delQuery.eq('destination_id', ord.destination_id) : delQuery.is('destination_id', null)
+        await delQuery
+      }
+    } catch {}
   }
 
   await writeAudit(supabase, {

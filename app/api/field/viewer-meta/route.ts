@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isSampleOrderText, resolveContainerType } from '@/lib/pipeline/schemas'
 
 export const runtime = 'nodejs'
 
@@ -182,7 +183,8 @@ export async function GET(req: NextRequest) {
 
         const qty = Number(it.quantity) || 0
         const perCase = cName.includes('農業総合研究所') || cName.includes('NSK') || (it.spec ?? '').includes('24') ? 24 : 20
-        const boxCount = Math.floor(qty / perCase) + (qty % perCase > 0 ? 1 : 0)
+        const isSmallSample = isSampleOrderText(dName, it.spec) && qty < perCase
+        const boxCount = isSmallSample ? 0 : Math.floor(qty / perCase) + (qty % perCase > 0 ? 1 : 0)
 
         targetItems.push({
           id: it.id,
@@ -192,12 +194,19 @@ export async function GET(req: NextRequest) {
           quantity: qty,
           unit: it.unit ?? 'P',
           spec: it.spec ?? '2〜3株 (標準)',
-          container: it.container_type || (dName.includes('岩槻') ? '青コン' : dName.includes('戸田') ? '茶コン' : '通常コンテナ'),
+          container: resolveContainerType({
+            explicitContainer: it.container_type,
+            clientName: cName,
+            destination: dName,
+            rawText: it.spec,
+          }),
           boxCount,
         })
       }
-    } else {
-      // 注文レコードが見当たらない場合は parsed_orders から当日該当分を抽出
+    }
+
+    // parsed_orders にのみ存在する当日明細（または全明細補完）も漏れなくマージして表示
+    {
       const parsedOrders = Array.isArray(payload['parsed_orders'])
         ? (payload['parsed_orders'] as Array<{
             customer_name?: string
@@ -225,6 +234,10 @@ export async function GET(req: NextRequest) {
           const perCase = cName.includes('農業総合研究所') || cName.includes('NSK') || (it.spec ?? '').includes('24') ? 24 : 20
           const boxCount = it.box_count != null ? Number(it.box_count) : Math.floor(qty / perCase) + (qty % perCase > 0 ? 1 : 0)
 
+          const alreadyIn = targetItems.some(
+            (t) => t.destinationName === dName && t.quantity === qty,
+          )
+          if (alreadyIn) continue
           targetItems.push({
             id: `parsed-${targetItems.length}`,
             customerName: cName,

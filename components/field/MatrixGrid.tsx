@@ -110,7 +110,7 @@ export function MatrixGrid({
    * - `unitMode === 'boxes'` のとき、純粋な数値（例: "30"）が入力されたら「30箱（"30c"）」として扱う。
    * - 明示的に "150p" / "150P" と入力された場合はパック数（"150"）として扱う。
    */
-  const normalizeRawForUnitMode = (rawInput: string, prevPacksStr: string, _ppc: number): string => {
+  const normalizeRawForUnitMode = (rawInput: string, prevPacksStr: string, ppc: number): string => {
     const trimmed = rawInput.trim().normalize('NFKC')
     if (!trimmed) return ''
     if (/^\d+\s*[pPパック点]$/.test(trimmed)) {
@@ -126,22 +126,27 @@ export function MatrixGrid({
     return trimmed
   }
 
+  function resolveCellPacks(rawVal: string | undefined, ppc: number): number {
+    if (!rawVal || !rawVal.trim()) return 0
+    const direct = Number(rawVal)
+    if (!isNaN(direct) && direct >= 0) return direct
+    const parsed = parseQuantity(rawVal, { packsPerCase: ppc })
+    return parsed.type === 'ok' ? parsed.total.toNumber() : 0
+  }
+
   // 取引先ごとの週間合計数量（パック数）
   const customerTotals = useMemo(() => {
     const totals: Record<string, number> = {}
     for (const c of customers) {
+      const ppc = getCustomerPpc(c.id, c.name)
       let sum = 0
       for (const d of dates) {
-        const val = values[key(c.id, d)]
-        if (val) {
-          const num = Number(val)
-          if (!isNaN(num)) sum += num
-        }
+        sum += resolveCellPacks(values[key(c.id, d)], ppc)
       }
       totals[c.id] = sum
     }
     return totals
-  }, [customers, dates, values])
+  }, [customers, dates, values, packsByCustomer])
 
   // 各日付の出荷合計数量（パック数＆箱数）
   const dateTotals = useMemo(() => {
@@ -151,14 +156,11 @@ export function MatrixGrid({
       let pSum = 0
       let bSum = 0
       for (const c of customers) {
-        const val = values[key(c.id, d)]
-        if (val) {
-          const num = Number(val)
-          if (!isNaN(num) && num > 0) {
-            pSum += num
-            const ppc = getCustomerPpc(c.id, c.name)
-            bSum += Math.ceil(num / ppc)
-          }
+        const ppc = getCustomerPpc(c.id, c.name)
+        const num = resolveCellPacks(values[key(c.id, d)], ppc)
+        if (num > 0) {
+          pSum += num
+          bSum += Math.ceil(num / ppc)
         }
       }
       packs[d] = pSum
@@ -220,12 +222,13 @@ export function MatrixGrid({
 
     setState(k, 'saving')
     try {
+      const effectiveDestId = destinationId === '__direct__' ? null : (destinationId ?? null)
       const res = await fetch('/api/shipments/cell', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           customer_id: customerId,
-          destination_id: destinationId ?? null,
+          destination_id: effectiveDestId,
           product_id: productId,
           delivery_date: date,
           quantity_raw: effectiveRaw,
@@ -501,7 +504,7 @@ export function MatrixGrid({
                         const k = key(c.id, d)
                         const st = states[k] ?? 'idle'
                         const rawVal = values[k] ?? ''
-                        const numPacks = Number(rawVal) || 0
+                        const numPacks = resolveCellPacks(rawVal, ppc)
                         const numBoxes = numPacks > 0 ? Math.ceil(numPacks / ppc) : 0
                         const isCellFocused =
                           focused?.customerId === c.id && !focused?.destId && focused?.date === d
@@ -580,7 +583,7 @@ export function MatrixGrid({
                             ) : (
                               <input
                                 type="text"
-                                inputMode="text"
+                                inputMode={unitMode === 'boxes' ? 'numeric' : 'text'}
                                 data-matrix-cell={`${c.id}|${d}`}
                                 value={rawVal}
                                 onChange={(e) => setCell(k, e.target.value)}
@@ -659,7 +662,7 @@ export function MatrixGrid({
                               const dk = destKey(c.id, dest.id, d)
                               const st = states[dk] ?? 'idle'
                               const dRawVal = destValues[dk] ?? ''
-                              const dPacks = Number(dRawVal) || 0
+                              const dPacks = resolveCellPacks(dRawVal, ppc)
                               const dBoxes = dPacks > 0 ? Math.ceil(dPacks / ppc) : 0
                               const isSubFocused =
                                 focused?.customerId === c.id &&
@@ -700,7 +703,7 @@ export function MatrixGrid({
                                   ) : (
                                     <input
                                       type="text"
-                                      inputMode="text"
+                                      inputMode={unitMode === 'boxes' ? 'numeric' : 'text'}
                                       data-matrix-cell={`${c.id}|${dest.id}|${d}`}
                                       value={dRawVal}
                                       onChange={(e) => setDestCell(dk, e.target.value)}

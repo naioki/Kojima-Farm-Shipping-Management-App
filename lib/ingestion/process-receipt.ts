@@ -15,7 +15,10 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import {
   calculateContainerBoxes,
   determineContainerType,
+  determineHasCard,
   determineUnitCount,
+  isGenericOrInvalidContainer,
+  resolveContainerType,
   formatQuantityCaseText,
   generateOrderKey,
   type PipelineAlertItem,
@@ -101,10 +104,19 @@ export function matchDestinationId(
   // 2. 部分一致（サンプル問い合わせならサンプル付き納入先を、通常ならサンプルなし納入先を優先）
   //    「岩槻」のような短い別名が、別取引先名を含む長い入力（例: らでぃっしゅぼーや岩槻ST）を
   //    誤って吸い込まないよう、「入力が候補を含む」方向は候補3文字以上に限定する。
+  const isRadishQuery = lower.includes('ラディッシュ') || lower.includes('ボーヤ') || lower.includes('st')
+  const isPalQuery = lower.includes('パルシステム') || lower.includes('パル')
   const partialHits = dests.filter((d) => {
     const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
       .filter((s): s is string => Boolean(s))
       .map(norm)
+    const fullNorm = norm(`${d.code ?? ''} ${d.full_name}`)
+    const isDestRadish = fullNorm.includes('ラディッシュ') || fullNorm.includes('ボーヤ') || fullNorm.includes('st')
+    const isDestPal = fullNorm.includes('パルシステム') || fullNorm.includes('パル')
+    if (isRadishQuery && isDestPal) return false
+    if (isPalQuery && isDestRadish) return false
+    const isDestSample = fullNorm.includes('サンプル')
+    if (isSampleQuery !== isDestSample) return false
     return cands.some((c) => c.includes(lower) || (c.length >= 3 && lower.includes(c)))
   })
 
@@ -349,6 +361,10 @@ export async function processReceipt(
           skipReason = rotRes.skip_reason ?? null
           slipNo = rotRes.slip_no ?? slipNo
           isFullResendingMatrix = Boolean(rotRes.is_full_resending_matrix)
+          imageBase64 = rot.base64
+          mimeType = rot.mimeType
+          payload['file_base64'] = rot.base64
+          payload['content_type'] = rot.mimeType
         }
       } catch {
         // 回転再試行の失敗は無視して初回結果を使う
@@ -642,18 +658,12 @@ export async function processReceipt(
       const remainder = it.remainder_packs ?? totalP % unitCount
       const quantityCaseText =
         it.quantity_case_text || formatQuantityCaseText(totalP, cases, remainder)
-      const rawItemContainer = (it.container_type ?? '').trim()
-      const validItemContainer =
-        rawItemContainer &&
-        rawItemContainer !== 'マテハン' &&
-        rawItemContainer !== 'コンテナ' &&
-        rawItemContainer !== '通常コンテナ'
-          ? rawItemContainer
-          : null
-      const containerType =
-        determineContainerType(po.customer_name ?? matchedCustomerName ?? '', po.destination_name) !== '通常コンテナ'
-          ? determineContainerType(po.customer_name ?? matchedCustomerName ?? '', po.destination_name)
-          : validItemContainer || matchedRule?.container_type || '通常コンテナ'
+      const containerType = resolveContainerType({
+        itemContainer: it.container_type,
+        ruleContainer: matchedRule?.container_type,
+        clientName: po.customer_name ?? matchedCustomerName ?? '',
+        destinationName: po.destination_name,
+      })
 
       // V5 パッキング資材: FAX記載値 → 取引ルール既定値の順でフォールバック
       const bagType = it.bag_type ?? matchedRule?.bag_type ?? null
@@ -672,14 +682,16 @@ export async function processReceipt(
         (sourceFileName || '').includes('サンプル') ||
         (slipData.source_file_name || '').includes('サンプル')
       )
-      const hasCard =
-        it.has_card != null
-          ? it.has_card
-          : isItemSample
-            ? false
-            : matchedRule?.has_card != null
-              ? matchedRule.has_card
-              : null
+      const hasCard = isItemSample
+        ? false
+        : determineHasCard({
+            clientName: po.customer_name ?? matchedCustomerName,
+            destinationName: po.destination_name,
+            spec: it.spec,
+            note: [it.note, po.note].filter(Boolean).join(' '),
+            ruleHasCard: matchedRule?.has_card ?? null,
+            explicitHasCard: it.has_card ?? null,
+          })
 
       const orderKey =
         it.order_key ||
@@ -774,11 +786,15 @@ export async function processReceipt(
         .limit(20)
 
       if (candidateOrders && candidateOrders.length > 0) {
-        // 1. 完全一致: destination_id が一致し、かつサンプル種別も一致
+        // 1. 完全一致: destination_id が一致し、かつサンプル種別も一致（サンプル注文は伝票Noが異なる別サンプルを上書きしない #11-04）
         existingOrder = candidateOrders.find((ord) => {
           const destMatches = destinationId ? ord.destination_id === destinationId : !ord.destination_id
           const isSample = Boolean((ord.note || '').includes('サンプル'))
-          return destMatches && (isIncomingSample ? isSample : !isSample)
+          if (!destMatches || (isIncomingSample ? !isSample : isSample)) return false
+          if (isIncomingSample && effectiveSlip && (ord.note || '').includes('伝票No:')) {
+            return (ord.note || '').includes(`伝票No: ${effectiveSlip}`)
+          }
+          return true
         }) as ExistingOrderRow | undefined
 
         // 2. 伝票No一致: 宛先が異なっていても同一伝票Noの未着手注文があればバインド（宛先修正・更新）
@@ -1226,13 +1242,13 @@ export async function processReceipt(
     >()
 
     if (effectiveSlipNo) {
-      const { data: slipOrdersInit, error: slipOrdersErr } = await admin
+      const { data: rawSlipOrders, error: slipOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
-      let slipOrders = slipOrdersInit
+      let slipOrders = rawSlipOrders ?? []
       if (slipOrdersErr) {
         const fbSlip = await admin
           .from('orders')
@@ -1247,14 +1263,14 @@ export async function processReceipt(
       }
     }
 
-    if (matrixDates.length > 0 && (isFullResendingMatrix || matrixDates.length >= 2 || effectiveSlipNo)) {
-      const { data: dateOrdersInit, error: dateOrdersErr } = await admin
+    if (matrixDates.length > 0 && !isIncomingSampleSlip && (isFullResendingMatrix || matrixDates.length >= 2)) {
+      const { data: rawDateOrders, error: dateOrdersErr } = await admin
         .from('orders')
         .select('id, delivery_date, destination_id, note, status, order_items(id, field_status, shipped_qty, quantity, is_manual_modified)')
         .eq('customer_id', firstResolvedCustomerId)
         .neq('status', 'cancelled')
         .in('delivery_date', matrixDates)
-      let dateOrders = dateOrdersInit
+      let dateOrders = rawDateOrders ?? []
       if (dateOrdersErr) {
         const fbDate = await admin
           .from('orders')

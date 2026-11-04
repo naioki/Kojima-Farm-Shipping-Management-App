@@ -44,17 +44,25 @@ export async function POST(req: Request) {
     if (dest) customerNameSnapshot = `${customer.name}＞${dest.code || dest.full_name}`
   }
 
-  // #40 有効な確定注文のみに絞り込む（cancelled / pending_review を除外）
+  // #40 有効な確定注文のみに絞り込む（cancelled / pending_review を除外、かつ無償サンプル注文を通常納品書から除外）
   let ordersQuery = supabase
     .from('orders')
-    .select('id')
+    .select('id, note, delivery_destinations(full_name, code)')
     .eq('customer_id', customer_id)
     .eq('delivery_date', delivery_date)
     .in('status', ['approved', 'shipped', 'invoiced'])
   if (destination_id) ordersQuery = ordersQuery.eq('destination_id', destination_id)
   const { data: orders, error: ordersErr } = await ordersQuery
   if (ordersErr) return NextResponse.json({ error: `対象注文の取得に失敗しました: ${ordersErr.message}` }, { status: 500 })
-  const orderIds = (orders ?? []).map((o) => o.id)
+  const isAskingSampleDest = customerNameSnapshot.includes('サンプル')
+  const filteredOrders = (orders ?? []).filter((o) => {
+    if (isAskingSampleDest) return true
+    const noteStr = (o as { note?: string | null }).note ?? ''
+    const destObj = (o as { delivery_destinations?: { full_name?: string; code?: string } | null }).delivery_destinations
+    const destStr = `${destObj?.full_name ?? ''} ${destObj?.code ?? ''}`
+    return !noteStr.includes('サンプル') && !destStr.includes('サンプル')
+  })
+  const orderIds = filteredOrders.map((o) => o.id)
 
   const itemsRes = orderIds.length
     ? await supabase

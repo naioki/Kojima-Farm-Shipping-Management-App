@@ -101,5 +101,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: failed.error.message }, { status: 500 })
   }
 
+  // 【#9-04 解消】DBカラム更新が成功した際も、app_settings(v5_pack_sort_order) に残っている古いソート値を同期・削除し、「自動順に戻す」が100%確実に効くようにする
+  try {
+    const { data: settingRow } = await admin
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'v5_pack_sort_order')
+      .maybeSingle()
+    if (settingRow?.value) {
+      const map = JSON.parse(settingRow.value) as Record<string, number>
+      let changed = false
+      for (const it of items) {
+        if (it.sortOrder == null) {
+          if (map[it.id] !== undefined) {
+            delete map[it.id]
+            changed = true
+          }
+        } else if (map[it.id] !== it.sortOrder) {
+          map[it.id] = it.sortOrder
+          changed = true
+        }
+      }
+      if (changed) {
+        await admin.from('app_settings').upsert(
+          {
+            key: 'v5_pack_sort_order',
+            value: JSON.stringify(map),
+            is_secret: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' },
+        )
+      }
+    }
+  } catch {}
+
   return NextResponse.json({ ok: true })
 }

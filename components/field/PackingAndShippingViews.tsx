@@ -19,6 +19,7 @@ import {
   type PackSortMode,
 } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
+import { isSampleOrderText, isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export interface ShipmentItemData extends ShipmentRowProps {
@@ -179,8 +180,10 @@ export function PackingAndShippingViews({
   const liveSpecMap = new Map<string, { packs: number; boxes: number }>()
 
   for (const it of items) {
-    const perCase = it.masterPacksPerCase && it.masterPacksPerCase > 0 ? it.masterPacksPerCase : 20
-    const boxCount = Math.ceil(it.orderedQty / perCase)
+    const perCase = it.masterPacksPerCase && it.masterPacksPerCase >= 10 ? it.masterPacksPerCase : 20
+    const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
+    const isSmallSample = isSample && it.orderedQty < perCase
+    const boxCount = isSmallSample ? 0 : Math.ceil(it.orderedQty / perCase)
     totalPacks += it.orderedQty
     totalBoxes += boxCount
     if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') {
@@ -190,14 +193,21 @@ export function PackingAndShippingViews({
       const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
       if (partialPacks > 0) {
         completedPacks += partialPacks
-        const remPacks = Math.max(0, it.orderedQty - partialPacks)
-        const remBoxes = Math.ceil(remPacks / perCase)
-        completedBoxes += Math.max(0, boxCount - remBoxes)
+        if (!isSmallSample) {
+          const remPacks = Math.max(0, it.orderedQty - partialPacks)
+          const remBoxes = Math.ceil(remPacks / perCase)
+          completedBoxes += Math.max(0, boxCount - remBoxes)
+        }
       }
     }
 
-    const cType = it.initialContainer || '通常コンテナ'
-    liveContainerMap.set(cType, (liveContainerMap.get(cType) ?? 0) + boxCount)
+    if (!isSmallSample && boxCount > 0) {
+      const cType =
+        it.initialContainer && !isGenericOrInvalidContainer(it.initialContainer)
+          ? it.initialContainer
+          : '青コン'
+      liveContainerMap.set(cType, (liveContainerMap.get(cType) ?? 0) + boxCount)
+    }
 
     const sKey = it.initialSpec || it.masterLabelSpec || '標準規格'
     const curSpec = liveSpecMap.get(sKey) ?? { packs: 0, boxes: 0 }
@@ -260,11 +270,17 @@ export function PackingAndShippingViews({
     itemId: string,
     newSpec: string | null,
     newContainer: string | null,
+    newHasCard?: boolean,
   ) => {
     setItems((prev) =>
       prev.map((it) =>
         it.itemId === itemId
-          ? { ...it, initialSpec: newSpec, initialContainer: newContainer }
+          ? {
+              ...it,
+              initialSpec: newSpec,
+              initialContainer: newContainer,
+              ...(newHasCard !== undefined ? { initialHasCard: newHasCard } : {}),
+            }
           : it,
       ),
     )
@@ -566,21 +582,6 @@ export function PackingAndShippingViews({
                   isNextUp={isNextUp}
                   deliveryDate={date}
                   isAdmin={isAdmin}
-                  onMoveToTop={
-                    !busyReorder && fullIdx > 0
-                      ? () => handleMoveToTop(fullIdx)
-                      : undefined
-                  }
-                  onMoveUp={
-                    !busyReorder && fullIdx > 0
-                      ? () => handleMove(fullIdx, 'up')
-                      : undefined
-                  }
-                  onMoveDown={
-                    !busyReorder && fullIdx >= 0 && fullIdx < sortedPackItems.length - 1
-                      ? () => handleMove(fullIdx, 'down')
-                      : undefined
-                  }
                   onStatusChange={handleStatusChange}
                   onShippedQtyChange={handleShippedQtyChange}
                   onOrderedQtyChange={handleOrderedQtyChange}
@@ -653,6 +654,20 @@ export function PackingAndShippingViews({
                         ),
                       )
                     }}
+                    onDetailsChange={(id, newSpec, newCont, newCard) => {
+                      setNextItems((prev) =>
+                        prev.map((it) =>
+                          it.itemId === id
+                            ? {
+                                ...it,
+                                initialSpec: newSpec,
+                                initialContainer: newCont,
+                                ...(newCard !== undefined ? { initialHasCard: newCard } : {}),
+                              }
+                            : it,
+                        ),
+                      )
+                    }}
                     onDeleted={(id) => {
                       setNextItems((prev) => prev.filter((it) => it.itemId !== id))
                     }}
@@ -678,7 +693,47 @@ export function PackingAndShippingViews({
                   左の「⠿」を指でドラッグして移動するか、【🔝 最上段】で一発優先指定できます。
                 </p>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                {incompleteCount > 0 && incompleteCount < sortedPackItems.length && (
+                  <button
+                    type="button"
+                    disabled={busyReorder}
+                    onClick={async () => {
+                      const incompletes = sortedPackItems.filter(
+                        (it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped',
+                      )
+                      const dones = sortedPackItems.filter(
+                        (it) => it.initialStatus === 'packed' || it.initialStatus === 'shipped',
+                      )
+                      const reordered = [...incompletes, ...dones]
+                      const updates = reordered.map((it, idx) => ({
+                        id: it.itemId,
+                        sortOrder: (idx + 1) * 10,
+                      }))
+                      const updatedMap = new Map(updates.map((u) => [u.id, u.sortOrder]))
+                      setItems((prev) =>
+                        prev.map((it) => ({
+                          ...it,
+                          dailyPackSortOrder: updatedMap.get(it.itemId) ?? it.dailyPackSortOrder,
+                        })),
+                      )
+                      setBusyReorder(true)
+                      try {
+                        await fetch('/api/order-items/reorder', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ items: updates }),
+                        })
+                        toast.success('未完了のカードをすべて上段に集めました')
+                      } finally {
+                        setBusyReorder(false)
+                      }
+                    }}
+                    className="rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-900 transition"
+                  >
+                    未完了を上に集める
+                  </button>
+                )}
                 {items.some((it) => it.dailyPackSortOrder != null) && (
                   <button
                     type="button"
@@ -747,7 +802,7 @@ export function PackingAndShippingViews({
                     )}
                   >
                     <div
-                      className="flex items-center justify-center h-10 w-8 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-800 cursor-grab active:cursor-grabbing touch-none shrink-0"
+                      className="flex items-center justify-center min-h-[44px] h-11 w-10 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 cursor-grab active:cursor-grabbing touch-none shrink-0"
                       title="ここを指でつかんで上下にドラッグ"
                       onPointerDown={(e) => {
                         if (busyReorder) return

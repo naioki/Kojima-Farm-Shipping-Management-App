@@ -37,9 +37,9 @@ export function getContainerColorStyle(containerType?: string | null): Container
       badgeClass: 'bg-[#FEF3C7] text-[#92400E] border-2 border-[#92400E]',
     }
   }
-  if (/緑|グリーン|green|緑コン/.test(c)) {
+  if (/緑|グリーン|green|緑コン|nsk|農業総研|オリコン|折りたたみ/.test(c)) {
     return {
-      label: '緑コン',
+      label: containerType?.includes('NSK') || containerType?.includes('農業総研') ? containerType : '緑コン',
       bg: 'bg-[#DCFCE7]',
       text: 'text-[#15803D]',
       border: 'border-[#15803D]',
@@ -47,7 +47,7 @@ export function getContainerColorStyle(containerType?: string | null): Container
       badgeClass: 'bg-[#DCFCE7] text-[#15803D] border-2 border-[#15803D]',
     }
   }
-  if (/ダンボール|段ボール|箱|carton|cardboard/.test(c)) {
+  if (/ダンボール|段ボール|carton|cardboard/.test(c)) {
     return {
       label: 'ダンボール',
       bg: 'bg-[#FFEDD5]',
@@ -67,9 +67,10 @@ export function getContainerColorStyle(containerType?: string | null): Container
       badgeClass: 'bg-[#F1F5F9] text-[#334155] border-2 border-[#334155]',
     }
   }
-  // デフォルト
+  // デフォルト（ケース/C/S/箱などの汎用語は青コンに正規化）
+  const isGeneric = /^(?:ケース|c\/s|cs|コンテナ|通常コンテナ|箱)$/i.test(c)
   return {
-    label: containerType || '青コン',
+    label: !containerType || isGeneric ? '青コン' : containerType,
     bg: 'bg-[#DBEAFE]',
     text: 'text-[#1D4ED8]',
     border: 'border-[#1D4ED8]',

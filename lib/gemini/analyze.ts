@@ -9,7 +9,9 @@ import type { AiRule } from '@/types/database'
 import {
   calculateContainerBoxes,
   determineContainerType,
+  determineHasCard,
   determineUnitCount,
+  isGenericOrInvalidContainer,
   formatQuantityCaseText,
   generateOrderKey,
   normalizeItemName,
@@ -433,14 +435,25 @@ export function normalizeCustomerAndDestination(params: {
         destinationName = 'ちばコープ グリーンボックス(戸田)'
       }
       if (!spec) spec = '2〜3株 (入数20)'
-    } else if (isSample || normDest.includes('グリンBOX')) {
+    } else if (normDest.includes('グリンBOX') || normDest.includes('チバコープ') || normDest.includes('戸田')) {
+      destinationName = isSample ? 'ちばコープ グリンBOXサンプル戸田' : 'ちばコープ グリーンボックス(戸田)'
+      if (!spec) spec = '2〜3株 (入数20)'
+    } else if (isSample) {
       if (normDest.includes('パルシステム') || normDest.includes('パル') || normDest.includes('岩槻')) {
         destinationName = 'パルシステム 岩槻 (サンプル)'
-      } else {
-        destinationName = 'ちばコープ グリンBOXサンプル戸田'
+      } else if (destinationName && !destinationName.includes('サンプル')) {
+        destinationName = `${destinationName} (サンプル)`
+      } else if (!destinationName) {
+        destinationName = 'サンプル依頼'
       }
       if (!spec) spec = '2〜3株 (入数20)'
     }
+  } else if (normClient.includes('オレンジ') || normClient.includes('オレンジファーム')) {
+    customerName = '株式会社オレンジファーム'
+    destinationName = null
+    if (!spec || spec.includes('25')) spec = '25入 (入数25)'
+  } else if (normClient.includes('ランドローム') || normClient.includes('やなぎさわ')) {
+    customerName = 'ランドローム（やなぎさわファーム）'
   }
 
   return { customerName, destinationName, spec }
@@ -452,8 +465,8 @@ export function normalizeCustomerAndDestination(params: {
 function stripPriceTextFromNote(text?: string | null): string | null {
   if (!text) return null
   const cleaned = text
-    .replace(/[\/／・,、\s]*買値\s*[:：]?\s*[¥￥]?\s*\d+(?:円)?/g, '')
-    .replace(/[\/／・,、\s]*単価\s*[:：]?\s*[¥￥]?\s*\d+(?:円)?/g, '')
+    .replace(/[\/／・,、\s]*(?:仕入)?(?:買値|単価)\s*[:：]?\s*[@＠¥￥]?\s*\d+(?:円)?(?:\s*[×xX*]\s*\d+\s*(?:pk|p|パック)?)?/gi, '')
+    .replace(/[@＠]\s*\d+\s*[×xX*]\s*\d+\s*(?:pk|p|パック)?/gi, '')
     .replace(/[¥￥]\s*\d+/g, '')
     .replace(/\(\s*\)|（\s*）/g, '')
     .replace(/^[\/／・\s]+|[\/／・\s]+$/g, '')
@@ -544,24 +557,58 @@ export function verifyAndNormalizeItem(
     }
   }
 
+  // 【#11-01 決定論的救済】サンプル依頼書等で仕入単価欄「@75 × 2pk」を AI が cases:75, packs_per_case:2, quantity:150 と誤乗算した場合の自動復元
+  const rawAiPpc = item.packs_per_case
+  const rawAiCases = item.cases
+  const isSampleContext = Boolean(
+    (std.destinationName ?? context?.destinationName ?? '').includes('サンプル') ||
+    (item.note ?? '').includes('サンプル') ||
+    (item.raw_name ?? '').includes('サンプル')
+  )
+  let rescuedFromPriceMult = false
+  if (
+    rawAiPpc != null &&
+    rawAiPpc >= 1 &&
+    rawAiPpc <= 9 &&
+    rawAiCases != null &&
+    rawAiCases >= 20 &&
+    Number(quantityStr) === rawAiCases * rawAiPpc
+  ) {
+    // @75(cases) × 2pk(packs_per_case) = 150 の典型パターン → 本来の数量は 2P (rawAiPpc)
+    quantityStr = String(rawAiPpc)
+    rescuedFromPriceMult = true
+  } else if (
+    isSampleContext &&
+    rawAiPpc != null &&
+    rawAiPpc >= 1 &&
+    rawAiPpc <= 9 &&
+    Number(quantityStr) >= 20 &&
+    Number(quantityStr) % rawAiPpc === 0
+  ) {
+    quantityStr = String(rawAiPpc)
+    rescuedFromPriceMult = true
+  }
+
   const numericTotal = Number(quantityStr)
-  let cases = item.cases ?? null
-  let remainder = item.remainder_packs ?? null
-  let boxCount = item.box_count ?? null
-  let quantityCaseText = item.quantity_case_text ?? null
+  let cases = rescuedFromPriceMult ? null : (item.cases ?? null)
+  let remainder = rescuedFromPriceMult ? null : (item.remainder_packs ?? null)
+  let boxCount = rescuedFromPriceMult ? null : (item.box_count ?? null)
+  let quantityCaseText = rescuedFromPriceMult ? null : (item.quantity_case_text ?? null)
 
   if (Number.isFinite(numericTotal) && numericTotal >= 0) {
     const computedCases = Math.floor(numericTotal / packsPerCase)
     const computedRemainder = numericTotal % packsPerCase
 
-    // AIが cases / remainder_packs を返している場合、検算して不一致なら要確認にする
+    // AIが cases / remainder_packs を返している場合、検算して不一致なら計算値を正としつつ要確認にする
     if (cases != null && remainder != null && numericTotal > 0) {
       const expectedTotal = cases * packsPerCase + remainder
       if (expectedTotal !== numericTotal && !(isKanbei && cases === numericTotal)) {
+        cases = computedCases
+        remainder = computedRemainder
         confidence = Math.min(confidence, 0.5)
         needsReviewReason =
           needsReviewReason ??
-          `入数検算不一致（総数${numericTotal}P ≠ ${cases}ケース×${packsPerCase}入＋端数${remainder}P）`
+          `入数検算不一致を自動補正（総数${numericTotal}P ＝ ${computedCases}ケース×${packsPerCase}入＋端数${computedRemainder}P）`
       }
     } else {
       cases = computedCases
@@ -577,8 +624,7 @@ export function verifyAndNormalizeItem(
   const normalizedProductName = normalizeItemName(item.product_name || 'チンゲン菜')
   const resolvedSpec = std.spec ?? (item.spec ? normalizeSpecDisplay(item.spec) : null)
   const rawContainer = (item.container_type ?? '').trim()
-  const isGenericContainer = !rawContainer || rawContainer === 'マテハン' || rawContainer === 'コンテナ' || rawContainer === '通常コンテナ'
-  const resolvedContainer = isGenericContainer
+  const resolvedContainer = isGenericOrInvalidContainer(rawContainer)
     ? determineContainerType(std.customerName ?? customerName, std.destinationName ?? context?.destinationName)
     : rawContainer
 
@@ -634,10 +680,18 @@ export function verifyAndNormalizeItem(
   }
 
   let hasCard: boolean | null = item.has_card ?? null
-  if (/生産者カード|カード\s*(?:入れる|あり|有|入|同梱)/.test(combinedText)) {
-    hasCard = true
-  } else if (/カード\s*(?:なし|無|不要)/.test(combinedText)) {
+  if (isSampleContext || /カード\s*(?:なし|無|不要)/.test(combinedText)) {
     hasCard = false
+  } else if (/生産者カード|カード\s*(?:入れる|あり|有|入|同梱)/.test(combinedText)) {
+    hasCard = true
+  } else {
+    hasCard = determineHasCard({
+      clientName: std.customerName ?? customerName,
+      destinationName: std.destinationName ?? context?.destinationName,
+      spec: resolvedSpec,
+      note,
+      explicitHasCard: item.has_card ?? null,
+    })
   }
 
   return {
@@ -843,10 +897,22 @@ export async function analyzeOrders(
               (it.box_count === 0 && (qStr === '' || qStr === '0' || numQ === 0))
             if (isZeroQty && !it.explicit_cancel_in_slip) return false
 
-            // 2. 小島農園の非対象品目（きゅうり・ししとう等）のみ除外。チンゲン菜、トマト、長ネギ、ミニ白菜等は通過させる
-            const name = `${it.product_name ?? ''} ${it.raw_name}`.toLowerCase()
+            // 2. 小島農園の非対象品目（きゅうり・ししとう・さつま芋・サニーレタス・ごぼう・大和芋・ケール等）および他生産者の行を除外（#12-03）
+            const name = `${it.product_name ?? ''} ${it.raw_name} ${it.note ?? ''}`.toLowerCase()
+            const isOtherProducerRow =
+              /(?:市東農場|林秀次|大木農園|大木正|椎名伸明|實川直行|さかき農産|飯田産業|秋谷百合子)/.test(name) &&
+              !/(?:小島|11番)/.test(name)
+            if (isOtherProducerRow) return false
+
             const isExcludedCrop =
-              (name.includes('きゅうり') || name.includes('胡瓜') || name.includes('ししとう')) &&
+              (name.includes('きゅうり') ||
+                name.includes('胡瓜') ||
+                name.includes('ししとう') ||
+                name.includes('さつま芋') ||
+                name.includes('サニーレタス') ||
+                name.includes('ごぼう') ||
+                name.includes('大和芋') ||
+                name.includes('ケール')) &&
               !name.includes('チンゲン') &&
               !name.includes('ちんげん') &&
               !name.includes('青梗菜') &&

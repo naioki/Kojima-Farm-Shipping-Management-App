@@ -3,11 +3,13 @@ import { foldKana } from '@/lib/normalize/kana'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import {
   calculateContainerBoxes,
-  determineContainerType,
+  determineHasCard,
   determineUnitCount,
   formatQuantityCaseText,
   generateOrderKey,
+  isSampleOrderText,
   normalizeItemName,
+  resolveContainerType,
 } from '@/lib/pipeline/schemas'
 import type { ParsedItem, ParsedOrder, OrdersResult } from '@/lib/gemini/analyze'
 
@@ -118,14 +120,22 @@ export function findBestMatchingDestination<
     return cands.some((c) => c.includes(target) || (c.length >= 2 && target.includes(c)))
   })
 
-  if (partials.length === 1) return partials[0]
-  if (partials.length > 1) {
+  if (partials.length >= 1) {
     const wantsSample = target.includes('サンプル')
-    const sampleFiltered = partials.find((d) => {
+    const wantsRadish = /らでぃっしゅ|ラディッシュ|radish/i.test(rawDest)
+    const filtered = partials.filter((d) => {
+      const dText = `${d.code ?? ''} ${d.full_name}`
+      const isDestRadish = /らでぃっしゅ|ラディッシュ|radish/i.test(dText)
+      if (wantsRadish !== isDestRadish) return false
+      return true
+    })
+    const poolToUse = filtered.length > 0 ? filtered : partials
+    if (poolToUse.length === 1) return poolToUse[0]
+    const sampleFiltered = poolToUse.find((d) => {
       const hasSample = `${d.code ?? ''} ${d.full_name}`.includes('サンプル')
       return wantsSample ? hasSample : !hasSample
     })
-    return sampleFiltered ?? partials[0]
+    return sampleFiltered ?? poolToUse[0]
   }
   return undefined
 }
@@ -454,11 +464,18 @@ export function parseNaturalOrderTextDeterministic(
     const qtyInfo = parseQuantityFromNaturalText(line, defaultPacks)
     if (!qtyInfo.totalPacks || qtyInfo.totalPacks <= 0) continue
 
-    const cases = qtyInfo.cases ?? Math.floor(qtyInfo.totalPacks / qtyInfo.packsPerCase)
-    const rem = qtyInfo.remainderPacks
+    const isSample = isSampleOrderText(resolvedDest, line)
+    const cases = isSample && qtyInfo.totalPacks < qtyInfo.packsPerCase ? 0 : (qtyInfo.cases ?? Math.floor(qtyInfo.totalPacks / qtyInfo.packsPerCase))
+    const rem = isSample && qtyInfo.totalPacks < qtyInfo.packsPerCase ? qtyInfo.totalPacks : qtyInfo.remainderPacks
     const boxCount = calculateContainerBoxes(cases, rem)
-    const containerType = determineContainerType(resolvedCustomer, resolvedDest)
-    const quantityCaseText = formatQuantityCaseText(qtyInfo.totalPacks, cases, rem)
+    const containerType = resolveContainerType({
+      clientName: resolvedCustomer,
+      destination: resolvedDest,
+      rawText: line,
+    })
+    const quantityCaseText = isSample && cases === 0
+      ? `サンプル ${qtyInfo.totalPacks}P`
+      : formatQuantityCaseText(qtyInfo.totalPacks, cases, rem)
 
     const hasSeal = /シール\s*(?:あり|有|付)/.test(line)
       ? true
@@ -466,7 +483,11 @@ export function parseNaturalOrderTextDeterministic(
       ? false
       : null
     const sealText = hasSeal ? 'シールあり' : hasSeal === false ? 'シールなし' : null
-    const hasCard = /カード\s*(?:なし|無|不要)/.test(line) ? false : true
+    const hasCard = determineHasCard({
+      clientName: resolvedCustomer,
+      destination: resolvedDest,
+      rawText: line,
+    })
     const bagType = /FG|印字/i.test(line) || (resolvedCustomer ?? '').includes('勘兵衛')
       ? '印字袋(FG)'
       : /無地/.test(line)

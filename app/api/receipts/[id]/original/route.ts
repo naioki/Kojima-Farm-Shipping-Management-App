@@ -164,9 +164,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 <body>
   <div id="controls">
     <span>📄 受注FAX原本プレビュー</span>
-    <a href="/api/receipts/${params.id}/original" target="_blank" rel="noopener noreferrer" class="open-btn">
-      全画面で開く ↗
-    </a>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <button type="button" onclick="window.rotateViewer(-90)" class="open-btn" style="background:#334155;border:1px solid #475569;cursor:pointer;">↺ 左90°</button>
+      <button type="button" onclick="window.rotateViewer(90)" class="open-btn" style="background:#334155;border:1px solid #475569;cursor:pointer;">↻ 右90°</button>
+      <button type="button" onclick="window.rotateViewer(180)" class="open-btn" style="background:#d97706;border:1px solid #fbbf24;cursor:pointer;">🔄 180°反転</button>
+      <a href="/api/receipts/${params.id}/original" target="_blank" rel="noopener noreferrer" class="open-btn">
+        全画面で開く ↗
+      </a>
+    </div>
   </div>
   <div id="viewer">
     <div id="loading" class="status-msg">FAX原本を描画中...</div>
@@ -196,17 +201,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         clearTimeout(fallbackTimer);
         if (loading) loading.remove();
         const viewer = document.getElementById('viewer');
+        const urlRot = Number(new URLSearchParams(window.location.search).get('rot') || 0) || 0;
+        let currentRot = ((urlRot % 360) + 360) % 360;
 
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 2.0 });
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-          viewer.appendChild(canvas);
-          await page.render({ canvasContext: context, viewport: viewport }).promise;
+        async function renderAllPages() {
+          viewer.innerHTML = '';
+          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const baseRot = (page.rotate || 0) + currentRot;
+            const viewport = page.getViewport({ scale: 2.0, rotation: baseRot % 360 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            viewer.appendChild(canvas);
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+          }
         }
+        window.rotateViewer = function(delta) {
+          currentRot = (currentRot + delta + 360) % 360;
+          renderAllPages();
+        };
+        await renderAllPages();
       } catch (err) {
         clearTimeout(fallbackTimer);
         console.error('PDF render error:', err);
@@ -224,7 +240,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       })
     }
 
-    // プレビュー表示（iframe埋め込み）かつ 画像の場合:
+    // プレビュー表示（iframe埋め込み）かつ 画像の場合（90°/180°回転対応）:
     if (isPreview && contentType.startsWith('image/')) {
       const html = `<!DOCTYPE html>
 <html>
@@ -232,12 +248,38 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
   <style>
-    body { margin: 0; padding: 12px; background: #090d16; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }
-    img { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
+    body { margin: 0; padding: 0; background: #090d16; color: #f8fafc; font-family: sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+    #controls { position: sticky; top: 0; z-index: 20; background: rgba(15,23,42,0.95); border-bottom: 1px solid #334155; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .btn { background: #334155; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: bold; cursor: pointer; text-decoration: none; }
+    .btn-flip { background: #d97706; border-color: #fbbf24; }
+    #img-wrap { flex: 1; display: flex; justify-content: center; align-items: center; padding: 12px; overflow: auto; }
+    img { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); transition: transform 0.2s ease; }
   </style>
 </head>
 <body>
-  <img src="data:${contentType};base64,${base64Data}" alt="FAX原本" />
+  <div id="controls">
+    <span style="font-size:12px;font-weight:bold;">📄 画像原本プレビュー</span>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button type="button" class="btn" onclick="rotImg(-90)">↺ 左90°</button>
+      <button type="button" class="btn" onclick="rotImg(90)">↻ 右90°</button>
+      <button type="button" class="btn btn-flip" onclick="rotImg(180)">🔄 180°反転</button>
+    </div>
+  </div>
+  <div id="img-wrap">
+    <img id="fax-img" src="data:${contentType};base64,${base64Data}" alt="FAX原本" />
+  </div>
+  <script>
+    let deg = Number(new URLSearchParams(window.location.search).get('rot') || 0) || 0;
+    const img = document.getElementById('fax-img');
+    function applyRot() {
+      img.style.transform = 'rotate(' + deg + 'deg)';
+    }
+    function rotImg(d) {
+      deg = (deg + d + 360) % 360;
+      applyRot();
+    }
+    applyRot();
+  </script>
 </body>
 </html>`
       return new NextResponse(html, {

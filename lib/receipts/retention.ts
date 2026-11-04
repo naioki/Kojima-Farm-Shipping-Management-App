@@ -20,10 +20,11 @@ export async function purgeOldReceiptBase64(
   const thresholdDate = new Date(thresholdMs).toISOString()
 
   try {
-    // 7日以上前のデータで、file_base64 が存在するレコードを検索
+    const thresholdDateYmd = thresholdDate.slice(0, 10)
+    // 7日以上前のデータで、file_base64 が存在するレコードを検索（未来の納品日の注文に紐づく原本は保護）
     const { data: oldReceipts, error } = await admin
       .from('order_receipts')
-      .select('id, raw_payload')
+      .select('id, delivery_date, raw_payload')
       .or(`received_at.lt.${thresholdDate},and(received_at.is.null,created_at.lt.${thresholdDate})`)
       .not('raw_payload->file_base64', 'is', null)
       .limit(100)
@@ -34,6 +35,9 @@ export async function purgeOldReceiptBase64(
 
     let purgedCount = 0
     for (const r of oldReceipts) {
+      // 納品日(delivery_date)が設定されており、まだ納品日+7日を経過していない原本は現場確認用に保持する
+      const delivDate = (r as { delivery_date?: string | null }).delivery_date
+      if (delivDate && delivDate > thresholdDateYmd) continue
       const p = (r.raw_payload ?? {}) as Record<string, unknown>
       if (p['file_base64'] !== undefined) {
         delete p['file_base64']

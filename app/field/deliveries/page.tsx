@@ -14,9 +14,10 @@ import {
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import { formatQty } from '@/lib/calculations/format-qty'
-import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-import { determineContainerType } from '@/lib/pipeline/schemas'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
+import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
@@ -265,14 +266,15 @@ export default async function DeliveriesPage({
     const effectiveDepTime = routeInfo.departureTime
     const effectiveRouteName = routeInfo.shippingRouteName
 
-    const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`)
-    const rawItemCont = (it.container_type ?? '').trim()
-    const validItemCont = rawItemCont && rawItemCont !== 'マテハン' && rawItemCont !== 'コンテナ' && rawItemCont !== '通常コンテナ' ? rawItemCont : null
-    const resolvedContainer =
-      validItemCont ||
-      dest?.default_container_type ||
-      rule?.default_container_type ||
-      determineContainerType(customerName, destName)
+    const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`) as { default_container_type?: string | null; container_type?: string | null; packs_per_case?: number | null } | undefined
+    const resolvedContainer = resolveContainerType({
+      explicitContainer: it.container_type,
+      ruleContainer: rule?.container_type || rule?.default_container_type || null,
+      destDefaultContainer: dest?.default_container_type ?? null,
+      clientName: customerName,
+      destination: destName,
+      rawText: `${order.note ?? ''} ${it.line_note ?? ''} ${it.spec ?? ''}`,
+    })
 
     const destKey = order.destination_id || `name:${destName}`
     let dEntry = cEntry.destinationsMap.get(destKey)
@@ -424,6 +426,8 @@ export default async function DeliveriesPage({
   })
 
   const globalTotalCustomers = customerCards.length
+  const todayStr = jstTodayStr()
+  const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
     <div className="mx-auto max-w-2xl space-y-3.5 pb-24">

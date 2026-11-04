@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Sun, Moon } from 'lucide-react'
+import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, RotateCw, RefreshCw, ExternalLink, Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { ViewerTargetItem, ViewerReceiptTab } from '@/app/api/field/viewer-meta/route'
 
@@ -15,13 +15,15 @@ export default function ReceiptViewerPage() {
   const returnProduct = searchParams.get('product') || ''
 
   const [zoom, setZoom] = useState<number>(100)
+  const [rotation, setRotation] = useState<number>(0)
   const [lightMode, setLightMode] = useState<boolean>(false)
+  const [showTargetItems, setShowTargetItems] = useState<boolean>(true)
   const [receipts, setReceipts] = useState<ViewerReceiptTab[]>([])
   const [targetItems, setTargetItems] = useState<ViewerTargetItem[]>([])
   const [loadingMeta, setLoadingMeta] = useState<boolean>(true)
 
-  const originalUrl = `/api/receipts/${receiptId}/original?mode=preview`
-  const directFileUrl = `/api/receipts/${receiptId}/original`
+  const originalUrl = `/api/receipts/${receiptId}/original?mode=preview&rot=${rotation}`
+  const directFileUrl = `/api/receipts/${receiptId}/original?rot=${rotation}`
 
   useEffect(() => {
     let active = true
@@ -65,7 +67,7 @@ export default function ReceiptViewerPage() {
   return (
     <div
       className={cn(
-        'flex h-screen w-screen flex-col select-none transition-colors',
+        'fixed inset-0 z-50 flex h-[100dvh] w-full flex-col overflow-hidden select-none transition-colors',
         lightMode ? 'bg-slate-100 text-slate-900' : 'bg-slate-900 text-white',
       )}
     >
@@ -134,14 +136,46 @@ export default function ReceiptViewerPage() {
           </button>
           <button
             type="button"
-            onClick={() => setZoom(100)}
+            onClick={() => setRotation((prev) => (prev + 270) % 360)}
             className={cn(
-              'inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl active:scale-95 transition',
+              'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2 sm:px-2.5 text-xs font-bold active:scale-95 transition',
               lightMode ? 'bg-slate-200 text-slate-900 hover:bg-slate-300' : 'bg-slate-700 text-white hover:bg-slate-600',
             )}
-            aria-label="リセット"
+            title="左へ90°回転"
+            aria-label="左へ90°回転"
           >
-            <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5" />
+            <RotateCcw className="h-4 w-4" />
+            <span className="hidden md:inline">左90°</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRotation((prev) => (prev + 90) % 360)}
+            className={cn(
+              'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2 sm:px-2.5 text-xs font-bold active:scale-95 transition',
+              lightMode ? 'bg-slate-200 text-slate-900 hover:bg-slate-300' : 'bg-slate-700 text-white hover:bg-slate-600',
+            )}
+            title="右へ90°回転"
+            aria-label="右へ90°回転"
+          >
+            <RotateCw className="h-4 w-4" />
+            <span className="hidden md:inline">右90°</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRotation((prev) => (prev + 180) % 360)}
+            className={cn(
+              'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2.5 text-xs font-black active:scale-95 transition',
+              rotation === 180
+                ? 'bg-amber-400 text-amber-950 shadow-xs'
+                : lightMode
+                ? 'bg-amber-100 text-amber-950 hover:bg-amber-200'
+                : 'bg-amber-500/20 border border-amber-400/50 text-amber-200 hover:bg-amber-500/30',
+            )}
+            title="上下180°反転（逆さまFAXを正立）"
+            aria-label="上下180°反転"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>180°反転</span>
           </button>
           <a
             href={directFileUrl}
@@ -189,47 +223,57 @@ export default function ReceiptViewerPage() {
         </div>
       )}
 
-      {/* ③ 本日該当明細の照合ハイライト帯 */}
-      <div className="bg-amber-300 text-amber-950 border-b border-amber-400 px-3 py-2 shadow-xs shrink-0 select-text">
-        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-base">🔍</span>
-            <span className="text-xs sm:text-sm font-black tracking-tight">
-              {returnDate ? `${returnDate} 納品該当明細:` : '該当明細:'}
-            </span>
-          </div>
-
-          {loadingMeta ? (
-            <span className="text-xs font-bold text-amber-900 animate-pulse">照合データ読込中...</span>
-          ) : targetItems.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {targetItems.map((it, idx) => (
-                <div
-                  key={it.id || idx}
-                  className="flex items-center gap-1.5 rounded-lg bg-amber-400/95 border border-amber-500/80 px-2.5 py-1 shadow-2xs text-xs font-black"
-                >
-                  <span className="text-amber-950 font-black">
-                    【{it.destinationName || it.customerName}】
-                  </span>
-                  <span className="text-amber-900 font-extrabold">{it.productName}</span>
-                  <span className="text-amber-950 text-sm font-black bg-white/80 px-1.5 py-0.2 rounded shadow-2xs">
-                    {it.boxCount}箱 ({it.quantity}{it.unit})
-                  </span>
-                  <span className="text-amber-900 text-[11px] font-bold">
-                    [{it.container}]
-                  </span>
-                  {it.spec && (
-                    <span className="text-amber-800 text-[11px] font-bold hidden sm:inline">
-                      規格: {it.spec}
-                    </span>
-                  )}
-                </div>
-              ))}
+      {/* ③ 本日該当明細の照合ハイライト帯（1タップで開閉可能にし、スマホでの原本表示面積を最大化 #26） */}
+      <div className="bg-amber-300 text-amber-950 border-b border-amber-400 px-3 py-1.5 shadow-xs shrink-0 select-text">
+        <div className="max-w-5xl mx-auto space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-sm">🔍</span>
+              <span className="text-xs font-black tracking-tight">
+                {returnDate ? `${returnDate} 納品該当明細 (${targetItems.length}件)` : `該当明細 (${targetItems.length}件)`}
+              </span>
             </div>
-          ) : (
-            <span className="text-xs font-bold text-amber-900">
-              このFAXには指定日（{returnDate}）の出荷明細は含まれていません
-            </span>
+            <button
+              type="button"
+              onClick={() => setShowTargetItems((prev) => !prev)}
+              className="rounded bg-amber-400/80 hover:bg-amber-400 px-2 py-0.5 text-[11px] font-black text-amber-950"
+            >
+              {showTargetItems ? '明細を隠す ▲' : '明細を表示 ▼'}
+            </button>
+          </div>
+          {showTargetItems && (
+            loadingMeta ? (
+              <span className="text-xs font-bold text-amber-900 animate-pulse">照合データ読込中...</span>
+            ) : targetItems.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {targetItems.map((it, idx) => (
+                  <div
+                    key={it.id || idx}
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-400/95 border border-amber-500/80 px-2.5 py-1 shadow-2xs text-xs font-black"
+                  >
+                    <span className="text-amber-950 font-black">
+                      【{it.destinationName || it.customerName}】
+                    </span>
+                    <span className="text-amber-900 font-extrabold">{it.productName}</span>
+                    <span className="text-amber-950 text-sm font-black bg-white/80 px-1.5 py-0.2 rounded shadow-2xs">
+                      {it.boxCount}箱 ({it.quantity}{it.unit})
+                    </span>
+                    <span className="text-amber-900 text-[11px] font-bold">
+                      [{it.container}]
+                    </span>
+                    {it.spec && (
+                      <span className="text-amber-800 text-[11px] font-bold hidden sm:inline">
+                        規格: {it.spec}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs font-bold text-amber-900">
+                このFAXには指定日（{returnDate}）の出荷明細は含まれていません
+              </span>
+            )
           )}
         </div>
       </div>

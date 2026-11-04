@@ -87,6 +87,8 @@ export const THAI_LABELS = {
   nextDayMorning: 'ส่งพรุ่งนี้เช้า',
   nextUpSpotlight: 'ทำรายการนี้ก่อน',
   inheritedCarryover: 'มีลังยกมาจากเมื่อวาน',
+  sampleOrder: 'ของตัวอย่าง (แยกส่ง)',
+  samplePacks: 'ถุงตัวอย่าง',
 }
 
 /** 品目名（野菜名）のタイ語訳を返す */

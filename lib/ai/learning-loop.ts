@@ -13,6 +13,9 @@ export interface MistakeFeedbackInput {
     | 'product'
     | 'spec'
     | 'container'
+    | 'has_card'
+    | 'has_seal'
+    | 'bag_type'
     | 'general'
   correctedValue: string
   originalAiValue?: string | null
@@ -57,6 +60,15 @@ export async function recordMistakeFeedback(
     } else if (input.correctedField === 'container') {
       prefixKey = `【自動学習・コンテナ設定】取引先『${client}』${input.note ? `（${input.note}）` : ''}`
       ruleText = `${prefixKey}のコンテナは『${input.correctedValue}』を標準適用する。`
+    } else if (input.correctedField === 'has_card') {
+      prefixKey = `【自動学習・カード有無】取引先『${client}』${input.note ? `（${input.note}）` : ''}`
+      ruleText = `${prefixKey}は生産者カード『${input.correctedValue}』を標準適用する。`
+    } else if (input.correctedField === 'has_seal') {
+      prefixKey = `【自動学習・シール有無】取引先『${client}』${input.note ? `（${input.note}）` : ''}`
+      ruleText = `${prefixKey}はシール『${input.correctedValue}』を標準適用する。`
+    } else if (input.correctedField === 'bag_type') {
+      prefixKey = `【自動学習・袋種別】取引先『${client}』${input.note ? `（${input.note}）` : ''}`
+      ruleText = `${prefixKey}の袋は『${input.correctedValue}』を標準適用する。`
     } else if (input.correctedField === 'quantity') {
       ruleText = `【自動学習・数量補正】取引先『${client}』: ${raw ? `AI読取『${raw}』ではなく` : ''}『${input.correctedValue}』として処理。`
     } else {

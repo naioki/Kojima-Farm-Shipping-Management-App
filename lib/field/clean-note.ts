@@ -144,5 +144,10 @@ export function extractChangeDiffBadge(rawNote: string | null | undefined): stri
     return '新規追加'
   }
 
+  // 5. 🧪サンプル依頼バッジ
+  if (text.includes('サンプル') || text.includes('見本') || text.includes('試供')) {
+    return '🧪サンプル依頼'
+  }
+
   return null
 }

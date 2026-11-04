@@ -33,6 +33,7 @@ import { ChannelBadge } from '@/components/admin/InboxBadges'
 import type { PendingOrder, PendingOrderItem } from '@/lib/orders/pending-types'
 import { pendingReasons } from '@/lib/orders/pending-types'
 import { formatJpDateShort } from '@/lib/dates'
+import { extractActionableNote } from '@/lib/field/clean-note'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import {
   determineContainerType,

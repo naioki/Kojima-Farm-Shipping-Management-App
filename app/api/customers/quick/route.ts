@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { customerCreateSchema } from '@/types/database'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
+import { resolveContainerType } from '@/lib/pipeline/schemas'
 
 export const runtime = 'nodejs'
 
@@ -115,12 +116,17 @@ export async function POST(req: Request) {
         .eq('product_id', targetProductId)
         .maybeSingle()
 
+      const safeContainer = resolveContainerType({
+        explicitContainer: parsed.data.container_type,
+        clientName: customerName,
+        destination: parsed.data.destination_name ?? null,
+      })
       if (existingRule) {
         await admin
           .from('customer_product_rules')
           .update({
             packs_per_case: parsed.data.packs_per_case,
-            container_type: parsed.data.container_type || 'ケース',
+            container_type: safeContainer,
             label_spec: `${parsed.data.packs_per_case}入`,
           })
           .eq('id', existingRule.id)
@@ -129,7 +135,7 @@ export async function POST(req: Request) {
           customer_id: customerId,
           product_id: targetProductId,
           packs_per_case: parsed.data.packs_per_case,
-          container_type: parsed.data.container_type || 'ケース',
+          container_type: safeContainer,
           label_spec: `${parsed.data.packs_per_case}入`,
           has_card: false,
         })

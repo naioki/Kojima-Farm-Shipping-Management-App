@@ -60,10 +60,10 @@ function sumLineTotals(items: { line_total: number | null }[] | null): number {
 
 function resolveDashboardPpc(spec?: string | null): number {
   const s = (spec ?? '').normalize('NFKC')
-  const m = s.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  const m = s.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
   if (m) {
     const n = Number(m[1] || m[2])
-    if (Number.isFinite(n) && n > 0 && n <= 200) return n
+    if (Number.isFinite(n) && n >= 10 && n <= 200) return n
   }
   if (s.includes('小コン')) return 30
   if (s.includes('24')) return 24
@@ -133,10 +133,10 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .limit(5),
   ])
 
-  const { error: profileErr } = user
+  const profileRes = user
     ? await supabase.from('users').select('full_name').eq('id', user.id).maybeSingle()
-    : { error: null }
-  if (profileErr) console.error('[admin-data] 表示名の取得に失敗:', profileErr.message)
+    : null
+  if (profileRes?.error) console.error('[admin-data] 表示名の取得に失敗:', profileRes.error.message)
   const name = '小島農園'
   const dateLabel = `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日 (${WEEKDAYS[jst.getUTCDay()]})`
 

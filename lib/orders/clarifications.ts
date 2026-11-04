@@ -189,7 +189,11 @@ export function buildClarificationQuestions(
         ? destinations.filter((d) => d.customer_id === matchedCustomer!.id)
         : destinations
 
+      const wantsRadish = /らでぃっしゅ|ラディッシュ|radish/i.test(order.destination_name)
       const matchedDest = custDests.find((d) => {
+        const dRaw = `${d.code ?? ''} ${d.full_name}`
+        const isDestRadish = /らでぃっしゅ|ラディッシュ|radish/i.test(dRaw)
+        if (wantsRadish !== isDestRadish) return false
         const cands = [d.code, d.full_name, ...(d.aliases ?? [])]
           .filter((x): x is string => Boolean(x))
           .map(normDest)

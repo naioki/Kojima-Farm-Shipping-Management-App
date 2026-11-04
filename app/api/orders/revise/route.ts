@@ -8,6 +8,7 @@ import {
   reviseOrdersWithInstruction,
   type ParsedOrder,
 } from '@/lib/gemini/analyze'
+import { isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -121,7 +122,13 @@ export async function POST(req: NextRequest) {
                 version: (Number((dbItem as { version?: number }).version) || 1) + 1,
                 quantity_raw: newItem.quantity_case_text ?? newItem.quantity,
                 spec: newItem.spec ?? undefined,
-                container_type: newItem.container_type ?? undefined,
+                container_type:
+                  newItem.container_type && !isGenericOrInvalidContainer(newItem.container_type)
+                    ? newItem.container_type
+                    : undefined,
+                has_card: typeof newItem.has_card === 'boolean' ? newItem.has_card : undefined,
+                has_seal: typeof newItem.has_seal === 'boolean' ? newItem.has_seal : undefined,
+                bag_type: newItem.bag_type ?? undefined,
                 confidence: 1.0,
               })
               .eq('id', dbItem.id)

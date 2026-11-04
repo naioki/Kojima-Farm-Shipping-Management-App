@@ -5,7 +5,7 @@ import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
-import { determineContainerType } from '@/lib/pipeline/schemas'
+import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
@@ -39,7 +39,7 @@ export async function PUT(req: Request) {
       .maybeSingle(),
     supabase.from('customers').select('name').eq('id', customer_id).maybeSingle(),
     destination_id
-      ? supabase.from('delivery_destinations').select('id, code, full_name').eq('id', destination_id).maybeSingle()
+      ? supabase.from('delivery_destinations').select('*').eq('id', destination_id).maybeSingle()
       : Promise.resolve({ data: null }),
   ])
   if (prodErr) return NextResponse.json({ error: prodErr.message }, { status: 500 })
@@ -212,12 +212,23 @@ export async function PUT(req: Request) {
       ? `${baseSpec} (入数${defaultPpc})`
       : baseSpec || `入数${defaultPpc}`
 
-  const effectiveContainer =
-    (typeof rule?.default_container_type === 'string' && rule.default_container_type) ||
-    (typeof rule?.container_type === 'string' && rule.container_type) ||
-    determineContainerType(custName, destName)
+  const destDefaultContainer = (destRes.data as { default_container_type?: string | null } | null)?.default_container_type ?? null
+  const effectiveContainer = resolveContainerType({
+    ruleContainer:
+      (typeof rule?.container_type === 'string' && rule.container_type) ||
+      (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null),
+    destDefaultContainer,
+    clientName: custName,
+    destination: destName,
+    rawText: effectiveSpec,
+  })
 
-  const effectiveHasCard = typeof rule?.has_card === 'boolean' ? rule.has_card : true
+  const effectiveHasCard = determineHasCard({
+    ruleHasCard: typeof rule?.has_card === 'boolean' ? rule.has_card : null,
+    clientName: custName,
+    destination: destName,
+    rawText: effectiveSpec,
+  })
   const effectiveHasSeal =
     typeof rule?.has_seal === 'boolean'
       ? rule.has_seal

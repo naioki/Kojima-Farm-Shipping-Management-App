@@ -550,6 +550,16 @@ export const shipmentAddSchema = z.object({
       product_name: z.string().nullish(),
     })
     .optional(),
+  /** 現場のスマート追加で添付された写真・PDF・Excel原本ファイル（追加費用0円・7日自動消去対象 #10-01） */
+  original_file: z
+    .object({
+      fileName: z.string(),
+      mimeType: z.string(),
+      base64: z.string(),
+    })
+    .nullish(),
+  /** 一括登録時に1枚の原本レコードを複数注文で共有するための既存 receipt_id（#10-02） */
+  receipt_id: z.string().uuid().nullish(),
 })
 export type ShipmentAddInput = z.infer<typeof shipmentAddSchema>
 

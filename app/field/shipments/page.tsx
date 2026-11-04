@@ -14,7 +14,7 @@ import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import { ProductSelectorTabs, type ProductTabItem } from '@/components/field/ProductSelectorTabs'
 import { type ContainerBreakdownItem, type SpecBreakdownItem } from '@/components/field/HarvestPulseSummary'
 import { calculateChainInventory } from '@/lib/inventory/chain'
-import { determineContainerType } from '@/lib/pipeline/schemas'
+import { determineHasCard, isSampleOrderText, resolveContainerType } from '@/lib/pipeline/schemas'
 import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
 import { resolveDefaultRouteInfo } from '@/lib/field/shipment-sort'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
@@ -43,10 +43,10 @@ function resolveItemPerCase(
   defaultCap: number | null | undefined,
 ): number {
   const combinedSpec = `${customerName} ${spec || ''}`.normalize('NFKC')
-  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
   if (specMatch) {
     const parsedNum = Number(specMatch[1] || specMatch[2])
-    if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
+    if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) {
       return parsedNum
     }
   }
@@ -92,7 +92,7 @@ export default async function ShipmentsPage({
       .order('name'),
     admin
       .from('orders')
-      .select('id, customer_id, destination_id, status')
+      .select('id, customer_id, destination_id, status, note')
       .eq('delivery_date', date)
       .in('status', ['approved', 'shipped', 'invoiced']),
     admin
@@ -115,6 +115,7 @@ export default async function ShipmentsPage({
   const orderIds = orders.map((o) => o.id)
   const orderToCustomer = new Map(orders.map((o) => [o.id, o.customer_id]))
   const orderToDestination = new Map(orders.map((o) => [o.id, o.destination_id]))
+  const orderToNote = new Map(orders.map((o) => [o.id, (o as { note?: string | null }).note ?? null]))
 
   // ③ 当日の明細取得（0026未適用DB環境にも安全にフォールバック）
   type RawOrderItemRow = {
@@ -390,9 +391,26 @@ export default async function ShipmentsPage({
         if (receiptByOrder.has(mId)) continue
         const custId = orderToCustomer.get(mId)
         if (!custId) continue
-        const fallbackReceipt = (candidateReceipts ?? []).find(
-          (cr) => cr.customer_id === custId && checkReceiptHasFile(cr)
+        const ordNote = orderToNote.get(mId) ?? ''
+        const destId = orderToDestination.get(mId)
+        const destObj = destId ? destinationMap.get(destId) : null
+        const destNameForMatch = destObj?.code || destObj?.full_name || ''
+        const slipNoMatch = ordNote.match(/伝票No\s*[:：]\s*([\w-]+)/)
+        const targetSlipNo = slipNoMatch?.[1]?.trim() || null
+        const isSampleOrd = isSampleOrderText(destNameForMatch, ordNote)
+
+        const custReceipts = (candidateReceipts ?? []).filter(
+          (cr) => cr.customer_id === custId && checkReceiptHasFile(cr),
         )
+        // 1. 伝票Noまたはサンプル伝票の一致を最優先（大口マトリックスFAXとサンプルFAXの取り違えを完全防止）
+        const fallbackReceipt =
+          (targetSlipNo
+            ? custReceipts.find((cr) => JSON.stringify(cr.raw_payload ?? {}).includes(targetSlipNo))
+            : null) ??
+          (isSampleOrd
+            ? custReceipts.find((cr) => JSON.stringify(cr.raw_payload ?? {}).includes('サンプル'))
+            : custReceipts.find((cr) => !JSON.stringify(cr.raw_payload ?? {}).includes('サンプル'))) ??
+          custReceipts[0]
         if (fallbackReceipt) {
           receiptByOrder.set(mId, {
             id: fallbackReceipt.id,
@@ -445,16 +463,37 @@ export default async function ShipmentsPage({
 
     const qty = it.quantity
 
-    // 箱数計算: ケース数 + (端数 > 0 ? 1 : 0)
-    const cases = Math.floor(qty / perCase)
-    const rem = qty % perCase
-    const boxCount = cases + (rem > 0 ? 1 : 0)
+    const ordNote = orderToNote.get(it.order_id) ?? null
+    const isSample = isSampleOrderText(dName, ordNote, it.line_note, it.field_note, it.spec)
+    const isSmallSample = isSample && qty < perCase
 
-    // コンテナ集計（ヘッダー文字の「マテハン」「コンテナ」は汎用語として無視し、決定論ルールへフォールバック）
-    const rawCont = (it.container_type ?? '').trim()
-    const validItemCont = rawCont && rawCont !== 'マテハン' && rawCont !== 'コンテナ' && rawCont !== '通常コンテナ' ? rawCont : null
-    const contType = validItemCont || dest?.default_container_type || determineContainerType(cName, dName)
-    containerCounts.set(contType, (containerCounts.get(contType) ?? 0) + boxCount)
+    // 箱数計算: 小口サンプル（バラ）の場合はコンテナ箱数に含めない
+    const cases = isSmallSample ? 0 : Math.floor(qty / perCase)
+    const rem = isSmallSample ? qty : qty % perCase
+    const boxCount = isSmallSample ? 0 : cases + (rem > 0 ? 1 : 0)
+
+    // コンテナ集計（「段ボール」「ケース」「C/S」等の汎用語・誤認語を排除し、決定論ルールへフォールバック）
+    const ruleContainer =
+      (typeof rule?.container_type === 'string' && rule.container_type) ||
+      (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null)
+    const contType = resolveContainerType({
+      explicitContainer: it.container_type,
+      ruleContainer,
+      destDefaultContainer: dest?.default_container_type ?? null,
+      clientName: cName,
+      destination: dName,
+      rawText: `${ordNote ?? ''} ${it.line_note ?? ''} ${it.spec ?? ''}`,
+    })
+    if (boxCount > 0) {
+      containerCounts.set(contType, (containerCounts.get(contType) ?? 0) + boxCount)
+    }
+    const resolvedHasCard = determineHasCard({
+      explicitHasCard: it.has_card,
+      ruleHasCard: typeof rule?.has_card === 'boolean' ? rule.has_card : null,
+      clientName: cName,
+      destination: dName,
+      rawText: `${ordNote ?? ''} ${it.line_note ?? ''} ${it.spec ?? ''}`,
+    })
 
     // 規格集計
     const specLabel = it.spec || ruleLabelSpec || '2〜3株 (標準)'
@@ -496,8 +535,8 @@ export default async function ShipmentsPage({
       initialVersion: it.version,
       initialSpec: it.spec,
       initialContainer: contType,
-      initialHasCard: it.has_card,
-      initialLineNote: it.line_note,
+      initialHasCard: resolvedHasCard,
+      initialLineNote: it.line_note ?? (isSample && ordNote ? ordNote : null),
       initialShippedQty: it.shipped_qty,
       initialFieldNote: it.field_note,
       specWarnings: it.spec_warnings,
@@ -551,7 +590,7 @@ export default async function ShipmentsPage({
     const nextOrderDestMap = new Map((nextOrders ?? []).map((o) => [o.id, o.destination_id]))
 
     if (nextOrderIds.length > 0) {
-      const { data: nextItemsInit, error: nextItemsErr } = await admin
+      const { data: rawNextItems, error: nextItemsErr } = await admin
         .from('order_items')
         .select(`
           id, order_id, product_id, product_name, quantity, unit, field_status, version,
@@ -561,7 +600,8 @@ export default async function ShipmentsPage({
         `)
         .eq('product_id', selectedProductId)
         .in('order_id', nextOrderIds)
-      let nextItems = nextItemsInit
+
+      let nextItems = rawNextItems ?? []
       if (nextItemsErr) {
         const fbNext = await admin
           .from('order_items')
@@ -605,9 +645,17 @@ export default async function ShipmentsPage({
         const qty = Number(ni.quantity) || 0
         if (qty <= 0) continue
 
-        const rawNextCont = (ni.container_type ?? '').trim()
-        const validNextCont = rawNextCont && rawNextCont !== 'マテハン' && rawNextCont !== 'コンテナ' && rawNextCont !== '通常コンテナ' ? rawNextCont : null
-        const contType = validNextCont || dest?.default_container_type || determineContainerType(cName, dName)
+        const nextRuleContainer =
+          (typeof rule?.container_type === 'string' && rule.container_type) ||
+          (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null)
+        const contType = resolveContainerType({
+          explicitContainer: ni.container_type,
+          ruleContainer: nextRuleContainer,
+          destDefaultContainer: dest?.default_container_type ?? null,
+          clientName: cName,
+          destination: dName,
+          rawText: `${ni.line_note ?? ''} ${ni.spec ?? ''}`,
+        })
 
         const override =
           (destId ? routeOverrides[`date:${nextDateStr}:dest:${destId}`] : null) ||

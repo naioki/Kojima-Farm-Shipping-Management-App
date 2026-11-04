@@ -8,11 +8,13 @@ import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import {
-  determineContainerType,
+  determineHasCard,
   determineUnitCount,
   formatQuantityCaseText,
   generateOrderKey,
+  resolveContainerType,
 } from '@/lib/pipeline/schemas'
+import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -131,7 +133,7 @@ export async function POST(req: NextRequest) {
     destination_id
       ? admin
           .from('delivery_destinations')
-          .select('id, code, full_name')
+          .select('*')
           .eq('id', destination_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -271,17 +273,25 @@ export async function POST(req: NextRequest) {
         ? `${baseSpec} (入数${effectivePacks})`
         : baseSpec || (effectivePacks > 0 ? `入数${effectivePacks}` : null)
 
-    const effectiveContainer =
-      it.container_type?.trim() ||
-      (typeof rule?.container_type === 'string' ? rule.container_type : null) ||
-      determineContainerType(customerName, destinationName)
+    const destDefaultContainer = (destRes.data as { default_container_type?: string | null } | null)?.default_container_type ?? null
+    const effectiveContainer = resolveContainerType({
+      explicitContainer: it.container_type?.trim() || null,
+      ruleContainer:
+        (typeof rule?.container_type === 'string' && rule.container_type) ||
+        (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null),
+      destDefaultContainer,
+      clientName: customerName,
+      destination: destinationName,
+      rawText: `${it.line_note ?? ''} ${note ?? ''} ${effectiveSpec ?? ''}`,
+    })
 
-    const effectiveHasCard =
-      it.has_card != null
-        ? it.has_card
-        : typeof rule?.has_card === 'boolean'
-        ? rule.has_card
-        : true
+    const effectiveHasCard = determineHasCard({
+      explicitHasCard: it.has_card,
+      ruleHasCard: typeof rule?.has_card === 'boolean' ? rule.has_card : null,
+      clientName: customerName,
+      destination: destinationName,
+      rawText: `${it.line_note ?? ''} ${note ?? ''} ${effectiveSpec ?? ''}`,
+    })
 
     const effectiveBagType =
       it.bag_type?.trim() ||
@@ -587,6 +597,7 @@ export async function POST(req: NextRequest) {
           created_order_ids: [orderId],
         },
       })
+      purgeOldReceiptBase64(admin, 7).catch(() => {})
     } catch (e) {
       console.error('[POST /api/orders] original_file receipt insert error', e)
     }

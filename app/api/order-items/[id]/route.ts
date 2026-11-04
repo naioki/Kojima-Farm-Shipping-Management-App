@@ -95,17 +95,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     updates.is_manual_modified = true
   }
 
-  const { data: updated, error: updErr } = await writeDroppingMissingColumns(
+  // 【#9-01 解消】同一カードの連続タップ（例: カード有無トグル直後にコンテナ切替・パック済タップ等）で
+  // 自分自身の通信同士が 409 Conflict になる自己競合を防止するため、資材・メモ・途中数更新時は最新versionへ安全にマージ
+  const isStrictStatusChange = 'field_status' in input
+  let { data: updated, error: updErr } = await writeDroppingMissingColumns(
     { ...updates, version: current.version + 1 },
-    (p) =>
-      admin
-        .from('order_items')
-        .update(p)
-        .eq('id', params.id)
-        .eq('version', input.version)
-        .select()
-        .maybeSingle(),
+    (p) => {
+      const q = admin.from('order_items').update(p).eq('id', params.id)
+      return (isStrictStatusChange ? q.eq('version', input.version) : q).select().maybeSingle()
+    },
   )
+  // 万一 field_status 変更時に version が1つだけズレていても、目標ステータスが同じか有効遷移であれば安全に適用
+  if (!updated && !updErr && isStrictStatusChange) {
+    const retryRes = await writeDroppingMissingColumns(
+      { ...updates, version: current.version + 1 },
+      (p) => admin.from('order_items').update(p).eq('id', params.id).select().maybeSingle(),
+    )
+    updated = retryRes.data
+    updErr = retryRes.error
+  }
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   if (!updated) {
     return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
@@ -122,39 +130,56 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」「シール」「袋」手動修正を自動学習ループ & 取引先×品目ルールへ自動蓄積
+  // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」「カード有無」「シール」「袋」手動修正を自動学習ループ & 取引先×品目ルール＋納入先マスタへ自動蓄積（#3-01〜#3-05）
   if (
     !('field_status' in input) &&
     ((input.spec !== undefined && input.spec !== current.spec && input.spec) ||
       (input.container_type !== undefined && input.container_type !== current.container_type && input.container_type) ||
+      (input.has_card !== undefined && input.has_card !== current.has_card) ||
       (input.has_seal !== undefined && input.has_seal !== current.has_seal) ||
       (input.bag_type !== undefined && input.bag_type !== current.bag_type && input.bag_type))
   ) {
     try {
       const { data: ord } = await admin
         .from('orders')
-        .select('customer_id')
+        .select('customer_id, destination_id')
         .eq('id', current.order_id)
         .maybeSingle()
       if (ord?.customer_id) {
-        const { data: cust } = await admin
-          .from('customers')
-          .select('name')
-          .eq('id', ord.customer_id)
-          .maybeSingle()
+        const [{ data: cust }, { data: destRow }] = await Promise.all([
+          admin.from('customers').select('name').eq('id', ord.customer_id).maybeSingle(),
+          ord.destination_id
+            ? admin.from('delivery_destinations').select('id, code, full_name').eq('id', ord.destination_id).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ])
         const clientName = cust?.name || '共通'
+        const destLabel = destRow?.code || destRow?.full_name || ''
+
+        // 【#3-02 解消】納入先（destination_id）が紐づいている場合、納入先ごとの既定コンテナ（default_container_type）も自動更新
+        if (ord.destination_id && input.container_type && input.container_type !== current.container_type) {
+          await writeDroppingMissingColumns(
+            { default_container_type: input.container_type },
+            (p) => admin.from('delivery_destinations').update(p).eq('id', ord.destination_id!),
+          )
+        }
 
         const rulePatch: Record<string, unknown> = {}
         if (input.spec && input.spec !== current.spec) {
           rulePatch.label_spec = input.spec
-          const m = input.spec.normalize('NFKC').match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
+          rulePatch.spec = input.spec
+          const m = input.spec.normalize('NFKC').match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:P入|パック入|袋入|入)/i)
           if (m) {
             const pNum = Number(m[1] || m[2])
-            if (pNum > 0 && pNum <= 200) rulePatch.packs_per_case = pNum
+            if (pNum >= 10 && pNum <= 200) rulePatch.packs_per_case = pNum
           }
         }
+        // 【#3-01 解消】customer_product_rules の正しいカラム名 container_type に保存
         if (input.container_type && input.container_type !== current.container_type) {
-          rulePatch.default_container_type = input.container_type
+          rulePatch.container_type = input.container_type
+        }
+        // 【#3-04 解消】has_card（カード有無）も取引先ルールに自動記憶
+        if (input.has_card !== undefined && input.has_card !== current.has_card && input.has_card !== null) {
+          rulePatch.has_card = input.has_card
         }
         if (input.has_seal !== undefined && input.has_seal !== current.has_seal) {
           rulePatch.has_seal = input.has_seal
@@ -165,6 +190,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         if (input.bag_type && input.bag_type !== current.bag_type) {
           rulePatch.bag_type = input.bag_type
         }
+        // 【#3-03 解消】既存ルール行が無い取引先でも upsert / insert で確実に記憶
         if (Object.keys(rulePatch).length > 0 && current.product_id) {
           const { data: existingRule } = await admin
             .from('customer_product_rules')
@@ -176,16 +202,26 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             await writeDroppingMissingColumns(rulePatch, (p) =>
               admin.from('customer_product_rules').update(p).eq('id', existingRule.id),
             )
+          } else {
+            await writeDroppingMissingColumns(
+              {
+                customer_id: ord.customer_id,
+                product_id: current.product_id,
+                ...rulePatch,
+              },
+              (p) => admin.from('customer_product_rules').insert(p as never),
+            )
           }
         }
 
+        const contextNote = [destLabel, current.product_name].filter(Boolean).join(' / ')
         if (input.spec && input.spec !== current.spec) {
           await recordMistakeFeedback({
             clientName,
             correctedField: 'spec',
             correctedValue: input.spec,
             originalAiValue: current.spec,
-            note: current.product_name,
+            note: contextNote,
           })
         }
         if (input.container_type && input.container_type !== current.container_type) {
@@ -194,7 +230,34 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             correctedField: 'container',
             correctedValue: input.container_type,
             originalAiValue: current.container_type,
-            note: current.product_name,
+            note: contextNote,
+          })
+        }
+        if (input.has_card !== undefined && input.has_card !== current.has_card && input.has_card !== null) {
+          await recordMistakeFeedback({
+            clientName,
+            correctedField: 'has_card',
+            correctedValue: input.has_card ? 'カードあり' : 'カードなし',
+            originalAiValue: current.has_card ? 'カードあり' : 'カードなし',
+            note: contextNote,
+          })
+        }
+        if (input.has_seal !== undefined && input.has_seal !== current.has_seal && input.has_seal !== null) {
+          await recordMistakeFeedback({
+            clientName,
+            correctedField: 'has_seal',
+            correctedValue: input.has_seal ? (input.seal_text || 'シールあり') : 'シールなし',
+            originalAiValue: current.has_seal ? 'シールあり' : 'シールなし',
+            note: contextNote,
+          })
+        }
+        if (input.bag_type && input.bag_type !== current.bag_type) {
+          await recordMistakeFeedback({
+            clientName,
+            correctedField: 'bag_type',
+            correctedValue: input.bag_type,
+            originalAiValue: current.bag_type,
+            note: contextNote,
           })
         }
       }

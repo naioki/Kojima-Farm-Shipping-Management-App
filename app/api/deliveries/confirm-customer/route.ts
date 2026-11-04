@@ -118,7 +118,7 @@ export async function POST(req: Request) {
           } else if (action === 'revert' && it.field_status === 'shipped') {
             await admin
               .from('order_items')
-              .update({ field_status: 'packed', version: (Number(it.version) || 1) + 1 })
+              .update({ field_status: 'packed', shipped_at: null, version: (Number(it.version) || 1) + 1 })
               .eq('id', it.id)
           }
         }

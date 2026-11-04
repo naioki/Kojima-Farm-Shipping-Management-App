@@ -17,7 +17,9 @@ import Image from 'next/image'
 import { cn } from '@/lib/cn'
 import { jstTodayStr, shiftDateStr, formatJpDateShort, formatJpDate } from '@/lib/dates'
 import { groupByCategory } from '@/lib/products/group'
-import { determineContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
+import { determineContainerType,
+  determineHasCard,
+  resolveContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
 import {
   findBestMatchingCustomer,
   findBestMatchingDestination,
@@ -266,17 +268,19 @@ export function OrderNewForm({
         pairRule?.spec ||
         `${baseLabel} (入数${ppc})`
 
-      const resolvedContainer =
-        overrideContainer?.trim() ||
-        pairRule?.container_type ||
-        determineContainerType(custName, destName)
+      const resolvedContainer = resolveContainerType({
+        explicitContainer: overrideContainer,
+        ruleContainer: pairRule?.container_type,
+        clientName: custName,
+        destination: destName,
+      })
 
-      const resolvedHasCard =
-        overrideHasCard != null
-          ? overrideHasCard
-          : pairRule?.has_card != null
-          ? pairRule.has_card
-          : true
+      const resolvedHasCard = determineHasCard({
+        explicitHasCard: overrideHasCard,
+        ruleHasCard: pairRule?.has_card,
+        clientName: custName,
+        destination: destName,
+      })
 
       const totalNum =
         overrideQty != null && String(overrideQty).trim() !== '' ? Number(overrideQty) : 0
@@ -497,8 +501,16 @@ export function OrderNewForm({
               pack_config_id: it.pack_config_id,
               base_per_selling: it.base_per_selling,
               spec: it.spec || `${baseLabel} (入数${ppc})`,
-              container_type: it.container_type || determineContainerType(custName, destName),
-              has_card: it.has_card ?? true,
+              container_type: resolveContainerType({
+                explicitContainer: it.container_type,
+                clientName: custName,
+                destination: destName,
+              }),
+              has_card: determineHasCard({
+                explicitHasCard: it.has_card,
+                clientName: custName,
+                destination: destName,
+              }),
             }
           }),
         )
@@ -959,8 +971,16 @@ export function OrderNewForm({
               tax_rate: prod.default_tax_rate ?? 8,
               packs_per_case: ppc,
               spec: it.spec ?? undefined,
-              container_type: it.container_type ?? determineContainerType(matchedCust!.name, matchedDest?.full_name),
-              has_card: it.has_card ?? true,
+              container_type: resolveContainerType({
+                explicitContainer: it.container_type,
+                clientName: matchedCust!.name,
+                destination: matchedDest?.full_name,
+              }),
+              has_card: determineHasCard({
+                explicitHasCard: it.has_card,
+                clientName: matchedCust!.name,
+                destination: matchedDest?.full_name,
+              }),
             }
           })
           .filter((x): x is NonNullable<typeof x> => x !== null)
@@ -1607,7 +1627,7 @@ export function OrderNewForm({
                           onChange={(e) => updateItemField(idx, 'container_type', e.target.value)}
                           className="h-9 flex-1 rounded-lg border border-line bg-white px-2 text-xs font-bold text-ink"
                         >
-                          {['青コン', '茶コン', '房総青コン', '段ボール', '農業総研専用折りたたみコンテナ', '通常コンテナ'].map(
+                          {['青コン', '茶コン', '房総青コン', '農業総研専用折りたたみコンテナ', '緑コン'].map(
                             (ct) => (
                               <option key={ct} value={ct}>
                                 {ct}
