@@ -86,6 +86,15 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!reverted) return NextResponse.json({ error: 'conflict' }, { status: 409 })
 
+  // 数量を戻したら収穫タスクの必要数も戻す（現場に出る必要数と注文数を食い違わせない）
+  if ('quantity' in restorable && restorable.quantity != null && restorable.quantity !== item.quantity) {
+    const { error: htErr } = await supabase
+      .from('harvest_tasks')
+      .update({ required_qty: Number(restorable.quantity) })
+      .eq('order_item_id', params.id)
+    if (htErr) console.error('[order-items/undo] 収穫タスクの数量同期に失敗:', htErr.message)
+  }
+
   await writeAudit(supabase, {
     entityType: 'order_items',
     entityId: params.id,

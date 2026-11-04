@@ -13,7 +13,6 @@ export const runtime = 'nodejs'
 export async function POST(req: Request) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = productCreateSchema.safeParse(body)

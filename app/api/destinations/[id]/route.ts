@@ -23,7 +23,6 @@ const updateSchema = z.object({
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const parsed = updateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
@@ -91,7 +90,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const admin = createAdminClient()
 

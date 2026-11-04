@@ -12,7 +12,6 @@ export const runtime = 'nodejs'
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = productUpdateSchema.safeParse(body)
@@ -62,7 +61,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const id = params.id
   const admin = createAdminClient()

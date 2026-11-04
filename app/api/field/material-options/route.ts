@@ -56,7 +56,6 @@ async function saveMaterialOptions(options: FieldMaterialOptions, userId: string
 export async function GET() {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const raw = await getSetting(MATERIAL_OPTIONS_KEY)
   return NextResponse.json(parseMaterialOptions(raw))

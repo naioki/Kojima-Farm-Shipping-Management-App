@@ -11,7 +11,6 @@ export const runtime = 'nodejs'
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const guard = await requireAdminApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const supabase = createAdminClient()
   const { data: invoice, error } = await supabase

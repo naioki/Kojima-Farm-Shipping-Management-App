@@ -32,7 +32,6 @@ export interface ViewerReceiptTab {
 export async function GET(req: NextRequest) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const { searchParams } = req.nextUrl
   const receiptId = searchParams.get('receiptId')

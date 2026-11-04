@@ -43,8 +43,12 @@ export function DeliveryNoteIssueButton({
         const j = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(j.error ?? `発行に失敗 (${res.status})`)
       }
-      const j = (await res.json()) as { id: string; note_number: string }
-      toast.success(`納品書 ${j.note_number} を発行しました`)
+      const j = (await res.json()) as { id: string; note_number: string; reused?: boolean }
+      toast.success(
+        j.reused
+          ? `内容に変更がないため、発行済みの納品書 ${j.note_number} を開きます`
+          : `納品書 ${j.note_number} を発行しました`,
+      )
       router.push(`/admin/delivery-notes/${j.id}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '発行に失敗しました')

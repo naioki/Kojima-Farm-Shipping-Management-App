@@ -14,7 +14,6 @@ export const runtime = 'nodejs'
 export async function GET(req: NextRequest) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const date = req.nextUrl.searchParams.get('date')
   const productId = req.nextUrl.searchParams.get('productId')
@@ -69,7 +68,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const body = await req.json().catch(() => ({}))
   const { date, productId, stockContainers, carryoverToNextDay } = body

@@ -22,7 +22,6 @@ const querySchema = z.object({
 export async function GET(req: Request) {
   const guard = await requireAdminApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const { searchParams } = new URL(req.url)
   const parsed = querySchema.safeParse({ start: searchParams.get('start'), end: searchParams.get('end') })

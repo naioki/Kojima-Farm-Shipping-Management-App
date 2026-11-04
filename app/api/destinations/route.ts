@@ -26,7 +26,6 @@ const createSchema = z.object({
 export async function POST(req: Request) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const parsed = createSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

@@ -29,7 +29,6 @@ const SETTING_KEY = 'v5_feedback_reports'
 export async function GET() {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const admin = createAdminClient()
   const { data: setting } = await admin
@@ -131,7 +130,6 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const guard = await requireStaffApi()
   if (!guard.ok) return guard.response
-  const user = guard.user
 
   const body = await req.json().catch(() => ({}))
   const id = typeof body.id === 'string' ? body.id : ''

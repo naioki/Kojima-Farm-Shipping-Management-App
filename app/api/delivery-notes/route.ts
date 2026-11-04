@@ -5,6 +5,7 @@ import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 import { getSetting } from '@/lib/settings'
 import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
 import { writeAudit } from '@/lib/audit/log'
+import { isSameNoteSnapshot } from '@/lib/delivery-notes/snapshot'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
@@ -113,64 +114,70 @@ export async function POST(req: Request) {
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
   )
 
-  const { data: existingNote } = await supabase
+  // スナップショット凍結（CLAUDE.md）: 発行済みの納品書は書き換えない。
+  // - 同じ取引先・納品日の直近の納品書と内容（明細・金額・発行元）が完全に同じ → それを返す（再印刷。番号を増やさない）
+  // - 内容が変わっている → 新しい番号で発行し直す（過去の納品書はそのまま残る）
+  const { data: existingNote, error: existingErr } = await supabase
     .from('delivery_notes')
-    .select('id, note_number')
+    .select('id, note_number, amount_mode, issuer_name, issuer_address, issuer_tel, total_amount')
     .eq('customer_id', customer_id)
     .eq('delivery_date', delivery_date)
     .eq('customer_name', customerNameSnapshot)
     .order('issued_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+  if (existingErr) return NextResponse.json({ error: `既存納品書の確認に失敗しました: ${existingErr.message}` }, { status: 500 })
 
-  let note: { id: string; note_number: string }
   if (existingNote?.id) {
-    const { data: updated, error: updErr } = await supabase
-      .from('delivery_notes')
-      .update({
-        amount_mode,
-        issuer_name: issuerName ?? null,
-        issuer_address: issuerAddress ?? null,
-        issuer_tel: issuerTel ?? null,
-        subtotal_8: t.reduced.subtotal.toNumber(),
-        subtotal_10: t.standard.subtotal.toNumber(),
-        total_amount: t.total.toNumber(),
-        issued_at: new Date().toISOString(),
-        issued_by: user.id,
-      })
-      .eq('id', existingNote.id)
-      .select('id, note_number')
-      .single()
-    if (updErr || !updated) return NextResponse.json({ error: updErr?.message ?? 'update_failed' }, { status: 500 })
-    note = updated
-    await supabase.from('delivery_note_items').delete().eq('delivery_note_id', note.id)
-  } else {
-    const monthKey = deliveryNoteMonthKey(delivery_date)
-    const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', { p_month: monthKey })
-    if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
-    const note_number = formatDeliveryNoteNumber(monthKey, seq as number)
+    const { data: existingItems, error: exItemsErr } = await supabase
+      .from('delivery_note_items')
+      .select('product_name, quantity, unit, unit_price, tax_rate')
+      .eq('delivery_note_id', existingNote.id)
+      .order('sort_order')
+    if (exItemsErr) return NextResponse.json({ error: `既存納品書の明細取得に失敗しました: ${exItemsErr.message}` }, { status: 500 })
 
-    const { data: inserted, error: noteErr } = await supabase
-      .from('delivery_notes')
-      .insert({
-        note_number,
-        customer_id,
-        customer_name: customerNameSnapshot,
-        delivery_date,
-        amount_mode,
-        issuer_name: issuerName ?? null,
-        issuer_address: issuerAddress ?? null,
-        issuer_tel: issuerTel ?? null,
-        subtotal_8: t.reduced.subtotal.toNumber(),
-        subtotal_10: t.standard.subtotal.toNumber(),
-        total_amount: t.total.toNumber(),
-        issued_by: user.id,
-      })
-      .select('id, note_number')
-      .single()
-    if (noteErr || !inserted) return NextResponse.json({ error: noteErr?.message ?? 'insert_failed' }, { status: 500 })
-    note = inserted
+    const sameContent = isSameNoteSnapshot(
+      { header: existingNote, items: existingItems ?? [] },
+      {
+        header: {
+          amount_mode,
+          issuer_name: issuerName ?? null,
+          issuer_address: issuerAddress ?? null,
+          issuer_tel: issuerTel ?? null,
+          total_amount: t.total.toNumber(),
+        },
+        items,
+      },
+    )
+    if (sameContent) {
+      return NextResponse.json({ id: existingNote.id, note_number: existingNote.note_number, reused: true }, { status: 200 })
+    }
   }
+
+  const monthKey = deliveryNoteMonthKey(delivery_date)
+  const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', { p_month: monthKey })
+  if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
+  const note_number = formatDeliveryNoteNumber(monthKey, seq as number)
+
+  const { data: note, error: noteErr } = await supabase
+    .from('delivery_notes')
+    .insert({
+      note_number,
+      customer_id,
+      customer_name: customerNameSnapshot,
+      delivery_date,
+      amount_mode,
+      issuer_name: issuerName ?? null,
+      issuer_address: issuerAddress ?? null,
+      issuer_tel: issuerTel ?? null,
+      subtotal_8: t.reduced.subtotal.toNumber(),
+      subtotal_10: t.standard.subtotal.toNumber(),
+      total_amount: t.total.toNumber(),
+      issued_by: user.id,
+    })
+    .select('id, note_number')
+    .single()
+  if (noteErr || !note) return NextResponse.json({ error: noteErr?.message ?? 'insert_failed' }, { status: 500 })
 
   const itemRows = items.map((it, i) => ({
     delivery_note_id: note.id,

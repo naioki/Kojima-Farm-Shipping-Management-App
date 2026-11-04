@@ -55,6 +55,18 @@ export async function approveOrder(
     return { ok: false, status: 400, error: '納品日を確定してください' }
   }
 
+  // 指定された納入先は、この注文の取引先のものに限る（他社の納入先を紐付けない）
+  if (!order.destination_id && input.destinationId) {
+    const { data: destRow, error: destErr } = await admin
+      .from('delivery_destinations')
+      .select('id')
+      .eq('id', input.destinationId)
+      .eq('customer_id', order.customer_id ?? '')
+      .maybeSingle()
+    if (destErr) return { ok: false, status: 500, error: `納入先の確認に失敗しました: ${destErr.message}` }
+    if (!destRow) return { ok: false, status: 400, error: '指定された納入先はこの取引先のものではありません' }
+  }
+
   let destinationId = order.destination_id ?? input.destinationId ?? null
   if (!destinationId && order.customer_id) {
     const { data: customerDests } = await admin
@@ -129,6 +141,33 @@ export async function approveOrder(
 
   const harvestTaskDate = shiftDateStr(deliveryDate, -1)
 
+  // 二重承認防止: pending_review のときだけ approved に切り替える（同時に2人が押しても1回だけ通る）。
+  // 収穫タスクの日付と注文の納品日がずれないよう、承認に使った納品日を注文にも反映する。
+  const updates: Record<string, unknown> = { status: 'approved' }
+  if (order.delivery_date !== deliveryDate) {
+    updates.delivery_date = deliveryDate
+    updates.delivery_date_source = 'manual'
+  }
+  if (!order.destination_id && destinationId) {
+    updates.destination_id = destinationId
+  }
+  const { data: claimed, error: updErr } = await admin
+    .from('orders')
+    .update(updates)
+    .eq('id', order.id)
+    .eq('status', 'pending_review')
+    .select('id')
+    .maybeSingle()
+  if (updErr) return { ok: false, status: 500, error: updErr.message }
+  if (!claimed) return { ok: false, status: 409, error: 'この注文は既に承認されたか、状態が変わりました。再読み込みしてください' }
+  const revertClaim = async () => {
+    const { error } = await admin
+      .from('orders')
+      .update({ status: 'pending_review', delivery_date: order.delivery_date, destination_id: order.destination_id })
+      .eq('id', order.id)
+    if (error) console.error('[approve] 承認の取り消しに失敗:', error.message)
+  }
+
   // #36 既に同じ (customer_id, destination_id, delivery_date) の承認済み注文があるかチェックし、あれば統合する
   // ※ ただしサンプル注文（note に「サンプル」を含む場合）は別口のサンプル依頼または通常大口便と混ざらないよう自動統合しない
   const isCurrentSample = Boolean(order.note && order.note.includes('サンプル'))
@@ -151,15 +190,22 @@ export async function approveOrder(
         .eq('order_id', targetExistingOrder.id)
 
       let tasksCreated = 0
+      const mergeErrors: string[] = []
+      const check = (label: string, r: { error: { message: string } | null }) => {
+        if (r.error) mergeErrors.push(`${label}: ${r.error.message}`)
+      }
       for (const it of items) {
+        // 出荷済みの明細には統合しない（数量を上書きして「未着手」に戻すと出荷実績が消えるため）。
+        // その場合は別行として既存注文に移す。
         const matchExisting = (existingItems ?? []).find(
           (ex) =>
-            (it.product_id && ex.product_id === it.product_id) ||
-            (!it.product_id && ex.product_name === it.product_name),
+            ex.field_status !== 'shipped' &&
+            ((it.product_id && ex.product_id === it.product_id) ||
+              (!it.product_id && ex.product_name === it.product_name)),
         )
         if (matchExisting) {
           const newQty = Number(it.quantity) || 0
-          await admin
+          const updRes = await admin
             .from('order_items')
             .update({
               quantity: newQty,
@@ -171,25 +217,51 @@ export async function approveOrder(
               version: (Number(matchExisting.version) || 1) + 1,
             })
             .eq('id', matchExisting.id)
-          await admin
-            .from('harvest_tasks')
-            .update({ required_qty: newQty, task_date: harvestTaskDate })
-            .eq('order_item_id', matchExisting.id)
-          await admin.from('order_items').delete().eq('id', it.id)
+          check(`明細更新(${it.product_name})`, updRes)
+          if (!updRes.error) {
+            // 上書き前の数量を監査に残す（Undo・事後確認の手がかり）
+            await writeAudit(admin, {
+              entityType: 'order_items',
+              entityId: matchExisting.id,
+              action: 'UPDATE',
+              oldValues: { quantity: matchExisting.quantity, field_status: matchExisting.field_status },
+              newValues: { quantity: newQty, field_status: 'not_started', merged_from_order_id: order.id },
+              userId,
+            }).catch((e) => console.error('[approve] 統合の監査記録に失敗', e))
+          }
+          check(
+            `収穫タスク更新(${it.product_name})`,
+            await admin
+              .from('harvest_tasks')
+              .update({ required_qty: newQty, task_date: harvestTaskDate })
+              .eq('order_item_id', matchExisting.id),
+          )
+          check(`重複明細削除(${it.product_name})`, await admin.from('order_items').delete().eq('id', it.id))
         } else {
-          await admin
-            .from('order_items')
-            .update({ order_id: targetExistingOrder.id })
-            .eq('id', it.id)
+          check(
+            `明細移動(${it.product_name})`,
+            await admin.from('order_items').update({ order_id: targetExistingOrder.id }).eq('id', it.id),
+          )
           if (it.product_id) {
-            await admin.from('harvest_tasks').insert({
+            const taskRes = await admin.from('harvest_tasks').insert({
               product_id: it.product_id,
               order_item_id: it.id,
               required_qty: it.quantity,
               task_date: harvestTaskDate,
             })
-            tasksCreated++
+            check(`収穫タスク作成(${it.product_name})`, taskRes)
+            if (!taskRes.error) tasksCreated++
           }
+        }
+      }
+
+      if (mergeErrors.length > 0) {
+        // 途中まで統合済みのため自動では巻き戻さない。元注文は残し、内容を返して人が確認できるようにする。
+        console.error('[approve] 既存注文への統合で一部失敗:', mergeErrors)
+        return {
+          ok: false,
+          status: 500,
+          error: `既存注文への統合の一部に失敗しました（統合先: ${targetExistingOrder.id}）。注文内容を確認してください: ${mergeErrors.join(' / ')}`,
         }
       }
 
@@ -200,7 +272,8 @@ export async function approveOrder(
           .eq('order_id', order.id)
       } catch {}
 
-      await admin.from('orders').delete().eq('id', order.id)
+      const { error: delErr } = await admin.from('orders').delete().eq('id', order.id)
+      if (delErr) console.error('[approve] 統合元の注文の削除に失敗:', delErr.message)
 
       try {
         await writeAudit(admin, {
@@ -217,18 +290,7 @@ export async function approveOrder(
     }
   }
 
-  // 既存の重複注文がない場合はそのまま approved に昇格
-  const updates: Record<string, unknown> = { status: 'approved' }
-  if (!order.delivery_date && input.deliveryDate) {
-    updates.delivery_date = input.deliveryDate
-    updates.delivery_date_source = 'manual'
-  }
-  if (!order.destination_id && destinationId) {
-    updates.destination_id = destinationId
-  }
-  const { error: updErr } = await admin.from('orders').update(updates).eq('id', order.id)
-  if (updErr) return { ok: false, status: 500, error: updErr.message }
-
+  // 既存の重複注文がない場合は、上で approved に切り替え済み。収穫タスクを生成する。
   const tasks = items
     .filter((it) => it.product_id)
     .map((it) => ({
@@ -240,7 +302,7 @@ export async function approveOrder(
   if (tasks.length > 0) {
     const { error: taskErr } = await admin.from('harvest_tasks').insert(tasks)
     if (taskErr) {
-      await admin.from('orders').update({ status: 'pending_review' }).eq('id', order.id)
+      await revertClaim()
       return { ok: false, status: 500, error: `収穫タスクの生成に失敗: ${taskErr.message}` }
     }
   }
