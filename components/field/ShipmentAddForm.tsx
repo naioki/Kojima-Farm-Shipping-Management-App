@@ -29,9 +29,7 @@ import { Modal } from '@/components/ui/Modal'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-import { determineContainerType,
-  determineHasCard,
-  resolveContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
+import { determineHasCard, resolveContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
 import { matchDestination, resolveBatchDate, createBatchModePlanner } from '@/lib/field/batch-register'
 import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
@@ -2736,7 +2734,7 @@ export function ShipmentAddForm({
                   ))}
 
                   {/* ③ 抽出明細一覧（各行でチェックON/OFF・箱数微調整・シール/規格/赤字バッジ確認可能） */}
-                  <div className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5">
+                  <div className="max-h-[28rem] overflow-y-auto space-y-2 pr-0.5">
                     {parsedCandidates.map((cand, cIdx) => {
                       const qNum = Number(String(cand.quantity ?? '0').replace(/,/g, ''))
                       const ppc = cand.packs_per_case || inputPacksPerCase || 20
@@ -2779,8 +2777,12 @@ export function ShipmentAddForm({
                               <span className="rounded-md bg-forest-900 text-white px-2 py-0.5 text-xs font-black shrink-0">
                                 {formatShortDateWithWeekday(cand.delivery_date)}
                               </span>
-                              <span className="font-black text-xs text-ink truncate">
-                                {cand.destination_name || cand.customer_name || `明細${cIdx + 1}`}
+                              {/* 表示は常に「取引先 ＞ 納入先」（CLAUDE.md） */}
+                              <span className="font-black text-sm text-ink truncate">
+                                {cand.customer_name || '取引先不明'}
+                                {cand.destination_name && cand.destination_name !== cand.customer_name && (
+                                  <span className="font-bold text-ink-soft"> ＞ {cand.destination_name}</span>
+                                )}
                               </span>
                             </div>
 
@@ -2818,9 +2820,12 @@ export function ShipmentAddForm({
                             </div>
                           </div>
 
-                          {/* 2行目：規格・シール・赤字確認バッジ ＋ 箱数ステッパー */}
+                          {/* 2行目：品目名・規格・シール・赤字確認バッジ ＋ 箱数ステッパー */}
                           <div className="flex flex-wrap items-center justify-between gap-2 pl-6">
                             <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-base font-black text-forest-950">
+                                {cand.product_name || `明細${cIdx + 1}`}
+                              </span>
                               {cand.spec && (
                                 <span className="rounded bg-sand-100 border border-sand-300 px-1.5 py-0.5 text-[10px] font-black text-ink">
                                   {cand.spec}
@@ -2859,17 +2864,19 @@ export function ShipmentAddForm({
                                 <button
                                   type="button"
                                   onClick={() => handleCandidateCasesChange(cand.id, cCases - 1)}
-                                  className="h-6 w-6 rounded border border-line bg-white hover:bg-sand-100 font-black text-xs text-ink flex items-center justify-center"
+                                  aria-label={`${cand.product_name ?? '明細'} を1箱減らす`}
+                                  className="h-10 w-10 rounded-lg border border-line bg-white hover:bg-sand-100 font-black text-base text-ink flex items-center justify-center"
                                 >
                                   -
                                 </button>
-                                <span className="text-xs font-black text-forest-950 min-w-[88px] text-center">
-                                  {cCases}箱 ({qNum}P)
+                                <span className="num text-sm font-black text-forest-950 min-w-[96px] text-center tabular-nums">
+                                  {cCases}箱 <span className="text-xs font-bold text-ink-soft">({qNum}P)</span>
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleCandidateCasesChange(cand.id, cCases + 1)}
-                                  className="h-6 w-6 rounded border border-line bg-white hover:bg-sand-100 font-black text-xs text-ink flex items-center justify-center"
+                                  aria-label={`${cand.product_name ?? '明細'} を1箱増やす`}
+                                  className="h-10 w-10 rounded-lg border border-line bg-white hover:bg-sand-100 font-black text-base text-ink flex items-center justify-center"
                                 >
                                   +
                                 </button>
