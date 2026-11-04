@@ -33,8 +33,14 @@ export default async function DeliveryNotesPage({
   const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(searchParams?.date ?? '') ? searchParams!.date! : defaultDate
 
   const supabase = createAdminClient()
-  const [{ data: customers, error }, { data: notes }, { data: dayOrders }, amountModeSetting] = await Promise.all([
-    supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
+  const [
+    { data: customers, error },
+    { data: notes },
+    { data: dayOrders },
+    { count: pendingCount },
+    amountModeSetting,
+  ] = await Promise.all([
+    supabase.from('customers').select('id, name, channel_identifiers').eq('is_active', true).order('name'),
     supabase
       .from('delivery_notes')
       .select('id, note_number, customer_name, delivery_date, amount_mode, total_amount, issued_at')
@@ -45,6 +51,10 @@ export default async function DeliveryNotesPage({
       .select('id, customer_id')
       .eq('delivery_date', targetDate)
       .in('status', ['approved', 'shipped', 'invoiced']),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending_review'),
     getSetting('DELIVERY_NOTE_AMOUNT_MODE'),
   ])
   if (error) return <ErrorState message={error.message} />
@@ -52,13 +62,31 @@ export default async function DeliveryNotesPage({
 
   const activeDayCustIds = new Set((dayOrders ?? []).map((o) => o.customer_id))
   const driverNoteCustomers = (customers ?? []).filter(
-    (c) => isDriverDeliveryNoteCustomer(c.name) && activeDayCustIds.has(c.id),
+    (c) =>
+      isDriverDeliveryNoteCustomer(c.name, (c as { channel_identifiers?: Record<string, unknown> | null }).channel_identifiers) &&
+      activeDayCustIds.has(c.id),
   )
-  const allDriverMasters = (customers ?? []).filter((c) => isDriverDeliveryNoteCustomer(c.name))
+  const allDriverMasters = (customers ?? []).filter((c) =>
+    isDriverDeliveryNoteCustomer(c.name, (c as { channel_identifiers?: Record<string, unknown> | null }).channel_identifiers),
+  )
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">納品書</h1>
+
+      {(pendingCount ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-950">
+          <span>
+            ⚠️ 未承認（確認待ち）の注文が <strong className="font-black underline">{pendingCount}件</strong> あります（承認すると納品書に反映されます）
+          </span>
+          <Link
+            href="/admin/orders?status=pending_review"
+            className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-black text-white hover:bg-amber-700"
+          >
+            確認待ちを開く →
+          </Link>
+        </div>
+      )}
 
       {/* 🚚 運転手渡し納品書（勘兵衛・オレンジファーム等）クイック印刷 */}
       <div className="rounded-2xl border-2 border-emerald-600/30 bg-emerald-50/70 p-4 space-y-3 shadow-2xs">
@@ -91,7 +119,10 @@ export default async function DeliveryNotesPage({
 
         <div className="grid grid-cols-1 gap-2">
           {(driverNoteCustomers.length > 0 ? driverNoteCustomers : allDriverMasters).map((c) => {
-            const preset = resolveDefaultIssuerPreset(c.name)
+            const preset = resolveDefaultIssuerPreset(
+              c.name,
+              (c as { channel_identifiers?: Record<string, unknown> | null }).channel_identifiers,
+            )
             const issuerLabel = resolveIssuerCompanyName(preset, '小島農園')
             const altPreset = preset === 'iplus' ? 'kojima' : 'iplus'
             const altLabel = altPreset === 'iplus' ? 'アイプラス名義' : '小島農園名義'

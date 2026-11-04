@@ -57,8 +57,8 @@ export function isDriverDeliveryNoteCustomer(
 
 /**
  * 取引先ごとの既定の発行元名義（小島農園 / 株式会社アイプラス）を返す。
- * - 勘兵衛 ➔ 株式会社アイプラス
- * - オレンジファーム ➔ 小島農園
+ * - 勘兵衛・オレンジファーム ➔ 株式会社アイプラス
+ * - その他 ➔ 小島農園
  */
 export function resolveDefaultIssuerPreset(
   customerName?: string | null,
@@ -68,7 +68,9 @@ export function resolveDefaultIssuerPreset(
     return parseIssuerPreset(channelIdentifiers.issuer_preset)
   }
   const norm = (customerName ?? '').normalize('NFKC')
-  if (norm.includes('勘兵衛')) return 'iplus'
+  if (norm.includes('勘兵衛') || norm.includes('オレンジファーム') || norm.includes('オレンジ')) {
+    return 'iplus'
+  }
   return 'kojima'
 }
 

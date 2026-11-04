@@ -112,30 +112,64 @@ export async function POST(req: Request) {
     items.map((it) => ({ quantity: it.quantity, unitPrice: it.unit_price, taxRate: it.tax_rate as TaxRate })),
   )
 
-  const monthKey = deliveryNoteMonthKey(delivery_date)
-  const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', { p_month: monthKey })
-  if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
-  const note_number = formatDeliveryNoteNumber(monthKey, seq as number)
-
-  const { data: note, error: noteErr } = await supabase
+  const { data: existingNote } = await supabase
     .from('delivery_notes')
-    .insert({
-      note_number,
-      customer_id,
-      customer_name: customerNameSnapshot,
-      delivery_date,
-      amount_mode,
-      issuer_name: issuerName ?? null,
-      issuer_address: issuerAddress ?? null,
-      issuer_tel: issuerTel ?? null,
-      subtotal_8: t.reduced.subtotal.toNumber(),
-      subtotal_10: t.standard.subtotal.toNumber(),
-      total_amount: t.total.toNumber(),
-      issued_by: user.id,
-    })
     .select('id, note_number')
-    .single()
-  if (noteErr) return NextResponse.json({ error: noteErr.message }, { status: 500 })
+    .eq('customer_id', customer_id)
+    .eq('delivery_date', delivery_date)
+    .eq('customer_name', customerNameSnapshot)
+    .order('issued_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let note: { id: string; note_number: string }
+  if (existingNote?.id) {
+    const { data: updated, error: updErr } = await supabase
+      .from('delivery_notes')
+      .update({
+        amount_mode,
+        issuer_name: issuerName ?? null,
+        issuer_address: issuerAddress ?? null,
+        issuer_tel: issuerTel ?? null,
+        subtotal_8: t.reduced.subtotal.toNumber(),
+        subtotal_10: t.standard.subtotal.toNumber(),
+        total_amount: t.total.toNumber(),
+        issued_at: new Date().toISOString(),
+        issued_by: user.id,
+      })
+      .eq('id', existingNote.id)
+      .select('id, note_number')
+      .single()
+    if (updErr || !updated) return NextResponse.json({ error: updErr?.message ?? 'update_failed' }, { status: 500 })
+    note = updated
+    await supabase.from('delivery_note_items').delete().eq('delivery_note_id', note.id)
+  } else {
+    const monthKey = deliveryNoteMonthKey(delivery_date)
+    const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', { p_month: monthKey })
+    if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
+    const note_number = formatDeliveryNoteNumber(monthKey, seq as number)
+
+    const { data: inserted, error: noteErr } = await supabase
+      .from('delivery_notes')
+      .insert({
+        note_number,
+        customer_id,
+        customer_name: customerNameSnapshot,
+        delivery_date,
+        amount_mode,
+        issuer_name: issuerName ?? null,
+        issuer_address: issuerAddress ?? null,
+        issuer_tel: issuerTel ?? null,
+        subtotal_8: t.reduced.subtotal.toNumber(),
+        subtotal_10: t.standard.subtotal.toNumber(),
+        total_amount: t.total.toNumber(),
+        issued_by: user.id,
+      })
+      .select('id, note_number')
+      .single()
+    if (noteErr || !inserted) return NextResponse.json({ error: noteErr?.message ?? 'insert_failed' }, { status: 500 })
+    note = inserted
+  }
 
   const itemRows = items.map((it, i) => ({
     delivery_note_id: note.id,

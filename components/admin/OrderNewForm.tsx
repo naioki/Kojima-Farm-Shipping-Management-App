@@ -151,12 +151,15 @@ function AnomalyBadge({ qty, stats }: { qty: number; stats: ProductStats }) {
  * 4. 既存注文のリアルタイム検知＆重複解決: 同一（取引先×納入先×出荷日）に注文がある場合、
  *    409エラーで止めず「既存注文に合算（追加）」「既存注文を上書き（置換）」「別便として追加」を選択可能。
  */
+const EMPTY_DESTINATIONS: DestinationOption[] = []
+const EMPTY_CUSTOMER_RULES: Record<string, CustomerRuleInfo> = {}
+
 export function OrderNewForm({
   customers: initialCustomers,
-  destinations = [],
+  destinations = EMPTY_DESTINATIONS,
   products,
   defaultSets,
-  customerRulesByPair = {},
+  customerRulesByPair = EMPTY_CUSTOMER_RULES,
   packsByProduct,
 }: OrderNewFormProps) {
   const router = useRouter()

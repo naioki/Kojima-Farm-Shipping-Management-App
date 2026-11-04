@@ -1,31 +1,47 @@
+'use client'
+
 import Link from 'next/link'
+import { useRouter, usePathname } from 'next/navigation'
 import { PackageCheck, Truck, CalendarRange } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 
 /**
  * 現場3大画面（収穫・パックボード ⇄ 便別積込・配送リスト ⇄ 週間マトリックス）の統合スイッチャー。
- * 基準日（date）および選択中の品目（product）を維持したまま、どの画面からでも1タップで相互に行き来できる（#01, #04）。
+ * - 基準日（date）および選択中の品目（product）を維持したまま、どの画面からでも1タップで相互に行き来できる（#01, #04）。
+ * - すでに開いている画面のタブを再タップした場合は、無反応にせず最新データへの再取得（router.refresh）を実行する。
  */
 export function FieldViewSwitch({
   active,
   date,
   product,
 }: {
-  active: 'day' | 'delivery' | 'week'
+  active: 'day' | 'delivery' | 'week' | 'concierge'
   date: string
   product?: string | null
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
   const prodParam = product ? `&product=${encodeURIComponent(product)}` : ''
   const base =
     'inline-flex flex-1 sm:flex-initial min-h-[42px] items-center justify-center gap-1.5 rounded-lg px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-black transition-all active:scale-95'
+
+  const handleSameTabClick = (targetPath: string, label: string) => {
+    if (pathname === targetPath) {
+      router.refresh()
+      toast.success(`${label}の最新データを取得しました`, { id: 'tab-refresh-toast', duration: 1500 })
+    }
+  }
+
   return (
     <div className="grid grid-cols-3 sm:inline-flex w-full sm:w-auto rounded-xl border border-line-strong bg-bg-soft p-1 shadow-2xs gap-1">
       <Link
         href={`/field/shipments?date=${date}${prodParam}`}
-        aria-current={active === 'day' ? 'page' : undefined}
+        onClick={() => handleSameTabClick('/field/shipments', 'パック画面')}
+        aria-current={active === 'day' && pathname === '/field/shipments' ? 'page' : undefined}
         className={cn(
           base,
-          active === 'day'
+          active === 'day' && pathname === '/field/shipments'
             ? 'bg-forest-700 text-white shadow-xs'
             : 'text-ink-soft hover:bg-white/80 hover:text-ink',
         )}
@@ -35,6 +51,7 @@ export function FieldViewSwitch({
       </Link>
       <Link
         href={`/field/deliveries?date=${date}${prodParam}`}
+        onClick={() => handleSameTabClick('/field/deliveries', '積込・配送リスト')}
         aria-current={active === 'delivery' ? 'page' : undefined}
         className={cn(
           base,
@@ -48,6 +65,7 @@ export function FieldViewSwitch({
       </Link>
       <Link
         href={`/field/matrix?week=${date}&date=${date}${prodParam}`}
+        onClick={() => handleSameTabClick('/field/matrix', '週間表')}
         aria-current={active === 'week' ? 'page' : undefined}
         className={cn(
           base,

@@ -208,7 +208,18 @@ export function ShipmentRow({
   const [editOrderBoxes, setEditOrderBoxes] = useState<string>(() =>
     String(Math.floor(initialOrderedQty / packsPerCase)),
   )
+  const [editOrderLoose, setEditOrderLoose] = useState<string>(() =>
+    String(initialOrderedQty % packsPerCase),
+  )
   const [editOrderPacks, setEditOrderPacks] = useState<string>(() => String(initialOrderedQty))
+  const [showOrderEdit, setShowOrderEdit] = useState(false)
+
+  // カスタム追加されたコンテナ・袋種別（全カード共有）
+  const [customContainers, setCustomContainers] = useState<string[]>([])
+  const [customBags, setCustomBags] = useState<string[]>([])
+  const [addingMaterialCat, setAddingMaterialCat] = useState<'container' | 'bag' | null>(null)
+  const [newMaterialInput, setNewMaterialInput] = useState('')
+  const [savingMaterialOpt, setSavingMaterialOpt] = useState(false)
 
   const [savingQuick, setSavingQuick] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
@@ -235,8 +246,74 @@ export function ShipmentRow({
   useEffect(() => {
     setOrderedQty(initialOrderedQty)
     setEditOrderBoxes(String(Math.floor(initialOrderedQty / packsPerCase)))
+    setEditOrderLoose(String(initialOrderedQty % packsPerCase))
     setEditOrderPacks(String(initialOrderedQty))
   }, [initialOrderedQty, packsPerCase])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch('/api/field/material-options')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { containers?: string[]; bags?: string[] } | null) => {
+        if (cancelled || !data) return
+        setCustomContainers(Array.isArray(data.containers) ? data.containers : [])
+        setCustomBags(Array.isArray(data.bags) ? data.bags : [])
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  async function handleAddCustomMaterial(category: 'container' | 'bag') {
+    const val = newMaterialInput.trim()
+    if (!val) return
+    setSavingMaterialOpt(true)
+    try {
+      const res = await fetch('/api/field/material-options', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ category, value: val }),
+      })
+      if (!res.ok) throw new Error('追加に失敗しました')
+      const data = (await res.json()) as { containers: string[]; bags: string[] }
+      setCustomContainers(data.containers ?? [])
+      setCustomBags(data.bags ?? [])
+      setNewMaterialInput('')
+      setAddingMaterialCat(null)
+      if (category === 'container') {
+        void quickPatchAttributes({ container_type: val })
+      } else {
+        void quickPatchAttributes({ bag_type: val })
+      }
+      toast.success(`「${val}」を選択肢に追加しました`)
+    } catch (e) {
+      toast.error(fieldErrorMessage(e, '追加に失敗しました'))
+    } finally {
+      setSavingMaterialOpt(false)
+    }
+  }
+
+  async function handleRemoveCustomMaterial(category: 'container' | 'bag', val: string) {
+    setSavingMaterialOpt(true)
+    try {
+      const res = await fetch('/api/field/material-options', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ category, value: val }),
+      })
+      if (!res.ok) throw new Error('削除に失敗しました')
+      const data = (await res.json()) as { containers: string[]; bags: string[] }
+      setCustomContainers(data.containers ?? [])
+      setCustomBags(data.bags ?? [])
+      toast.success(`「${val}」を選択肢から削除しました`)
+    } catch (e) {
+      toast.error(fieldErrorMessage(e, '削除に失敗しました'))
+    } finally {
+      setSavingMaterialOpt(false)
+    }
+  }
 
   useEffect(() => {
     setShippedPacks(initialShippedQty)
@@ -1366,57 +1443,175 @@ export function ShipmentRow({
                 {hasSeal ? '🏷️ シールあり' : '🏷️ シールなし'}
               </button>
 
-              {['印字袋(FG)', '無地袋'].map((bt) => {
+              {['印字袋(FG)', '無地袋', ...customBags.filter((b) => b !== '印字袋(FG)' && b !== '無地袋')].map((bt) => {
                 const active = bagType === bt
+                const isCustom = bt !== '印字袋(FG)' && bt !== '無地袋'
                 return (
-                  <button
-                    key={bt}
-                    type="button"
-                    disabled={savingDetails}
-                    onClick={() => void quickPatchAttributes({ bag_type: active ? null : bt })}
-                    className={cn(
-                      'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
-                      active
-                        ? 'border-amber-500 bg-amber-500 text-white shadow-2xs'
-                        : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100',
+                  <span key={bt} className="inline-flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      disabled={savingDetails}
+                      onClick={() => void quickPatchAttributes({ bag_type: active ? null : bt })}
+                      className={cn(
+                        'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
+                        active
+                          ? 'border-amber-500 bg-amber-500 text-white shadow-2xs'
+                          : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100',
+                      )}
+                    >
+                      🛍️ {bt}
+                    </button>
+                    {isCustom && (
+                      <button
+                        type="button"
+                        disabled={savingMaterialOpt}
+                        onClick={() => void handleRemoveCustomMaterial('bag', bt)}
+                        title={`「${bt}」を選択肢から削除`}
+                        className="h-6 w-6 rounded-full text-[11px] font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      >
+                        ×
+                      </button>
                     )}
-                  >
-                    🛍️ {bt}
-                  </button>
+                  </span>
                 )
               })}
+              <button
+                type="button"
+                onClick={() => {
+                  setAddingMaterialCat(addingMaterialCat === 'bag' ? null : 'bag')
+                  setNewMaterialInput('')
+                }}
+                className="min-h-[34px] px-2.5 rounded-xl border border-dashed border-slate-300 bg-white text-[11px] font-bold text-ink-soft hover:border-slate-500 hover:text-ink"
+              >
+                ＋袋・資材を追加
+              </button>
             </div>
+
+            {addingMaterialCat === 'bag' && (
+              <div className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50/70 p-2">
+                <input
+                  type="text"
+                  value={newMaterialInput}
+                  onChange={(e) => setNewMaterialInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void handleAddCustomMaterial('bag')
+                    }
+                  }}
+                  placeholder="新しい袋・資材名（例: ボードン11号）"
+                  className={cn(fieldInput, 'flex-1 h-9 text-xs')}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => void handleAddCustomMaterial('bag')}
+                  isLoading={savingMaterialOpt}
+                  className="h-9 px-3 text-xs font-black"
+                >
+                  追加して適用
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setAddingMaterialCat(null)}
+                  className="px-2 text-xs font-bold text-ink-soft hover:text-ink"
+                >
+                  閉じる
+                </button>
+              </div>
+            )}
 
             {/* 🟦 コンテナ種別 1タップピルボタン */}
             <div className="space-y-1">
-              <span className="text-[11px] font-bold text-ink-soft block">📦 コンテナ種別（1タップで切替）</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-ink-soft block">📦 コンテナ種別（1タップで切替）</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingMaterialCat(addingMaterialCat === 'container' ? null : 'container')
+                    setNewMaterialInput('')
+                  }}
+                  className="text-[11px] font-bold text-sky-700 hover:underline"
+                >
+                  ＋新しいコンテナを追加
+                </button>
+              </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {[
-                  { label: '🟦 青コン', value: '青コン' },
-                  { label: '🟫 茶コン', value: '茶コン' },
-                  { label: '🟩 NSKオリコン', value: '農業総研専用折りたたみコンテナ' },
-                  { label: '🟦 房総青コン', value: '房総青コン' },
-                  { label: '🟩 緑コン', value: '緑コン' },
+                  { label: '🟦 青コン', value: '青コン', isCustom: false },
+                  { label: '🟫 茶コン', value: '茶コン', isCustom: false },
+                  { label: '🟩 NSKオリコン', value: '農業総研専用折りたたみコンテナ', isCustom: false },
+                  { label: '🟦 房総青コン', value: '房総青コン', isCustom: false },
+                  { label: '🟩 緑コン', value: '緑コン', isCustom: false },
+                  ...customContainers
+                    .filter(
+                      (c) =>
+                        !['青コン', '茶コン', '農業総研専用折りたたみコンテナ', '房総青コン', '緑コン'].includes(c),
+                    )
+                    .map((c) => ({ label: `📦 ${c}`, value: c, isCustom: true })),
                 ].map((cOpt) => {
                   const active = container === cOpt.value || (cOpt.value === '農業総研専用折りたたみコンテナ' && container.includes('NSK'))
                   return (
-                    <button
-                      key={cOpt.value}
-                      type="button"
-                      disabled={savingDetails}
-                      onClick={() => void quickPatchAttributes({ container_type: cOpt.value })}
-                      className={cn(
-                        'min-h-[36px] px-2.5 rounded-xl border text-xs font-black transition active:scale-95',
-                        active
-                          ? 'border-sky-700 bg-sky-700 text-white shadow-2xs'
-                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100',
+                    <span key={cOpt.value} className="inline-flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        disabled={savingDetails}
+                        onClick={() => void quickPatchAttributes({ container_type: cOpt.value })}
+                        className={cn(
+                          'min-h-[36px] px-2.5 rounded-xl border text-xs font-black transition active:scale-95',
+                          active
+                            ? 'border-sky-700 bg-sky-700 text-white shadow-2xs'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100',
+                        )}
+                      >
+                        {cOpt.label}
+                      </button>
+                      {cOpt.isCustom && (
+                        <button
+                          type="button"
+                          disabled={savingMaterialOpt}
+                          onClick={() => void handleRemoveCustomMaterial('container', cOpt.value)}
+                          title={`「${cOpt.value}」を選択肢から削除`}
+                          className="h-6 w-6 rounded-full text-[11px] font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          ×
+                        </button>
                       )}
-                    >
-                      {cOpt.label}
-                    </button>
+                    </span>
                   )
                 })}
               </div>
+              {addingMaterialCat === 'container' && (
+                <div className="mt-1.5 flex items-center gap-1.5 rounded-xl border border-sky-300 bg-sky-50/70 p-2">
+                  <input
+                    type="text"
+                    value={newMaterialInput}
+                    onChange={(e) => setNewMaterialInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault()
+                        void handleAddCustomMaterial('container')
+                      }
+                    }}
+                    placeholder="新しいコンテナ名（例: 黄コン、赤コン、段ボール）"
+                    className={cn(fieldInput, 'flex-1 h-9 text-xs')}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => void handleAddCustomMaterial('container')}
+                    isLoading={savingMaterialOpt}
+                    className="h-9 px-3 text-xs font-black"
+                  >
+                    追加して適用
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setAddingMaterialCat(null)}
+                    className="px-2 text-xs font-bold text-ink-soft hover:text-ink"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 📐 1箱の入数 ＆ 規格プリセット（1タップで即時保存・箱数再計算・次回から自動適用） */}
@@ -1482,67 +1677,101 @@ export function ShipmentRow({
               </div>
             </div>
 
-            {/* 📦 注文数の変更 ＆ 規格手入力・削除 */}
+            {/* 📦 注文数の変更 ＆ 規格手入力（普段は折りたたんで途中数と誤認しない設計） */}
             <div className="rounded-xl border border-slate-200 bg-white p-2.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-black text-ink">📦 注文数の変更（1箱＝{packsPerCase}P）</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={editOrderBoxes}
-                    onChange={(e) => {
-                      const b = e.target.value
-                      setEditOrderBoxes(b)
-                      const bNum = parseInt(b, 10)
-                      if (!isNaN(bNum) && bNum >= 0) {
-                        setEditOrderPacks(String(bNum * packsPerCase))
-                      }
-                    }}
-                    className={cn(fieldInput, 'num w-18 text-center font-black')}
-                  />
-                  <span className="text-xs font-bold text-ink">箱 ＝</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={editOrderPacks}
-                    onChange={(e) => {
-                      const p = e.target.value
-                      setEditOrderPacks(p)
-                      const pNum = parseInt(p, 10)
-                      if (!isNaN(pNum) && pNum >= 0 && packsPerCase > 0) {
-                        setEditOrderBoxes(String(Math.floor(pNum / packsPerCase)))
-                      }
-                    }}
-                    className={cn(fieldInput, 'num w-22 text-center font-black')}
-                  />
-                  <span className="text-xs font-bold text-ink">P</span>
-                </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-ink-soft">
+                  📦 現在の注文数：<strong className="font-black text-ink">{fullCases}箱{loosePacks > 0 ? `＋${loosePacks}P` : ''}（計{orderedQty}P / 1箱{packsPerCase}入）</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowOrderEdit(!showOrderEdit)}
+                  className={cn(
+                    'rounded-lg border px-2.5 py-1 text-xs font-black transition',
+                    showOrderEdit
+                      ? 'border-slate-700 bg-slate-800 text-white'
+                      : 'border-slate-300 bg-slate-50 text-ink hover:bg-slate-100',
+                  )}
+                >
+                  {showOrderEdit ? '閉じる ▲' : '📦 注文数・規格を変更する ✎'}
+                </button>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
-                <input
-                  className={cn(fieldInput, 'flex-1 min-w-[160px]')}
-                  value={spec}
-                  onChange={(e) => setSpec(e.target.value)}
-                  placeholder="規格を自由入力（例: 2〜3株 (入数20)）"
-                />
-                <div className="flex items-center gap-2 ml-auto">
-                  <button
-                    type="button"
-                    onClick={() => setDeleteOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-bold text-alert hover:bg-alert/10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    <span>{isThaiMode ? 'ลบ (削除)' : '削除'}</span>
-                  </button>
-                  <Button size="sm" onClick={executeSaveAllSpecsAndQty} isLoading={savingDetails} className="h-10 px-3.5 text-xs font-black">
-                    ✓ 数量・規格を保存
-                  </Button>
+              {showOrderEdit && (
+                <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black text-ink">注文数の変更（1箱＝{packsPerCase}P）</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={editOrderBoxes}
+                        onChange={(e) => {
+                          const b = e.target.value
+                          setEditOrderBoxes(b)
+                          const bNum = parseInt(b, 10)
+                          const lNum = parseInt(editOrderLoose, 10) || 0
+                          if (!isNaN(bNum) && bNum >= 0) {
+                            setEditOrderPacks(String(bNum * packsPerCase + Math.max(0, lNum)))
+                          }
+                        }}
+                        className={cn(fieldInput, 'num w-16 text-center font-black')}
+                      />
+                      <span className="text-xs font-bold text-ink">箱 ＋ 端数</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={Math.max(0, packsPerCase - 1)}
+                        value={editOrderLoose}
+                        onChange={(e) => {
+                          const l = e.target.value
+                          setEditOrderLoose(l)
+                          const bNum = parseInt(editOrderBoxes, 10) || 0
+                          const lNum = parseInt(l, 10)
+                          if (!isNaN(lNum) && lNum >= 0) {
+                            setEditOrderPacks(String(Math.max(0, bNum) * packsPerCase + lNum))
+                          }
+                        }}
+                        className={cn(fieldInput, 'num w-14 text-center font-black')}
+                      />
+                      <span className="text-xs font-bold text-ink">P ＝ 計</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={editOrderPacks}
+                        onChange={(e) => {
+                          const p = e.target.value
+                          setEditOrderPacks(p)
+                          const pNum = parseInt(p, 10)
+                          if (!isNaN(pNum) && pNum >= 0 && packsPerCase > 0) {
+                            setEditOrderBoxes(String(Math.floor(pNum / packsPerCase)))
+                            setEditOrderLoose(String(pNum % packsPerCase))
+                          }
+                        }}
+                        className={cn(fieldInput, 'num w-20 text-center font-black')}
+                      />
+                      <span className="text-xs font-bold text-ink">P</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                    <input
+                      className={cn(fieldInput, 'flex-1 min-w-[160px]')}
+                      value={spec}
+                      onChange={(e) => setSpec(e.target.value)}
+                      placeholder="規格を自由入力（例: 2〜3株 (入数20)）"
+                    />
+                    <div className="flex items-center gap-2 ml-auto">
+                      <Button size="sm" onClick={executeSaveAllSpecsAndQty} isLoading={savingDetails} className="h-10 px-3.5 text-xs font-black">
+                        ✓ 数量・規格を保存
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 

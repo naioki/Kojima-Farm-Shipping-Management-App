@@ -56,6 +56,8 @@ function isUserTypingInInput(): boolean {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || (el as HTMLElement).isContentEditable
 }
 
+const EMPTY_NEXT_DAY_ITEMS: ShipmentItemData[] = []
+
 /**
  * 収穫・袋詰め（パック）専用の明細カード一覧ビュー（v5.1.10 重複完全排除版）。
  * - 【#01 解消】二重になっていた濃緑スティッキー進捗バーと HarvestPulseSummary を単一コックピットへ統合。
@@ -64,7 +66,7 @@ function isUserTypingInInput(): boolean {
  */
 export function PackingAndShippingViews({
   items: initialItems,
-  nextDayItems: initialNextDayItems = [],
+  nextDayItems: initialNextDayItems = EMPTY_NEXT_DAY_ITEMS,
   date,
   isAdmin,
   productName,

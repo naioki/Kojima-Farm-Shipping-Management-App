@@ -73,6 +73,8 @@ export interface CustomerDeliveryCardProps {
   onCompletionChange?: (customerId: string, isCompleted: boolean) => void
 }
 
+const EMPTY_ROUTE_SUMMARIES: Array<{ title: string; departureTime: string | null }> = []
+
 /**
  * 便別積込・配送リストの1カードコンポーネント（v5.1.10 重複完全排除版）。
  * - 【#15 解消】「便・時間順」モードでセクション見出しに時刻が出ている場合は、カード内の時刻チップをスリムな「⏰ 出荷時間」ボタンにして同じ時刻文字列の反復を排除。
@@ -89,7 +91,7 @@ export function CustomerDeliveryCard({
   notes: initialNotes,
   isCompleted: initialIsCompleted,
   destinations: initialDestinations,
-  routeSummaries = [],
+  routeSummaries = EMPTY_ROUTE_SUMMARIES,
   earliestDepartureTime,
   hideParentTimeChip = false,
   onCompletionChange,

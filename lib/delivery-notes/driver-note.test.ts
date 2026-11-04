@@ -17,11 +17,12 @@ describe('driver-note helper rules', () => {
   })
 
   describe('resolveDefaultIssuerPreset & resolveIssuerCompanyName', () => {
-    it('defaults Kanbei to iplus (株式会社アイプラス) and Orange Farm to kojima (小島農園)', () => {
+    it('defaults Kanbei and Orange Farm to iplus (株式会社アイプラス) and others to kojima (小島農園)', () => {
       expect(resolveDefaultIssuerPreset('株式会社勘兵衛')).toBe('iplus')
       expect(resolveIssuerCompanyName('iplus', '小島農園')).toBe('株式会社アイプラス')
 
-      expect(resolveDefaultIssuerPreset('株式会社オレンジファーム')).toBe('kojima')
+      expect(resolveDefaultIssuerPreset('株式会社オレンジファーム')).toBe('iplus')
+      expect(resolveDefaultIssuerPreset('和郷園')).toBe('kojima')
       expect(resolveIssuerCompanyName('kojima', '小島農園')).toBe('小島農園')
     })
   })

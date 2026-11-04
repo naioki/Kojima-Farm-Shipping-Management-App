@@ -10,7 +10,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const user = await getAuthedUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const parsed = customerUpdateSchema.safeParse(await req.json().catch(() => null))
+  const rawBody = (await req.json().catch(() => null)) as Record<string, unknown> | null
+  const parsed = customerUpdateSchema.safeParse(rawBody)
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid', detail: parsed.error.flatten() }, { status: 400 })
   }
@@ -22,16 +23,40 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (d.payment_terms !== undefined) updates.payment_terms = d.payment_terms
   if (d.is_active !== undefined) updates.is_active = d.is_active
   if ('display_color' in d) updates.display_color = d.display_color ?? null
+
+  const admin = createAdminClient()
+
+  // 納品書の発行元名義（issuer_preset）および運転手渡し納品書対象（requires_delivery_note）を channel_identifiers に保存
+  const hasIssuerPreset = rawBody && typeof rawBody.issuer_preset === 'string'
+  const hasRequiresNote = rawBody && typeof rawBody.requires_delivery_note === 'boolean'
+  if (hasIssuerPreset || hasRequiresNote) {
+    const { data: existing } = await admin
+      .from('customers')
+      .select('channel_identifiers')
+      .eq('id', params.id)
+      .maybeSingle()
+    const currentChan =
+      existing?.channel_identifiers && typeof existing.channel_identifiers === 'object'
+        ? { ...(existing.channel_identifiers as Record<string, unknown>) }
+        : {}
+    if (hasIssuerPreset) {
+      currentChan.issuer_preset = rawBody.issuer_preset === 'iplus' ? 'iplus' : 'kojima'
+    }
+    if (hasRequiresNote) {
+      currentChan.requires_delivery_note = Boolean(rawBody.requires_delivery_note)
+    }
+    updates.channel_identifiers = currentChan
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 })
   }
 
-  const admin = createAdminClient()
   const { data, error } = await admin
     .from('customers')
     .update(updates)
     .eq('id', params.id)
-    .select('id, name, name_kana, payment_terms, is_active')
+    .select('id, name, name_kana, payment_terms, is_active, channel_identifiers')
     .maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'not_found' }, { status: 404 })

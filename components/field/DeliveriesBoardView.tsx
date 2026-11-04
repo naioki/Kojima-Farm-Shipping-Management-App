@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, RotateCw, Printer, Clock, Building2 } from 'lucide-react'
+import { CheckCircle2, RotateCw, Clock, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
@@ -66,24 +66,25 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
     prevSignatureRef.current = sig
   }, [initialCards])
 
-  // スマート・ポーリング（入力中は自動更新を一時停止）
+  // スマート・ポーリング（入力中は自動更新を一時停止、focusとvisibilitychangeの重複発火をデバウンス）
   useEffect(() => {
+    let lastRefreshAt = 0
     const syncLatest = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         if (isUserTypingInInput()) return
+        const now = Date.now()
+        if (now - lastRefreshAt < 2500) return
+        lastRefreshAt = now
         router.refresh()
       }
     }
     const timer = setInterval(syncLatest, 30_000)
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible' && !isUserTypingInInput()) router.refresh()
-    }
     window.addEventListener('focus', syncLatest)
-    document.addEventListener('visibilitychange', onVisibility)
+    document.addEventListener('visibilitychange', syncLatest)
     return () => {
       clearInterval(timer)
       window.removeEventListener('focus', syncLatest)
-      document.removeEventListener('visibilitychange', onVisibility)
+      document.removeEventListener('visibilitychange', syncLatest)
     }
   }, [router])
 
@@ -308,22 +309,14 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             </span>
             <button
               type="button"
-              onClick={() => window.print()}
-              title="積込リストを印刷"
-              aria-label="積込リストを印刷"
-              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-1 text-xs text-white/90 border border-white/15 transition"
-            >
-              <Printer className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
               onClick={handleRefresh}
               disabled={isRefreshing}
               title="最新データを再取得"
               aria-label="最新データを再取得"
-              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-1.5 py-1 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
+              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-2 py-1 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+              <span className="hidden sm:inline text-[11px] font-bold">更新</span>
             </button>
           </div>
         </div>

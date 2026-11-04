@@ -17,8 +17,125 @@ import {
   resolvePrintedDeliveryDate,
 } from '@/lib/delivery-notes/driver-note'
 import { shiftDateStr } from '@/lib/dates'
+import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
 
 export const runtime = 'nodejs'
+
+async function autoUpsertDeliveryNoteSnapshot(params: {
+  supabase: ReturnType<typeof createAdminClient>
+  userId: string
+  customerId: string
+  customerName: string
+  deliveryDate: string
+  amountMode: string
+  issuerName: string
+  issuerAddress: string | null
+  issuerTel: string | null
+  subtotal8: number
+  subtotal10: number
+  totalAmount: number
+  items: {
+    product_name: string
+    quantity: number
+    unit: string
+    unit_price: number
+    tax_rate: number
+    subtotal: number
+  }[]
+}) {
+  try {
+    const {
+      supabase,
+      userId,
+      customerId,
+      customerName,
+      deliveryDate,
+      amountMode,
+      issuerName,
+      issuerAddress,
+      issuerTel,
+      subtotal8,
+      subtotal10,
+      totalAmount,
+      items,
+    } = params
+    if (items.length === 0) return
+
+    const { data: existing } = await supabase
+      .from('delivery_notes')
+      .select('id, note_number')
+      .eq('customer_id', customerId)
+      .eq('delivery_date', deliveryDate)
+      .eq('customer_name', customerName)
+      .order('issued_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let noteId = existing?.id ?? null
+
+    if (noteId) {
+      await supabase
+        .from('delivery_notes')
+        .update({
+          amount_mode: amountMode,
+          issuer_name: issuerName,
+          issuer_address: issuerAddress,
+          issuer_tel: issuerTel,
+          subtotal_8: subtotal8,
+          subtotal_10: subtotal10,
+          total_amount: totalAmount,
+          issued_at: new Date().toISOString(),
+          issued_by: userId,
+        })
+        .eq('id', noteId)
+
+      await supabase.from('delivery_note_items').delete().eq('delivery_note_id', noteId)
+    } else {
+      const monthKey = deliveryNoteMonthKey(deliveryDate)
+      const { data: seq, error: seqErr } = await supabase.rpc('get_next_delivery_note_number', {
+        p_month: monthKey,
+      })
+      if (seqErr || seq == null) return
+      const noteNumber = formatDeliveryNoteNumber(monthKey, seq as number)
+      const { data: inserted, error: insErr } = await supabase
+        .from('delivery_notes')
+        .insert({
+          note_number: noteNumber,
+          customer_id: customerId,
+          customer_name: customerName,
+          delivery_date: deliveryDate,
+          amount_mode: amountMode,
+          issuer_name: issuerName,
+          issuer_address: issuerAddress,
+          issuer_tel: issuerTel,
+          subtotal_8: subtotal8,
+          subtotal_10: subtotal10,
+          total_amount: totalAmount,
+          issued_by: userId,
+        })
+        .select('id')
+        .single()
+      if (insErr || !inserted) return
+      noteId = inserted.id
+    }
+
+    if (noteId) {
+      const itemRows = items.map((it, idx) => ({
+        delivery_note_id: noteId!,
+        product_name: it.product_name,
+        quantity: it.quantity,
+        unit: it.unit,
+        unit_price: it.unit_price,
+        tax_rate: it.tax_rate as TaxRate,
+        subtotal: it.subtotal,
+        sort_order: idx,
+      }))
+      await supabase.from('delivery_note_items').insert(itemRows)
+    }
+  } catch (err) {
+    console.warn('[api/delivery-notes/pdf] 自動履歴保存をスキップ:', err)
+  }
+}
 
 /**
  * 納品書 / ご注文確認書 PDF（@react-pdf）。
@@ -197,6 +314,28 @@ export async function GET(req: Request) {
       })),
     )
 
+    const subtotal8 = t.reduced.subtotal.toNumber()
+    const subtotal10 = t.standard.subtotal.toNumber()
+    const totalAmount = t.total.toNumber()
+
+    if (docType === 'delivery' && rawItems.length > 0) {
+      await autoUpsertDeliveryNoteSnapshot({
+        supabase,
+        userId: user.id,
+        customerId,
+        customerName: displayCustomerName,
+        deliveryDate: printedDate,
+        amountMode: effectiveMode,
+        issuerName,
+        issuerAddress: address ?? null,
+        issuerTel: tel ?? null,
+        subtotal8,
+        subtotal10,
+        totalAmount,
+        items: rawItems,
+      })
+    }
+
     sheets.push({
       customerName: displayCustomerName,
       date: printedDate,
@@ -206,9 +345,9 @@ export async function GET(req: Request) {
       issuer: { name: issuerName, address, tel },
       items: rawItems,
       totals: {
-        subtotal8: t.reduced.subtotal.toNumber(),
-        subtotal10: t.standard.subtotal.toNumber(),
-        total: t.total.toNumber(),
+        subtotal8,
+        subtotal10,
+        total: totalAmount,
       },
     })
   }

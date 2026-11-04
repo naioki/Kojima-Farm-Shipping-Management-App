@@ -162,6 +162,9 @@ function extractBreakdownParts(
   return parts.length >= 2 ? parts : null
 }
 
+const EMPTY_DESTINATIONS: LocalDestination[] = []
+const EMPTY_RULES_BY_PAIR: Record<string, CustomerProductRuleSummary> = {}
+
 /**
  * 出荷一覧の「スマート追加・変更」フォーム（画像＋テキスト＋事前指示書の完全統合＆一覧確認ボード搭載）。
  */
@@ -170,9 +173,9 @@ export function ShipmentAddForm({
   defaultProductId,
   customers: initialCustomers,
   products: initialProducts,
-  destinations = [],
+  destinations = EMPTY_DESTINATIONS,
   packsByPair,
-  rulesByPair = {},
+  rulesByPair = EMPTY_RULES_BY_PAIR,
 }: ShipmentAddFormProps) {
   const router = useRouter()
   const { enqueueShipment } = useOutbox()

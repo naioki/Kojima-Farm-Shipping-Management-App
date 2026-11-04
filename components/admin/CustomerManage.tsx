@@ -2,11 +2,16 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Trash2 } from 'lucide-react'
+import { Check, Trash2, Building2, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { ConfirmModal } from '@/components/ui/Modal'
+import {
+  resolveDefaultIssuerPreset,
+  isDriverDeliveryNoteCustomer,
+  type IssuerPreset,
+} from '@/lib/delivery-notes/driver-note'
 
 export interface CustomerManageProps {
   customer: {
@@ -15,11 +20,12 @@ export interface CustomerManageProps {
     name_kana: string | null
     payment_terms: string | null
     is_active: boolean
+    channel_identifiers?: Record<string, unknown> | null
   }
 }
 
 /**
- * 取引先の管理（情報編集・有効/無効・削除）。
+ * 取引先の管理（情報編集・納品書名義設定・有効/無効・削除）。
  * 未使用の取引先は付随ルールごと物理削除し、過去の注文・請求書がある取引先は自動的に非表示（無効化）にする。
  */
 export function CustomerManage({ customer }: CustomerManageProps) {
@@ -28,6 +34,12 @@ export function CustomerManage({ customer }: CustomerManageProps) {
   const [kana, setKana] = useState(customer.name_kana ?? '')
   const [terms, setTerms] = useState(customer.payment_terms ?? '')
   const [active, setActive] = useState(customer.is_active)
+  const [issuerPreset, setIssuerPreset] = useState<IssuerPreset>(() =>
+    resolveDefaultIssuerPreset(customer.name, customer.channel_identifiers),
+  )
+  const [requiresDeliveryNote, setRequiresDeliveryNote] = useState<boolean>(() =>
+    isDriverDeliveryNoteCustomer(customer.name, customer.channel_identifiers),
+  )
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -42,13 +54,20 @@ export function CustomerManage({ customer }: CustomerManageProps) {
       const res = await fetch(`/api/customers/${customer.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, name_kana: kana || null, payment_terms: terms || null, is_active: active }),
+        body: JSON.stringify({
+          name,
+          name_kana: kana || null,
+          payment_terms: terms || null,
+          is_active: active,
+          issuer_preset: issuerPreset,
+          requires_delivery_note: requiresDeliveryNote,
+        }),
       })
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(j.error ?? `保存に失敗 (${res.status})`)
       }
-      toast.success('保存しました')
+      toast.success('取引先設定を保存しました')
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
@@ -91,6 +110,53 @@ export function CustomerManage({ customer }: CustomerManageProps) {
             onChange={(e) => setActive(e.target.checked)}
           />
           <span className="text-sm text-ink">有効（オフで一覧・選択肢から非表示）</span>
+        </label>
+      </div>
+
+      {/* 📄 納品書の発行元名義 ＆ 運転手渡し対象設定 */}
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-sm font-black text-emerald-950">
+            <Building2 className="h-4 w-4 text-emerald-700" />
+            <span>納品書の発行元名義（デフォルト）</span>
+          </div>
+          <div className="inline-flex rounded-lg border border-emerald-300 bg-white p-0.5 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setIssuerPreset('kojima')}
+              className={
+                issuerPreset === 'kojima'
+                  ? 'rounded-md bg-emerald-700 px-3 py-1 text-xs font-black text-white'
+                  : 'rounded-md px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft'
+              }
+            >
+              小島農園
+            </button>
+            <button
+              type="button"
+              onClick={() => setIssuerPreset('iplus')}
+              className={
+                issuerPreset === 'iplus'
+                  ? 'rounded-md bg-emerald-700 px-3 py-1 text-xs font-black text-white'
+                  : 'rounded-md px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft'
+              }
+            >
+              株式会社アイプラス
+            </button>
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-emerald-700"
+            checked={requiresDeliveryNote}
+            onChange={(e) => setRequiresDeliveryNote(e.target.checked)}
+          />
+          <span className="text-xs font-bold text-ink flex items-center gap-1">
+            <FileText className="h-3.5 w-3.5 text-emerald-700" />
+            <span>運転手渡し納品書の対象にする（積込リスト・帳票印刷画面に「📄 納品書PDF」ボタンを表示）</span>
+          </span>
         </label>
       </div>
 

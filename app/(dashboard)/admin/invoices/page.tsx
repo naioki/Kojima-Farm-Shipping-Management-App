@@ -29,10 +29,20 @@ export default async function InvoicesPage() {
   if (guard) return guard
 
   const supabase = createAdminClient()
-  const { data: invoices, error } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date')
-    .order('created_at', { ascending: false })
+  const [{ data: invoices, error }, { count: pendingCount }, { count: uninvoicedCount }] = await Promise.all([
+    supabase
+      .from('invoices')
+      .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending_review'),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['approved', 'shipped']),
+  ])
   if (error) return <ErrorState message="請求書の一覧を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
 
   const customerIds = [...new Set((invoices ?? []).map((i) => i.customer_id))]
@@ -45,6 +55,31 @@ export default async function InvoicesPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">請求</h1>
+
+      {((pendingCount ?? 0) > 0 || (uninvoicedCount ?? 0) > 0) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-950">
+          <div className="flex flex-wrap items-center gap-3">
+            {(pendingCount ?? 0) > 0 && (
+              <span>
+                ⚠️ 未承認（確認待ち）の注文：<strong className="font-black underline">{pendingCount}件</strong>
+              </span>
+            )}
+            {(uninvoicedCount ?? 0) > 0 && (
+              <span>
+                📋 未請求の確定・出荷済注文：<strong className="font-black">{uninvoicedCount}件</strong>
+              </span>
+            )}
+          </div>
+          {(pendingCount ?? 0) > 0 && (
+            <Link
+              href="/admin/orders?status=pending_review"
+              className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-black text-white hover:bg-amber-700"
+            >
+              未承認を確認 →
+            </Link>
+          )}
+        </div>
+      )}
 
       <Card className="space-y-4">
         <div>

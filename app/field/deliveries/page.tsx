@@ -482,6 +482,15 @@ export default async function DeliveriesPage({
         packsByPair={Object.fromEntries(
           (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),
         )}
+        rulesByPair={Object.fromEntries(
+          (rulesRes.data ?? []).map((r) => [
+            `${r.customer_id}:${r.product_id}`,
+            {
+              packsPerCase: r.packs_per_case ?? null,
+              containerType: (r as { container_type?: string | null }).container_type ?? r.default_container_type ?? null,
+            },
+          ]),
+        )}
       />
     </div>
   )

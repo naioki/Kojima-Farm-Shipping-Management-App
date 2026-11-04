@@ -42,7 +42,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
   ] = await Promise.all([
     supabase
       .from('customers')
-      .select('id, name, name_kana, payment_terms, is_active, display_color')
+      .select('id, name, name_kana, payment_terms, is_active, display_color, channel_identifiers')
       .eq('id', params.id)
       .maybeSingle(),
     supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
@@ -185,6 +185,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
             name_kana: customer.name_kana,
             payment_terms: customer.payment_terms,
             is_active: customer.is_active,
+            channel_identifiers: (customer as { channel_identifiers?: Record<string, unknown> | null }).channel_identifiers ?? null,
           }}
         />
       </Card>
