@@ -15,6 +15,8 @@ export interface ApproveOrderInput {
   orderId: string
   deliveryDate?: string
   destinationId?: string
+  /** 「納入先なし（取引先あて）」を明示選択した。納入先が複数ある取引先でも納入先なしで承認する。 */
+  noDestination?: boolean
   role: 'admin' | 'staff'
   userId: string
 }
@@ -69,14 +71,17 @@ export async function approveOrder(
   }
 
   let destinationId = order.destination_id ?? input.destinationId ?? null
+  let activeDestCount = 0
   if (!destinationId && order.customer_id) {
-    const { data: customerDests } = await admin
+    const { data: customerDests, error: destsErr } = await admin
       .from('delivery_destinations')
       .select('id, code, full_name, aliases')
       .eq('customer_id', order.customer_id)
       .eq('is_active', true)
+    if (destsErr) return { ok: false, status: 500, error: `納入先マスタの確認に失敗しました: ${destsErr.message}` }
+    activeDestCount = customerDests?.length ?? 0
 
-    if (customerDests && customerDests.length > 0) {
+    if (customerDests && customerDests.length > 0 && !input.noDestination) {
       if (customerDests.length === 1 && customerDests[0]) {
         destinationId = customerDests[0].id
       } else {
@@ -95,6 +100,18 @@ export async function approveOrder(
           destinationId = matched.id
         }
       }
+    }
+  }
+
+  // 納入先ゲート（CLAUDE.md）: 納入先が複数ある取引先で、どの納入先か決まらない注文は承認しない。
+  // 出荷一覧で「取引先 ＞ 納入先」の仕分け・箱数が必ず出せる状態を保証するため。
+  // 該当する納入先が無い場合は「納入先なし（取引先あて）」を明示選択すれば承認できる。
+  if (!destinationId && activeDestCount >= 2 && !input.noDestination) {
+    return {
+      ok: false,
+      status: 400,
+      error: '納入先を選択してください（該当しない場合は「納入先なし」を選択）',
+      reason: 'destination_required',
     }
   }
 
@@ -352,7 +369,11 @@ export async function approveOrder(
       entityId: order.id,
       action: 'UPDATE',
       oldValues: { status: 'pending_review' },
-      newValues: { status: 'approved', approved_by: userId },
+      newValues: {
+        status: 'approved',
+        approved_by: userId,
+        ...(!destinationId && input.noDestination ? { destination: '納入先なし（明示選択）' } : {}),
+      },
       userId,
     })
   } catch (e) {

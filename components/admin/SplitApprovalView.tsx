@@ -160,16 +160,19 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
       toast.success(`${order.customerName} の注文を承認しました`)
       try {
         const res = await fetch(`/api/orders/${order.id}/approve`, { method: 'POST' })
-        if (!res.ok) throw new Error('承認に失敗しました')
+        if (!res.ok) {
+          const j = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(j.error ?? '承認に失敗しました')
+        }
         router.refresh()
-      } catch {
+      } catch (e) {
         setOptimisticApprovedIds((prev) => {
           const copy = new Set(prev)
           copy.delete(order.id)
           return copy
         })
         setSelectedOrderId(order.id)
-        toast.error('承認の保存に失敗したため元に戻しました')
+        toast.error(`承認できませんでした: ${e instanceof Error ? e.message : '保存に失敗'}（元に戻しました）`)
       }
     },
     [visibleOrders, router],

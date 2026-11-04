@@ -12,6 +12,8 @@ const bodySchema = z.object({
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   /** 納入先が未確定（取引先に納入先があるのに未選択）なら承認時にここで確定。 */
   destination_id: z.string().uuid().optional(),
+  /** 「納入先なし（取引先あて）」を明示選択（納入先が複数ある取引先でも納入先なしで承認）。 */
+  no_destination: z.boolean().optional(),
 })
 
 /**
@@ -48,6 +50,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     orderId: params.id,
     deliveryDate: parsed.data.delivery_date,
     destinationId: parsed.data.destination_id,
+    noDestination: parsed.data.no_destination,
     role,
     userId: user.id,
   })
