@@ -1,3 +1,4 @@
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthedUser } from '@/lib/supabase/server'
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   }
 
   const admin = createAdminClient()
-  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const since = shiftDateStr(jstTodayStr(), -90)
 
   const { data: orders, error: ordersErr } = await admin
     .from('orders')

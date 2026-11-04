@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 過去90日の同取引先×商品の最大数量を取得（異常値検知）
-  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const since = shiftDateStr(jstTodayStr(), -90)
   const { data: histOrders, error: histOrdersErr } = await admin
     .from('orders')
     .select('id')

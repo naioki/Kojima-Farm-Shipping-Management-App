@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyCronRequest } from '@/lib/config/ingestion'
+import { shouldNotifyOnce } from '@/lib/notifications/dedupe'
 import { getSetting } from '@/lib/settings'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
@@ -152,10 +153,10 @@ export async function GET(req: NextRequest) {
     // 「翌午前」など当日納品便と、前日夕方出発（16:00, 18:00 等、翌日納品分）を両方カバー
     const isMorningNextDayDep = /翌/.test(depTime)
     if (order.delivery_date === tomorrowStr && isMorningNextDayDep) continue
-    if (order.delivery_date === todayStr && !isMorningNextDayDep && /^\d{1,2}:\d{2}$/.test(depTime) && Number(depTime.split(':')[0]) >= 13) {
-      // 13:00以降の出発時刻は前日夕方積込・翌日納品のため、当日納品分では昨日すでに出発対象
-    }
     const hhmmMatch = depTime.match(/(\d{1,2}):(\d{2})/)
+    // 翌日納品分は「前日夕方出発（13:00以降）」の便だけが今日の対象。
+    // 朝（13:00より前）の出発は明日の時刻なので、今日の時刻と比べて誤報にしない。
+    if (order.delivery_date === tomorrowStr && !(hhmmMatch && Number(hhmmMatch[1]) >= 13)) continue
     const normalizedDepTime = hhmmMatch ? `${hhmmMatch[1]!.padStart(2, '0')}:${hhmmMatch[2]!}` : depTime
 
     // 時間比較 (HH:mm)
@@ -197,6 +198,15 @@ export async function GET(req: NextRequest) {
     lines.push(`【${item.routeName} (予定: ${item.departureTime})】`)
     lines.push(`・${item.customerName} ${item.destinationName ? `(${item.destinationName})` : ''}`)
     lines.push(`  未出荷: ${item.unshippedItems.join(', ')}`)
+  }
+
+  // 同じ遅れ（日付＋内容が同一）を Cron のたびに再通知しない。force 指定時は常に送る。
+  const fingerprint = `${todayStr}|${overdueList
+    .map((o) => `${o.customerName}/${o.destinationName}/${o.departureTime}/${o.unshippedItems.join(',')}`)
+    .sort()
+    .join('||')}`
+  if (!force && !(await shouldNotifyOnce(supabase, 'overdue_alert_last_fingerprint', fingerprint))) {
+    return NextResponse.json({ ok: true, overdueCount: overdueList.length, skipped: true, reason: '同じ内容を通知済み' })
   }
 
   const message = lines.join('\n')

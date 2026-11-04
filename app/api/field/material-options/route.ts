@@ -34,9 +34,9 @@ function parseMaterialOptions(raw: string | null): FieldMaterialOptions {
   }
 }
 
-async function saveMaterialOptions(options: FieldMaterialOptions, userId: string) {
+async function saveMaterialOptions(options: FieldMaterialOptions, userId: string): Promise<string | null> {
   const admin = createAdminClient()
-  await admin.from('app_settings').upsert(
+  const { error } = await admin.from('app_settings').upsert(
     {
       key: MATERIAL_OPTIONS_KEY,
       value: JSON.stringify(options),
@@ -45,7 +45,12 @@ async function saveMaterialOptions(options: FieldMaterialOptions, userId: string
     },
     { onConflict: 'key' },
   )
+  if (error) {
+    console.error('[field/material-options] 保存に失敗:', error.message)
+    return error.message
+  }
   invalidateSettingsCache()
+  return null
 }
 
 export async function GET() {
@@ -84,7 +89,8 @@ export async function POST(req: Request) {
     }
   }
 
-  await saveMaterialOptions(current, user.id)
+  const saveErr = await saveMaterialOptions(current, user.id)
+  if (saveErr) return NextResponse.json({ error: saveErr }, { status: 500 })
   return NextResponse.json(current)
 }
 
@@ -111,6 +117,7 @@ export async function DELETE(req: Request) {
     current.bags = current.bags.filter((v) => v !== value)
   }
 
-  await saveMaterialOptions(current, user.id)
+  const saveErr = await saveMaterialOptions(current, user.id)
+  if (saveErr) return NextResponse.json({ error: saveErr }, { status: 500 })
   return NextResponse.json(current)
 }

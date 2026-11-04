@@ -78,12 +78,10 @@ export function GenerateInvoiceForm() {
           if (!cancelled) {
             const list = data.candidates ?? []
             setCandidates(list)
-            const firstCandidate = list[0]
-            if (firstCandidate && !list.some((c) => c.customerId === selectedCustomerId)) {
-              setSelectedCustomerId(firstCandidate.customerId)
-            } else if (list.length === 0) {
-              setSelectedCustomerId('')
-            }
+            // 選択中の取引先が候補に残っていれば維持、無ければ先頭（候補なしなら空）へ
+            setSelectedCustomerId((prev) =>
+              list.some((c) => c.customerId === prev) ? prev : (list[0]?.customerId ?? ''),
+            )
           }
         })
         .catch(() => {
