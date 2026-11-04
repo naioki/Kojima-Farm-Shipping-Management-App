@@ -14,9 +14,12 @@ permissions:
   contents: read
   pull-requests: write
   issues: read
+  # claude-code-action は GitHub の OIDC トークンでアプリ認証を行うため必須（公式 setup.md）
+  id-token: write
 
 jobs:
   review:
+    timeout-minutes: 30
     # Run on PR events, or on issue comments that mention @claude
     if: |
       github.event_name == 'pull_request' ||
@@ -57,19 +60,21 @@ jobs:
           fi
 
       - name: Claude Code Review
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-opus-4-5-20251101
-          timeout_minutes: 30
-          track_progress: true
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+
             Review this Pull Request using the standards in .claude/agents/code-reviewer.md
 
             1. Read .claude/agents/code-reviewer.md for the full checklist
             2. Run `git diff origin/${{ steps.pr-info.outputs.base_ref }}...HEAD` to see changes
             3. Apply the review checklist to modified files
             4. Provide feedback organized by severity (Critical, Warning, Suggestion)
+            5. Post the result with `gh pr comment <PR NUMBER above>` (write the comment in Japanese)
           claude_args: |
+            --model claude-opus-4-5-20251101
             --max-turns 10
             --allowedTools "Read,Glob,Grep,Bash(git:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
