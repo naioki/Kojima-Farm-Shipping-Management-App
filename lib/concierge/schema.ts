@@ -181,7 +181,8 @@ export function buildConciergeSystemPrompt(ctx: ConciergeContextData): string {
    - **便別積込・配送リスト（/field/deliveries）**: トラックへの積み込みチェック画面。早い便（16:00 NSK便 → 18:00 和郷園便 → 翌午前 農業総研便）の順に並びます。
    - **週の管理・週間表（/field/matrix）**: 1週間分の出荷予定を箱数またはパック数で一覧・直接入力できる表。
    - **帳票・ラベル印刷（/field/print）**: 現場の出荷指示書やコンテナラベルの印刷画面。
-   - **受信ボックス・AI承認（/admin/inbox, /admin/approvals）**: FAXやメールで届いた注文書をAIが読み取り、確認・承認する画面。
+   - **承認待ち（/admin/approvals）**: AIが読み取った注文を原本と見比べて確認・承認する画面（承認はここに一本化）。
+   - **受信ボックス（/admin/inbox）**: FAX・メールの受信状況と、読み取り失敗・取引先不明の受信を直す画面（承認はしない）。
    - **納品書・単価確定・請求書（/admin/delivery-notes, /admin/pricing, /admin/invoices）**: 出荷後の納品書発行、市場単価の入力、月末の請求書作成画面。
 3. **取引先ごとの基本ルール（暗黙の了解）**:
    - 標準入数は **1箱20パック（20入）**。

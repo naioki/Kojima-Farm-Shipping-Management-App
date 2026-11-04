@@ -63,8 +63,8 @@ export const ADMIN_GROUPS: NavGroup[] = [
     label: '受注',
     items: [
       { href: '/admin/orders/new', label: '注文の受付（電話・LINE・紙・写真）', icon: PlusCircle },
-      { href: '/admin/inbox', label: '受信ボックス（FAX・メール）', icon: Inbox },
-      { href: '/admin/approvals', label: '承認待ち（原本と見比べ）', icon: CheckSquare },
+      { href: '/admin/approvals', label: '承認待ち（原本と見比べて承認）', icon: CheckSquare },
+      { href: '/admin/inbox', label: '受信ボックス（読み取り失敗の処理）', icon: Inbox },
       { href: '/admin/orders', label: '受注台帳', icon: ClipboardList },
     ],
   },

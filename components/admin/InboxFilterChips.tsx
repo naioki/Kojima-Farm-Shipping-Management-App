@@ -4,18 +4,18 @@ import Link from 'next/link'
 import { cn } from '@/lib/cn'
 import type { InboxFilter, InboxCounts } from '@/lib/orders/inbox'
 
-/** 受注ボックスのフィルタチップ。URLクエリ ?filter= で状態を保持し、各チップに件数を表示する。 */
+/** 受信ボックスのフィルタチップ。URLクエリ ?filter= で状態を保持し、各チップに件数を表示する。 */
+// 承認待ちは「承認待ち」画面（/admin/approvals）に一本化したため、ここには出さない
 const CHIPS: { key: InboxFilter; label: string }[] = [
   { key: 'all', label: 'すべて' },
-  { key: 'parsing', label: '解析待ち' },
-  { key: 'review', label: '要確認' },
-  { key: 'pending', label: '承認待ち' },
+  { key: 'parsing', label: '読み取り中' },
+  { key: 'review', label: '読み取り失敗・取引先不明' },
   { key: 'approved', label: '今日承認済み' },
 ]
 
 export function InboxFilterChips({ active, counts }: { active: InboxFilter; counts: InboxCounts }) {
   return (
-    <div className="flex flex-wrap gap-2" role="tablist" aria-label="受注ボックスの絞り込み">
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label="受信ボックスの絞り込み">
       {CHIPS.map((chip) => {
         const isActive = chip.key === active
         const count = counts[chip.key]

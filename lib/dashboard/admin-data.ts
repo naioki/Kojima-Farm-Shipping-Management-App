@@ -10,13 +10,13 @@ import type { OrderStatusKey, RecentOrderRow, TomorrowPackStats, TrendPoint } fr
 import { ClipboardList, CheckCircle2, PackageCheck, Sparkles, FileText, Settings, PlusCircle } from 'lucide-react'
 
 const QUICK_ACTIONS: AdminDashboardData['actions'] = [
-  { href: '/admin/orders/new', label: '新規注文入力', icon: PlusCircle, tone: 'forest' },
-  { href: '/admin/inbox?filter=pending', label: '受注ボックス', icon: CheckCircle2, tone: 'harvest' },
+  { href: '/admin/orders/new', label: '注文の受付', icon: PlusCircle, tone: 'forest' },
+  { href: '/admin/approvals', label: '承認待ち', icon: CheckCircle2, tone: 'harvest' },
   { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck, tone: 'forest' },
-  { href: '/admin/orders', label: '受注一覧', icon: ClipboardList, tone: 'trust' },
+  { href: '/admin/orders', label: '受注台帳', icon: ClipboardList, tone: 'trust' },
   { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles, tone: 'earth' },
   { href: '/admin/invoices', label: '請求書作成', icon: FileText, tone: 'earth' },
-  { href: '/admin/settings', label: 'システム設定', icon: Settings, tone: 'trust' },
+  { href: '/admin/settings', label: '設定', icon: Settings, tone: 'trust' },
 ]
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']

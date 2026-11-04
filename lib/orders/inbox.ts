@@ -283,7 +283,8 @@ export async function getInboxData(): Promise<InboxData> {
     receipts,
     pendingOrders,
     approvedOrders,
-    counts: { all: parsing + review + pending, parsing, review, pending, approved },
+    // 受信ボックスは受信の処理専用（承認は /admin/approvals に一本化）。「すべて」に承認待ちは含めない
+    counts: { all: parsing + review, parsing, review, pending, approved },
   }
 }
 
