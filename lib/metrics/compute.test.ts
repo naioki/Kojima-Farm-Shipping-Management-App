@@ -95,6 +95,12 @@ describe('computeWeeklyMetrics', () => {
         { created_at: t, status: 'draft' },
         { created_at: t, status: 'void' },
       ],
+      actionEvents: [
+        { name: 'concierge_feedback', meta: { rating: 'up' }, created_at: t },
+        { name: 'concierge_feedback', meta: { rating: 'down' }, created_at: t },
+        { name: 'concierge_execute', meta: {}, created_at: t },
+        { name: 'concierge_undo', meta: {}, created_at: t },
+      ],
     })
     expect(w!.qtyCorrections).toBe(1)
     expect(w!.noteRevisions).toBe(1)
@@ -104,5 +110,6 @@ describe('computeWeeklyMetrics', () => {
     expect(w!.fieldMin).toBe(1)
     expect(w!.appDeliveryNotes).toBe(1)
     expect(w!.appInvoices).toBe(1)
+    expect([w!.conciergeUp, w!.conciergeDown, w!.conciergeExecuted, w!.conciergeUndone]).toEqual([1, 1, 1, 1])
   })
 })

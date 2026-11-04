@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-import { getAuthedUser } from '@/lib/supabase/server'
+import { GoogleGenerativeAI, type Part } from '@google/generative-ai'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { getSetting } from '@/lib/settings'
+import { conciergeToolDeclarations, runConciergeTool, getTodayWork, type ToolContext } from '@/lib/concierge/tools'
+import { sanitizeProposals, parseLooseJson, buildBriefing } from '@/lib/concierge/guard'
 import { DEFAULT_MAIN_GEMINI_MODEL, modelTryOrder } from '@/lib/gemini/models'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import {
@@ -16,20 +17,35 @@ import {
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+/** ツール呼び出しの最大往復数（無限ループ・コスト暴走の防止） */
+const MAX_TOOL_ROUNDS = 4
+
+/** 道具（ツール）の使い方と、正直さのルール（システムプロンプトに追記） */
+function toolRules(role: 'admin' | 'staff'): string {
+  return `
+==================================================
+【4. データの調べ方（最重要）】
+==================================================
+- 注文・作業状況・売上・評価指標など「数字」を聞かれたら、上の要約だけで答えず、必ず道具（get_orders / get_today_work${role === 'admin' ? ' / get_sales_summary / get_metrics' : ''}）で実際のデータを調べてから答えてください。
+- 道具の結果に無い数字を作ってはいけません。調べられなかったときは「わかりませんでした」と正直に伝え、どの画面で確認できるかを navigate で案内してください。
+- 出荷先は必ず「取引先 ＞ 納入先」の形で書いてください。
+- 今話している相手は「${role === 'admin' ? '管理者（経営者）' : '現場スタッフ'}」です。${role === 'admin' ? '' : '設定の変更（toggle_setting）と /admin で始まる画面への案内は提案しないでください（スタッフは使えません）。売上の金額は答えないでください。'}
+- 調べ終わったら、最後は【3. 応答のルール】のJSONだけを出力してください。`
+}
+
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const role = guard.role
 
   const body = (await req.json().catch(() => ({}))) as {
     message?: string
+    mode?: 'briefing'
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
     referenceDate?: string
   }
   const message = (body.message ?? '').trim()
-  if (!message) {
+  if (!message && body.mode !== 'briefing') {
     return NextResponse.json({ error: 'メッセージを入力してください' }, { status: 400 })
   }
 
@@ -40,6 +56,29 @@ export async function POST(req: Request) {
       : shiftDateStr(todayStr, 1)
 
   const admin = createAdminClient()
+
+  // 開いた瞬間の「今日の要点」: AI を呼ばずに実データから即答（速い・数字が正確）
+  if (body.mode === 'briefing') {
+    try {
+      const w = (await getTodayWork(tomorrowStr, { admin })) as Record<string, number>
+      if ('error' in w) throw new Error(String((w as { error?: unknown }).error))
+      return NextResponse.json(
+        buildBriefing({
+          role,
+          deliveryDate: tomorrowStr,
+          dateLabel: tomorrowStr === shiftDateStr(todayStr, 1) ? '明日' : tomorrowStr === todayStr ? '今日' : tomorrowStr,
+          notStarted: w['未着手'] ?? 0,
+          packed: w['パック済'] ?? 0,
+          shipped: w['出荷済'] ?? 0,
+          packsLeft: w['未出荷のパック数'] ?? 0,
+          pendingApprovals: w['承認待ちの注文'] ?? 0,
+          failedReceipts: w['読み取り失敗_取引先不明の受信'] ?? 0,
+        }),
+      )
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : '今日の要点を取得できませんでした' }, { status: 500 })
+    }
+  }
 
   // マスタ・明日の注文・現在の設定を並列で取得
   const [custRes, destRes, prodRes, settingsRes, ordersRes, rulesRes, apiKey, configuredModel] =
@@ -163,16 +202,20 @@ export async function POST(req: Request) {
   }
 
   // 1. まず決定論的エンジンで0.01秒で確実に解決できる定型リクエストかチェック
-  const deterministic = buildDeterministicConciergeResponse(message, ctx)
+  const rawDeterministic = buildDeterministicConciergeResponse(message, ctx)
+  const deterministic = rawDeterministic
+    ? { ...rawDeterministic, proposals: sanitizeProposals(rawDeterministic.proposals, role) }
+    : null
   if (deterministic && (!apiKey || message.length <= 60)) {
     return NextResponse.json(deterministic)
   }
 
-  // 2. Gemini による柔軟な対話＋アクション提案生成
+  // 2. Gemini: 必要なら道具（読み取り専用ツール）で実データを調べてから、返答＋実行ボタンの提案を作る
   if (apiKey) {
     const genAI = new GoogleGenerativeAI(apiKey)
     const tryModels = modelTryOrder(configuredModel || DEFAULT_MAIN_GEMINI_MODEL)
-    const systemInstruction = buildConciergeSystemPrompt(ctx)
+    const systemInstruction = `${buildConciergeSystemPrompt(ctx)}\n${toolRules(role)}`
+    const toolCtx: ToolContext = { admin, role, customers, destinations, customerPpc: rulePpcMap }
 
     const historyText = (body.history ?? [])
       .slice(-6)
@@ -188,23 +231,37 @@ export async function POST(req: Request) {
         const model = genAI.getGenerativeModel({
           model: modelName,
           systemInstruction,
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.2,
-          },
+          tools: [{ functionDeclarations: conciergeToolDeclarations(role) }],
+          generationConfig: { temperature: 0.2 },
         })
+        const chat = model.startChat()
+        let result = await chat.sendMessage(userPrompt)
+        const usedTools: string[] = []
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const calls = result.response.functionCalls() ?? []
+          if (calls.length === 0) break
+          const responses: Part[] = await Promise.all(
+            calls.map(async (c) => {
+              usedTools.push(c.name)
+              const out = await runConciergeTool(c.name, (c.args ?? {}) as Record<string, unknown>, toolCtx)
+              return { functionResponse: { name: c.name, response: out } }
+            }),
+          )
+          result = await chat.sendMessage(responses)
+        }
 
-        const result = await model.generateContent(userPrompt)
         const rawText = result.response.text()
-        const json = JSON.parse(rawText) as Partial<ConciergeResponse>
-        if (typeof json.reply === 'string' && json.reply.trim()) {
+        const json = parseLooseJson(rawText) as Partial<ConciergeResponse> | null
+        const reply = typeof json?.reply === 'string' && json.reply.trim() ? json.reply.trim() : rawText.trim()
+        if (reply) {
           return NextResponse.json({
-            reply: json.reply.trim(),
-            proposals: Array.isArray(json.proposals) ? json.proposals : deterministic?.proposals ?? [],
-            followUpSuggestions: Array.isArray(json.followUpSuggestions)
-              ? json.followUpSuggestions.slice(0, 4)
-              : ['明日の注文状況を教えて', '新しい品目を追加したい', 'スタッフの設定をすべてオンにして'],
-          } satisfies ConciergeResponse)
+            reply,
+            proposals: sanitizeProposals(json?.proposals ?? deterministic?.proposals ?? [], role),
+            followUpSuggestions: Array.isArray(json?.followUpSuggestions)
+              ? json!.followUpSuggestions.filter((x): x is string => typeof x === 'string').slice(0, 4)
+              : ['明日の注文状況を教えて', '何が終わっていない？', '先週と比べて今週はどう？'],
+            usedTools,
+          } satisfies ConciergeResponse & { usedTools: string[] })
         }
       } catch (err) {
         console.warn(`[concierge] model ${modelName} failed:`, err)

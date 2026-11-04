@@ -26,6 +26,8 @@ export interface MetricsInput {
   audits: { entity_type: string; action: string; changed_fields: string[] | null; new_values: unknown; created_at: string }[]
   deliveryIssues: { created_at: string }[]
   opsEvents: { path: string; active_ms: number | null; created_at: string }[]
+  /** 操作の記録（AI相談窓口の評価・実行・取り消し） */
+  actionEvents?: { name: string | null; meta: unknown; created_at: string }[]
   deliveryNotes: { issued_at: string }[]
   invoices: { created_at: string; status: string }[]
 }
@@ -53,6 +55,11 @@ export interface WeekMetrics {
   phoneLineEntered: number
   appDeliveryNotes: number
   appInvoices: number
+  /** AI相談窓口: 👍・👎・提案の実行・取り消しの件数 */
+  conciergeUp: number
+  conciergeDown: number
+  conciergeExecuted: number
+  conciergeUndone: number
 }
 
 /** ISO日時（または YYYY-MM-DD）→ その週の月曜（日本時間）YYYY-MM-DD */
@@ -103,6 +110,10 @@ export function computeWeeklyMetrics(input: MetricsInput): WeekMetrics[] {
     phoneLineEntered: 0,
     appDeliveryNotes: 0,
     appInvoices: 0,
+    conciergeUp: 0,
+    conciergeDown: 0,
+    conciergeExecuted: 0,
+    conciergeUndone: 0,
   })
   const byWeek = new Map(input.weeks.map((w) => [w, blank(w)]))
   const at = (iso: string) => byWeek.get(weekStartJst(iso))
@@ -183,6 +194,17 @@ export function computeWeeklyMetrics(input: MetricsInput): WeekMetrics[] {
     const min = (e.active_ms ?? 0) / 60_000
     if (e.path.startsWith('/admin')) w.officeMin += min
     else if (e.path.startsWith('/field')) w.fieldMin += min
+  }
+  for (const e of input.actionEvents ?? []) {
+    const w = at(e.created_at)
+    if (!w) continue
+    if (e.name === 'concierge_execute') w.conciergeExecuted++
+    else if (e.name === 'concierge_undo') w.conciergeUndone++
+    else if (e.name === 'concierge_feedback') {
+      const rating = e.meta && typeof e.meta === 'object' ? (e.meta as Record<string, unknown>).rating : null
+      if (rating === 'up') w.conciergeUp++
+      else if (rating === 'down') w.conciergeDown++
+    }
   }
   for (const n of input.deliveryNotes) {
     const w = at(n.issued_at)

@@ -44,7 +44,7 @@ export async function loadWeeklyMetrics(weeksCount = 8): Promise<WeekMetrics[]> 
   )
   const orderIds = orders.map((o) => o.id)
 
-  const [receipts, items, audits, deliveryIssues, opsEvents, deliveryNotes, invoices] = await Promise.all([
+  const [receipts, items, audits, deliveryIssues, opsEvents, deliveryNotes, invoices, actionEvents] = await Promise.all([
     fetchByIds('受信ログ', orderIds, (chunk) =>
       admin.from('order_receipts').select('order_id, received_at').in('order_id', chunk),
     ),
@@ -77,6 +77,16 @@ export async function loadWeeklyMetrics(weeksCount = 8): Promise<WeekMetrics[]> 
     fetchAll('請求書', (f, t) =>
       admin.from('invoices').select('created_at, status').gte('created_at', since).order('created_at').range(f, t),
     ),
+    fetchAll('操作の記録', (f, t) =>
+      admin
+        .from('ops_events')
+        .select('name, meta, created_at')
+        .eq('event', 'action')
+        .like('name', 'concierge_%')
+        .gte('created_at', since)
+        .order('created_at')
+        .range(f, t),
+    ),
   ])
 
   const input: MetricsInput = {
@@ -89,6 +99,7 @@ export async function loadWeeklyMetrics(weeksCount = 8): Promise<WeekMetrics[]> 
     opsEvents,
     deliveryNotes,
     invoices,
+    actionEvents: actionEvents as MetricsInput['actionEvents'],
   }
   return computeWeeklyMetrics(input)
 }

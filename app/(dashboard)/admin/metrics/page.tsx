@@ -1,4 +1,4 @@
-import { Gauge, Timer, AlertTriangle, Clock, FileX, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { Gauge, Timer, AlertTriangle, Clock, FileX, TrendingDown, TrendingUp, Minus, Sparkles } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -231,6 +231,30 @@ export default async function MetricsPage() {
         <WeekTable
           weeks={weeks}
           cols={CHANNEL_KEYS.map((k) => ({ label: CHANNEL_LABEL[k], get: (w: WeekMetrics) => String(w.channels[k]) }))}
+        />
+      </Card>
+
+      {/* 5. AI相談窓口の品質（世界の業務AIと同じく、評価と取り消し率で改善する） */}
+      <Card variant="elevated" className="space-y-4">
+        <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
+          <Sparkles className="h-5 w-5 text-earth-600" aria-hidden />
+          AI相談窓口の品質
+        </h2>
+        <p className="text-xs text-ink-soft">
+          👍・👎の数と、提案を実行した数・あとで取り消した数です。取り消しや👎が多い週は、答え方や提案に改善の余地があります。
+        </p>
+        <WeekTable
+          weeks={weeks}
+          cols={[
+            { label: '👍', get: (w) => String(w.conciergeUp) },
+            { label: '👎', get: (w) => String(w.conciergeDown) },
+            { label: '実行', get: (w) => String(w.conciergeExecuted) },
+            { label: '取り消し', get: (w) => String(w.conciergeUndone) },
+            {
+              label: '取り消し率',
+              get: (w) => (w.conciergeExecuted ? `${Math.round((w.conciergeUndone / w.conciergeExecuted) * 100)}%` : '—'),
+            },
+          ]}
         />
       </Card>
     </div>

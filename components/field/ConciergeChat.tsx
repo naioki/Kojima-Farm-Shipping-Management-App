@@ -20,6 +20,9 @@ import {
   ExternalLink,
   History,
   FileCheck2,
+  ThumbsUp,
+  ThumbsDown,
+  Database,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
@@ -92,6 +95,33 @@ interface ChatMessage {
   content: string
   proposals?: ConciergeAction[]
   executedIndices?: number[]
+  /** この返答のために AI が調べたデータ（根拠の見える化） */
+  usedTools?: string[]
+  /** 直前の質問（評価の記録用） */
+  question?: string
+  rating?: 'up' | 'down'
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  get_orders: '注文',
+  get_today_work: '今日の作業状況',
+  get_sales_summary: '売上',
+  get_metrics: '評価指標',
+}
+
+/**
+ * 使われ方の記録（評価・実行・取り消し）。AI窓口の品質を数字で改善するため（ops_events）。
+ * 送信失敗は業務に影響させない。質問文は200字までに切る。
+ */
+function logConciergeEvent(name: string, meta: Record<string, unknown>) {
+  try {
+    const body = JSON.stringify({ events: [{ path: '/field/concierge', event: 'action', name, meta }] })
+    fetch('/api/ops-events', { method: 'POST', body, keepalive: true, headers: { 'content-type': 'application/json' } }).catch(
+      () => {},
+    )
+  } catch {
+    /* 記録できなくても業務は続ける */
+  }
 }
 
 const RECEIPT_STORAGE_KEY = 'kojima_concierge_receipts_v1'
@@ -235,7 +265,7 @@ export function ConciergeChat({
       id: 'welcome',
       role: 'assistant',
       content:
-        'こんにちは！小島農園の「AI総合相談窓口」です🌱\n細かい画面操作や設定がわからなくても大丈夫です！「明日の注文を追加して」「新しい品目を入れて」「面倒な設定をオンにして」など、下のボタンを押すか、普通の言葉で話しかけてください。\n\n実行した後は「どこに・どう登録されたか」の証明レシートが出て、ワンタップで実物を見に行ったり、元に戻したりできます！',
+        'こんにちは！小島農園のAI相談窓口です🌱 注文の追加・品目の登録・数字の確認などを、ふつうの言葉で頼んでください。実行の前に必ず確認ボタンが出て、あとから元に戻すこともできます。',
       proposals: [],
     },
   ])
@@ -271,7 +301,48 @@ export function ConciergeChat({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending])
 
+  // 開いた瞬間に「今日の要点」（承認待ち・読み取り失敗・残り作業）を実データから出す
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/concierge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'briefing', referenceDate: defaultDate }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: Partial<ConciergeResponse> | null) => {
+        if (cancelled || !json?.reply) return
+        setMessages((prev) => [
+          ...prev,
+          { id: 'briefing', role: 'assistant', content: json.reply!, proposals: json.proposals ?? [], executedIndices: [] },
+        ])
+        if (Array.isArray(json.followUpSuggestions) && json.followUpSuggestions.length > 0) {
+          setSuggestions(json.followUpSuggestions)
+        }
+      })
+      .catch(() => {
+        /* 要点が出せなくても相談はできる */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [defaultDate])
+
+  function rateMessage(msgId: string, rating: 'up' | 'down') {
+    setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, rating } : m)))
+    const msg = messages.find((m) => m.id === msgId)
+    logConciergeEvent('concierge_feedback', {
+      rating,
+      question: msg?.question?.slice(0, 200) ?? null,
+      reply: msg?.content.slice(0, 200) ?? null,
+      used_tools: msg?.usedTools ?? [],
+      proposal_types: (msg?.proposals ?? []).map((p) => p.type),
+    })
+    if (rating === 'down') toast('ありがとうございます。改善に使わせていただきます', { icon: '📝' })
+  }
+
   function saveNewReceipt(key: string, receipt: ExecutionReceipt) {
+    logConciergeEvent('concierge_execute', { title: receipt.title })
     setReceiptsByKey((prev) => ({ ...prev, [key]: receipt }))
     setHistoryReceipts((prev) => {
       const next = [receipt, ...prev.filter((r) => r.id !== receipt.id)].slice(0, 25)
@@ -369,7 +440,10 @@ export function ConciergeChat({
           referenceDate: defaultDate,
         }),
       })
-      const json = (await res.json().catch(() => ({}))) as Partial<ConciergeResponse> & { error?: string }
+      const json = (await res.json().catch(() => ({}))) as Partial<ConciergeResponse> & {
+        error?: string
+        usedTools?: string[]
+      }
       if (!res.ok) {
         throw new Error(json.error ?? `通信エラー (${res.status})`)
       }
@@ -380,6 +454,8 @@ export function ConciergeChat({
         content: json.reply || '承知しました！以下の内容でよろしければ実行ボタンを押してください。',
         proposals: Array.isArray(json.proposals) ? json.proposals : [],
         executedIndices: [],
+        usedTools: Array.isArray(json.usedTools) ? [...new Set(json.usedTools)] : [],
+        question: text,
       }
       setMessages((prev) => [...prev, assistantMsg])
       if (Array.isArray(json.followUpSuggestions) && json.followUpSuggestions.length > 0) {
@@ -843,6 +919,7 @@ export function ConciergeChat({
       }
 
       markReceiptUndone(receipt.id)
+      logConciergeEvent('concierge_undo', { title: receipt.title })
       toast.success('↩️ 取り消して元の状態に戻しました！')
       router.refresh()
     } catch (e) {
@@ -1046,7 +1123,38 @@ export function ConciergeChat({
                 </div>
               )}
               {msg.content}
+              {msg.role === 'assistant' && msg.usedTools && msg.usedTools.length > 0 && (
+                <p className="mt-2 flex flex-wrap items-center gap-1 text-xs font-bold text-ink-soft">
+                  <Database className="h-3.5 w-3.5" aria-hidden />
+                  調べたデータ: {msg.usedTools.map((t) => TOOL_LABELS[t] ?? t).join('・')}
+                </p>
+              )}
             </div>
+            {msg.role === 'assistant' && msg.question && (
+              <div className="flex items-center gap-1 pl-1" aria-label="この回答の評価">
+                {(['up', 'down'] as const).map((r) => {
+                  const Icon = r === 'up' ? ThumbsUp : ThumbsDown
+                  const active = msg.rating === r
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => rateMessage(msg.id, r)}
+                      disabled={Boolean(msg.rating)}
+                      aria-pressed={active}
+                      aria-label={r === 'up' ? '役に立った' : '役に立たなかった'}
+                      className={cn(
+                        'inline-flex h-9 w-9 items-center justify-center rounded-lg border text-ink-soft transition-colors disabled:cursor-default',
+                        active ? 'border-forest-600 bg-forest-50 text-forest-800' : 'border-line bg-white hover:bg-sand-100',
+                        msg.rating && !active && 'opacity-40',
+                      )}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {/* アクション提案カード（「どこに・どう登録されるか」事前プレビュー ＋ 実行後の証明レシート） */}
             {msg.proposals && msg.proposals.length > 0 && (
