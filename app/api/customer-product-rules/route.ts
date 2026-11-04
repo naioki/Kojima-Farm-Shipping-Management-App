@@ -80,9 +80,10 @@ export async function PUT(req: Request) {
     userId: user.id,
   })
 
+  const changes = formatRuleChanges(oldRule ?? null, rule)
+
   // 通知（ベストエフォート。送信失敗でリクエストは失敗させない）
   if (notifyRaw !== 'off') {
-    const changes = formatRuleChanges(oldRule ?? null, rule)
     // 実質変化があるときだけ通知
     if (changes.length > 0) {
       try {
@@ -110,5 +111,5 @@ export async function PUT(req: Request) {
     }
   }
 
-  return NextResponse.json({ rule })
+  return NextResponse.json({ rule, oldRule: oldRule ?? null, changes })
 }

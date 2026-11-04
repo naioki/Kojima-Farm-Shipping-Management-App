@@ -130,6 +130,7 @@ export function ShipmentRow({
   sealText: initialSealText,
   hasSeal: initialHasSeal,
   deliveryDate,
+  customerId,
   productId,
   showShippingButton = false,
   isNextDay = false,
@@ -159,6 +160,8 @@ export function ShipmentRow({
   const undoTimerRef = useRef<number | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [isSpotlighted, setIsSpotlighted] = useState(false)
+  const rowRef = useRef<HTMLDivElement | null>(null)
 
   const [open, setOpen] = useState(false)
   const [spec, setSpec] = useState(initialSpec ?? '')
@@ -254,6 +257,31 @@ export function ShipmentRow({
       if (undoTimerRef.current != null) window.clearTimeout(undoTimerRef.current)
     }
   }, [])
+
+  // ✨ AIコンシェルジュ等の「今すぐ現場画面で確認する」から遷移した際のスポットライト点滅＆自動スクロール
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const hlItem = params.get('highlightItem')
+    const hlCust = params.get('highlightCustomer')
+    const matched =
+      (hlItem && hlItem === itemId) ||
+      (!hlItem && hlCust && customerId && hlCust === customerId)
+    if (!matched) return
+
+    setIsSpotlighted(true)
+    setExpandedWhenDone(true)
+    const scrollTimer = window.setTimeout(() => {
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 150)
+    const clearTimer = window.setTimeout(() => {
+      setIsSpotlighted(false)
+    }, 6000)
+    return () => {
+      window.clearTimeout(scrollTimer)
+      window.clearTimeout(clearTimer)
+    }
+  }, [itemId, customerId])
 
   function startUndoGrace(from: FieldStatus, settled: FieldStatus) {
     if (undoTimerRef.current != null) window.clearTimeout(undoTimerRef.current)
@@ -659,8 +687,10 @@ export function ShipmentRow({
 
   return (
     <div
+      ref={rowRef}
+      id={`shipment-item-${itemId}`}
       className={cn(
-        'rounded-2xl border shadow-sm transition-all duration-200',
+        'rounded-2xl border shadow-sm transition-all duration-300',
         isCollapsedDone ? 'px-3.5 py-2.5' : 'p-3.5',
         isFutureOrNextDay
           ? 'border-slate-300 bg-slate-100/95 text-slate-800 shadow-xs'
@@ -684,9 +714,24 @@ export function ShipmentRow({
         isNextUp && !isDone && !isFutureOrNextDay
           ? 'ring-2 ring-emerald-600 border-emerald-600 bg-white shadow-md'
           : '',
+        isSpotlighted
+          ? 'ring-4 ring-amber-400 border-amber-500 bg-amber-50/95 shadow-xl scale-[1.01]'
+          : '',
         conflict ? 'animate-pulse-alert border-alert ring-2 ring-alert/20' : '',
       )}
     >
+      {isSpotlighted && (
+        <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl bg-amber-500 px-3 py-2 text-xs sm:text-sm font-black text-white shadow-sm animate-pulse">
+          <span>✨ ここです！AIおまかせ相談から今登録・反映されたカードです</span>
+          <button
+            type="button"
+            onClick={() => setIsSpotlighted(false)}
+            className="rounded-md bg-white/20 px-2 py-0.5 text-[11px] font-bold hover:bg-white/30"
+          >
+            閉じる
+          </button>
+        </div>
+      )}
       {conflict && (
         <div className="mb-2.5 flex items-center justify-between rounded-xl bg-alert/10 border border-alert/30 p-2.5 text-xs font-bold text-alert">
           <span className="flex items-center gap-1.5">

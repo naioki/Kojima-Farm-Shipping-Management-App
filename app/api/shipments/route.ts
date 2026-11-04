@@ -674,5 +674,16 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ item: finalItem, mode, learnedMistake, receiptId: savedReceiptId }, { status: 201 })
+  return NextResponse.json(
+    {
+      item: finalItem,
+      mode,
+      learnedMistake,
+      receiptId: savedReceiptId,
+      previousQty: existingItem ? Number(existingItem.quantity) || 0 : 0,
+      wasNewItem: !existingItem,
+      effectivePacksPerCase,
+    },
+    { status: 201 },
+  )
 }

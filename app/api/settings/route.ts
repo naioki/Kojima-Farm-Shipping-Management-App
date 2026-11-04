@@ -42,11 +42,25 @@ export async function PUT(req: Request) {
     if (spec.secret && value.trim() === '') continue // 秘密の空＝据え置き
     rows.push({ key, value, is_secret: spec.secret, updated_by: user.id })
   }
-  if (rows.length === 0) return NextResponse.json({ updated: 0 })
+  if (rows.length === 0) return NextResponse.json({ updated: 0, previousEntries: [] })
+
+  const targetKeys = rows.map((r) => r.key)
+  const { data: existingRows } = await admin
+    .from('app_settings')
+    .select('key, value')
+    .in('key', targetKeys)
+  const existingMap = new Map<string, string>()
+  for (const r of existingRows ?? []) {
+    if (r.key && typeof r.value === 'string') existingMap.set(r.key, r.value)
+  }
+  const previousEntries = rows.map((r) => ({
+    key: r.key,
+    value: existingMap.get(r.key) ?? (r.key.startsWith('STAFF_CAN_') || r.key === 'AUTO_APPROVE_ENABLED' ? 'on' : 'off'),
+  }))
 
   const { error } = await admin.from('app_settings').upsert(rows, { onConflict: 'key' })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   invalidateSettingsCache()
-  return NextResponse.json({ updated: rows.length })
+  return NextResponse.json({ updated: rows.length, previousEntries })
 }
