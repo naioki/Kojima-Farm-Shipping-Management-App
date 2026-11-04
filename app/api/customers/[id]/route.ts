@@ -29,7 +29,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // 納品書の発行元名義（issuer_preset）および運転手渡し納品書対象（requires_delivery_note）を channel_identifiers に保存
   const hasIssuerPreset = rawBody && typeof rawBody.issuer_preset === 'string'
   const hasRequiresNote = rawBody && typeof rawBody.requires_delivery_note === 'boolean'
-  if (hasIssuerPreset || hasRequiresNote) {
+  const hasSkipDestGate = rawBody && typeof rawBody.skip_destination_gate === 'boolean'
+  if (hasIssuerPreset || hasRequiresNote || hasSkipDestGate) {
     const { data: existing } = await admin
       .from('customers')
       .select('channel_identifiers')
@@ -44,6 +45,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     if (hasRequiresNote) {
       currentChan.requires_delivery_note = Boolean(rawBody.requires_delivery_note)
+    }
+    if (hasSkipDestGate) {
+      // 承認時の納入先ゲートを飛ばす取引先（納入先なしで承認してよい）
+      currentChan.skip_destination_gate = Boolean(rawBody.skip_destination_gate)
     }
     updates.channel_identifiers = currentChan
   }

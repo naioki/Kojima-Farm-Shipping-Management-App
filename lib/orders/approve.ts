@@ -8,6 +8,7 @@ import { getSetting } from '@/lib/settings'
 import { getStaffFeatures } from '@/lib/field/features'
 import { decideReceiptApproval, parseThreshold } from '@/lib/ingestion/auto-approve'
 import { foldKana } from '@/lib/normalize/kana'
+import { skipsDestinationGate } from '@/lib/customers/settings'
 
 type AdminClient = SupabaseClient<Database>
 
@@ -103,10 +104,22 @@ export async function approveOrder(
     }
   }
 
+  // 取引先設定「納入先を指定しない」がオンなら、納入先が決まらなくても承認してよい
+  let customerSkipsGate = false
+  if (!destinationId && activeDestCount >= 2 && !input.noDestination && order.customer_id) {
+    const { data: cust, error: custErr } = await admin
+      .from('customers')
+      .select('channel_identifiers')
+      .eq('id', order.customer_id)
+      .maybeSingle()
+    if (custErr) return { ok: false, status: 500, error: `取引先設定の確認に失敗しました: ${custErr.message}` }
+    customerSkipsGate = skipsDestinationGate(cust?.channel_identifiers)
+  }
+
   // 納入先ゲート（CLAUDE.md）: 納入先が複数ある取引先で、どの納入先か決まらない注文は承認しない。
   // 出荷一覧で「取引先 ＞ 納入先」の仕分け・箱数が必ず出せる状態を保証するため。
   // 該当する納入先が無い場合は「納入先なし（取引先あて）」を明示選択すれば承認できる。
-  if (!destinationId && activeDestCount >= 2 && !input.noDestination) {
+  if (!destinationId && activeDestCount >= 2 && !input.noDestination && !customerSkipsGate) {
     return {
       ok: false,
       status: 400,
@@ -373,6 +386,7 @@ export async function approveOrder(
         status: 'approved',
         approved_by: userId,
         ...(!destinationId && input.noDestination ? { destination: '納入先なし（明示選択）' } : {}),
+        ...(!destinationId && customerSkipsGate ? { destination: '納入先なし（取引先設定）' } : {}),
       },
       userId,
     })

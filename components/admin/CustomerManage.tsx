@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Trash2, Building2, FileText } from 'lucide-react'
+import { Check, Trash2, Building2, FileText, MapPinOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -12,6 +12,7 @@ import {
   isDriverDeliveryNoteCustomer,
   type IssuerPreset,
 } from '@/lib/delivery-notes/driver-note'
+import { skipsDestinationGate } from '@/lib/customers/settings'
 
 export interface CustomerManageProps {
   customer: {
@@ -40,6 +41,9 @@ export function CustomerManage({ customer }: CustomerManageProps) {
   const [requiresDeliveryNote, setRequiresDeliveryNote] = useState<boolean>(() =>
     isDriverDeliveryNoteCustomer(customer.name, customer.channel_identifiers),
   )
+  const [skipDestGate, setSkipDestGate] = useState<boolean>(() =>
+    skipsDestinationGate(customer.channel_identifiers),
+  )
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -61,6 +65,7 @@ export function CustomerManage({ customer }: CustomerManageProps) {
           is_active: active,
           issuer_preset: issuerPreset,
           requires_delivery_note: requiresDeliveryNote,
+          skip_destination_gate: skipDestGate,
         }),
       })
       if (!res.ok) {
@@ -159,6 +164,25 @@ export function CustomerManage({ customer }: CustomerManageProps) {
           </span>
         </label>
       </div>
+
+      {/* 📍 承認時の納入先チェック */}
+      <label className="flex items-start gap-2 rounded-xl border border-line bg-bg-soft p-3.5 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-earth-600"
+          checked={skipDestGate}
+          onChange={(e) => setSkipDestGate(e.target.checked)}
+        />
+        <span className="space-y-0.5">
+          <span className="flex items-center gap-1 text-xs font-bold text-ink">
+            <MapPinOff className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
+            納入先を指定しない取引先にする（承認時の納入先チェックを飛ばす）
+          </span>
+          <span className="block text-xs text-ink-soft">
+            オンにすると、納入先が複数登録されていても、納入先が決まらない注文を「納入先なし（取引先あて）」のまま承認できます。
+          </span>
+        </span>
+      </label>
 
       <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
         <Button onClick={save} isLoading={saving} size="sm">

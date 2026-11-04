@@ -53,6 +53,8 @@ Drive上は編集・閲覧・git専用にする。
   ある取引先）・荷姿(`pack_configs`、登録がある商品)が未確定だと承認できない。出荷一覧に来た
   時点で箱数・納入先が必ず計算・表示できる状態を保証するためのゲート。該当する納入先が無い注文は
   承認時に「納入先なし（取引先あて）」を明示選択すれば通る（`no_destination: true`、audit_log に記録）。
+  取引先設定「納入先を指定しない取引先にする」（`channel_identifiers.skip_destination_gate`）がオンの
+  取引先はゲートを飛ばす（`lib/customers/settings.ts`）。
 - **楽観ロック**: `order_items.version` を使い、PATCHは `WHERE id=$ AND version=$expected`。
   0件なら409（競合）でUIに再読込を促す。新しい編集APIを作るときはこのパターンに従う。
 - **スナップショット凍結**: 請求書(`invoices`)・納品書(`delivery_notes`)は発行時点の内容を
