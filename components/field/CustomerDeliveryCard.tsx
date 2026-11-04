@@ -10,6 +10,7 @@ import {
   Check,
   Loader2,
   Plus,
+  FileDown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
@@ -22,6 +23,7 @@ import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeE
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { getThaiContainer, getContainerColorEmoji, THAI_LABELS } from '@/lib/field/thai-dict'
+import { isDriverDeliveryNoteCustomer, resolveDefaultIssuerPreset } from '@/lib/delivery-notes/driver-note'
 
 export interface DestinationDetail {
   destinationId: string | null
@@ -112,6 +114,12 @@ export function CustomerDeliveryCard({
     (it) => it.fieldStatus === 'packed' || it.fieldStatus === 'shipped',
   ).length
   const unpackedItemCount = Math.max(0, allDeliveryItems.length - packedItemCount)
+
+  const isDriverNoteTarget = isDriverDeliveryNoteCustomer(customerName)
+  const driverNoteDefaultIssuer = resolveDefaultIssuerPreset(customerName)
+  const driverNotePdfHref = isDriverNoteTarget
+    ? `/api/delivery-notes/pdf?customer=${customerId}&date=${deliveryDate}&amount=none&issuer=${driverNoteDefaultIssuer}&layout=2up`
+    : null
 
   const containerSummary = (() => {
     const map = new Map<string, number>()
@@ -324,6 +332,19 @@ export function CustomerDeliveryCard({
                 ({totalQty.toLocaleString()}P)
               </span>
             </span>
+            {driverNotePdfHref && (
+              <a
+                href={driverNotePdfHref}
+                target="_blank"
+                rel="noopener"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-white px-2 text-xs font-black text-emerald-900 hover:bg-emerald-50 transition"
+                title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
+              >
+                <FileDown className="h-3.5 w-3.5 text-emerald-700" />
+                <span>納品書</span>
+              </a>
+            )}
             <button
               type="button"
               disabled={busy}
@@ -416,6 +437,18 @@ export function CustomerDeliveryCard({
                         )}
                       </span>
                     )
+                  )}
+                  {driverNotePdfHref && (
+                    <a
+                      href={driverNotePdfHref}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex items-center gap-1 rounded-md border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-950 hover:bg-emerald-100 shadow-2xs transition"
+                      title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
+                    >
+                      <FileDown className="h-3 w-3 text-emerald-700" />
+                      <span>📄 納品書PDF</span>
+                    </a>
                   )}
                 </div>
 

@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { FileDown, Truck, Building2 } from 'lucide-react'
 import { PrintCustomerFilter } from '@/components/field/PrintCustomerFilter'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -7,6 +9,11 @@ import { DateNav } from '@/components/field/DateNav'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
+import {
+  isDriverDeliveryNoteCustomer,
+  resolveDefaultIssuerPreset,
+  resolveIssuerCompanyName,
+} from '@/lib/delivery-notes/driver-note'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,6 +73,7 @@ export default async function FieldPrintPage({
     : { data: [], error: null }
   if (custErr) return <ErrorState message={custErr.message} />
   const customers = custRows ?? []
+  const driverNoteCustomers = customers.filter((c) => isDriverDeliveryNoteCustomer(c.name))
 
   const products = [...new Map(items.map((i) => [i.product_id, i.product_name])).entries()]
 
@@ -99,6 +107,91 @@ export default async function FieldPrintPage({
         />
       ) : (
         <>
+          {/* 🚚 運転手渡し納品書（勘兵衛・オレンジファーム等）1タップ印刷パネル */}
+          {driverNoteCustomers.length > 0 && (
+            <div className="rounded-2xl border-2 border-emerald-600/30 bg-emerald-50/70 p-4 space-y-3 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-2xs">
+                    <Truck className="h-4 w-4" aria-hidden />
+                  </span>
+                  <div>
+                    <h2 className="font-display text-sm sm:text-base font-black text-emerald-950">
+                      運転手渡し納品書（A4上下2連：納品書＋控）
+                    </h2>
+                    <p className="text-xs text-emerald-900/80">
+                      金額なし・箱数明記 ／ オレンジファームはFAX記載着日で自動印字
+                    </p>
+                  </div>
+                </div>
+                {driverNoteCustomers.length > 1 && (
+                  <a
+                    href={`/api/delivery-notes/pdf?customers=${driverNoteCustomers.map((c) => c.id).join(',')}&date=${date}&amount=none&layout=2up`}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs sm:text-sm font-black text-white shadow-sm hover:bg-emerald-800 transition active:scale-95"
+                  >
+                    <FileDown className="h-4 w-4 shrink-0" />
+                    <span>対象{driverNoteCustomers.length}社をまとめてA4印刷</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                {driverNoteCustomers.map((c) => {
+                  const defaultPreset = resolveDefaultIssuerPreset(c.name)
+                  const defaultIssuerLabel = resolveIssuerCompanyName(defaultPreset, '小島農園')
+                  const altPreset = defaultPreset === 'iplus' ? 'kojima' : 'iplus'
+                  const altIssuerLabel = altPreset === 'iplus' ? 'アイプラス名義' : '小島農園名義'
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-white px-3.5 py-2.5 shadow-2xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black text-sm text-ink">{c.name}</span>
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                            <Building2 className="h-3 w-3" />
+                            既定：{defaultIssuerLabel}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <a
+                          href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${defaultPreset}&layout=2up`}
+                          target="_blank"
+                          rel="noopener"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-xs font-black text-white hover:bg-emerald-800 shadow-2xs transition active:scale-95"
+                        >
+                          <FileDown className="h-3.5 w-3.5" />
+                          <span>納品書PDF（{defaultPreset === 'iplus' ? 'アイプラス' : '小島農園'}）</span>
+                        </a>
+                        <a
+                          href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${altPreset}&layout=2up`}
+                          target="_blank"
+                          rel="noopener"
+                          className="inline-flex h-9 items-center gap-1 rounded-lg border border-line-strong bg-bg-soft px-2.5 text-xs font-bold text-ink-soft hover:bg-earth-50 hover:text-ink transition"
+                          title={`発行元名義を「${altIssuerLabel}」に切り替えてPDFを開きます`}
+                        >
+                          <span>{altIssuerLabel}で開く</span>
+                        </a>
+                        {role === 'admin' && (
+                          <Link
+                            href={`/admin/delivery-notes/view?customer=${c.id}&date=${date}&amount=none&issuer=${defaultPreset}&layout=2up`}
+                            className="inline-flex h-9 items-center rounded-lg border border-line px-2.5 text-xs font-bold text-trust-600 hover:bg-bg-soft"
+                          >
+                            プレビュー
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <PrintCustomerFilter date={date} customers={customers} />
 
           {(jobs ?? []).length > 0 && (
