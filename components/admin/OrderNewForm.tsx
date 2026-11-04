@@ -29,6 +29,7 @@ import { ColorDot } from '@/components/ui/ColorDot'
 import { Modal } from '@/components/ui/Modal'
 import { OrderSmartResolver, type ResolvedOrderData } from '@/components/admin/OrderSmartResolver'
 import type { ParsedOrder } from '@/lib/gemini/analyze'
+import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
 
 export interface CustomerOption {
   id: string
@@ -175,6 +176,7 @@ export function OrderNewForm({
   // 全品目「出荷日の前日に収穫・パック」の原則および現場ボード既定日（翌日出荷）に合わせ、初期値を明日（tomorrow）に設定
   const [deliveryDate, setDeliveryDate] = useState(tomorrow)
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('am')
+  const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
   const [note, setNote] = useState('')
   const [items, setItems] = useState<FormItem[]>([])
   const [stats, setStats] = useState<Record<string, ProductStats>>({})
@@ -802,6 +804,7 @@ export function OrderNewForm({
         destination_id: destinationId || undefined,
         delivery_date: deliveryDate,
         shipping_time: shippingTime || undefined,
+        intake_channel: intakeChannel ?? undefined,
         note: note || undefined,
         items: validItems.map((it) => ({
           product_id: it.product_id,
@@ -999,6 +1002,7 @@ export function OrderNewForm({
             destination_id: matchedDest?.id || undefined,
             delivery_date: ordDate,
             shipping_time: shippingTime || undefined,
+            intake_channel: intakeChannel ?? undefined,
             note: ord.note || note || undefined,
             items: batchItems,
             original_file: i === 0 ? originalFile ?? undefined : undefined,
@@ -1403,6 +1407,9 @@ export function OrderNewForm({
             </div>
           </div>
         )}
+
+        {/* 受注経路（電話・LINE・紙）— 評価指標「紙の卒業」の計測用 */}
+        <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} className="mt-4" />
 
         {/* 納入先（届け先） ＆ 出荷時間帯 */}
         <div className="grid gap-4 sm:grid-cols-2 mt-4">

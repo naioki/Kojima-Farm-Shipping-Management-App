@@ -346,6 +346,9 @@ export async function POST(req: Request) {
         shipping_time: shipping_time ?? null,
         note: note ?? null,
         created_by: userRow ? user.id : null,
+        intake_channel: parsed.data.intake_channel ?? null,
+        approved_at: new Date().toISOString(),
+        approved_by: userRow ? user.id : null,
       })
       .select('id')
       .single()

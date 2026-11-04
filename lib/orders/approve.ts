@@ -174,7 +174,11 @@ export async function approveOrder(
 
   // 二重承認防止: pending_review のときだけ approved に切り替える（同時に2人が押しても1回だけ通る）。
   // 収穫タスクの日付と注文の納品日がずれないよう、承認に使った納品日を注文にも反映する。
-  const updates: Record<string, unknown> = { status: 'approved' }
+  const updates: Record<string, unknown> = {
+    status: 'approved',
+    approved_at: new Date().toISOString(),
+    approved_by: userId,
+  }
   if (order.delivery_date !== deliveryDate) {
     updates.delivery_date = deliveryDate
     updates.delivery_date_source = 'manual'
@@ -194,7 +198,13 @@ export async function approveOrder(
   const revertClaim = async () => {
     const { error } = await admin
       .from('orders')
-      .update({ status: 'pending_review', delivery_date: order.delivery_date, destination_id: order.destination_id })
+      .update({
+        status: 'pending_review',
+        delivery_date: order.delivery_date,
+        destination_id: order.destination_id,
+        approved_at: null,
+        approved_by: null,
+      })
       .eq('id', order.id)
     if (error) console.error('[approve] 承認の取り消しに失敗:', error.message)
   }

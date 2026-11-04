@@ -184,6 +184,7 @@ export async function PUT(req: Request) {
         order_date: jstTodayStr(),
         delivery_date,
         delivery_date_source: 'manual',
+        approved_at: new Date().toISOString(),
       })
       .select('id')
       .single()

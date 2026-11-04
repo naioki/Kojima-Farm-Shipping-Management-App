@@ -16,6 +16,7 @@ import {
   FileCheck2,
   Coins,
   Tag,
+  Gauge,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -44,6 +45,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/admin/metrics', label: '評価指標（処理時間・ミス・紙の卒業）', icon: Gauge },
       { href: '/field/concierge', label: '🤖 AI総合相談窓口（おまかせ設定・追加）', icon: Sparkles },
     ],
   },

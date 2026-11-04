@@ -36,6 +36,7 @@ import { matchDestination, resolveBatchDate, createBatchModePlanner } from '@/li
 import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
+import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
 
 export interface CustomerProductRuleSummary {
   packsPerCase?: number | null
@@ -209,6 +210,7 @@ export function ShipmentAddForm({
   const [qtyRaw, setQtyRaw] = useState('')
   const [mode, setMode] = useState<'create' | 'increase' | 'decrease' | 'set'>('create')
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('')
+  const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
   const [note, setNote] = useState('')
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const fileSelectorRef = useRef<HTMLInputElement | null>(null)
@@ -1847,6 +1849,7 @@ export function ShipmentAddForm({
           has_seal: cand.has_seal ?? ruleObj?.hasSeal ?? undefined,
           seal_text: cand.seal_text ?? ruleObj?.sealText ?? undefined,
           bag_type: cand.bag_type ?? ruleObj?.bagType ?? undefined,
+          intake_channel: intakeChannel ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
@@ -1940,6 +1943,7 @@ export function ShipmentAddForm({
       product_id: productId,
       delivery_date: targetDate,
       shipping_time: shippingTime || undefined,
+      intake_channel: intakeChannel ?? undefined,
       quantity_raw: qtyRaw,
       packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
       spec: spec.trim() || undefined,
@@ -2943,6 +2947,9 @@ export function ShipmentAddForm({
                   </div>
                 </div>
               </div>
+
+              {/* 受注経路（電話・LINE・紙）— 評価指標「紙の卒業」の計測用。前回の選択を記憶 */}
+              <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
 
               {/* 取引先セレクト（ワンタップ主要取引先チップ ＋ 全件セレクト） */}
               <div className="space-y-2">

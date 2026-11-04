@@ -65,6 +65,13 @@ Drive上は編集・閲覧・git専用にする。
 - **NEVER swallow errors**: 一覧・詳細ページはエラー時に必ず `<ErrorState message={...} />` を
   返す（サイレント失敗しない）。空状態は必ず `<EmptyState />`。
 
+## 評価指標（オーナー定義）
+
+改善の効果は `/admin/metrics` の4指標で判断する: ①1注文あたり処理時間（受信→承認→出荷）
+②出荷・請求ミス件数 ③事務作業時間（`ops_events` の操作時間から自動推定）④紙の卒業
+（`orders.intake_channel`＝電話・LINE・紙の内訳）。集計は `lib/metrics/compute.ts`（純関数・テスト付き）。
+手入力で注文を作る新しい経路を足すときは `intake_channel` と `approved_at` を必ず埋めること。
+
 ## デプロイ
 
 `git push` だけでは本番に反映されない（デプロイトリガー未設定）。手動で
