@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateInvoiceForCustomer } from '@/lib/invoices/generate'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -22,8 +22,9 @@ const inputSchema = z
  * 一括生成（generate-bulk）と共有する。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireAdminApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const parsed = inputSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

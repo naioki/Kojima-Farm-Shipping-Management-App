@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { customerParseHintSchema } from '@/types/database'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -11,8 +11,9 @@ export const runtime = 'nodejs'
  * これが Gemini プロンプトの few-shot（lib/ingestion/learning）の素になる。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const parsed = customerParseHintSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

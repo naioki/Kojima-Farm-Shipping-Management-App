@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { deliveryNoteCreateSchema } from '@/types/database'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
 import { getSetting } from '@/lib/settings'
 import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
 import { writeAudit } from '@/lib/audit/log'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -15,8 +15,9 @@ export const runtime = 'nodejs'
  * - #41: 数量は billable_qty ?? shipped_qty ?? quantity の優先順で実出荷数を採用。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const parsed = deliveryNoteCreateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

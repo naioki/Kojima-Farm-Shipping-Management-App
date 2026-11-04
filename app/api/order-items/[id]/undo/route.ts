@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { determineUndoEligibility } from '@/lib/orders/undo'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -12,8 +12,9 @@ export const runtime = 'nodejs'
  *   - Undo 自体も audit_log に action='undo' で記録。Redo は実装しない。
  */
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const supabase = createAdminClient()
 

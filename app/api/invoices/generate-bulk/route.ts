@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateInvoiceForCustomer } from '@/lib/invoices/generate'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -23,8 +23,9 @@ const inputSchema = z
  *   - 番号は終了日の月で欠番なし採番（取引先をまたいで連番・税務上正しい）。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireAdminApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const parsed = inputSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

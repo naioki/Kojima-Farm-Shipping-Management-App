@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { lotCreateSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -12,8 +12,9 @@ export const runtime = 'nodejs'
  * assign_delivery_date 指定時は、その出荷日の同品目の未紐付け明細に一括紐付けする。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = lotCreateSchema.safeParse(body)

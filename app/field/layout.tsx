@@ -24,9 +24,17 @@ export default async function FieldLayout({ children }: { children: React.ReactN
     .select('role, full_name')
     .eq('id', user.id)
     .maybeSingle()
-  // ロール解決に失敗したら最小権限（staff）にフォールバック。無言にはしない。
-  if (profileErr) console.error('[field/layout] ロールの取得に失敗:', profileErr.message)
-  const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
+  // ロール解決に失敗したら fail closed（社内データを見せない）。無言にはしない。
+  if (profileErr) {
+    console.error('[field/layout] ロールの取得に失敗:', profileErr.message)
+    throw new Error('ユーザー権限の確認に失敗しました。時間をおいて再読み込みしてください。')
+  }
+  // 社員名簿（public.users）に行が無い＝取引先ポータルのユーザー等。現場画面は見せない。
+  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
+    const isPortal = Boolean((user.app_metadata as { customer_id?: string } | undefined)?.customer_id)
+    redirect(isPortal ? '/portal/order' : '/login')
+  }
+  const role = profile.role as 'admin' | 'staff'
   // 経営者欄には個人の名前を出さず、農園名「小島農園」を表示する
   const name = role === 'admin' ? '小島農園' : (profile?.full_name?.trim() || user.email?.split('@')[0] || 'スタッフ')
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'

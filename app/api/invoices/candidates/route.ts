@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -11,8 +11,9 @@ export const runtime = 'nodejs'
  * 請求書作成時の「取引先選びの迷い・空振りエラー」を撲滅する。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireAdminApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const { searchParams } = new URL(req.url)
   const from = searchParams.get('from')

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { verifyCronRequest } from '@/lib/config/ingestion'
 import { getSetting } from '@/lib/settings'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { getRouteOverrides } from '@/lib/field/destination-routes-store'
@@ -14,6 +15,9 @@ export const runtime = 'nodejs'
  * LINE / LINE WORKS / Discord / メールへ遅延アラートを通知するCronエンドポイント。
  */
 export async function GET(req: NextRequest) {
+  if (!(await verifyCronRequest(req.headers))) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
   const overdueAlertSetting = await getSetting('OVERDUE_ALERT_ENABLED')
   const isEnabled = overdueAlertSetting !== 'off'
 
