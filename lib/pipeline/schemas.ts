@@ -423,10 +423,11 @@ export function validateAndComputeQuantities(params: {
 } {
   const resolvedUnit = determineUnitCount(params.clientName, params.spec, params.unitCount, params.itemName)
   const normClient = (params.clientName ?? '').normalize('NFKC')
+  const isCaseClient = normClient.includes('勘兵衛') || normClient.includes('オレンジファーム')
   let warningNote: string | null = null
 
   if (
-    (normClient.includes('勘兵衛') || params.isCaseInput) &&
+    (isCaseClient || params.isCaseInput) &&
     (params.isCaseInput || ((params.totalPacks == null || params.totalPacks === 0) && (params.cases ?? 0) > 0))
   ) {
     const cVal = Math.trunc(params.cases != null && params.cases > 0 ? params.cases : (params.totalPacks ?? 0))
@@ -453,7 +454,7 @@ export function validateAndComputeQuantities(params: {
 
   if (params.cases != null && params.remainderPacks != null) {
     const printedTotal = Math.trunc(params.cases) * resolvedUnit + Math.trunc(params.remainderPacks)
-    if (printedTotal !== tVal && !(normClient.includes('勘兵衛') && Math.trunc(params.cases) === tVal)) {
+    if (printedTotal !== tVal && !(isCaseClient && Math.trunc(params.cases) === tVal)) {
       warningNote = `【要確認】数量検算不一致: 総数${tVal}P ≠ ${params.cases}ケース×${resolvedUnit}＋端数${params.remainderPacks}P(${printedTotal}P)`
     }
   }

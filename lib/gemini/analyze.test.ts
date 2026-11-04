@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { verifyAndNormalizeItem, buildAiRulesSection, ordersResultSchema, normalizeCustomerAndDestination } from './analyze'
+import {
+  verifyAndNormalizeItem,
+  buildAiRulesSection,
+  ordersResultSchema,
+  normalizeCustomerAndDestination,
+  resolveOrangeFarmShippingDate,
+} from './analyze'
 import { highModelTryOrder, modelTryOrder, normalizeModelId } from './models'
 import {
   generateOrderKey,
@@ -396,5 +402,70 @@ describe('v5.1.13 Sample (@75 x 2pk), Container, and Card Normalization', () => 
     expect(norm.destinationName).toContain('東北サンネット')
     expect(norm.destinationName).toContain('サンプル')
     expect(norm.destinationName).not.toContain('ちばコープ')
+  })
+
+  it('オレンジファームの着日（木曜・土曜）を水曜・金曜出荷へ決定論的に変換し、マスの数字（50箱・40箱）を×25パック（1250P・1000P）に換算する', () => {
+    // 1. 11/5(木)着 → 11/4(水)出荷
+    const thuRes = resolveOrangeFarmShippingDate('2026-11-05')
+    expect(thuRes.deliveryDate).toBe('2026-11-04')
+    expect(thuRes.arrivalNote).toContain('2026-11-05(木)')
+    expect(thuRes.arrivalNote).toContain('2026-11-04(水)')
+
+    // 2. 11/7(土)着 → 11/6(金)出荷
+    const satRes = resolveOrangeFarmShippingDate('2026-11-07')
+    expect(satRes.deliveryDate).toBe('2026-11-06')
+    expect(satRes.arrivalNote).toContain('2026-11-07(土)')
+    expect(satRes.arrivalNote).toContain('2026-11-06(金)')
+
+    // 3. 既にAI側で水曜（2026-11-04）に変換済みの場合は二重引き算しない
+    const wedRes = resolveOrangeFarmShippingDate('2026-11-04')
+    expect(wedRes.deliveryDate).toBe('2026-11-04')
+    expect(wedRes.arrivalNote).toBeNull()
+
+    // 4. マスの数字 50（コンテナ数）がそのまま quantity:"50" で来ても 50箱×25入＝1250P に正規化される
+    const item50 = verifyAndNormalizeItem(
+      {
+        raw_name: 'チンゲン菜',
+        product_name: 'チンゲン菜',
+        quantity: '50',
+        unit: 'P',
+        confidence: 0.95,
+        spec: '25入',
+        packs_per_case: 25,
+        is_handwritten_modified: true,
+        note: '手書きで 0→50 に修正あり',
+      },
+      '株式会社オレンジファーム',
+      { deliveryDate: '2026-11-04' },
+    )
+    expect(item50.packs_per_case).toBe(25)
+    expect(item50.cases).toBe(50)
+    expect(item50.box_count).toBe(50)
+    expect(item50.quantity).toBe('1250')
+    expect(item50.spec).toBe('25入 (入数25)')
+    expect(item50.container_type).toBe('青コン')
+    expect(item50.note).toContain('50')
+
+    // 5. AIが既に 50×25=1250 として返した場合も二重掛け算せず 50箱＝1250P を維持する
+    const item1250 = verifyAndNormalizeItem(
+      {
+        raw_name: 'チンゲン菜',
+        product_name: 'チンゲン菜',
+        quantity: '1250',
+        cases: 50,
+        box_count: 50,
+        unit: 'P',
+        confidence: 0.95,
+        spec: '25入',
+        packs_per_case: 25,
+        is_case_input: true,
+        is_handwritten_modified: true,
+      },
+      '株式会社オレンジファーム',
+      { deliveryDate: '2026-11-04' },
+    )
+    expect(item1250.cases).toBe(50)
+    expect(item1250.box_count).toBe(50)
+    expect(item1250.quantity).toBe('1250')
   })
 })

@@ -40,6 +40,9 @@ export function invalidateAiRulesCache(): void {
 const NSK_UPGRADED_RULE_TEXT =
   '[11番小島裕美・24入・複数出荷先・欄外内訳] 社名印字が無くても『生産者番号11・小島裕美(小島)・出荷先(1加工センター/4関東顧客向け/5北海道/6関西)・入数24』の表は必ず customer_name: "株式会社農業総合研究所（NSK）" とする。生産者『11番 小島裕美』のチンゲンサイ行のみ抽出。入数24(表の数値は総Pのため÷24がケース数: 1,440→60箱、720→30箱)、容器『農業総研専用折りたたみコンテナ』。行ごとに規格列（『200gUP』→『200gUP (入数24)』、『200g』→『200g (入数24)』）とシール列（『あり』→has_seal:true, seal_text:『シールあり（生産者11:小島裕美）』、『なし』→has_seal:false, seal_text:『シールなし』）を厳密に区別する。赤文字の数字（例:5北海道の720赤字）も確定数量として抽出し note に『※表で赤字記載（変更箇所）』と記載。右欄外に『(木)のみ ライフ近畿：40 / サンプラザ：20』等のケース数内訳がある場合は該当日の note に『内訳: ライフ近畿40箱(960P) / サンプラザ20箱(480P)』と記載。数値『0』のセルは explicit_cancel_in_slip:true, quantity:"0" とし、『なし』や空欄は除外する。買値(¥78/¥75等)は現場非表示のため note に一切記載禁止。'
 
+export const ORANGE_FARM_UPGRADED_RULE_TEXT =
+  '[着日→水曜・金曜出荷変換・25入コンテナ数・手書き最優先] 発信元『(株)オレンジファーム』『オレンジファーム』（FAX 042-451-9155）。画像が横向き・逆さの場合は文字の向き（「小島農園 御中」「注文書」「11月度」等）を正立させてから解析し、印字カスレ・枠線ズレは文脈（「チンゲン菜」「25入」「市場休み」等）から補完する。【最重要: 着日→出荷日変換】注文書に印刷されている日付は「当社着日（納品先到着日）」だが、当農園では集荷が原則【水曜日・金曜日の朝一番】のため、必ず実出荷日（集荷日）を delivery_date に設定すること（木曜着分 → 前日の【水曜日出荷】、土曜着分 → 前日の【金曜日出荷】）。ただし手書きの矢印や修正で日付がずらされている場合は手書き指示を最優先する。【数量＝コンテナ数（箱数）】各マス内の数字（50、40等）はすべて「コンテナ数（箱数, is_case_input:true）」を表す（1コンテナ＝25入, packs_per_case:25）。総パック数 quantity は「コンテナ数×25」とする（例: 50箱 → cases:50, box_count:50, quantity:"1250"、40箱 → cases:40, box_count:40, quantity:"1000"）。ボールペン・鉛筆の手書き追記、打ち消し線、丸囲み、矢印（例: 5日(木)着の『0 → 50』、7日(土)着の『40』、12日(木)着の枠外左『40』等）を最優先で採用し（is_handwritten_modified:true）、note に「着日YYYY-MM-DD(曜)→実出荷YYYY-MM-DD(曜) / 手書き0→50箱修正」のように伝票記載着日と手書き変更内容を明記する。容器は『青コン』。決して『ランドローム』や『やなぎさわファーム』と混同してはならない。'
+
 /** APIキーは設定（DB→env）。設定画面 or Secret Manager で投入する。 */
 async function client(): Promise<GoogleGenerativeAI> {
   const key = await getSetting('GEMINI_API_KEY')
@@ -231,6 +234,17 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
             .eq('id', r.id)
           return { ...r, rule_text: NSK_UPGRADED_RULE_TEXT }
         }
+        // 旧オレンジファームルール（数値は総点数・着日そのまま）が登録されている場合は最新の「着日→水曜・金曜出荷変換・25入コンテナ数」ルールへ自動アップグレード
+        if (
+          r.client_name.includes('オレンジファーム') &&
+          (r.rule_text.includes('数値は総点数') || !r.rule_text.includes('水曜日・金曜日'))
+        ) {
+          void admin
+            .from('ai_rules')
+            .update({ rule_text: ORANGE_FARM_UPGRADED_RULE_TEXT, updated_at: new Date().toISOString() })
+            .eq('id', r.id)
+          return { ...r, rule_text: ORANGE_FARM_UPGRADED_RULE_TEXT }
+        }
         return r
       })
       aiRulesCache = { rules: allRules, expiresAt: now + AI_RULES_CACHE_TTL_MS }
@@ -273,8 +287,40 @@ export function buildAiRulesSection(rules: AiRule[]): string {
 }
 
 /**
- * 相対日付（「明日」「明後日」など）を正確に解決するためのJST基準日コンテキスト。
+ * オレンジファームの「当社着日 → 実出荷日（水曜・金曜朝集荷）」決定論的変換ヘルパー。
+ * - オレンジファームの注文書は表頭が「当社着日」であり、集荷は原則【水曜日・金曜日の朝一番】。
+ *   - 木曜着分 (dayOfWeek === 4) → 前日の【水曜日出荷】 (-1日)
+ *   - 土曜着分 (dayOfWeek === 6) → 前日の【金曜日出荷】 (-1日)
+ * - AIが着日（木曜・土曜）のまま `delivery_date` に返した場合でも決定論的に前日（水曜・金曜）へ変換し、
+ *   既に水曜・金曜へ変換済みの場合は二重引き算しない。
  */
+export function resolveOrangeFarmShippingDate(
+  rawDateStr?: string | null,
+  existingNote?: string | null,
+): { deliveryDate: string | null; arrivalNote: string | null } {
+  if (!rawDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(rawDateStr)) {
+    return { deliveryDate: rawDateStr ?? null, arrivalNote: null }
+  }
+  const [y, m, d] = rawDateStr.split('-').map(Number)
+  if (!y || !m || !d) return { deliveryDate: rawDateStr, arrivalNote: null }
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  const dow = dt.getUTCDay() // 0:Sun, 1:Mon, 2:Tue, 3:Wed, 4:Thu, 5:Fri, 6:Sat
+  const dowLabels = ['日', '月', '火', '水', '木', '金', '土']
+
+  // 木曜(4)着 → 水曜(3)出荷、土曜(6)着 → 金曜(5)出荷
+  if (dow === 4 || dow === 6) {
+    const shippedDate = shiftDateStr(rawDateStr, -1)
+    const shipDow = dowLabels[(dow + 6) % 7]
+    const arrDow = dowLabels[dow]
+    const label = `伝票着日:${rawDateStr}(${arrDow})→実出荷日:${shippedDate}(${shipDow})`
+    const alreadyNoted = (existingNote ?? '').includes('着日') || (existingNote ?? '').includes('実出荷')
+    return {
+      deliveryDate: shippedDate,
+      arrivalNote: alreadyNoted ? null : label,
+    }
+  }
+  return { deliveryDate: rawDateStr, arrivalNote: null }
+}
 function buildDateContext(): string {
   const today = jstTodayStr()
   const tomorrow = shiftDateStr(today, 1)
@@ -490,6 +536,7 @@ export function verifyAndNormalizeItem(
   })
   const cust = (std.customerName ?? customerName ?? '').toLowerCase()
   const isKanbei = cust.includes('勘兵衛')
+  const isOrangeFarm = cust.includes('オレンジファーム') || cust.includes('オレンジ')
   const isNsk = cust.includes('農業総合研究所') || cust.includes('nsk')
 
   const packsPerCase = determineUnitCount(
@@ -511,6 +558,46 @@ export function verifyAndNormalizeItem(
     note = note.replace(/★/g, '').trim() || null
   }
 
+  // 和郷園スタイル "300+0 (15-0)" がそのまま quantity に入った場合は先頭数値を採用
+  const wagoenMatch = quantityStr.match(/^(\d+)\s*\+\s*(\d+)/)
+  if (wagoenMatch) {
+    const basePacks = Number(wagoenMatch[1])
+    const extraPacks = Number(wagoenMatch[2])
+    quantityStr = String(basePacks + extraPacks)
+  }
+
+  // "5ケース" / "2 C/S" / "2cs" 表記、または勘兵衛・オレンジファーム（マスの数字＝コンテナ数/箱数）の総パック数換算
+  const caseUnitMatch = quantityStr.match(/^(\d+(?:\.\d+)?)\s*(?:ケース|c\/s|cs|箱|コンテナ)$/i)
+  if (caseUnitMatch) {
+    const c = Number(caseUnitMatch[1])
+    quantityStr = String(Math.round(c * packsPerCase))
+  } else if (isOrangeFarm && /^\d+$/.test(quantityStr)) {
+    // オレンジファームは各マスの数字（50、40等）がすべて「コンテナ数（箱数）」を表す（1コンテナ＝25入）
+    // AIが既に quantity = cases * 25 (例: 50箱→1250) に換算済みの場合は二重掛け算せずそのまま採用する
+    const numVal = Number(quantityStr)
+    const alreadyMultiplied =
+      (item.cases != null && item.cases > 0 && numVal === item.cases * packsPerCase) ||
+      (item.box_count != null && item.box_count > 0 && numVal === item.box_count * packsPerCase)
+    if (
+      !alreadyMultiplied &&
+      (item.cases === numVal ||
+        item.box_count === numVal ||
+        (numVal > 0 && numVal <= 200 && (item.cases == null || item.cases <= 10)))
+    ) {
+      quantityStr = String(numVal * packsPerCase)
+    }
+  } else if (
+    (isKanbei || item.is_case_input) &&
+    ((item.unit ?? '').toLowerCase().includes('c') || item.is_case_input) &&
+    /^\d+$/.test(quantityStr)
+  ) {
+    // 勘兵衛で単位が C/S のままケース数が入っている場合
+    const c = Number(quantityStr)
+    if (item.cases == null || item.cases === c) {
+      quantityStr = String(c * packsPerCase)
+    }
+  }
+
   // 「約80」などの暫定表記チェック（セル単位限定。伝票全体のnoteに引きずられない）
   const hasApprox =
     Boolean(item.is_approximate) ||
@@ -525,35 +612,14 @@ export function verifyAndNormalizeItem(
   } else if (item.is_handwritten_modified) {
     const isRedTextNote = Boolean((note ?? '').includes('赤字') || (note ?? '').includes('赤文字'))
     if (!isRedTextNote) {
-      const handNote = `手書き修正（${quantityStr.replace(/約\s*/g, '')}点）`
-      if (!(note ?? '').includes('手書き修正')) {
+      const cleanPts = Number(quantityStr.replace(/約\s*/g, ''))
+      const handNote =
+        isOrangeFarm && Number.isFinite(cleanPts) && cleanPts > 0
+          ? `手書き修正（${Math.round(cleanPts / packsPerCase)}箱＝${cleanPts}点）`
+          : `手書き修正（${quantityStr.replace(/約\s*/g, '')}点）`
+      if (!(note ?? '').includes('手書き')) {
         note = note ? `${handNote} / ${note}` : handNote
       }
-    }
-  }
-
-  // 和郷園スタイル "300+0 (15-0)" がそのまま quantity に入った場合は先頭数値を採用
-  const wagoenMatch = quantityStr.match(/^(\d+)\s*\+\s*(\d+)/)
-  if (wagoenMatch) {
-    const basePacks = Number(wagoenMatch[1])
-    const extraPacks = Number(wagoenMatch[2])
-    quantityStr = String(basePacks + extraPacks)
-  }
-
-  // "5ケース" / "2 C/S" / "2cs" 表記の総パック数換算
-  const caseUnitMatch = quantityStr.match(/^(\d+(?:\.\d+)?)\s*(?:ケース|c\/s|cs|箱)$/i)
-  if (caseUnitMatch) {
-    const c = Number(caseUnitMatch[1])
-    quantityStr = String(Math.round(c * packsPerCase))
-  } else if (
-    (isKanbei || item.is_case_input) &&
-    ((item.unit ?? '').toLowerCase().includes('c') || item.is_case_input) &&
-    /^\d+$/.test(quantityStr)
-  ) {
-    // 勘兵衛で単位が C/S のままケース数が入っている場合
-    const c = Number(quantityStr)
-    if (item.cases == null || item.cases === c) {
-      quantityStr = String(c * packsPerCase)
     }
   }
 
@@ -602,7 +668,7 @@ export function verifyAndNormalizeItem(
     // AIが cases / remainder_packs を返している場合、検算して不一致なら計算値を正としつつ要確認にする
     if (cases != null && remainder != null && numericTotal > 0) {
       const expectedTotal = cases * packsPerCase + remainder
-      if (expectedTotal !== numericTotal && !(isKanbei && cases === numericTotal)) {
+      if (expectedTotal !== numericTotal && !((isKanbei || isOrangeFarm) && cases === numericTotal)) {
         cases = computedCases
         remainder = computedRemainder
         confidence = Math.min(confidence, 0.5)
@@ -860,7 +926,10 @@ export async function analyzeOrders(
     const filteredOrders = parsed.orders.filter((order) => {
       // 表形式FAXで有効な表頭日付リストがある場合、表頭に存在しない日付（スライド誤読で生じた月末はみ出し日等）は安全に排除
       if (validHeaderDatesSet && order.delivery_date) {
-        if (!validHeaderDatesSet.has(order.delivery_date)) {
+        const isOrangeOrder = (order.customer_name ?? '').includes('オレンジ')
+        const plusOneDate = shiftDateStr(order.delivery_date, 1)
+        const isAllowedOrangeShiftedDate = isOrangeOrder && validHeaderDatesSet.has(plusOneDate)
+        if (!validHeaderDatesSet.has(order.delivery_date) && !isAllowedOrangeShiftedDate) {
           console.warn(`[analyzeOrders] 表頭日付外の幻覚スライド注文を除外: ${order.delivery_date} (${order.destination_name})`)
           return false
         }
@@ -884,6 +953,16 @@ export async function analyzeOrders(
         })
         const resolvedCustomer = std.customerName ?? order.customer_name
         const resolvedDest = std.destinationName ?? order.destination_name ?? null
+
+        // オレンジファーム：「着日（木曜・土曜）」がそのまま delivery_date に入っていた場合は決定論的に「水曜・金曜出荷」へ変換
+        const isOrangeCust = (resolvedCustomer ?? '').includes('オレンジ')
+        const orangeDateRes = isOrangeCust
+          ? resolveOrangeFarmShippingDate(order.delivery_date, order.note)
+          : { deliveryDate: order.delivery_date, arrivalNote: null }
+        const effectiveDeliveryDate = orangeDateRes.deliveryDate
+        const effectiveOrderNote = orangeDateRes.arrivalNote
+          ? [orangeDateRes.arrivalNote, stripPriceTextFromNote(order.note)].filter(Boolean).join(' / ')
+          : stripPriceTextFromNote(order.note)
 
         const items = order.items
           // 1. 数量が0の品目は、明示キャンセル（explicit_cancel_in_slip: true）を除き自動除外
@@ -925,11 +1004,15 @@ export async function analyzeOrders(
           .map((it) => {
             const normalized = verifyAndNormalizeItem(it, resolvedCustomer, {
               destinationName: resolvedDest,
-              deliveryDate: order.delivery_date,
+              deliveryDate: effectiveDeliveryDate,
             })
+            const itemNoteWithArrival =
+              orangeDateRes.arrivalNote && !(normalized.note ?? '').includes('着日')
+                ? [orangeDateRes.arrivalNote, normalized.note].filter(Boolean).join(' / ')
+                : normalized.note
             const baseKey = generateOrderKey({
               clientName: resolvedCustomer ?? '',
-              deliveryDate: order.delivery_date ?? '',
+              deliveryDate: effectiveDeliveryDate ?? '',
               destination: resolvedDest ?? '',
               itemName: normalized.product_name ?? 'チンゲン菜',
               spec: normalized.spec ?? '',
@@ -939,7 +1022,7 @@ export async function analyzeOrders(
             orderKeyCounts.set(baseKey, nextIdx)
             const finalKey = generateOrderKey({
               clientName: resolvedCustomer ?? '',
-              deliveryDate: order.delivery_date ?? '',
+              deliveryDate: effectiveDeliveryDate ?? '',
               destination: resolvedDest ?? '',
               itemName: normalized.product_name ?? 'チンゲン菜',
               spec: normalized.spec ?? '',
@@ -947,6 +1030,7 @@ export async function analyzeOrders(
             })
             return {
               ...normalized,
+              note: itemNoteWithArrival,
               order_key: finalKey,
             }
           })
@@ -955,7 +1039,8 @@ export async function analyzeOrders(
           ...order,
           customer_name: resolvedCustomer,
           destination_name: resolvedDest,
-          note: stripPriceTextFromNote(order.note),
+          delivery_date: effectiveDeliveryDate,
+          note: effectiveOrderNote,
           slip_no: order.slip_no ?? parsed.slip_no ?? null,
           items,
         }
@@ -1014,7 +1099,8 @@ export async function analyzeOrders(
         (o) =>
           (o.customer_name ?? '').includes('和郷園') ||
           (o.customer_name ?? '').includes('房総食料') ||
-          (o.customer_name ?? '').includes('農業総合研究所'),
+          (o.customer_name ?? '').includes('農業総合研究所') ||
+          (o.customer_name ?? '').includes('オレンジファーム'),
       ) &&
         deduplicatedOrders.length >= 2))
 
