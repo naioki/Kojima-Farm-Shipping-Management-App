@@ -251,6 +251,7 @@ export function ShipmentAddForm({
   // テキスト欄に「貼り付け」で入れたか（貼り付け＝LINE の転記。手打ちの指示は経路を推定しない）
   const textPastedRef = useRef(false)
   const [dragOver, setDragOver] = useState(false)
+  const naturalTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
 
   // AI解析結果・確認事項
   const [aiExplanation, setAiExplanation] = useState<string | null>(null)
@@ -312,7 +313,8 @@ export function ShipmentAddForm({
   useEffect(() => setAllDestinations(destinations), [destinations])
   useEffect(() => setLocalPacksByPair(packsByPair), [packsByPair])
   useEffect(() => setLocalRulesByPair(rulesByPair), [rulesByPair])
-  const [manualFormOpen, setManualFormOpen] = useState(true)
+  // AI入力欄が主役。手入力は必要なときだけ開く（AIの単品結果・未登録取引先の作成時は自動で開く）
+  const [manualFormOpen, setManualFormOpen] = useState(false)
 
   /** モーダルを開くたびに前回の取引先・数量・候補残りをクリーンに初期化して別会社への混入を100%防ぐ */
   const openCleanAddModal = () => {
@@ -351,7 +353,7 @@ export function ShipmentAddForm({
     setNewAliases('')
     setShowNewDestForExisting(false)
     setNewDestForExistingName('')
-    setManualFormOpen(true)
+    setManualFormOpen(false)
     if (defaultProductId) {
       const matchedP = products.find((p) => p.id === defaultProductId)
       if (matchedP) {
@@ -689,6 +691,8 @@ export function ShipmentAddForm({
       const data = json.data
       const badges: string[] = []
       if (textPastedRef.current) applyIntakeSuggestion(suggestIntakeChannel('text'))
+      // 文字入力の解析結果（1件）は手入力欄に反映されるので、確認できるよう開く
+      setManualFormOpen(true)
 
       // 1. 取引先の反映
       if (data.customer_id) {
@@ -1510,6 +1514,42 @@ export function ShipmentAddForm({
     reader.readAsDataURL(file)
   }
 
+  // AI入力欄を主役に: 開いたら（PCのみ）入力欄にカーソルを置き、すぐ Ctrl+V で貼れるようにする。
+  // スマホでは自動でキーボードが出ると邪魔なので行わない。
+  const handlePhotoFileRef = useRef(handlePhotoFile)
+  handlePhotoFileRef.current = handlePhotoFile
+  useEffect(() => {
+    if (!isOpen || step !== 'input') return
+    const finePointer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches
+    const focusTimer = finePointer ? window.setTimeout(() => naturalTextAreaRef.current?.focus(), 150) : undefined
+
+    // 入力欄の外で貼り付けても受け付ける（画像→AI読み取り、文字→AI入力欄へ）
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      const data = e.clipboardData
+      if (!data) return
+      const imageFile = Array.from(data.files).find((f) => f.type.startsWith('image/'))
+      if (imageFile) {
+        e.preventDefault()
+        void handlePhotoFileRef.current(imageFile, { fromClipboard: true })
+        return
+      }
+      const text = data.getData('text')
+      if (text.trim()) {
+        e.preventDefault()
+        textPastedRef.current = true
+        setNaturalText((prev) => (prev.trim() ? `${prev}\n${text}` : text))
+        naturalTextAreaRef.current?.focus()
+      }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => {
+      if (focusTimer) window.clearTimeout(focusTimer)
+      document.removeEventListener('paste', onPaste)
+    }
+  }, [isOpen, step])
+
   // 📍 既存取引先への新規納入先クイック追加
   async function handleCreateDestinationForExisting() {
     const dName = newDestForExistingName.trim()
@@ -2115,7 +2155,7 @@ export function ShipmentAddForm({
           className="w-full rounded-2xl border-2 border-dashed border-forest-300 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
         >
           <Plus className="h-4 w-4 stroke-[2.8] text-forest-700" />
-          <span>＋ 新規注文の追加・数量変更（手入力 / 写真 / FAX・Excel）</span>
+          <span>＋ 注文を追加（写真・LINEを貼り付け / 手入力も可）</span>
         </button>
       </div>
 
@@ -2176,6 +2216,7 @@ export function ShipmentAddForm({
               >
                 キャンセル
               </Button>
+              {manualFormOpen && (
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
@@ -2216,6 +2257,7 @@ export function ShipmentAddForm({
                   <span>即登録する</span>
                 </Button>
               </div>
+              )}
             </div>
           )
         }
@@ -2451,6 +2493,7 @@ export function ShipmentAddForm({
               <div className="relative">
                 <textarea
                   id="shipment-natural-text-area"
+                  ref={naturalTextAreaRef}
                   value={naturalText}
                   onChange={(e) => {
                     setNaturalText(e.target.value)
@@ -2472,7 +2515,7 @@ export function ShipmentAddForm({
                       handleNaturalInputSubmit()
                     }
                   }}
-                  rows={2}
+                  rows={3}
                   placeholder="LINEの文面や画像をここに貼り付け（Ctrl+V）／例:「明日の和郷園に20c追加」「寺崎 50P」／画像への補足指示"
                   className="w-full rounded-xl border border-forest-300/80 bg-white p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-200"
                 />
@@ -2929,7 +2972,7 @@ export function ShipmentAddForm({
                   onClick={() => setManualFormOpen((prev) => !prev)}
                   className="inline-flex items-center gap-1.5 text-xs font-black text-forest-900 bg-forest-50 hover:bg-forest-100 border border-forest-200 px-2.5 py-1.5 rounded-lg transition"
                 >
-                  <span>{manualFormOpen ? '▲ 手動入力・個別微修正フォームをたたむ' : '▼ 1件ずつ手動入力・個別微修正する（タップで開く）'}</span>
+                  <span>{manualFormOpen ? '▲ 手入力の欄をたたむ' : '✍️ 手で入力する・数量を直す（タップで開く）'}</span>
                 </button>
                 {/* 操作モード選択 */}
                 <div className="flex items-center gap-1 text-xs font-bold">
