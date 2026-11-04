@@ -249,7 +249,7 @@ export default async function ShipmentsPage({
 
   // マスタ取得（RLS遮断防止のためすべて admin クライアントで取得）
   const [custRes, prodCapRes, destRows, rulesRes, routeOverrides, packSortMap] = await Promise.all([
-    admin.from('customers').select('id, name, display_color').eq('is_active', true).order('name'),
+    admin.from('customers').select('id, name, display_color, aliases').eq('is_active', true).order('name'),
     productIds.length
       ? admin.from('products').select('id, container_capacity').in('id', productIds)
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
@@ -294,9 +294,37 @@ export default async function ShipmentsPage({
   const ruleById = new Map((ruleRows ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
   const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r as Record<string, unknown>]))
   const packsByPair: Record<string, number | null> = {}
-  type RuleWithPacks = { customer_id: string; product_id: string; packs_per_case?: number | null }
-  for (const r of (ruleRows ?? []) as RuleWithPacks[]) {
-    packsByPair[`${r.customer_id}:${r.product_id}`] = r.packs_per_case ?? null
+  const rulesByPair: Record<
+    string,
+    {
+      packsPerCase?: number | null
+      spec?: string | null
+      containerType?: string | null
+      hasCard?: boolean | null
+      hasSeal?: boolean | null
+      sealText?: string | null
+      bagType?: string | null
+    }
+  > = {}
+  for (const r of (ruleRows ?? []) as Array<Record<string, unknown>>) {
+    const key = `${r.customer_id as string}:${r.product_id as string}`
+    const ppc = typeof r.packs_per_case === 'number' ? r.packs_per_case : null
+    packsByPair[key] = ppc
+    rulesByPair[key] = {
+      packsPerCase: ppc,
+      spec:
+        (typeof r.spec === 'string' && r.spec) ||
+        (typeof r.label_spec === 'string' && r.label_spec) ||
+        null,
+      containerType:
+        (typeof r.container_type === 'string' && r.container_type) ||
+        (typeof r.default_container_type === 'string' && r.default_container_type) ||
+        null,
+      hasCard: typeof r.has_card === 'boolean' ? r.has_card : null,
+      hasSeal: typeof r.has_seal === 'boolean' ? r.has_seal : null,
+      sealText: typeof r.seal_text === 'string' ? r.seal_text : null,
+      bagType: typeof r.bag_type === 'string' ? r.bag_type : null,
+    }
   }
 
   // 荷姿マスタ取得
@@ -800,14 +828,20 @@ export default async function ShipmentsPage({
       <ShipmentAddForm
         deliveryDate={date}
         defaultProductId={selectedProductId}
-        customers={allCustomers.map((c) => ({ id: c.id, name: c.name }))}
+        customers={allCustomers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          aliases: (c as { aliases?: string[] | null }).aliases ?? null,
+        }))}
         products={allProducts.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
         destinations={allDestinations.map((d) => ({
           id: d.id,
           customerId: d.customer_id ?? '',
           label: d.code?.trim() || d.full_name,
+          defaultContainerType: d.default_container_type ?? null,
         }))}
         packsByPair={packsByPair}
+        rulesByPair={rulesByPair}
       />
     </div>
   )

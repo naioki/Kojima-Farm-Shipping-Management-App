@@ -47,8 +47,9 @@ export function normalizeCustomerMatchKey(raw?: string | null): string {
 
 /**
  * 取引先名テキストから customers マスタの最良一致を検索する。
+ * 括弧内の別名（例: ランドローム（やなぎさわファーム））や aliases 配列もすべて照合する。
  */
-export function findBestMatchingCustomer<T extends { id: string; name: string }>(
+export function findBestMatchingCustomer<T extends { id: string; name: string; aliases?: string[] | null }>(
   rawName: string | null | undefined,
   customers: T[],
 ): T | undefined {
@@ -58,34 +59,69 @@ export function findBestMatchingCustomer<T extends { id: string; name: string }>
     return undefined
   }
 
-  const rawNorm = foldKana(normalizeOrgName(trimmed)).toLowerCase()
-  const rawBase = normalizeCustomerMatchKey(trimmed)
-  if (!rawNorm && !rawBase) return undefined
+  const normFull = (s: string) =>
+    foldKana(normalizeOrgName(s))
+      .replace(/[\s　・()（）]/g, '')
+      .toLowerCase()
 
-  // 1. 正規化名の完全一致
+  const extractCandidateKeys = (c: T): string[] => {
+    const keys = new Set<string>()
+    const full = normFull(c.name)
+    if (full) keys.add(full)
+    const base = normalizeCustomerMatchKey(c.name)
+    if (base) keys.add(base)
+    const parenMatches = c.name.matchAll(/[（(]([^）)]+)[）)]/g)
+    for (const m of parenMatches) {
+      const pk = normFull(m[1] ?? '')
+      if (pk.length >= 2) keys.add(pk)
+    }
+    for (const al of c.aliases ?? []) {
+      const ak = normFull(al)
+      if (ak.length >= 2) keys.add(ak)
+      const ab = normalizeCustomerMatchKey(al)
+      if (ab.length >= 2) keys.add(ab)
+    }
+    return Array.from(keys)
+  }
+
+  const rawFull = normFull(trimmed)
+  const rawBase = normalizeCustomerMatchKey(trimmed)
+  if (!rawFull && !rawBase) return undefined
+
+  // 1. 正規化名・別名の完全一致
   const exact = customers.find((c) => {
-    const cNorm = foldKana(normalizeOrgName(c.name)).toLowerCase()
-    const cBase = normalizeCustomerMatchKey(c.name)
-    return (cNorm && cNorm === rawNorm) || (cBase && cBase === rawBase)
+    const keys = extractCandidateKeys(c)
+    return keys.some((k) => (rawFull && k === rawFull) || (rawBase && k === rawBase))
   })
   if (exact) return exact
 
-  // 2. NSK 等の既知別名対応
+  // 2. NSK / やなぎさわ / オレンジファーム 等の既知別名対応
   if (trimmed.toUpperCase().includes('NSK') || trimmed.includes('農業総合研究所') || trimmed.includes('農総研')) {
     const nsk = customers.find(
       (c) => c.name.includes('農業総合研究所') || c.name.toUpperCase().includes('NSK'),
     )
     if (nsk) return nsk
   }
+  if (/やなぎさわ|ヤナギサワ|柳沢|ランドローム/.test(trimmed)) {
+    const yanagisawa = customers.find(
+      (c) => /やなぎさわ|ヤナギサワ|ランドローム/.test(c.name),
+    )
+    if (yanagisawa) return yanagisawa
+  }
+  if (/オレンジファーム/.test(trimmed)) {
+    const orange = customers.find((c) => c.name.includes('オレンジファーム'))
+    if (orange) return orange
+  }
 
   // 3. 部分一致（2文字以上）
   return customers.find((c) => {
-    const cBase = normalizeCustomerMatchKey(c.name)
-    if (!cBase || !rawBase) return false
-    if (cBase.length >= 2 && rawBase.length >= 2) {
-      return cBase.includes(rawBase) || rawBase.includes(cBase)
-    }
-    return cBase === rawBase
+    const keys = extractCandidateKeys(c)
+    return keys.some((k) => {
+      if (k.length < 2) return false
+      if (rawBase.length >= 2 && (k.includes(rawBase) || rawBase.includes(k))) return true
+      if (rawFull.length >= 2 && (k.includes(rawFull) || rawFull.includes(k))) return true
+      return false
+    })
   })
 }
 

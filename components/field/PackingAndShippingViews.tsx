@@ -171,33 +171,32 @@ export function PackingAndShippingViews({
 
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
-  // 各行の正確な入数（NSK=24入、小コン=30入、標準=20入等）に基づいて箱数を合算
+  // 上部進捗コックピット（目標箱数・完成箱数・残り箱数）は取引先別の個別入数にかかわらず一律「総パック数 ÷ 20」で算出
+  // コンテナ別・規格別の内訳は各行の実入数（NSK=24入、オレンジファーム=25入、やなぎさわ=10入、標準=20入等）で算出
   let totalPacks = 0
-  let totalBoxes = 0
-  let completedBoxes = 0
   let completedPacks = 0
   const liveContainerMap = new Map<string, number>()
   const liveSpecMap = new Map<string, { packs: number; boxes: number }>()
 
   for (const it of items) {
-    const perCase = it.masterPacksPerCase && it.masterPacksPerCase >= 10 ? it.masterPacksPerCase : 20
+    const specMatch = (it.initialSpec || '').normalize('NFKC').match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
+    const specPpc = specMatch ? Number(specMatch[1] || specMatch[2]) : null
+    const perCase =
+      specPpc && specPpc >= 10 && specPpc <= 200
+        ? specPpc
+        : it.masterPacksPerCase && it.masterPacksPerCase >= 10
+        ? it.masterPacksPerCase
+        : 20
     const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
     const isSmallSample = isSample && it.orderedQty < perCase
     const boxCount = isSmallSample ? 0 : Math.ceil(it.orderedQty / perCase)
     totalPacks += it.orderedQty
-    totalBoxes += boxCount
     if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') {
-      completedBoxes += boxCount
       completedPacks += it.orderedQty
     } else {
       const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
       if (partialPacks > 0) {
         completedPacks += partialPacks
-        if (!isSmallSample) {
-          const remPacks = Math.max(0, it.orderedQty - partialPacks)
-          const remBoxes = Math.ceil(remPacks / perCase)
-          completedBoxes += Math.max(0, boxCount - remBoxes)
-        }
       }
     }
 
@@ -216,11 +215,13 @@ export function PackingAndShippingViews({
     liveSpecMap.set(sKey, curSpec)
   }
 
+  const totalBoxes = totalPacks > 0 ? Math.ceil(totalPacks / 20) : 0
+  const remainingPacksTotal = Math.max(0, totalPacks - completedPacks)
+  const remainingBoxesTotal = remainingPacksTotal > 0 ? Math.ceil(remainingPacksTotal / 20) : 0
+  const completedBoxes = Math.max(0, totalBoxes - remainingBoxesTotal)
+
   const nextDayTotalPacks = nextItems.reduce((acc, it) => acc + it.orderedQty, 0)
-  const nextDayTotalBoxes = nextItems.reduce((acc, it) => {
-    const perCase = it.masterPacksPerCase && it.masterPacksPerCase > 0 ? it.masterPacksPerCase : 20
-    return acc + Math.ceil(it.orderedQty / perCase)
-  }, 0)
+  const nextDayTotalBoxes = nextDayTotalPacks > 0 ? Math.ceil(nextDayTotalPacks / 20) : 0
 
   const liveContainerBreakdown: ContainerBreakdownItem[] =
     items.length > 0
@@ -231,8 +232,6 @@ export function PackingAndShippingViews({
     items.length > 0
       ? Array.from(liveSpecMap.entries()).map(([spec, d]) => ({ spec, packs: d.packs, boxes: d.boxes }))
       : (specBreakdown ?? [])
-
-  completedBoxes = Math.min(totalBoxes, completedBoxes)
 
   const incompleteCount = sortedPackItems.filter(
     (it) => it.initialStatus !== 'packed' && it.initialStatus !== 'shipped',

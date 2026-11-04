@@ -37,18 +37,31 @@ import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
 
+export interface CustomerProductRuleSummary {
+  packsPerCase?: number | null
+  spec?: string | null
+  containerType?: string | null
+  hasCard?: boolean | null
+  hasSeal?: boolean | null
+  sealText?: string | null
+  bagType?: string | null
+}
+
 export interface ShipmentAddFormProps {
   deliveryDate: string
   defaultProductId?: string | null
-  customers: { id: string; name: string }[]
+  customers: { id: string; name: string; aliases?: string[] | null }[]
   products: { id: string; name: string; unit: string; category?: string | null }[]
   /** 取引先配下の納入先（届け先） */
-  destinations: { id: string; customerId: string; label: string }[]
+  destinations: { id: string; customerId: string; label: string; defaultContainerType?: string | null }[]
   /** `${customer_id}:${product_id}` → packs_per_case（c記法プレビュー用） */
   packsByPair: Record<string, number | null>
+  /** `${customer_id}:${product_id}` → 登録済みルール一式（入数・容器・規格・シール・カード・袋） */
+  rulesByPair?: Record<string, CustomerProductRuleSummary>
 }
 
-type LocalCustomer = { id: string; name: string }
+type LocalCustomer = { id: string; name: string; aliases?: string[] | null }
+type LocalDestination = { id: string; customerId: string; label: string; defaultContainerType?: string | null }
 type LocalProduct = { id: string; name: string; unit: string; category?: string | null }
 
 const UNGROUPED_LABEL = 'その他'
@@ -159,6 +172,7 @@ export function ShipmentAddForm({
   products: initialProducts,
   destinations = [],
   packsByPair,
+  rulesByPair = {},
 }: ShipmentAddFormProps) {
   const router = useRouter()
   const { enqueueShipment } = useOutbox()
@@ -168,8 +182,20 @@ export function ShipmentAddForm({
   // マスタ state
   const [customers, setCustomers] = useState<LocalCustomer[]>(initialCustomers)
   const [products, setProducts] = useState<LocalProduct[]>(initialProducts)
-  const [allDestinations, setAllDestinations] = useState<Array<{ id: string; customerId: string; label: string }>>(destinations)
+  const [allDestinations, setAllDestinations] = useState<LocalDestination[]>(destinations)
   const [localPacksByPair, setLocalPacksByPair] = useState<Record<string, number | null>>(packsByPair)
+  const [localRulesByPair, setLocalRulesByPair] = useState<Record<string, CustomerProductRuleSummary>>(rulesByPair)
+
+  // AI読取時にAIが明示指定したフィールドを記録し、useEffectによる誤上書きを防止するref
+  const aiExplicitFieldsRef = useRef<{
+    packsPerCase?: number | null
+    spec?: string | null
+    containerType?: string | null
+    hasCard?: boolean | null
+    hasSeal?: boolean | null
+    sealText?: string | null
+    bagType?: string | null
+  }>({})
 
   // フォーム入力値
   const [targetDate, setTargetDate] = useState(deliveryDate)
@@ -263,11 +289,58 @@ export function ShipmentAddForm({
   useEffect(() => setProducts(initialProducts), [initialProducts])
   useEffect(() => setAllDestinations(destinations), [destinations])
   useEffect(() => setLocalPacksByPair(packsByPair), [packsByPair])
+  useEffect(() => setLocalRulesByPair(rulesByPair), [rulesByPair])
   const [manualFormOpen, setManualFormOpen] = useState(true)
+
+  /** モーダルを開くたびに前回の取引先・数量・候補残りをクリーンに初期化して別会社への混入を100%防ぐ */
+  const openCleanAddModal = () => {
+    aiExplicitFieldsRef.current = {}
+    aiOriginalParsedRef.current = null
+    setStep('input')
+    setTargetDate(deliveryDate)
+    setCustomerId('')
+    setDestinationId('')
+    setQtyRaw('')
+    setInputCases('')
+    setInputTotalPacks('')
+    setInputPacksPerCase(20)
+    setSpec('2〜3株 (入数20)')
+    setContainerType('青コン')
+    setHasCard(false)
+    setHasSeal(null)
+    setSealText('')
+    setBagType('')
+    setMode('create')
+    setShippingTime('')
+    setNote('')
+    setNaturalText('')
+    setPhotoPreview(null)
+    setAttachedFilePayload(null)
+    setConfirmedBadges([])
+    setUncertainItems([])
+    setAiExplanation(null)
+    setParsedCandidates([])
+    setActiveCandidateIdx(0)
+    setExistingShipmentInfo(null)
+    setShowNewCustomer(false)
+    setNewCustomerName('')
+    setNewDestinationName('')
+    setNewAliases('')
+    setShowNewDestForExisting(false)
+    setNewDestForExistingName('')
+    setManualFormOpen(true)
+    if (defaultProductId) {
+      const matchedP = products.find((p) => p.id === defaultProductId)
+      if (matchedP) {
+        setProductId(matchedP.id)
+        setSelectedCategory(resolveProductCategory(matchedP))
+      }
+    }
+    setIsOpen(true)
+  }
 
   useEffect(() => {
     if (isOpen) {
-      setStep('input')
       setTargetDate(deliveryDate)
       if (defaultProductId) {
         const matchedP = products.find((p) => p.id === defaultProductId)
@@ -351,18 +424,22 @@ export function ShipmentAddForm({
   const unit = selectedProduct?.unit ?? 'P'
   const packsPerCase = customerId && productId ? localPacksByPair[`${customerId}:${productId}`] ?? null : null
 
-  // 取引先・品目・納入先変更時に連動して1箱の入数・コンテナ種別・規格を更新
+  // 取引先・品目・納入先変更時に連動して登録済みルール（入数・コンテナ・規格・カード・シール・袋）を自動セット
+  // （AI解析が明示指定したフィールドがある場合はAI読取値を優先維持）
   useEffect(() => {
     const cName = customers.find((c) => c.id === customerId)?.name || ''
-    const dName = allDestinations.find((d) => d.id === destinationId)?.label || ''
+    const destObjCurrent = allDestinations.find((d) => d.id === destinationId)
+    const dName = destObjCurrent?.label || ''
     const pName = products.find((p) => p.id === productId)?.name || ''
+    const ruleSummary = customerId && productId ? localRulesByPair[`${customerId}:${productId}`] : undefined
+    const aiExplicit = aiExplicitFieldsRef.current
 
     if (customerId && productId) {
-      const rulePacks = localPacksByPair[`${customerId}:${productId}`]
+      const rulePacks = ruleSummary?.packsPerCase ?? localPacksByPair[`${customerId}:${productId}`]
       const inferredPacks =
-        rulePacks && rulePacks > 0
-          ? rulePacks
-          : determineUnitCount(cName, dName)
+        (aiExplicit.packsPerCase && aiExplicit.packsPerCase > 0 ? aiExplicit.packsPerCase : null) ??
+        (rulePacks && rulePacks > 0 ? rulePacks : null) ??
+        determineUnitCount(cName, dName, undefined, pName)
       setInputPacksPerCase(inferredPacks)
       setInputCases((curCases) => {
         if (curCases && Number(curCases) > 0) {
@@ -372,30 +449,73 @@ export function ShipmentAddForm({
         }
         return curCases
       })
+
       const isNsk = cName.includes('農業総合研究所') || cName.toUpperCase().includes('NSK')
-      const baseLabel = isNsk
-        ? dName.includes('北海道')
+      if (aiExplicit.spec) {
+        const s = aiExplicit.spec
+        setSpec(s.includes('入数') ? s : `${s} (入数${inferredPacks})`)
+      } else if (ruleSummary?.spec && !(isNsk && dName.includes('北海道') && ruleSummary.spec.includes('200gUP'))) {
+        const cleanRuleSpec = ruleSummary.spec.replace(/\s*\(入数\d+\)/g, '').trim()
+        setSpec(`${cleanRuleSpec} (入数${inferredPacks})`)
+      } else {
+        const baseLabel = isNsk
+          ? dName.includes('北海道')
+            ? '200g'
+            : '200gUP'
+          : pName.includes('小松菜')
           ? '200g'
-          : '200gUP'
-        : pName.includes('小松菜')
-        ? '200g'
-        : pName.includes('青梗菜') || pName.includes('チンゲン')
-        ? '2〜3株'
-        : '標準'
-      setSpec((prev) => {
-        // AIが明示設定した規格があれば維持
-        if (prev && isNsk && (prev.includes('200gUP') || prev.includes('200g'))) {
-          return `${baseLabel} (入数${inferredPacks})`
-        }
-        return `${baseLabel} (入数${inferredPacks})`
-      })
+          : pName.includes('青梗菜') || pName.includes('チンゲン')
+          ? '2〜3株'
+          : '標準'
+        setSpec(`${baseLabel} (入数${inferredPacks})`)
+      }
+
+      if (aiExplicit.hasSeal !== undefined && aiExplicit.hasSeal !== null) {
+        setHasSeal(aiExplicit.hasSeal)
+        setSealText(aiExplicit.sealText || (aiExplicit.hasSeal ? 'シールあり' : 'シールなし'))
+      } else if (ruleSummary?.hasSeal !== undefined && ruleSummary?.hasSeal !== null) {
+        setHasSeal(ruleSummary.hasSeal)
+        setSealText(ruleSummary.sealText || (ruleSummary.hasSeal ? 'シールあり' : 'シールなし'))
+      } else if (isNsk) {
+        const nskSeal = !dName.includes('北海道')
+        setHasSeal(nskSeal)
+        setSealText(nskSeal ? 'シールあり（生産者11:小島裕美）' : 'シールなし')
+      } else {
+        setHasSeal(null)
+        setSealText('')
+      }
+
+      if (aiExplicit.bagType) {
+        setBagType(aiExplicit.bagType)
+      } else if (ruleSummary?.bagType) {
+        setBagType(ruleSummary.bagType)
+      } else if (cName.includes('勘兵衛')) {
+        setBagType('印字袋(FG)')
+      } else {
+        setBagType('')
+      }
     }
 
     if (cName || dName) {
-      setContainerType(resolveContainerType({ clientName: cName, destination: dName }))
-      setHasCard(determineHasCard({ clientName: cName, destination: dName }))
+      setContainerType(
+        resolveContainerType({
+          explicitContainer: aiExplicit.containerType ?? null,
+          ruleContainer: ruleSummary?.containerType ?? null,
+          destDefaultContainer: destObjCurrent?.defaultContainerType ?? null,
+          clientName: cName,
+          destination: dName,
+        }),
+      )
+      setHasCard(
+        determineHasCard({
+          explicitHasCard: aiExplicit.hasCard ?? null,
+          ruleHasCard: ruleSummary?.hasCard ?? null,
+          clientName: cName,
+          destination: dName,
+        }),
+      )
     }
-  }, [customerId, productId, destinationId, localPacksByPair, customers, allDestinations, products])
+  }, [customerId, productId, destinationId, localPacksByPair, localRulesByPair, customers, allDestinations, products])
 
   // ⚡ Step 1 リアルタイム既存出荷チェック（選択直後に現在の登録数と上書き/増量/減量を表示）
   useEffect(() => {
@@ -1042,6 +1162,22 @@ export function ShipmentAddForm({
       product_name: firstItem?.product_name || firstItem?.raw_name || null,
     }
 
+    const rawTextForPacks = firstItem?.raw_name || ''
+    const explicitPacks =
+      firstItem?.packs_per_case ||
+      (rawTextForPacks.match(/(\d+)入/)?.[1] ? parseInt(RegExp.$1, 10) : null) ||
+      null
+
+    aiExplicitFieldsRef.current = {
+      packsPerCase: explicitPacks,
+      spec: firstItem?.spec ?? null,
+      containerType: firstItem?.container_type ?? null,
+      hasCard: firstItem?.has_card ?? null,
+      hasSeal: firstItem?.has_seal ?? null,
+      sealText: firstItem?.seal_text ?? null,
+      bagType: firstItem?.bag_type ?? null,
+    }
+
     const badges: string[] = []
     let detectedCustName = parsedOrder.customer_name?.trim() || ''
 
@@ -1049,7 +1185,7 @@ export function ShipmentAddForm({
       detectedCustName = ''
     }
 
-    // 1. 取引先照合
+    // 1. 取引先照合（未登録の場合は前回の取引先IDを絶対に引き継がずクリアし、新規取引先確認フォームを自動で開く）
     const matchedCust = detectedCustName
       ? findBestMatchingCustomer(detectedCustName, customers)
       : undefined
@@ -1059,12 +1195,25 @@ export function ShipmentAddForm({
       setShowNewCustomer(false)
       badges.push(`取引先: ${matchedCust.name}`)
     } else if (detectedCustName) {
+      setCustomerId('')
+      setDestinationId('')
       setNewCustomerName(detectedCustName)
-      if (parsedOrder.destination_name) setNewDestinationName(parsedOrder.destination_name.trim())
-      const firstItemPacks = parsedOrder.items?.[0]?.packs_per_case
-      if (firstItemPacks && firstItemPacks > 0) setNewPacksPerCase(firstItemPacks)
+      setNewDestinationName(parsedOrder.destination_name?.trim() || '')
+      const inferredNewPacks =
+        (explicitPacks && explicitPacks > 0 ? explicitPacks : null) ||
+        determineUnitCount(detectedCustName, parsedOrder.destination_name)
+      setNewPacksPerCase(inferredNewPacks)
+      setNewContainerType(
+        resolveContainerType({
+          explicitContainer: firstItem?.container_type,
+          clientName: detectedCustName,
+          destination: parsedOrder.destination_name,
+          rawText: firstItem?.note,
+        }),
+      )
       setNewAliases(detectedCustName)
       setShowNewCustomer(true)
+      setManualFormOpen(true)
       badges.push(`未登録取引先: ${detectedCustName}`)
     }
 
@@ -1100,8 +1249,8 @@ export function ShipmentAddForm({
       const dName = parsedOrder.destination_name.trim()
       const destPool = matchedCust
         ? allDestinations.filter((d) => d.customerId === matchedCust.id)
-        : allDestinations
-      const matchedDest = matchDestination(dName, destPool)
+        : []
+      const matchedDest = matchedCust ? matchDestination(dName, destPool) : undefined
       if (matchedDest) {
         setDestinationId(matchedDest.id)
         setShowNewDestForExisting(false)
@@ -1112,10 +1261,12 @@ export function ShipmentAddForm({
         if (!isMultiMatrix) setShowNewDestForExisting(true)
         badges.push(`納入先: ${dName} (一括登録時に自動追加)`)
       } else {
+        setDestinationId('')
         setNewDestinationName(dName)
         badges.push(`納入先: ${dName}`)
       }
     } else {
+      setDestinationId('')
       setShowNewDestForExisting(false)
     }
 
@@ -1134,21 +1285,28 @@ export function ShipmentAddForm({
         badges.push(`品目: ${matchedProd.name}`)
       }
 
-      const rawText = firstItem.raw_name || ''
-      const parsedPacks = firstItem.packs_per_case || (rawText.match(/(\d+)入/)?.[1] ? parseInt(RegExp.$1, 10) : null)
-      const currentPacks = parsedPacks || inputPacksPerCase || 20
-      if (parsedPacks) {
-        setInputPacksPerCase(parsedPacks)
-      }
+      const ruleForPair =
+        matchedCust && (matchedProd?.id || productId)
+          ? localRulesByPair[`${matchedCust.id}:${matchedProd?.id || productId}`]
+          : undefined
+      const currentPacks =
+        explicitPacks ||
+        ruleForPair?.packsPerCase ||
+        determineUnitCount(matchedCust?.name || detectedCustName, parsedOrder.destination_name, undefined, matchedProd?.name) ||
+        inputPacksPerCase ||
+        20
+      setInputPacksPerCase(currentPacks)
 
       if (firstItem.spec) {
-        setSpec(firstItem.spec)
+        const s = firstItem.spec
+        setSpec(s.includes('入数') ? s : `${s} (入数${currentPacks})`)
         badges.push(`規格: ${firstItem.spec}`)
       }
       setContainerType(
         resolveContainerType({
           explicitContainer: firstItem.container_type,
-          clientName: detectedCustName,
+          ruleContainer: ruleForPair?.containerType ?? null,
+          clientName: matchedCust?.name || detectedCustName,
           destination: parsedOrder.destination_name,
           rawText: firstItem.note,
         }),
@@ -1156,7 +1314,8 @@ export function ShipmentAddForm({
       setHasCard(
         determineHasCard({
           explicitHasCard: firstItem.has_card,
-          clientName: detectedCustName,
+          ruleHasCard: ruleForPair?.hasCard ?? null,
+          clientName: matchedCust?.name || detectedCustName,
           destination: parsedOrder.destination_name,
           rawText: firstItem.note,
         }),
@@ -1403,13 +1562,24 @@ export function ShipmentAddForm({
       const json = await res.json()
       if (!res.ok || !json.id) throw new Error(json.error ?? '作成失敗')
 
-      setCustomers((prev) => (prev.some((c) => c.id === json.id) ? prev : [...prev, { id: json.id, name: json.name }]))
+      const createdAliases = aliasList.length > 0 ? aliasList : undefined
+      setCustomers((prev) =>
+        prev.some((c) => c.id === json.id)
+          ? prev
+          : [...prev, { id: json.id, name: json.name, aliases: createdAliases }],
+      )
+      aiExplicitFieldsRef.current = {}
       setCustomerId(json.id)
 
       if (json.destination) {
         setAllDestinations((prev) => [
           ...prev.filter((d) => d.id !== json.destination.id),
-          { id: json.destination.id, customerId: json.id, label: json.destination.label },
+          {
+            id: json.destination.id,
+            customerId: json.id,
+            label: json.destination.label,
+            defaultContainerType: newContainerType || null,
+          },
         ])
         setDestinationId(json.destination.id)
       }
@@ -1421,6 +1591,13 @@ export function ShipmentAddForm({
             ...prev,
             [`${json.id}:${productId}`]: json.packs_per_case,
           }))
+          setLocalRulesByPair((prev) => ({
+            ...prev,
+            [`${json.id}:${productId}`]: {
+              packsPerCase: json.packs_per_case,
+              containerType: newContainerType || null,
+            },
+          }))
         }
         if (inputCases && Number(inputCases) > 0) {
           const tot = Math.round(Number(inputCases) * json.packs_per_case)
@@ -1428,6 +1605,25 @@ export function ShipmentAddForm({
           setQtyRaw(`${inputCases}c`)
         }
       }
+      if (newContainerType) {
+        setContainerType(newContainerType)
+      }
+
+      // 候補一覧の未登録取引先名も作成した取引先名へ同期する
+      setParsedCandidates((prev) =>
+        prev.map((cand) => {
+          const cName = cand.customer_name?.trim() || ''
+          if (!cName || cName === name || !findBestMatchingCustomer(cName, customers)) {
+            return {
+              ...cand,
+              customer_name: json.name,
+              packs_per_case: cand.packs_per_case || json.packs_per_case || newPacksPerCase,
+              container_type: cand.container_type || newContainerType || null,
+            }
+          }
+          return cand
+        }),
+      )
 
       setShowNewCustomer(false)
       setNewCustomerName('')
@@ -1506,6 +1702,7 @@ export function ShipmentAddForm({
     const updatedList = [...parsedCandidates]
     const failures: string[] = []
     const createdDests: Array<{ id: string; label: string; customerId: string }> = []
+    const registeredDates: string[] = []
     const planMode = createBatchModePlanner()
 
     try {
@@ -1518,16 +1715,32 @@ export function ShipmentAddForm({
           ? findBestMatchingCustomer(detectedCustName, customers) ?? null
           : null
 
-        const matchedCust = matchedByName || customers.find((c) => c.id === customerId) || customers[0]
+        // 🚨 未登録の取引先名が検出された場合、別会社の納入先に混ぜたり既存選択を引き継いだりせず、新規取引先作成フォームを開く
+        if (detectedCustName && !matchedByName) {
+          setCustomerId('')
+          setDestinationId('')
+          setNewCustomerName(detectedCustName)
+          if (cand.destination_name?.trim()) setNewDestinationName(cand.destination_name.trim())
+          if (cand.packs_per_case && cand.packs_per_case > 0) setNewPacksPerCase(cand.packs_per_case)
+          if (cand.container_type?.trim()) setNewContainerType(cand.container_type.trim())
+          setNewAliases(detectedCustName)
+          setShowNewCustomer(true)
+          setManualFormOpen(true)
+          toast.error(
+            `未登録の取引先「${detectedCustName}」があります。下の確認フォームで「取引先・納入先・ルールを一括作成」を押してから登録してください。`,
+            { duration: 8000 },
+          )
+          setBatchRegistering(false)
+          return
+        }
+
+        const matchedCust = matchedByName || customers.find((c) => c.id === customerId)
         if (!matchedCust) {
-          failures.push(`${rowLabel}：取引先が見つかりません`)
+          failures.push(`${rowLabel}：取引先が未選択または未登録です`)
           continue
         }
 
-        let dName = cand.destination_name?.trim() || ''
-        if (!dName && detectedCustName && !matchedByName) {
-          dName = detectedCustName
-        }
+        const dName = cand.destination_name?.trim() || ''
         const destPool = [...allDestinations, ...createdDests].filter((d) => d.customerId === matchedCust.id)
         let matchedDest: { id: string; label: string } | undefined = matchDestination(dName, destPool)
 
@@ -1567,7 +1780,8 @@ export function ShipmentAddForm({
           continue
         }
 
-        const rulePacks = localPacksByPair[`${matchedCust.id}:${matchedProd.id}`]
+        const ruleObj = localRulesByPair[`${matchedCust.id}:${matchedProd.id}`]
+        const rulePacks = localPacksByPair[`${matchedCust.id}:${matchedProd.id}`] ?? ruleObj?.packsPerCase
         const cPacks =
           cand.packs_per_case ||
           rulePacks ||
@@ -1597,14 +1811,15 @@ export function ShipmentAddForm({
               date: cDate,
             })
 
+        const destDefaultContainer = allDestinations.find((d) => d.id === matchedDest?.id)?.defaultContainerType
         const cContainer = resolveContainerType({
-          explicitContainer: cand.container_type,
+          explicitContainer: cand.container_type || destDefaultContainer || ruleObj?.containerType,
           clientName: matchedCust.name,
           destination: matchedDest?.label || dName,
           rawText: cand.note,
         })
         const cHasCard = determineHasCard({
-          explicitHasCard: cand.has_card,
+          explicitHasCard: cand.has_card ?? ruleObj?.hasCard,
           clientName: matchedCust.name,
           destination: matchedDest?.label || dName,
           rawText: cand.note,
@@ -1615,7 +1830,7 @@ export function ShipmentAddForm({
             ? `200g (入数${cPacks})`
             : `200gUP (入数${cPacks})`
           : `${matchedProd.name.includes('小松菜') ? '200g' : '2〜3株'} (入数${cPacks})`
-        const cSpec = cand.spec || defaultSpecLabel
+        const cSpec = cand.spec || ruleObj?.spec || defaultSpecLabel
 
         const batchPayload = {
           customer_id: matchedCust.id,
@@ -1626,9 +1841,9 @@ export function ShipmentAddForm({
           spec: cSpec,
           container_type: cContainer,
           has_card: cHasCard,
-          has_seal: cand.has_seal ?? undefined,
-          seal_text: cand.seal_text ?? undefined,
-          bag_type: cand.bag_type ?? undefined,
+          has_seal: cand.has_seal ?? ruleObj?.hasSeal ?? undefined,
+          seal_text: cand.seal_text ?? ruleObj?.sealText ?? undefined,
+          bag_type: cand.bag_type ?? ruleObj?.bagType ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
@@ -1647,6 +1862,7 @@ export function ShipmentAddForm({
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           await enqueueShipment(batchPayload, rowLabel)
           updatedList[idx] = { ...cand, registered: true }
+          registeredDates.push(cDate)
           successCount++
           continue
         }
@@ -1662,6 +1878,7 @@ export function ShipmentAddForm({
               sharedReceiptId = okJson.receiptId as string
             }
             updatedList[idx] = { ...cand, registered: true }
+            registeredDates.push(cDate)
             successCount++
           } else {
             const ej = await res.json().catch(() => ({}))
@@ -1670,6 +1887,7 @@ export function ShipmentAddForm({
         } catch {
           await enqueueShipment(batchPayload, rowLabel)
           updatedList[idx] = { ...cand, registered: true }
+          registeredDates.push(cDate)
           successCount++
         }
       }
@@ -1679,7 +1897,6 @@ export function ShipmentAddForm({
       }
 
       setParsedCandidates(updatedList)
-      router.refresh()
 
       const remaining = updatedList.filter((c) => c.selected && !c.registered).length
       if (remaining === 0) {
@@ -1691,7 +1908,14 @@ export function ShipmentAddForm({
         setPhotoPreview(null)
         setAttachedFilePayload(null)
         setNaturalText('')
+        if (registeredDates.length > 0 && !registeredDates.includes(deliveryDate)) {
+          const jumpDate = registeredDates[0]
+          router.push(`/field/shipments?date=${jumpDate}${productId ? `&product=${productId}` : ''}`)
+        } else {
+          router.refresh()
+        }
       } else {
+        router.refresh()
         toast.success(`${successCount} 件を登録しました（残り ${remaining} 件を確認してください）`)
         const nextIdx = updatedList.findIndex((c) => c.selected && !c.registered)
         if (nextIdx !== -1) selectParsedCandidate(nextIdx, updatedList)
@@ -1819,7 +2043,12 @@ export function ShipmentAddForm({
       setParsedCandidates([])
       setActiveCandidateIdx(0)
       aiOriginalParsedRef.current = null
-      router.refresh()
+      aiExplicitFieldsRef.current = {}
+      if (targetDate && targetDate !== deliveryDate) {
+        router.push(`/field/shipments?date=${targetDate}${productId ? `&product=${productId}` : ''}`)
+      } else {
+        router.refresh()
+      }
     } catch (e: unknown) {
       toast.error(fieldErrorMessage(e, '登録に失敗しました'))
     } finally {
@@ -1846,10 +2075,7 @@ export function ShipmentAddForm({
       <div className="print:hidden pt-1">
         <button
           type="button"
-          onClick={() => {
-            setIsOpen(true)
-            setStep('input')
-          }}
+          onClick={openCleanAddModal}
           className="w-full rounded-2xl border-2 border-dashed border-forest-300 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
         >
           <Plus className="h-4 w-4 stroke-[2.8] text-forest-700" />
@@ -1864,10 +2090,7 @@ export function ShipmentAddForm({
       >
         <button
           type="button"
-          onClick={() => {
-            setIsOpen(true)
-            setStep('input')
-          }}
+          onClick={openCleanAddModal}
           className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-2xl ring-4 ring-white/90 hover:bg-forest-700 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-forest-300"
           aria-label="新規注文の追加・数量変更"
           title="新規注文の追加・数量変更"
@@ -2503,6 +2726,40 @@ export function ShipmentAddForm({
                     })}
                   </div>
 
+                  {/* 🚨 未登録取引先が検出された場合、まとめ一覧内で即座に確認・新規作成できるバナー */}
+                  {showNewCustomer && (
+                    <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3 space-y-2 shadow-2xs">
+                      <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                        <UserPlus className="h-4 w-4 text-amber-700 shrink-0" />
+                        <span>
+                          未登録の取引先「{newCustomerName || parsedCandidates[0]?.customer_name}」が検出されました。新規取引先として登録しますか？
+                        </span>
+                      </p>
+                      <p className="text-[11px] font-bold text-amber-900">
+                        別会社の納入先に混ざらないよう自動ストップしました。下の「✨ 新規取引先のワンストップ一括登録」で取引先を作成してから反映してください。
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleCreateOneStopCustomer}
+                          isLoading={creatingCustomer}
+                          disabled={!newCustomerName.trim()}
+                          className="bg-forest-700 hover:bg-forest-800 text-white font-black text-xs h-8 px-3.5 shadow-2xs"
+                        >
+                          ✨ 「{newCustomerName}」を新規取引先として即座に作成（{newPacksPerCase}P/箱・{newContainerType}）
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => setManualFormOpen(true)}
+                          className="text-xs font-bold text-forest-800 underline px-2 py-1"
+                        >
+                          詳細（納入先・別名）を編集してから作成
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* ④ ワンタップ一括反映ボタン */}
                   {selectedCandidateCount > 0 && (
                     <button
@@ -2695,7 +2952,11 @@ export function ShipmentAddForm({
                       <button
                         key={c.id}
                         type="button"
-                        onClick={() => setCustomerId(c.id)}
+                        onClick={() => {
+                          aiExplicitFieldsRef.current = {}
+                          setShowNewCustomer(false)
+                          setCustomerId(c.id)
+                        }}
                         className={cn(
                           'min-h-[40px] rounded-xl border px-3 py-1.5 text-xs font-black transition-all active:scale-95',
                           customerId === c.id
@@ -2713,7 +2974,11 @@ export function ShipmentAddForm({
                   required
                   placeholder="取引先を選択..."
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
+                  onChange={(e) => {
+                    aiExplicitFieldsRef.current = {}
+                    setShowNewCustomer(false)
+                    setCustomerId(e.target.value)
+                  }}
                   options={customers.map((c) => ({ value: c.id, label: c.name }))}
                 />
                 {!showNewCustomer && (
@@ -2886,7 +3151,10 @@ export function ShipmentAddForm({
                           <button
                             key={d.id}
                             type="button"
-                            onClick={() => setDestinationId(d.id)}
+                            onClick={() => {
+                              aiExplicitFieldsRef.current = {}
+                              setDestinationId(d.id)
+                            }}
                             className={cn(
                               'min-h-[38px] rounded-xl border px-3 py-1.5 text-xs font-black transition-all active:scale-95',
                               destinationId === d.id
@@ -2902,7 +3170,10 @@ export function ShipmentAddForm({
                         <Select
                           placeholder="リストから納入先を選択..."
                           value={destinationId}
-                          onChange={(e) => setDestinationId(e.target.value)}
+                          onChange={(e) => {
+                            aiExplicitFieldsRef.current = {}
+                            setDestinationId(e.target.value)
+                          }}
                           options={customerDestinations.map((d) => ({ value: d.id, label: d.label }))}
                         />
                       )}

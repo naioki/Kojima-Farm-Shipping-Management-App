@@ -69,14 +69,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         const wasPacked = current.field_status === 'packed' || current.field_status === 'shipped'
         updates.field_status = 'not_started'
         updates.shipped_qty = wasPacked && newQ > oldQ ? oldQ : null
-        if (wasPacked && newQ > oldQ) {
-          const addP = newQ - oldQ
-          const alertMemo = `🚨パック済(${oldQ}P)→${newQ}P(+${addP}P追加必要)`
-          const prevNote = typeof current.line_note === 'string' ? current.line_note : ''
-          if (input.line_note === undefined) {
-            updates.line_note = prevNote ? `${prevNote} / ${alertMemo}` : alertMemo
-          }
-        }
+        updates.snap_total_packs = oldQ
+        const changeToken =
+          wasPacked && newQ > oldQ
+            ? `🚨パック済(${oldQ}P)→${newQ}P(+${newQ - oldQ}P追加必要)`
+            : `数量変更:${oldQ}→${newQ}P`
+        const rawBaseNote: string =
+          input.line_note !== undefined
+            ? String(input.line_note ?? '')
+            : typeof current.line_note === 'string'
+            ? current.line_note
+            : ''
+        const cleanedBase = rawBaseNote
+          .split(/\s*\/\s*/)
+          .filter((t: string) => t && !/^(?:数量変更:|🚨パック済|★?新規追加)/.test(t.trim()))
+          .join(' / ')
+        updates.line_note = [changeToken, cleanedBase].filter(Boolean).join(' / ')
       }
     }
     if (input.unit_price != null) updates.unit_price = input.unit_price
@@ -88,7 +96,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (input.has_seal !== undefined) updates.has_seal = input.has_seal
     if (input.seal_text !== undefined) updates.seal_text = input.seal_text
     if (input.bag_type !== undefined) updates.bag_type = input.bag_type
-    if (input.line_note !== undefined) updates.line_note = input.line_note
+    if (input.line_note !== undefined && updates.line_note === undefined) updates.line_note = input.line_note
     if (input.pack_config_id !== undefined) updates.pack_config_id = input.pack_config_id
     if (input.shipped_qty !== undefined) updates.shipped_qty = input.shipped_qty
     if (input.field_note !== undefined) updates.field_note = input.field_note

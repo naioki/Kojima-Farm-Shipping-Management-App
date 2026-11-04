@@ -397,7 +397,12 @@ export async function POST(req: Request) {
         : `数量変更:${oldQty}→${newQty}P`
       : null
 
-    const combinedNote = [stripPriceFromNote(existingItem.line_note), changeNote, note]
+    const prevCleanedNote = (stripPriceFromNote(existingItem.line_note) ?? '')
+      .split(/\s*\/\s*/)
+      .filter((t) => t && !/^(?:数量変更:|🚨パック済|★?新規追加)/.test(t.trim()))
+      .join(' / ')
+
+    const combinedNote = [changeNote, prevCleanedNote, note]
       .filter((s): s is string => Boolean(s && s.trim()))
       .join(' / ') || null
 
@@ -419,10 +424,12 @@ export async function POST(req: Request) {
         seal_text: effectiveSealText ?? existingItem.seal_text ?? null,
         bag_type: effectiveBagType ?? existingItem.bag_type ?? null,
         line_note: combinedNote,
+        is_manual_modified: true,
         ...(qtyChanged
           ? {
               field_status: 'not_started',
               shipped_qty: preservedPartialQty,
+              snap_total_packs: oldQty,
             }
           : {}),
         updated_at: new Date().toISOString(),
@@ -445,11 +452,12 @@ export async function POST(req: Request) {
       console.warn('[api/shipments] audit warning:', auditErr)
     }
   } else {
-    // 新規明細作成（単価・税率は商品マスタから）
+    // 新規明細作成（単価・税率は商品マスタから。★新規追加トークンでボード上の新規バッジを点灯）
     const initCases = Math.floor(deltaQty / effectivePacksPerCase)
     const initRem = deltaQty % effectivePacksPerCase
     const initQuantityRaw =
       initRem > 0 ? `${initCases}c+${initRem}P` : `${initCases}c`
+    const newAdditionLineNote = ['★新規追加', note].filter((s): s is string => Boolean(s && s.trim())).join(' / ')
 
     const { data: item, error: itemErr } = await writeDroppingMissingColumns<Record<string, unknown>, { code?: string; message?: string }>(
       {
@@ -465,7 +473,8 @@ export async function POST(req: Request) {
         rule_id: (typeof rule?.id === 'string' ? rule.id : null),
         confidence: 1.0,
         field_status: 'not_started',
-        line_note: note ?? null,
+        line_note: newAdditionLineNote || '★新規追加',
+        is_new_addition: true,
         spec: effectiveSpec,
         container_type: effectiveContainerType,
         has_card: effectiveHasCard,
@@ -523,6 +532,45 @@ export async function POST(req: Request) {
       }
     } catch (htErr) {
       console.warn('[api/shipments] harvest_tasks 同期警告:', htErr)
+    }
+  }
+
+  // 💾 取引先×品目ルール（入数・規格・容器・カード・シール・袋）の自動保存・更新
+  // 新規取引先やルール未登録の取引先でも、一度登録すれば次回選択時に全項目が自動セットされるようにする
+  if (customer_id && product_id) {
+    try {
+      const rulePayload: Record<string, unknown> = {
+        packs_per_case: effectivePacksPerCase,
+        spec: effectiveSpec,
+        label_spec: effectiveSpec,
+        container_type: effectiveContainerType,
+        has_card: effectiveHasCard,
+      }
+      if (effectiveHasSeal !== null && effectiveHasSeal !== undefined) {
+        rulePayload.has_seal = effectiveHasSeal
+      }
+      if (effectiveSealText) {
+        rulePayload.seal_text = effectiveSealText
+      }
+      if (effectiveBagType) {
+        rulePayload.bag_type = effectiveBagType
+      }
+      if (rule && typeof rule.id === 'string') {
+        await writeDroppingMissingColumns(rulePayload, (p) =>
+          supabase.from('customer_product_rules').update(p).eq('id', rule.id as string),
+        )
+      } else {
+        await writeDroppingMissingColumns(
+          {
+            customer_id,
+            product_id,
+            ...rulePayload,
+          },
+          (p) => supabase.from('customer_product_rules').insert(p as never),
+        )
+      }
+    } catch (ruleUpsertErr) {
+      console.warn('[api/shipments] customer_product_rules 自動保存警告:', ruleUpsertErr)
     }
   }
 

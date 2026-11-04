@@ -170,24 +170,21 @@ export function ShipmentRow({
   const [sealText, setSealText] = useState<string>(initialSealText ?? (initialHasSeal ? 'シールあり' : ''))
   const [bagType, setBagType] = useState<string>(initialBagType ?? '')
 
-  let packsPerCase = masterPacksPerCase && masterPacksPerCase >= 10 ? masterPacksPerCase : null
-  if (!packsPerCase || packsPerCase <= 0) {
+  const packsPerCase: number = (() => {
     const combinedSpec = `${customerName} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
     const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
     if (match) {
       const parsedNum = Number(match[1] || match[2])
       if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) {
-        packsPerCase = parsedNum
+        return parsedNum
       }
     }
-    if (!packsPerCase || packsPerCase <= 0) {
-      if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) {
-        packsPerCase = 24
-      } else {
-        packsPerCase = 20
-      }
-    }
-  }
+    if (masterPacksPerCase && masterPacksPerCase >= 10) return masterPacksPerCase
+    if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
+    if (combinedSpec.includes('オレンジファーム')) return 25
+    if (combinedSpec.includes('やなぎさわ') || combinedSpec.includes('ランドローム')) return 10
+    return 20
+  })()
 
   const isSampleOrder = isSampleOrderText(destinationName, currentLineNote, initialFieldNote, spec)
   const isSmallSample = isSampleOrder && orderedQty < packsPerCase
@@ -1377,8 +1374,41 @@ export function ShipmentRow({
               </div>
             </div>
 
-            {/* 📐 規格プリセット ＋ 自由入力 */}
-            <div className="space-y-1">
+            {/* 📐 1箱の入数 ＆ 規格プリセット（1タップで即時保存・箱数再計算・次回から自動適用） */}
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <span className="text-[11px] font-bold text-ink-soft">🔢 1箱の入数（1タップで箱数再計算＆記憶）</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  {[10, 20, 24, 25, 30].map((ppcOpt) => {
+                    const active = packsPerCase === ppcOpt
+                    return (
+                      <button
+                        key={ppcOpt}
+                        type="button"
+                        disabled={savingDetails}
+                        onClick={() => {
+                          const baseClean =
+                            (spec || masterLabelSpec || '2〜3株')
+                              .replace(/[（(]?\s*(?:入数|1箱|1ケース)\s*[:：]?\s*\d+\s*[Pパック入]*\s*[）)]?/gi, '')
+                              .replace(/\b\d+\s*入(?:り)?\b/g, '')
+                              .trim() || '2〜3株'
+                          const nextSpec = `${baseClean} (入数${ppcOpt})`
+                          void quickPatchAttributes({ spec: nextSpec })
+                        }}
+                        className={cn(
+                          'min-h-[32px] px-2.5 rounded-lg border text-xs font-black transition active:scale-95',
+                          active
+                            ? 'border-emerald-700 bg-emerald-700 text-white shadow-2xs'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100',
+                        )}
+                      >
+                        {ppcOpt}入
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <span className="text-[11px] font-bold text-ink-soft block">📐 規格（プリセット1タップ または 直接入力）</span>
               <div className="flex flex-wrap items-center gap-1.5">
                 {[

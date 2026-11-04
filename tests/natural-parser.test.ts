@@ -13,6 +13,8 @@ describe('natural-parser: findBestMatchingCustomer & findBestMatchingDestination
     { id: 'c2', name: '農事組合法人 和郷園' },
     { id: 'c3', name: '農事組合法人 房総食料センター' },
     { id: 'c4', name: '農業総合研究所' },
+    { id: 'c5', name: 'ランドローム（やなぎさわファーム）', aliases: ['やなぎさわファーム', 'ランドローム'] },
+    { id: 'c6', name: 'オレンジファーム', aliases: ['株式会社オレンジファーム'] },
   ]
 
   const destinations = [
@@ -22,13 +24,21 @@ describe('natural-parser: findBestMatchingCustomer & findBestMatchingDestination
     { id: 'd4', customer_id: 'c3', code: 'BOX用', full_name: 'BOX用', aliases: [] },
   ]
 
-  it('法人格・空白・括弧差を吸収して取引先を正確に照合する（「農」「合」「社」が文字クラスで消えない）', () => {
+  it('法人格・空白・括弧差・別名（aliases）を吸収して取引先を正確に照合する', () => {
     expect(findBestMatchingCustomer('株式会社勘兵衛', customers)?.id).toBe('c1')
     expect(findBestMatchingCustomer('勘兵衛', customers)?.id).toBe('c1')
     expect(findBestMatchingCustomer('農事組合法人和郷園', customers)?.id).toBe('c2')
     expect(findBestMatchingCustomer('房総食料センター', customers)?.id).toBe('c3')
     expect(findBestMatchingCustomer('株式会社農業総合研究所（NSK）', customers)?.id).toBe('c4')
     expect(findBestMatchingCustomer('NSK', customers)?.id).toBe('c4')
+    expect(findBestMatchingCustomer('ランドローム', customers)?.id).toBe('c5')
+    expect(findBestMatchingCustomer('やなぎさわファーム', customers)?.id).toBe('c5')
+    expect(findBestMatchingCustomer('株式会社 やなぎさわファーム', customers)?.id).toBe('c5')
+    expect(findBestMatchingCustomer('株式会社オレンジファーム', customers)?.id).toBe('c6')
+  })
+
+  it('未登録の取引先名は誤って別の取引先にマッチせず undefined を返す', () => {
+    expect(findBestMatchingCustomer('未知の青果センター', customers)).toBeUndefined()
   })
 
   it('宛名「アイプラス」「小島農園」は受託側のため取引先として誤マッチしない', () => {
