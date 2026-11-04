@@ -6,6 +6,8 @@
 export const THAI_CONTAINERS: Record<string, string> = {
   青コン: 'ลังน้ำเงิน',
   茶コン: 'ลังน้ำตาล',
+  緑コン: 'ลังเขียว',
+  深緑コン: 'ลังเขียวเข้ม',
   房総青コン: 'ลังน้ำเงินโบโซ',
   段ボール: 'กล่องกระดาษ',
   農業総研専用折りたたみコンテナ: 'ลังพับNSK',
@@ -130,6 +132,7 @@ export function getContainerColorEmoji(name: string | null | undefined): string 
   if (!name) return '📦'
   if (name.includes('青')) return '🟦'
   if (name.includes('茶')) return '🟫'
+  if (name.includes('緑')) return '🟩'
   if (name.includes('黄')) return '🟨'
   if (name.includes('段ボール') || name.includes('ダンボール')) return '📦'
   if (name.includes('農業総研') || name.includes('NSK') || name.includes('折りたたみ') || name.includes('オリコン')) return '🟩'

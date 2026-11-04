@@ -138,6 +138,28 @@ export function AiRulesManager({
   const [deletingRule, setDeletingRule] = useState<AiRule | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // ✨ AIカルテ一括整理・矛盾診断モーダル状態
+  const [consolidateOpen, setConsolidateOpen] = useState(false)
+  const [diagnosing, setDiagnosing] = useState(false)
+  const [applyingConsolidation, setApplyingConsolidation] = useState(false)
+  const [consolidateMeta, setConsolidateMeta] = useState<{
+    usedModel: string
+    beforeRuleCount: number
+    afterRuleCount: number
+    beforeChars: number
+    afterChars: number
+  } | null>(null)
+  const [proposals, setProposals] = useState<
+    {
+      client_name: string
+      original_count: number
+      original_texts: string[]
+      proposed_rule_text: string
+      priority: number
+      conflicts: { topic: string; options: string[]; recommended: string }[]
+    }[]
+  >([])
+
   // 進行中のトグルID
   const [togglingIds, setTogglingIds] = useState<Record<string, boolean>>({})
 
@@ -360,6 +382,74 @@ export function AiRulesManager({
     }
   }
 
+  async function runConsolidateDiagnose() {
+    setConsolidateOpen(true)
+    setDiagnosing(true)
+    try {
+      const res = await fetch('/api/ai-rules/consolidate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'diagnose' }),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string
+        usedModel?: string
+        beforeRuleCount?: number
+        afterRuleCount?: number
+        beforeChars?: number
+        afterChars?: number
+        proposals?: typeof proposals
+      }
+      if (!res.ok) throw new Error(json.error ?? `診断失敗 (${res.status})`)
+      setConsolidateMeta({
+        usedModel: json.usedModel ?? 'gemini-3.8-flash',
+        beforeRuleCount: json.beforeRuleCount ?? rules.length,
+        afterRuleCount: json.afterRuleCount ?? 0,
+        beforeChars: json.beforeChars ?? 0,
+        afterChars: json.afterChars ?? 0,
+      })
+      setProposals(json.proposals ?? [])
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'AI矛盾診断に失敗しました')
+    } finally {
+      setDiagnosing(false)
+    }
+  }
+
+  async function handleApplyConsolidation() {
+    if (proposals.length === 0) return
+    setApplyingConsolidation(true)
+    try {
+      const res = await fetch('/api/ai-rules/consolidate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'apply',
+          proposals: proposals.map((p) => ({
+            client_name: p.client_name,
+            proposed_rule_text: p.proposed_rule_text,
+            priority: p.priority,
+          })),
+        }),
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string
+        updatedCount?: number
+        deletedCount?: number
+      }
+      if (!res.ok) throw new Error(json.error ?? `統合失敗 (${res.status})`)
+      toast.success(
+        `決定版カルテ全 ${json.updatedCount ?? proposals.length} 社に統合しました（重複 ${json.deletedCount ?? 0} 件を整理）`,
+      )
+      setConsolidateOpen(false)
+      window.location.reload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '統合の反映に失敗しました')
+    } finally {
+      setApplyingConsolidation(false)
+    }
+  }
+
   const inputCls =
     'h-10 w-full rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100'
 
@@ -385,6 +475,15 @@ export function AiRulesManager({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => void runConsolidateDiagnose()}
+            className="border-emerald-600/40 bg-emerald-50 text-emerald-950 hover:bg-emerald-100"
+          >
+            <Sparkles className="h-4 w-4 text-emerald-700" aria-hidden />
+            ✨ AIカルテ一括整理・矛盾診断
+          </Button>
           <Button variant="secondary" size="md" onClick={() => setTestModalOpen(true)}>
             <FlaskConical className="h-4 w-4 text-earth-700" aria-hidden />
             🧪 ルール・モデルの動作テスト
@@ -907,6 +1006,126 @@ export function AiRulesManager({
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* ✨ AIカルテ一括整理・矛盾診断モーダル */}
+      <Modal
+        open={consolidateOpen}
+        onClose={() => setConsolidateOpen(false)}
+        title="✨ AIカルテ一括整理・矛盾診断（Gemini 3.8 Flash）"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConsolidateOpen(false)} disabled={applyingConsolidation}>
+              キャンセル
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void handleApplyConsolidation()}
+              isLoading={applyingConsolidation}
+              disabled={diagnosing || proposals.length === 0}
+            >
+              <Check className="h-4 w-4" aria-hidden />
+              この内容で決定版カルテに一括統合する
+            </Button>
+          </>
+        }
+      >
+        <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-1">
+          {diagnosing ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-3 text-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-600 border-t-transparent" />
+              <p className="text-sm font-bold text-ink">
+                Gemini 3.8 Flash が全ルールの矛盾を診断し、1社1枠の決定版カルテを作成しています...
+              </p>
+              <p className="text-xs text-ink-soft">
+                重要なFAX読取ロジック（着日変換・入数・手書き優先等）を100%残しつつ、重複とトークンを圧縮します。
+              </p>
+            </div>
+          ) : (
+            <>
+              {consolidateMeta && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50/80 p-3 text-xs">
+                  <div className="font-bold text-emerald-950">
+                    📊 整理結果：全 <strong>{consolidateMeta.beforeRuleCount}枠</strong> ➔ 1社1枠の決定版 <strong>{consolidateMeta.afterRuleCount}枠</strong> へ集約
+                  </div>
+                  <div className="font-mono text-emerald-900">
+                    文字数: {consolidateMeta.beforeChars}文字 → {consolidateMeta.afterChars}文字（モデル: {consolidateMeta.usedModel}）
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {proposals.map((p, idx) => (
+                  <div
+                    key={p.client_name}
+                    className="rounded-xl border border-line bg-bg-card p-3.5 space-y-2.5 shadow-2xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-black text-ink">{p.client_name}</span>
+                        {p.original_count > 1 && (
+                          <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                            {p.original_count}件のルールを1枠に統合
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-ink-faint">優先度: {p.priority}</span>
+                    </div>
+
+                    {p.conflicts && p.conflicts.length > 0 && (
+                      <div className="rounded-lg border border-amber-400 bg-amber-50 p-2.5 space-y-2">
+                        <p className="text-xs font-black text-amber-950">
+                          ⚠️ 矛盾・食い違いが検出されました（クリックすると下のカルテ文面に反映されます）：
+                        </p>
+                        {p.conflicts.map((c, cIdx) => (
+                          <div key={cIdx} className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="font-bold text-amber-900">・{c.topic}:</span>
+                            {c.options.map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                  setProposals((prev) =>
+                                    prev.map((item, i) => {
+                                      if (i !== idx) return item
+                                      let nextText = item.proposed_rule_text
+                                      for (const otherOpt of c.options) {
+                                        if (otherOpt !== opt && nextText.includes(otherOpt)) {
+                                          nextText = nextText.replaceAll(otherOpt, opt)
+                                        }
+                                      }
+                                      return { ...item, proposed_rule_text: nextText }
+                                    }),
+                                  )
+                                  toast.success(`「${opt}」をカルテに反映しました`)
+                                }}
+                                className="rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-xs font-black text-ink hover:bg-amber-600 hover:text-white transition"
+                              >
+                                「{opt}」を採用する
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <textarea
+                      rows={3}
+                      value={p.proposed_rule_text}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setProposals((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, proposed_rule_text: val } : item)),
+                        )
+                      }}
+                      className="w-full rounded-lg border border-line-strong bg-white p-2.5 text-xs leading-relaxed text-ink focus:border-trust-500 focus:outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </Modal>

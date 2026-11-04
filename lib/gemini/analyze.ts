@@ -41,7 +41,7 @@ const NSK_UPGRADED_RULE_TEXT =
   '[11番小島裕美・24入・複数出荷先・欄外内訳] 社名印字が無くても『生産者番号11・小島裕美(小島)・出荷先(1加工センター/4関東顧客向け/5北海道/6関西)・入数24』の表は必ず customer_name: "株式会社農業総合研究所（NSK）" とする。生産者『11番 小島裕美』のチンゲンサイ行のみ抽出。入数24(表の数値は総Pのため÷24がケース数: 1,440→60箱、720→30箱)、容器『農業総研専用折りたたみコンテナ』。行ごとに規格列（『200gUP』→『200gUP (入数24)』、『200g』→『200g (入数24)』）とシール列（『あり』→has_seal:true, seal_text:『シールあり（生産者11:小島裕美）』、『なし』→has_seal:false, seal_text:『シールなし』）を厳密に区別する。赤文字の数字（例:5北海道の720赤字）も確定数量として抽出し note に『※表で赤字記載（変更箇所）』と記載。右欄外に『(木)のみ ライフ近畿：40 / サンプラザ：20』等のケース数内訳がある場合は該当日の note に『内訳: ライフ近畿40箱(960P) / サンプラザ20箱(480P)』と記載。数値『0』のセルは explicit_cancel_in_slip:true, quantity:"0" とし、『なし』や空欄は除外する。買値(¥78/¥75等)は現場非表示のため note に一切記載禁止。'
 
 export const ORANGE_FARM_UPGRADED_RULE_TEXT =
-  '[着日→水曜・金曜出荷変換・25入コンテナ数・手書き最優先] 発信元『(株)オレンジファーム』『オレンジファーム』（FAX 042-451-9155）。画像が横向き・逆さの場合は文字の向き（「小島農園 御中」「注文書」「11月度」等）を正立させてから解析し、印字カスレ・枠線ズレは文脈（「チンゲン菜」「25入」「市場休み」等）から補完する。【最重要: 着日→出荷日変換】注文書に印刷されている日付は「当社着日（納品先到着日）」だが、当農園では集荷が原則【水曜日・金曜日の朝一番】のため、必ず実出荷日（集荷日）を delivery_date に設定すること（木曜着分 → 前日の【水曜日出荷】、土曜着分 → 前日の【金曜日出荷】）。ただし手書きの矢印や修正で日付がずらされている場合は手書き指示を最優先する。【数量＝コンテナ数（箱数）】各マス内の数字（50、40等）はすべて「コンテナ数（箱数, is_case_input:true）」を表す（1コンテナ＝25入, packs_per_case:25）。総パック数 quantity は「コンテナ数×25」とする（例: 50箱 → cases:50, box_count:50, quantity:"1250"、40箱 → cases:40, box_count:40, quantity:"1000"）。ボールペン・鉛筆の手書き追記、打ち消し線、丸囲み、矢印（例: 5日(木)着の『0 → 50』、7日(土)着の『40』、12日(木)着の枠外左『40』等）を最優先で採用し（is_handwritten_modified:true）、note に「着日YYYY-MM-DD(曜)→実出荷YYYY-MM-DD(曜) / 手書き0→50箱修正」のように伝票記載着日と手書き変更内容を明記する。容器は『青コン』。決して『ランドローム』や『やなぎさわファーム』と混同してはならない。'
+  '[着日→水曜・金曜出荷変換・25入コンテナ数・手書き最優先] 発信元『(株)オレンジファーム』『オレンジファーム』（FAX 042-451-9155）。画像の向きを正立させカスレは文脈補完。【着日→出荷日変換】印刷日付は「当社着日」のため実出荷日（集荷日）を delivery_date に設定（木曜着→前日【水曜出荷】、土曜着→前日【金曜出荷】、手書き矢印・日付変更がある場合は手書き最優先）。【数量＝コンテナ数】各マス内の数字（50、40等）はコンテナ数（is_case_input:true, 1箱＝25入, packs_per_case:25）、総P quantity＝箱数×25（50箱→1250P、40箱→1000P）。手書き追記・打消線・丸囲み・矢印（0→50、枠外40等）を最優先採用（is_handwritten_modified:true）し note に「着日YYYY-MM-DD(曜)→実出荷YYYY-MM-DD(曜) / 手書き修正内容」を明記。他社（ランドローム等）と混同厳禁。[標準仕様: 25入 / 緑コン / シール無 / カード無]'
 
 /** APIキーは設定（DB→env）。設定画面 or Secret Manager で投入する。 */
 async function client(): Promise<GoogleGenerativeAI> {
@@ -234,10 +234,10 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
             .eq('id', r.id)
           return { ...r, rule_text: NSK_UPGRADED_RULE_TEXT }
         }
-        // 旧オレンジファームルール（数値は総点数・着日そのまま）が登録されている場合は最新の「着日→水曜・金曜出荷変換・25入コンテナ数」ルールへ自動アップグレード
+        // 旧オレンジファームルール（数値は総点数・着日そのまま）が残っている場合のみ決定版へアップグレード
         if (
           r.client_name.includes('オレンジファーム') &&
-          (r.rule_text.includes('数値は総点数') || !r.rule_text.includes('水曜日・金曜日'))
+          r.rule_text.includes('数値は総点数')
         ) {
           void admin
             .from('ai_rules')
@@ -266,6 +266,30 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
   // 万一該当取引先のルールが1件もヒットしなかった場合は安全側で全ルールを返す
   const hasSpecific = filtered.some((r) => r.client_name !== '共通')
   return hasSpecific ? filtered : allRules
+}
+
+/**
+ * 入力テキストやヒントから取引先が1社に特定できる場合、その取引先名を返す（他社ルールの不要なトークン送信を最大75%削減）。
+ * 複数社が含まれる場合や画像のみで判別できない場合は null を返し、安全に全社のルールを適用する。
+ */
+export function inferClientHintFromInput(
+  text?: string | null,
+  hintText?: string | null,
+): string | null {
+  const combined = `${text ?? ''} ${hintText ?? ''}`.normalize('NFKC')
+  if (!combined.trim()) return null
+
+  const candidates: { name: string; pattern: RegExp }[] = [
+    { name: '農事組合法人 和郷園', pattern: /和郷園|らでぃっしゅ|パルシステム|ちばコープ|グリンBOX|グリーンボックス/i },
+    { name: '農事組合法人 房総食料センター', pattern: /房総食料|ちばセット/i },
+    { name: '株式会社農業総合研究所（NSK）', pattern: /農業総合研究所|農総研|\bNSK\b|生産者.*11|小島裕美/i },
+    { name: '株式会社オレンジファーム', pattern: /オレンジファーム|042-451-9155/i },
+    { name: '株式会社勘兵衛', pattern: /勘兵衛|イオンタウン向け/i },
+    { name: 'ランドローム（やなぎさわファーム）', pattern: /ランドローム|やなぎさわ|小松運輸/i },
+  ]
+
+  const matched = candidates.filter((c) => c.pattern.test(combined))
+  return matched.length === 1 ? matched[0]!.name : null
 }
 
 /**
@@ -814,9 +838,10 @@ export async function analyzeNormal(
   /** この解析だけに使う一回限りのプロンプト上書き（手動OCR画面用）。設定は変更しない。 */
   promptOverride?: string,
 ): Promise<ParsedItem[]> {
+  const autoClientHint = inferClientHintFromInput(input.text, hintText)
   const [baseInstruction, activeRules] = await Promise.all([
     promptOverride && promptOverride.trim() !== '' ? Promise.resolve(promptOverride) : getBaseInstruction(),
-    fetchActiveAiRules(),
+    fetchActiveAiRules(autoClientHint),
   ])
   const rulesSection = buildAiRulesSection(activeRules)
   const systemInstruction = [baseInstruction, rulesSection, buildDateContext()].filter(Boolean).join('\n\n')
@@ -889,7 +914,8 @@ export async function analyzeOrders(
   /** テスト実行時の一時モデル指定（省略時は設定 GEMINI_MODEL） */
   modelOverride?: string,
 ): Promise<OrdersResult> {
-  const activeRules = await fetchActiveAiRules(clientNameHint)
+  const effectiveClientHint = clientNameHint || inferClientHintFromInput(input.text, hintText)
+  const activeRules = await fetchActiveAiRules(effectiveClientHint)
   const rulesSection = buildAiRulesSection(activeRules)
   const systemInstruction = [DEFAULT_GEMINI_PROMPT_ORDERS, rulesSection, buildDateContext()]
     .filter(Boolean)

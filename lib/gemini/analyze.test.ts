@@ -5,7 +5,9 @@ import {
   ordersResultSchema,
   normalizeCustomerAndDestination,
   resolveOrangeFarmShippingDate,
+  inferClientHintFromInput,
 } from './analyze'
+import { mergeSpecTagIntoRuleText } from '@/lib/ai/learning-loop'
 import { highModelTryOrder, modelTryOrder, normalizeModelId } from './models'
 import {
   generateOrderKey,
@@ -80,6 +82,7 @@ describe('ARCHITECTURE.md Ver 4.1 & 指示書 v2.3 チンゲン菜検算・正�
     expect(res.cases).toBe(2)
     expect(res.remainder_packs).toBe(0)
     expect(res.box_count).toBe(2)
+    expect(res.container_type).toBe('緑コン')
     expect(res.quantity_case_text).toBe('総数40点（2ケース＋端数0点）')
   })
 
@@ -443,7 +446,7 @@ describe('v5.1.13 Sample (@75 x 2pk), Container, and Card Normalization', () => 
     expect(item50.box_count).toBe(50)
     expect(item50.quantity).toBe('1250')
     expect(item50.spec).toBe('25入 (入数25)')
-    expect(item50.container_type).toBe('青コン')
+    expect(item50.container_type).toBe('緑コン')
     expect(item50.note).toContain('50')
 
     // 5. AIが既に 50×25=1250 として返した場合も二重掛け算せず 50箱＝1250P を維持する
@@ -467,5 +470,20 @@ describe('v5.1.13 Sample (@75 x 2pk), Container, and Card Normalization', () => 
     expect(item1250.cases).toBe(50)
     expect(item1250.box_count).toBe(50)
     expect(item1250.quantity).toBe('1250')
+  })
+
+  it('省トークン自動絞り込み（inferClientHintFromInput）と超圧縮タグ更新（mergeSpecTagIntoRuleText）が正しく動作する', () => {
+    expect(inferClientHintFromInput('オレンジファーム 明日 50箱')).toBe('株式会社オレンジファーム')
+    expect(inferClientHintFromInput('株式会社勘兵衛 イオンタウン向け 5 C/S')).toBe('株式会社勘兵衛')
+    expect(inferClientHintFromInput('和郷園と勘兵衛の両方')).toBeNull()
+    expect(inferClientHintFromInput('')).toBeNull()
+
+    const initialRule = '発信元オレンジファーム。容器は『青コン』。[標準仕様: 25入 / 青コン / シール有 / カード無]'
+    const afterContainer = mergeSpecTagIntoRuleText(initialRule, 'container', '緑コン')
+    expect(afterContainer).toContain('容器は『緑コン』')
+    expect(afterContainer).toContain('[標準仕様: 25入 / 緑コン / シール有 / カード無]')
+
+    const afterSeal = mergeSpecTagIntoRuleText(afterContainer, 'has_seal', 'シールなし')
+    expect(afterSeal).toContain('[標準仕様: 25入 / 緑コン / シール無 / カード無]')
   })
 })

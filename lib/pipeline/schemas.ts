@@ -41,6 +41,7 @@ export type OrderStatusLabel = '有効' | '要確認' | '取消'
 export type ContainerTypeLabel =
   | '青コン'
   | '茶コン'
+  | '緑コン'
   | '房総青コン'
   | '段ボール'
   | '農業総研専用折りたたみコンテナ'
@@ -304,6 +305,9 @@ export function determineContainerType(
   }
   if (normClient.includes('房総食料')) {
     return '房総青コン'
+  }
+  if (normClient.includes('オレンジ') || normClient.includes('勘兵衛')) {
+    return '緑コン'
   }
   if (normClient.includes('和郷園')) {
     return '青コン'
