@@ -1,0 +1,83 @@
+# 開発・運用ルール（コードを書く前に読む）
+
+> 旧 GEMINI.md の規約を、Claude Code・Gemini CLI など**どのAIでも同じルールで**読めるよう
+> `.claude/rules/` に一本化したもの（2026-11）。GEMINI.md は、ここへの案内だけを置いている。
+
+## 1. 最優先原則（高品質 × 省トークン）
+
+- **最小読取・直接修正**: 推測や冗長な探索を避け、対象ファイルをピンポイントで読んで直接修正する。
+  別モデル向けの指示書を作るのではなく、自分でコードを修正・検証する。
+
+### 本番DBの絶対ルール（マイグレーションの一部が本番に未適用）
+
+- サーバー側APIルートおよび管理画面Server ComponentでのDB更新・マスタ参照は、認証確認
+  （`requireAdmin` / `requireStaffApi` / `requireAdminApi` / `isStaffUser`）のうえ必ず
+  `createAdminClient()` を使う（`createClient()` だとスタッフ操作や `app_settings` 更新がRLSで弾かれる）。
+- **本番に無い列（2026-11-04 に確認）**: `delivery_destinations` の拡張4列
+  （`departure_time` / `shipping_route_name` / `pack_sort_order` / `default_container_type`）、
+  `order_items` の `bag_type` / `seal_text` / `has_seal` / `is_manual_modified`、
+  `customer_product_rules.seal_text`。これらを読み書きするコードは、未適用環境のエラー
+  （`42703` / `PGRST205` / `42P01`）時に必ず基本カラムへフォールバックし、`app_settings` ストア
+  （`v5_destination_routes`、`v5_pack_sort_order`）へ自動退避する（`lib/supabase/missing-column.ts`）。
+  `daily_container_inventory` は 0031 で作成済み（`v5_container_inv:*` の退避は残してある）。
+  未適用の列を本番に足すときは、退避ストアに溜まっている既存データの移行を先に設計すること。
+- `orders.shipping_time` には `'am' | 'pm'` の CHECK 制約がある。時刻文字列（`'11:30'` 等）を直接書かず
+  `lib/field/destination-routes-store.ts`（`v5_destination_routes`）に保存する。
+- マイグレーションを足したら、本番 Supabase（project: `kojima-noen`）にも適用し、`types/database.ts` に反映する。
+
+## 2. マスタ削除・編集の鉄則
+
+- 品目（`/api/products/[id]`）・取引先（`/api/customers/[id]`）・納入先（`/api/destinations/[id]`）の
+  `DELETE` は、409エラーで拒否しない:
+  - 注文・請求実績が0件なら、付随する子テーブル（`pack_configs`, `price_rules`,
+    `customer_product_rules` 等）を自動クリーンアップして物理削除する。
+  - 過去の注文・請求実績がある場合は、履歴保護のため自動的に `is_active: false`
+    （非表示・アーカイブ）に更新して `200 OK` を返す。
+
+## 3. AI受発注解析（Gemini）の省トークン・高精度設計 ＆ 前日収穫・パック原則
+
+- **全品目「出荷日の前日に収穫・パック」**: すべての品目・取引先で、収穫およびパックは
+  出荷日（`delivery_date`）の前日（-1日）に行う（`harvest_tasks.task_date = shiftDateStr(delivery_date, -1)`）。
+- **二重送信禁止**: `lib/gemini/prompts.ts` には全社共通のコア指示・JSONスキーマのみを置き、
+  取引先別ルールは Supabase `ai_rules` テーブル（高密度5ルール）から `systemInstruction` に
+  1回だけ注入する（`parts` 側には絶対に入れない）。
+- **決定論的検算**: 入数換算（標準20／NSK24／勘兵衛ケース×20）・箱数切り上げ・固定書式・注文キー生成は
+  `lib/gemini/analyze.ts`（`verifyAndNormalizeItem`）と `lib/pipeline/schemas.ts` で決定論的に算出する。
+- **青梗菜の進捗箱数（収穫コンテナ40入・ニコイチ20入）**: 収穫コンテナには40パック入り、それを
+  「ニコイチ」（20パック/箱）で箱詰め・配送する現場運用に基づき、青梗菜のパック進捗（ヘッダー・追従バー・
+  進捗メーター）の目標箱数・残り箱数は、取引先別の個別入数にかかわらず一律
+  `Math.ceil(総パック数 / 20)` で決定論的に算出する（作業画面UIには「40入る/ニコイチ」等の内部理由は出さない）。
+- **AI相談窓口**: 数字は必ずツール（`lib/concierge/tools.ts`、読み取り専用）で実データを調べてから答える。
+  AIが返した提案は `lib/concierge/guard.ts` の `sanitizeProposals` を通してから画面に出す
+  （ロール別・変更してよい設定キーの許可リスト・外部URL禁止）。書き込みは必ず人が「実行」を押してから。
+
+## 4. 検証とデプロイ
+
+1. 検証: `npm run typecheck` / `npm run lint` / `npm run test`（Vitest）。お金・承認・請求の流れは
+   `tests/support/fake-supabase.ts` を使った通しテスト（`lib/orders/approve.test.ts`、
+   `lib/invoices/generate.test.ts`）で固定してあるので、触ったら必ず通す。
+2. デプロイ手順は [DEPLOY.md](../../DEPLOY.md) が正本（`scripts/deploy.ps1`。ここには重ねて書かない）。
+
+## 5. 不具合対応の鉄則：直す → 抽象化 → 転用 → 仕分け
+
+問題を直したら、必ず次の4手順で「同じ種類の問題が他で起きない」ところまで仕上げる。
+
+1. **直す**: 本番データと原因コードの両方を修正する（データだけ・コードだけで終わらせない）。
+2. **抽象化**: 原因を「個別事象」ではなく「パターン」に言い換える
+   （例: 「相模セ」→「自動登録時に表示名を切り詰めた」→「自動生成する値を勝手に加工・欠落させてはならない」）。
+3. **転用**: パターンで他の箇所を横断検索し（顧客・品目・納入先・荷姿・請求など）、同種の欠陥を同時に直す。
+   再発検知用の回帰テストを必ず追加する。
+4. **仕分け**: 下記基準で「転用する／しない」を明示し、報告で分けて伝える。
+
+### 転用すべきもの（横展開する）
+- 自動生成・自動登録される値の欠落／切り詰め／型違い（表示名・コード・別名・日付・数量の丸め）。
+- 表記ゆれ（ひらがな⇔カタカナ、全角半角、空白、略称）による照合ミス。短い別名による誤吸収。
+- 未登録マスタ（取引先・納入先・品目・荷姿）で注文が黙って欠落する経路。
+- DB未適用環境でのフォールバック漏れ、`createAdminClient()` の使い忘れ。
+- 手で直したデータは、同じ状態の他レコードがないか全件スキャンして一括修復する。
+
+### 転用しないもの（その場限りで留める）
+- 特定の取引先・納入先・日付だけの個別データ（例: 10/31 のらでぃっしゅぼーや岩槻ST注文）。
+  マスタ別名や注文データとして登録するに留め、コードに固有名を埋め込まない。
+- 取引先固有の現場運用ルール（`ai_rules` に置くべきもの）を全社共通ロジックへ一般化しない。
+- 原因が一度きりの人為ミス（誤入力・誤送信）で、機械的に防げないもの（ログ・通知で検知するに留める）。

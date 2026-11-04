@@ -19,12 +19,17 @@ FAX・メール・電話・取引先ポータルで届く受注を取り込み�
 このファイルは全体像のみ。詳細な業務仕様・設計判断は `.claude/rules/` を参照する
 （コード内コメントも「features.md §7-8」のように該当箇所を指している）:
 
+- `.claude/rules/engineering.md` — **開発・運用ルール（コードを書く前に必読）**。本番DBの注意・マスタ削除・
+  AI解析・不具合対応の鉄則
 - `.claude/rules/features.md` — 業務フロー・機能仕様（受注〜請求の各フェーズ）
 - `.claude/rules/design.md` — デザインシステム・UI原則
 - `.claude/rules/security.md` — 認証・RLS・シークレット管理
 - `.claude/rules/stack.md` — 技術構成の詳細
 - `.claude/rules/structure.md` — ディレクトリ構成・ナビ設計
 - `.claude/rules/tax.md` — 税率・金額計算のルール
+
+ほかのドキュメント: [DEPLOY.md](DEPLOY.md)（デプロイ・ロールバックの正本）／[TODO.md](TODO.md)（現在の残タスク）／
+[README.md](README.md)（人向けの概要）／`docs/`（設計メモ・移行手順）／GEMINI.md（Gemini CLI 向けの案内のみ）。
 
 ## 環境の注意（重要）
 
@@ -74,11 +79,10 @@ Drive上は編集・閲覧・git専用にする。
 
 ## デプロイ
 
-`git push` だけでは本番に反映されない（デプロイトリガー未設定）。手動で
-`gcloud builds submit --config=cloudbuild.yaml --substitutions=...` を実行する必要がある
-（コマンド全体は [DEPLOY.md](DEPLOY.md) 参照）。デプロイ後は必ずトラフィックが
-`--to-latest` になっているか確認する（過去に特定リビジョンへの固定が残り、新デプロイが
-反映されない事故があった）。
+`git push` だけでは本番に反映されない（デプロイトリガー未設定）。`scripts/deploy.ps1`
+（事前チェック → ビルド → トラフィック確認 → スモークテスト → git tag）で反映する。手順の正本は
+[DEPLOY.md](DEPLOY.md)。デプロイ後は必ずトラフィックが `--to-latest` になっているか確認する
+（過去に特定リビジョンへの固定が残り、新デプロイが反映されない事故があった。スクリプトが確認する）。
 
 ## マイグレーション
 

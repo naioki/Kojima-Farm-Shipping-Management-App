@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 
 /**
- * スマートパース（features.md §5 / PROMPT.md Phase A）。
+ * スマートパース（features.md §5）。
  *
  * 数量表記の誤解釈は出荷ミス・請求ミスに直結するため、ここに解釈ロジックを集約し
  * 単体テストで固定する。浮動小数点は使わず Decimal.js で計算する（tax.md 準拠）。

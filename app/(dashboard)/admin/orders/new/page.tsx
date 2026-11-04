@@ -23,7 +23,7 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
   const receiptId = /^[0-9a-f-]{36}$/i.test(searchParams.receipt ?? '') ? searchParams.receipt! : null
   const fromReceipt = receiptId ? await loadReceiptAttachment(receiptId) : null
 
-  // RLSによるマスタ取得漏れを防ぐため createAdminClient() を使用（GEMINI.md §1）
+  // RLSによるマスタ取得漏れを防ぐため createAdminClient() を使用（.claude/rules/engineering.md §1）
   const admin = createAdminClient()
   const [customersRes, productsRes, rulesRes, destinationsRes] = await Promise.all([
     admin.from('customers').select('id, name, channel_identifiers').eq('is_active', true).order('name'),
