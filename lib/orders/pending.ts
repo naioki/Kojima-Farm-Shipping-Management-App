@@ -17,6 +17,7 @@ import type {
   PendingOrder,
 } from './pending-types'
 import { pendingReasons } from './pending-types'
+import { skipsDestinationGate } from '@/lib/customers/settings'
 
 export type {
   PackConfigOption,
@@ -64,8 +65,11 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       )
       .in('order_id', orderIds),
     customerIds.length
-      ? supabase.from('customers').select('id, name, display_color').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string; display_color: string | null }[], error: null }),
+      ? supabase.from('customers').select('id, name, display_color, channel_identifiers').in('id', customerIds)
+      : Promise.resolve({
+          data: [] as { id: string; name: string; display_color: string | null; channel_identifiers: unknown }[],
+          error: null,
+        }),
     customerIds.length
       ? supabase
           .from('delivery_destinations')
@@ -84,6 +88,10 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   if (custsRes.error) console.error('[pending] 取引先名の解決に失敗:', custsRes.error.message)
   if (destsRes.error) console.error('[pending] 納入先の解決に失敗:', destsRes.error.message)
   const custs = custsRes.data
+  // 取引先設定「納入先を指定しない」の取引先（承認待ち理由に「納入先未定」を出さない）
+  const skipGateCustomerIds = new Set(
+    (custs ?? []).filter((c) => skipsDestinationGate((c as { channel_identifiers?: unknown }).channel_identifiers)).map((c) => c.id),
+  )
   const destRows = destsRes.data
 
   const productIds = [...new Set((items ?? []).map((it) => it.product_id).filter(Boolean))] as string[]
@@ -192,7 +200,10 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
       const destinationOptions = o.customer_id ? destByCustomer.get(o.customer_id) ?? [] : []
       const resolvedDestName =
         (o.destination_id ? destLabelById.get(o.destination_id) : null) ?? noteDest ?? null
-      const isDestinationKnown = Boolean(o.destination_id || noteDest || destinationOptions.length === 0)
+      const custSkipsGate = o.customer_id ? skipGateCustomerIds.has(o.customer_id) : false
+      const isDestinationKnown = Boolean(
+        o.destination_id || noteDest || destinationOptions.length === 0 || custSkipsGate,
+      )
       const needsDestination = !isDestinationKnown
 
       const needsPackConfig = orderItems.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)

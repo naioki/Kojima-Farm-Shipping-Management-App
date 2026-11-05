@@ -830,10 +830,10 @@ export default async function ShipmentsPage({
             </a>
             {isAdmin && (
               <a
-                href="/admin/inbox"
+                href="/admin/approvals"
                 className="inline-flex items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink hover:bg-slate-200"
               >
-                受注ボックスを確認
+                承認待ちを確認
               </a>
             )}
           </div>
@@ -858,6 +858,7 @@ export default async function ShipmentsPage({
         }))}
         packsByPair={packsByPair}
         rulesByPair={rulesByPair}
+        allowAiRead={canStaffUse('ocr', role, staffFeatures)}
       />
     </div>
   )

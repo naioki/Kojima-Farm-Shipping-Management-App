@@ -24,7 +24,11 @@ export function PortalLoginForm() {
     try {
       const supabase = createClient()
       const emailRedirectTo = `${window.location.origin}/auth/callback?next=/portal/order`
-      const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo } })
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        // 未登録メールでアカウントを自動作成しない（登録済み取引先のみログイン可）
+        options: { emailRedirectTo, shouldCreateUser: false },
+      })
       if (error) throw new Error(error.message)
       setSent(true)
     } catch (err) {

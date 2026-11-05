@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting, invalidateSettingsCache } from '@/lib/settings'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -34,9 +34,9 @@ function parseMaterialOptions(raw: string | null): FieldMaterialOptions {
   }
 }
 
-async function saveMaterialOptions(options: FieldMaterialOptions, userId: string) {
+async function saveMaterialOptions(options: FieldMaterialOptions, userId: string): Promise<string | null> {
   const admin = createAdminClient()
-  await admin.from('app_settings').upsert(
+  const { error } = await admin.from('app_settings').upsert(
     {
       key: MATERIAL_OPTIONS_KEY,
       value: JSON.stringify(options),
@@ -45,20 +45,26 @@ async function saveMaterialOptions(options: FieldMaterialOptions, userId: string
     },
     { onConflict: 'key' },
   )
+  if (error) {
+    console.error('[field/material-options] 保存に失敗:', error.message)
+    return error.message
+  }
   invalidateSettingsCache()
+  return null
 }
 
 export async function GET() {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const raw = await getSetting(MATERIAL_OPTIONS_KEY)
   return NextResponse.json(parseMaterialOptions(raw))
 }
 
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = (await req.json().catch(() => null)) as {
     category?: 'container' | 'bag'
@@ -82,13 +88,15 @@ export async function POST(req: Request) {
     }
   }
 
-  await saveMaterialOptions(current, user.id)
+  const saveErr = await saveMaterialOptions(current, user.id)
+  if (saveErr) return NextResponse.json({ error: saveErr }, { status: 500 })
   return NextResponse.json(current)
 }
 
 export async function DELETE(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = (await req.json().catch(() => null)) as {
     category?: 'container' | 'bag'
@@ -108,6 +116,7 @@ export async function DELETE(req: Request) {
     current.bags = current.bags.filter((v) => v !== value)
   }
 
-  await saveMaterialOptions(current, user.id)
+  const saveErr = await saveMaterialOptions(current, user.id)
+  if (saveErr) return NextResponse.json({ error: saveErr }, { status: 500 })
   return NextResponse.json(current)
 }

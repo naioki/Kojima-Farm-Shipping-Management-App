@@ -29,13 +29,13 @@ import { Modal } from '@/components/ui/Modal'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
-import { determineContainerType,
-  determineHasCard,
-  resolveContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
+import { determineHasCard, resolveContainerType, determineUnitCount } from '@/lib/pipeline/schemas'
 import { matchDestination, resolveBatchDate, createBatchModePlanner } from '@/lib/field/batch-register'
 import { findBestMatchingCustomer } from '@/lib/orders/natural-parser'
 import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
+import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
+import { inputKindOf, suggestIntakeChannel } from '@/lib/orders/intake-suggest'
 
 export interface CustomerProductRuleSummary {
   packsPerCase?: number | null
@@ -58,6 +58,15 @@ export interface ShipmentAddFormProps {
   packsByPair: Record<string, number | null>
   /** `${customer_id}:${product_id}` → 登録済みルール一式（入数・容器・規格・シール・カード・袋） */
   rulesByPair?: Record<string, CustomerProductRuleSummary>
+  /**
+   * 開いた時点で添付しておく原本（受信ボックスの「読み取る」から、FAX・メールの原本を引き継ぐ）。
+   * 指定するとフォームを自動で開き、そのまま AI 読み取りを始める。
+   */
+  initialAttachment?: { base64: string; mimeType: string; fileName: string } | null
+  /** 受注経路を固定する（受信ボックスから来た FAX・メールは経路が確定しているので選ばせない） */
+  fixedIntakeChannel?: 'fax' | 'email' | null
+  /** 写真・ファイルの AI 読み取りを使えるか（現場スタッフは設定「写真・FAX自動読取を許可」に従う） */
+  allowAiRead?: boolean
 }
 
 type LocalCustomer = { id: string; name: string; aliases?: string[] | null }
@@ -176,6 +185,9 @@ export function ShipmentAddForm({
   destinations = EMPTY_DESTINATIONS,
   packsByPair,
   rulesByPair = EMPTY_RULES_BY_PAIR,
+  initialAttachment = null,
+  fixedIntakeChannel = null,
+  allowAiRead = true,
 }: ShipmentAddFormProps) {
   const router = useRouter()
   const { enqueueShipment } = useOutbox()
@@ -209,6 +221,20 @@ export function ShipmentAddForm({
   const [qtyRaw, setQtyRaw] = useState('')
   const [mode, setMode] = useState<'create' | 'increase' | 'decrease' | 'set'>('create')
   const [shippingTime, setShippingTime] = useState<'am' | 'pm' | ''>('')
+  const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
+  const intakeChannelRef = useRef<ManualIntakeChannel | null>(null)
+  useEffect(() => {
+    intakeChannelRef.current = intakeChannel
+  }, [intakeChannel])
+  /** AI読み取りの入力から受注経路を推定して初期値にする（違えば画面で選び直せる） */
+  function applyIntakeSuggestion(suggested: ManualIntakeChannel | null) {
+    if (!suggested || intakeChannelRef.current === suggested) return
+    intakeChannelRef.current = suggested
+    setIntakeChannel(suggested)
+    toast(`受注経路を「${suggested === 'line' ? 'LINE' : '紙・口頭'}」にしました（違えば上で選び直してください）`, {
+      icon: '📮',
+    })
+  }
   const [note, setNote] = useState('')
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const fileSelectorRef = useRef<HTMLInputElement | null>(null)
@@ -232,6 +258,10 @@ export function ShipmentAddForm({
   const [analyzingNatural, setAnalyzingNatural] = useState(false)
   const [streamStep, setStreamStep] = useState<number>(0) // 1: 読取, 2: 照合, 3: まとめ
   const abortControllerRef = useRef<AbortController | null>(null)
+  // テキスト欄に「貼り付け」で入れたか（貼り付け＝LINE の転記。手打ちの指示は経路を推定しない）
+  const textPastedRef = useRef(false)
+  const [dragOver, setDragOver] = useState(false)
+  const naturalTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
 
   // AI解析結果・確認事項
   const [aiExplanation, setAiExplanation] = useState<string | null>(null)
@@ -293,7 +323,8 @@ export function ShipmentAddForm({
   useEffect(() => setAllDestinations(destinations), [destinations])
   useEffect(() => setLocalPacksByPair(packsByPair), [packsByPair])
   useEffect(() => setLocalRulesByPair(rulesByPair), [rulesByPair])
-  const [manualFormOpen, setManualFormOpen] = useState(true)
+  // AI入力欄が主役。手入力は必要なときだけ開く（AIの単品結果・未登録取引先の作成時は自動で開く）
+  const [manualFormOpen, setManualFormOpen] = useState(false)
 
   /** モーダルを開くたびに前回の取引先・数量・候補残りをクリーンに初期化して別会社への混入を100%防ぐ */
   const openCleanAddModal = () => {
@@ -317,6 +348,7 @@ export function ShipmentAddForm({
     setShippingTime('')
     setNote('')
     setNaturalText('')
+    textPastedRef.current = false
     setPhotoPreview(null)
     setAttachedFilePayload(null)
     setConfirmedBadges([])
@@ -331,7 +363,7 @@ export function ShipmentAddForm({
     setNewAliases('')
     setShowNewDestForExisting(false)
     setNewDestForExistingName('')
-    setManualFormOpen(true)
+    setManualFormOpen(false)
     if (defaultProductId) {
       const matchedP = products.find((p) => p.id === defaultProductId)
       if (matchedP) {
@@ -668,6 +700,9 @@ export function ShipmentAddForm({
 
       const data = json.data
       const badges: string[] = []
+      if (textPastedRef.current) applyIntakeSuggestion(suggestIntakeChannel('text'))
+      // 文字入力の解析結果（1件）は手入力欄に反映されるので、確認できるよう開く
+      setManualFormOpen(true)
 
       // 1. 取引先の反映
       if (data.customer_id) {
@@ -1374,6 +1409,8 @@ export function ShipmentAddForm({
     mime: string
     fileName?: string
     instructionText?: string
+    /** 受注経路を推定するか（クリップボードから貼った画像は LINE のスクショか紙か判別できないので推定しない） */
+    suggestChannel?: boolean
   }) {
     setAnalyzingPhoto(true)
     setStreamStep(1)
@@ -1407,6 +1444,11 @@ export function ShipmentAddForm({
         data.applied_rules_count,
       )
       toast.success('画像と事前指示書から注文内容をすべて読み取りました！一覧を確認してください')
+      if (params.suggestChannel) {
+        applyIntakeSuggestion(
+          suggestIntakeChannel(inputKindOf({ mimeType: params.mime, fileName: params.fileName ?? '' })),
+        )
+      }
     } catch (err: unknown) {
       if ((err as Error)?.name === 'AbortError') {
         toast('解析を中断しました', { icon: 'ℹ️' })
@@ -1422,7 +1464,7 @@ export function ShipmentAddForm({
     }
   }
 
-  async function handlePhotoFile(file: File) {
+  async function handlePhotoFile(file: File, opts: { fromClipboard?: boolean } = {}) {
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (galleryInputRef.current) galleryInputRef.current.value = ''
     if (fileSelectorRef.current) fileSelectorRef.current.value = ''
@@ -1440,6 +1482,7 @@ export function ShipmentAddForm({
         mime,
         fileName: file.name,
         instructionText: cleanedHint || undefined,
+        suggestChannel: !opts.fromClipboard,
       })
     } catch (err: unknown) {
       toast.error((err as Error)?.message || '画像の処理に失敗しました')
@@ -1480,6 +1523,58 @@ export function ShipmentAddForm({
     }
     reader.readAsDataURL(file)
   }
+
+  // AI入力欄を主役に: 開いたら（PCのみ）入力欄にカーソルを置き、すぐ Ctrl+V で貼れるようにする。
+  // スマホでは自動でキーボードが出ると邪魔なので行わない。
+  const handlePhotoFileRef = useRef(handlePhotoFile)
+  handlePhotoFileRef.current = handlePhotoFile
+  useEffect(() => {
+    if (!isOpen || step !== 'input') return
+    const finePointer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches
+    const focusTimer = finePointer ? window.setTimeout(() => naturalTextAreaRef.current?.focus(), 150) : undefined
+
+    // 入力欄の外で貼り付けても受け付ける（画像→AI読み取り、文字→AI入力欄へ）
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      const data = e.clipboardData
+      if (!data) return
+      const imageFile = allowAiRead ? Array.from(data.files).find((f) => f.type.startsWith('image/')) : undefined
+      if (imageFile) {
+        e.preventDefault()
+        void handlePhotoFileRef.current(imageFile, { fromClipboard: true })
+        return
+      }
+      const text = data.getData('text')
+      if (text.trim()) {
+        e.preventDefault()
+        textPastedRef.current = true
+        setNaturalText((prev) => (prev.trim() ? `${prev}\n${text}` : text))
+        naturalTextAreaRef.current?.focus()
+      }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => {
+      if (focusTimer) window.clearTimeout(focusTimer)
+      document.removeEventListener('paste', onPaste)
+    }
+  }, [isOpen, step, allowAiRead])
+
+  // 受信ボックスの「読み取る」から来た場合: 原本を添付した状態でフォームを開き、そのまま AI 読み取りを始める（1回だけ）
+  const initialAttachmentHandledRef = useRef(false)
+  const runOcrRef = useRef(runOcrAnalyzeWithPayload)
+  runOcrRef.current = runOcrAnalyzeWithPayload
+  const openCleanRef = useRef<() => void>(() => {})
+  openCleanRef.current = openCleanAddModal
+  useEffect(() => {
+    if (!initialAttachment || initialAttachmentHandledRef.current) return
+    initialAttachmentHandledRef.current = true
+    openCleanRef.current()
+    const { base64, mimeType, fileName } = initialAttachment
+    setAttachedFilePayload({ base64, mime: mimeType, fileName })
+    setPhotoPreview(mimeType.startsWith('image/') ? `data:${mimeType};base64,${base64}` : null)
+    void runOcrRef.current({ base64, mime: mimeType, fileName })
+  }, [initialAttachment])
 
   // 📍 既存取引先への新規納入先クイック追加
   async function handleCreateDestinationForExisting() {
@@ -1847,6 +1942,7 @@ export function ShipmentAddForm({
           has_seal: cand.has_seal ?? ruleObj?.hasSeal ?? undefined,
           seal_text: cand.seal_text ?? ruleObj?.sealText ?? undefined,
           bag_type: cand.bag_type ?? ruleObj?.bagType ?? undefined,
+          intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
@@ -1911,6 +2007,7 @@ export function ShipmentAddForm({
         setPhotoPreview(null)
         setAttachedFilePayload(null)
         setNaturalText('')
+        textPastedRef.current = false
         if (registeredDates.length > 0 && !registeredDates.includes(deliveryDate)) {
           const jumpDate = registeredDates[0]
           router.push(`/field/shipments?date=${jumpDate}${productId ? `&product=${productId}` : ''}`)
@@ -1940,6 +2037,7 @@ export function ShipmentAddForm({
       product_id: productId,
       delivery_date: targetDate,
       shipping_time: shippingTime || undefined,
+      intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
       quantity_raw: qtyRaw,
       packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
       spec: spec.trim() || undefined,
@@ -2039,6 +2137,7 @@ export function ShipmentAddForm({
       setStep('input')
       setQtyRaw('')
       setNaturalText('')
+      textPastedRef.current = false
       setPhotoPreview(null)
       setAttachedFilePayload(null)
       setConfirmedBadges([])
@@ -2082,7 +2181,7 @@ export function ShipmentAddForm({
           className="w-full rounded-2xl border-2 border-dashed border-forest-300 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
         >
           <Plus className="h-4 w-4 stroke-[2.8] text-forest-700" />
-          <span>＋ 新規注文の追加・数量変更（手入力 / 写真 / FAX・Excel）</span>
+          <span>＋ 注文を追加（写真・LINEを貼り付け / 手入力も可）</span>
         </button>
       </div>
 
@@ -2143,6 +2242,7 @@ export function ShipmentAddForm({
               >
                 キャンセル
               </Button>
+              {manualFormOpen && (
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
@@ -2183,6 +2283,7 @@ export function ShipmentAddForm({
                   <span>即登録する</span>
                 </Button>
               </div>
+              )}
             </div>
           )
         }
@@ -2330,7 +2431,36 @@ export function ShipmentAddForm({
             />
 
             {/* ① スマート入力エリア（ボトムアクションシート起動 ＋ 自然言語・画像統合解析） */}
-            <div className="rounded-2xl border-2 border-forest-200 bg-gradient-to-br from-forest-50/70 to-emerald-50/40 p-4 space-y-3 shadow-2xs">
+            <div
+              onDragOver={(e) => {
+                if (allowAiRead && Array.from(e.dataTransfer.types).includes('Files')) {
+                  e.preventDefault()
+                  setDragOver(true)
+                }
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                const file = allowAiRead ? e.dataTransfer.files?.[0] : undefined
+                setDragOver(false)
+                if (file) {
+                  e.preventDefault()
+                  void handleGenericFile(file)
+                }
+              }}
+              className={cn(
+                'rounded-2xl border-2 bg-gradient-to-br from-forest-50/70 to-emerald-50/40 p-4 space-y-3 shadow-2xs',
+                dragOver ? 'border-dashed border-forest-600' : 'border-forest-200',
+              )}
+            >
+              {/* 受注経路（電話・LINE・紙）— 評価指標「紙の卒業」の計測用。AI読み取りの入力から自動推定し、前回の選択も記憶 */}
+              {fixedIntakeChannel ? (
+                <p className="text-xs font-bold text-forest-900">
+                  受注経路: {fixedIntakeChannel === 'fax' ? 'FAX' : 'メール'}（受信ボックスの原本から読み取り）
+                </p>
+              ) : (
+                <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
+              )}
+
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs font-black text-forest-900">
                   <Sparkles className="h-4 w-4 text-forest-600" />
@@ -2343,6 +2473,8 @@ export function ShipmentAddForm({
                 )}
               </div>
 
+              {allowAiRead && (
+              <>
               {/* 1タップで下から開く読み込みアクションボタン */}
               <button
                 type="button"
@@ -2357,6 +2489,8 @@ export function ShipmentAddForm({
                   カメラ / 写真 / PDF / Excel ➜
                 </span>
               </button>
+              </>
+              )}
 
               {/* 📷 添付中の画像・ファイルプレビュー */}
               {(photoPreview || attachedFilePayload) && (
@@ -2395,16 +2529,32 @@ export function ShipmentAddForm({
               <div className="relative">
                 <textarea
                   id="shipment-natural-text-area"
+                  ref={naturalTextAreaRef}
                   value={naturalText}
-                  onChange={(e) => setNaturalText(e.target.value)}
+                  onChange={(e) => {
+                    setNaturalText(e.target.value)
+                    if (!e.target.value.trim()) textPastedRef.current = false
+                  }}
+                  onPaste={(e) => {
+                    // 画像（スクリーンショット・コピーした写真）の貼り付け → そのまま読み取り
+                    const imageFile = allowAiRead
+                      ? Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
+                      : undefined
+                    if (imageFile) {
+                      e.preventDefault()
+                      void handlePhotoFile(imageFile, { fromClipboard: true })
+                      return
+                    }
+                    if (e.clipboardData.getData('text').trim()) textPastedRef.current = true
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault()
                       handleNaturalInputSubmit()
                     }
                   }}
-                  rows={2}
-                  placeholder="例:「明日の和郷園に20c追加」「寺崎 50P」または添付画像への補足指示（例:「5北海道は35箱に変更して」）"
+                  rows={3}
+                  placeholder="LINEの文面や画像をここに貼り付け（Ctrl+V）／例:「明日の和郷園に20c追加」「寺崎 50P」／画像への補足指示"
                   className="w-full rounded-xl border border-forest-300/80 bg-white p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-200"
                 />
               </div>
@@ -2584,7 +2734,7 @@ export function ShipmentAddForm({
                   ))}
 
                   {/* ③ 抽出明細一覧（各行でチェックON/OFF・箱数微調整・シール/規格/赤字バッジ確認可能） */}
-                  <div className="max-h-72 overflow-y-auto space-y-1.5 pr-0.5">
+                  <div className="max-h-[28rem] overflow-y-auto space-y-2 pr-0.5">
                     {parsedCandidates.map((cand, cIdx) => {
                       const qNum = Number(String(cand.quantity ?? '0').replace(/,/g, ''))
                       const ppc = cand.packs_per_case || inputPacksPerCase || 20
@@ -2627,8 +2777,12 @@ export function ShipmentAddForm({
                               <span className="rounded-md bg-forest-900 text-white px-2 py-0.5 text-xs font-black shrink-0">
                                 {formatShortDateWithWeekday(cand.delivery_date)}
                               </span>
-                              <span className="font-black text-xs text-ink truncate">
-                                {cand.destination_name || cand.customer_name || `明細${cIdx + 1}`}
+                              {/* 表示は常に「取引先 ＞ 納入先」（CLAUDE.md） */}
+                              <span className="font-black text-sm text-ink truncate">
+                                {cand.customer_name || '取引先不明'}
+                                {cand.destination_name && cand.destination_name !== cand.customer_name && (
+                                  <span className="font-bold text-ink-soft"> ＞ {cand.destination_name}</span>
+                                )}
                               </span>
                             </div>
 
@@ -2666,9 +2820,12 @@ export function ShipmentAddForm({
                             </div>
                           </div>
 
-                          {/* 2行目：規格・シール・赤字確認バッジ ＋ 箱数ステッパー */}
+                          {/* 2行目：品目名・規格・シール・赤字確認バッジ ＋ 箱数ステッパー */}
                           <div className="flex flex-wrap items-center justify-between gap-2 pl-6">
                             <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-base font-black text-forest-950">
+                                {cand.product_name || `明細${cIdx + 1}`}
+                              </span>
                               {cand.spec && (
                                 <span className="rounded bg-sand-100 border border-sand-300 px-1.5 py-0.5 text-[10px] font-black text-ink">
                                   {cand.spec}
@@ -2707,17 +2864,19 @@ export function ShipmentAddForm({
                                 <button
                                   type="button"
                                   onClick={() => handleCandidateCasesChange(cand.id, cCases - 1)}
-                                  className="h-6 w-6 rounded border border-line bg-white hover:bg-sand-100 font-black text-xs text-ink flex items-center justify-center"
+                                  aria-label={`${cand.product_name ?? '明細'} を1箱減らす`}
+                                  className="h-10 w-10 rounded-lg border border-line bg-white hover:bg-sand-100 font-black text-base text-ink flex items-center justify-center"
                                 >
                                   -
                                 </button>
-                                <span className="text-xs font-black text-forest-950 min-w-[88px] text-center">
-                                  {cCases}箱 ({qNum}P)
+                                <span className="num text-sm font-black text-forest-950 min-w-[96px] text-center tabular-nums">
+                                  {cCases}箱 <span className="text-xs font-bold text-ink-soft">({qNum}P)</span>
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleCandidateCasesChange(cand.id, cCases + 1)}
-                                  className="h-6 w-6 rounded border border-line bg-white hover:bg-sand-100 font-black text-xs text-ink flex items-center justify-center"
+                                  aria-label={`${cand.product_name ?? '明細'} を1箱増やす`}
+                                  className="h-10 w-10 rounded-lg border border-line bg-white hover:bg-sand-100 font-black text-base text-ink flex items-center justify-center"
                                 >
                                   +
                                 </button>
@@ -2860,7 +3019,7 @@ export function ShipmentAddForm({
                   onClick={() => setManualFormOpen((prev) => !prev)}
                   className="inline-flex items-center gap-1.5 text-xs font-black text-forest-900 bg-forest-50 hover:bg-forest-100 border border-forest-200 px-2.5 py-1.5 rounded-lg transition"
                 >
-                  <span>{manualFormOpen ? '▲ 手動入力・個別微修正フォームをたたむ' : '▼ 1件ずつ手動入力・個別微修正する（タップで開く）'}</span>
+                  <span>{manualFormOpen ? '▲ 手入力の欄をたたむ' : '✍️ 手で入力する・数量を直す（タップで開く）'}</span>
                 </button>
                 {/* 操作モード選択 */}
                 <div className="flex items-center gap-1 text-xs font-bold">

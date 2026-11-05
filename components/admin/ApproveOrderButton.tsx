@@ -7,6 +7,9 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 
+/** 「納入先なし（取引先あて）」を表す選択値（納入先IDと衝突しない値）。 */
+const NO_DESTINATION = '__none__'
+
 interface DestinationOption {
   id: string
   label: string
@@ -40,6 +43,9 @@ export function ApproveOrderButton({
   const [date, setDate] = useState('')
   const [destinationId, setDestinationId] = useState('')
   const [busy, setBusy] = useState(false)
+  // メモから納入先を推定できたように見えても、承認時にサーバーが特定できなければ選択欄を出す
+  const [forceDestination, setForceDestination] = useState(false)
+  const showDestination = (needsDestination || forceDestination) && destinationOptions.length > 0
 
   async function approve() {
     if (needsDeliveryDate && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -48,16 +54,20 @@ export function ApproveOrderButton({
     }
     setBusy(true)
     try {
-      const body: Record<string, string> = {}
+      const body: Record<string, string | boolean> = {}
       if (needsDeliveryDate) body.delivery_date = date
-      if (destinationId) body.destination_id = destinationId
+      if (destinationId === NO_DESTINATION) body.no_destination = true
+      else if (destinationId) body.destination_id = destinationId
       const res = await fetch(`/api/orders/${orderId}/approve`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const json = (await res.json()) as { ok?: boolean; error?: string; tasksCreated?: number }
-      if (!res.ok) throw new Error(json.error ?? `承認失敗 (${res.status})`)
+      const json = (await res.json()) as { ok?: boolean; error?: string; reason?: string; tasksCreated?: number }
+      if (!res.ok) {
+        if (json.reason === 'destination_required') setForceDestination(true)
+        throw new Error(json.error ?? `承認失敗 (${res.status})`)
+      }
       toast.success(`承認しました（収穫タスク ${json.tasksCreated ?? 0} 件）`)
       router.refresh()
     } catch (e) {
@@ -81,19 +91,20 @@ export function ApproveOrderButton({
           className={cn(inputCls, size === 'lg' && 'h-12')}
         />
       )}
-      {needsDestination && (
+      {showDestination && (
         <select
           value={destinationId}
           onChange={(e) => setDestinationId(e.target.value)}
           aria-label="納入先"
           className={cn(inputCls, size === 'lg' && 'h-12')}
         >
-          <option value="">納入先（AI自動判別 / 指定なし）</option>
+          <option value="">納入先を選択（未選択ならメモから自動判別）</option>
           {destinationOptions.map((d) => (
             <option key={d.id} value={d.id}>
               {d.label}
             </option>
           ))}
+          <option value={NO_DESTINATION}>納入先なし（取引先あて）</option>
         </select>
       )}
       <Button variant="primary" size={size} onClick={approve} isLoading={busy}>

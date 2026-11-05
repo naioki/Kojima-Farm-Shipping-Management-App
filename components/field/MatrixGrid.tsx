@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useCallback, Fragment } from 'react'
 import Link from 'next/link'
 import { Download, Filter, ChevronRight, ChevronDown, Box, Layers, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -96,14 +96,14 @@ export function MatrixGrid({
     })
   }
 
-  const getCustomerPpc = (customerId: string, customerName?: string): number => {
+  const getCustomerPpc = useCallback((customerId: string, customerName?: string): number => {
     const ppc = packsByCustomer[customerId]
     if (ppc && ppc > 0) return ppc
     if (customerName && (customerName.includes('農業総合研究所') || customerName.toUpperCase().includes('NSK'))) {
       return 24
     }
     return 20
-  }
+  }, [packsByCustomer])
 
   /**
    * 【#22】現在の unitMode に応じて、セル入力文字列を API 送信用の正規化文字列へ変換する。
@@ -146,7 +146,7 @@ export function MatrixGrid({
       totals[c.id] = sum
     }
     return totals
-  }, [customers, dates, values, packsByCustomer])
+  }, [customers, dates, values, getCustomerPpc])
 
   // 各日付の出荷合計数量（パック数＆箱数）
   const dateTotals = useMemo(() => {
@@ -167,7 +167,7 @@ export function MatrixGrid({
       boxes[d] = bSum
     }
     return { packs, boxes }
-  }, [customers, dates, values, packsByCustomer])
+  }, [customers, dates, values, getCustomerPpc])
 
   const grandTotalPacks = useMemo(() => {
     return Object.values(dateTotals.packs).reduce((a, b) => a + b, 0)

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { buildInvoiceCsv, CSV_BOM, type InvoiceCsvRow } from '@/lib/invoices/csv'
 import type { TaxRate } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -20,8 +20,8 @@ const querySchema = z.object({
  *   - 明細1行＝CSV1行。請求書番号でグルーピングできる。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireAdminApi()
+  if (!guard.ok) return guard.response
 
   const { searchParams } = new URL(req.url)
   const parsed = querySchema.safeParse({ start: searchParams.get('start'), end: searchParams.get('end') })

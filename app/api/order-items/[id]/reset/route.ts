@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fieldStatusResetSchema } from '@/types/database'
 import { resetOneStep } from '@/lib/field/tap-loop'
 import { writeAudit } from '@/lib/audit/log'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -15,8 +15,9 @@ export const runtime = 'nodejs'
  * 楽観ロック（version 一致時のみ更新）と監査記録は前進タップと同じ規約。
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = fieldStatusResetSchema.safeParse(body)

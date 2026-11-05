@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isSampleOrderText, resolveContainerType } from '@/lib/pipeline/schemas'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -30,8 +30,8 @@ export interface ViewerReceiptTab {
  * 原本ビューアー上部に表示する「照合ハイライト帯」と「同日FAX切替タブ」のメタデータを返す。
  */
 export async function GET(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const { searchParams } = req.nextUrl
   const receiptId = searchParams.get('receiptId')

@@ -19,12 +19,17 @@ FAX・メール・電話・取引先ポータルで届く受注を取り込み�
 このファイルは全体像のみ。詳細な業務仕様・設計判断は `.claude/rules/` を参照する
 （コード内コメントも「features.md §7-8」のように該当箇所を指している）:
 
+- `.claude/rules/engineering.md` — **開発・運用ルール（コードを書く前に必読）**。本番DBの注意・マスタ削除・
+  AI解析・不具合対応の鉄則
 - `.claude/rules/features.md` — 業務フロー・機能仕様（受注〜請求の各フェーズ）
 - `.claude/rules/design.md` — デザインシステム・UI原則
 - `.claude/rules/security.md` — 認証・RLS・シークレット管理
 - `.claude/rules/stack.md` — 技術構成の詳細
 - `.claude/rules/structure.md` — ディレクトリ構成・ナビ設計
 - `.claude/rules/tax.md` — 税率・金額計算のルール
+
+ほかのドキュメント: [DEPLOY.md](DEPLOY.md)（デプロイ・ロールバックの正本）／[TODO.md](TODO.md)（現在の残タスク）／
+[README.md](README.md)（人向けの概要）／`docs/`（設計メモ・移行手順）／GEMINI.md（Gemini CLI 向けの案内のみ）。
 
 ## 環境の注意（重要）
 
@@ -51,7 +56,10 @@ Drive上は編集・閲覧・git専用にする。
   どこに新しい画面を作っても、この表示ルールを踏襲する。
 - **承認ゲート**（`app/api/orders/[id]/approve/route.ts`）: 納品日に加え、納入先（複数登録が
   ある取引先）・荷姿(`pack_configs`、登録がある商品)が未確定だと承認できない。出荷一覧に来た
-  時点で箱数・納入先が必ず計算・表示できる状態を保証するためのゲート。
+  時点で箱数・納入先が必ず計算・表示できる状態を保証するためのゲート。該当する納入先が無い注文は
+  承認時に「納入先なし（取引先あて）」を明示選択すれば通る（`no_destination: true`、audit_log に記録）。
+  取引先設定「納入先を指定しない取引先にする」（`channel_identifiers.skip_destination_gate`）がオンの
+  取引先はゲートを飛ばす（`lib/customers/settings.ts`）。
 - **楽観ロック**: `order_items.version` を使い、PATCHは `WHERE id=$ AND version=$expected`。
   0件なら409（競合）でUIに再読込を促す。新しい編集APIを作るときはこのパターンに従う。
 - **スナップショット凍結**: 請求書(`invoices`)・納品書(`delivery_notes`)は発行時点の内容を
@@ -62,13 +70,19 @@ Drive上は編集・閲覧・git専用にする。
 - **NEVER swallow errors**: 一覧・詳細ページはエラー時に必ず `<ErrorState message={...} />` を
   返す（サイレント失敗しない）。空状態は必ず `<EmptyState />`。
 
+## 評価指標（オーナー定義）
+
+改善の効果は `/admin/metrics` の4指標で判断する: ①1注文あたり処理時間（受信→承認→出荷）
+②出荷・請求ミス件数 ③事務作業時間（`ops_events` の操作時間から自動推定）④紙の卒業
+（`orders.intake_channel`＝電話・LINE・紙の内訳）。集計は `lib/metrics/compute.ts`（純関数・テスト付き）。
+手入力で注文を作る新しい経路を足すときは `intake_channel` と `approved_at` を必ず埋めること。
+
 ## デプロイ
 
-`git push` だけでは本番に反映されない（デプロイトリガー未設定）。手動で
-`gcloud builds submit --config=cloudbuild.yaml --substitutions=...` を実行する必要がある
-（コマンド全体は [DEPLOY.md](DEPLOY.md) 参照）。デプロイ後は必ずトラフィックが
-`--to-latest` になっているか確認する（過去に特定リビジョンへの固定が残り、新デプロイが
-反映されない事故があった）。
+`git push` だけでは本番に反映されない（デプロイトリガー未設定）。`scripts/deploy.ps1`
+（事前チェック → ビルド → トラフィック確認 → スモークテスト → git tag）で反映する。手順の正本は
+[DEPLOY.md](DEPLOY.md)。デプロイ後は必ずトラフィックが `--to-latest` になっているか確認する
+（過去に特定リビジョンへの固定が残り、新デプロイが反映されない事故があった。スクリプトが確認する）。
 
 ## マイグレーション
 

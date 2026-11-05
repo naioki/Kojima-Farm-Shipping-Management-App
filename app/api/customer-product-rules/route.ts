@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { customerProductRuleUpsertSchema } from '@/types/database'
@@ -9,6 +8,7 @@ import { formatRuleChanges, summarizeRuleChanges } from '@/lib/rules/format'
 import { writeAudit } from '@/lib/audit/log'
 import { notify } from '@/lib/notify'
 import { buildChannelsFromSettings } from '@/lib/notify/from-settings'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -20,8 +20,9 @@ export const runtime = 'nodejs'
  *   - RULES_CHANGE_NOTIFY on なら Discord / LINE WORKS へ通知。
  */
 export async function PUT(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = customerProductRuleUpsertSchema.safeParse(body)

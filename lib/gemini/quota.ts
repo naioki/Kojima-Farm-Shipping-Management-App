@@ -65,19 +65,25 @@ export async function canRunGeminiNow(priority: GeminiPriority): Promise<{
 }> {
   const { createAdminClient } = await import('@/lib/supabase/admin')
   const { notify } = await import('@/lib/notify')
+  const { shouldNotifyOnce } = await import('@/lib/notifications/dedupe')
+  const { jstTodayStr, shiftDateStr } = await import('@/lib/dates')
 
-  const today = new Date().toISOString().slice(0, 10)
+  // 集計の1日は日本時間（業務日付）で区切る。終端は翌日0時の未満で、23:59:59 以降の取りこぼしを防ぐ。
+  const today = jstTodayStr()
   const admin = createAdminClient()
-  const { count } = await admin
+  const { count, error: countErr } = await admin
     .from('gemini_usage_log')
     .select('id', { count: 'exact', head: true })
-    .gte('called_at', `${today}T00:00:00Z`)
-    .lt('called_at', `${today}T23:59:59Z`)
+    .gte('called_at', `${today}T00:00:00+09:00`)
+    .lt('called_at', `${shiftDateStr(today, 1)}T00:00:00+09:00`)
+  // 取得失敗は「0件使用」に化けるため、無言にせずログに残す（取り込み自体は止めない）。
+  if (countErr) console.error('[gemini/quota] 使用量の取得に失敗（0件として続行）:', countErr.message)
 
   const remaining = remainingFromUsage(count ?? 0)
   const status = getQuotaStatus(remaining)
 
-  if (status.shouldNotify) {
+  // 5分毎の取り込みで毎回通知しないよう、同じ日・同じ段階（残50/枯渇）は1回だけ通知する。
+  if (status.shouldNotify && (await shouldNotifyOnce(admin, 'gemini_quota_last_notified', `${today}:${status.level}`))) {
     await notify({
       event: 'quota_low',
       level: 'alert',

@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { buildInvoiceCsv, CSV_BOM, type InvoiceCsvRow } from '@/lib/invoices/csv'
 import type { TaxRate } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 /** 1請求書の明細を会計ソフト取り込み用 CSV（UTF-8 BOM）でダウンロード。 */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireAdminApi()
+  if (!guard.ok) return guard.response
 
   const supabase = createAdminClient()
   const { data: invoice, error } = await supabase

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchBilledOrderItemIds } from '@/lib/invoices/generate'
 import { sumInvoiceTotals, type TaxRate } from '@/lib/calculations/tax'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -11,8 +12,8 @@ export const runtime = 'nodejs'
  * 請求書作成時の「取引先選びの迷い・空振りエラー」を撲滅する。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireAdminApi()
+  if (!guard.ok) return guard.response
 
   const { searchParams } = new URL(req.url)
   const from = searchParams.get('from')
@@ -37,6 +38,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // 1-2. 既に有効な請求書に載っている明細は候補から除外（二重請求防止・生成側と同じ判定）
+  const billed = await fetchBilledOrderItemIds(supabase, (rows ?? []).map((r) => r.id))
+  if (!billed.ok) {
+    console.error('[invoices/candidates]', billed.message)
+    return NextResponse.json({ error: billed.message }, { status: 500 })
+  }
+
   // 2. 取引先ごとにグループ化
   const grouped = new Map<
     string,
@@ -47,6 +55,7 @@ export async function GET(req: Request) {
   >()
 
   for (const r of rows ?? []) {
+    if (billed.ids.has(r.id)) continue
     const custId = (r.orders as unknown as { customer_id: string })?.customer_id
     if (!custId) continue
     const cur = grouped.get(custId) ?? { itemCount: 0, items: [] }

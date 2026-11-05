@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { customerUpdateSchema } from '@/types/database'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 /** 取引先の更新（情報編集・有効/無効）。 */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const rawBody = (await req.json().catch(() => null)) as Record<string, unknown> | null
   const parsed = customerUpdateSchema.safeParse(rawBody)
@@ -29,7 +29,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // 納品書の発行元名義（issuer_preset）および運転手渡し納品書対象（requires_delivery_note）を channel_identifiers に保存
   const hasIssuerPreset = rawBody && typeof rawBody.issuer_preset === 'string'
   const hasRequiresNote = rawBody && typeof rawBody.requires_delivery_note === 'boolean'
-  if (hasIssuerPreset || hasRequiresNote) {
+  const hasSkipDestGate = rawBody && typeof rawBody.skip_destination_gate === 'boolean'
+  if (hasIssuerPreset || hasRequiresNote || hasSkipDestGate) {
     const { data: existing } = await admin
       .from('customers')
       .select('channel_identifiers')
@@ -44,6 +45,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     if (hasRequiresNote) {
       currentChan.requires_delivery_note = Boolean(rawBody.requires_delivery_note)
+    }
+    if (hasSkipDestGate) {
+      // 承認時の納入先ゲートを飛ばす取引先（納入先なしで承認してよい）
+      currentChan.skip_destination_gate = Boolean(rawBody.skip_destination_gate)
     }
     updates.channel_identifiers = currentChan
   }
@@ -70,8 +75,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
  * - 注文・請求履歴がある取引先は、履歴・税務証跡を保護しつつ自動で is_active = false（非表示・アーカイブ）にする。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const id = params.id
   const admin = createAdminClient()

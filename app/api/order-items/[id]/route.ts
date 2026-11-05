@@ -103,24 +103,40 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     updates.is_manual_modified = true
   }
 
-  // 【#9-01 解消】同一カードの連続タップ（例: カード有無トグル直後にコンテナ切替・パック済タップ等）で
-  // 自分自身の通信同士が 409 Conflict になる自己競合を防止するため、資材・メモ・途中数更新時は最新versionへ安全にマージ
-  const isStrictStatusChange = 'field_status' in input
-  let { data: updated, error: updErr } = await writeDroppingMissingColumns(
-    { ...updates, version: current.version + 1 },
-    (p) => {
-      const q = admin.from('order_items').update(p).eq('id', params.id)
-      return (isStrictStatusChange ? q.eq('version', input.version) : q).select().maybeSingle()
-    },
-  )
-  // 万一 field_status 変更時に version が1つだけズレていても、目標ステータスが同じか有効遷移であれば安全に適用
-  if (!updated && !updErr && isStrictStatusChange) {
-    const retryRes = await writeDroppingMissingColumns(
-      { ...updates, version: current.version + 1 },
-      (p) => admin.from('order_items').update(p).eq('id', params.id).select().maybeSingle(),
+  // 楽観ロック（CLAUDE.md: WHERE id=$ AND version=$expected、0件なら409）。
+  // - 数量・単価・税率（請求・出荷数に直結）: 画面が見ていた version と一致しなければ 409。
+  //   他の人の変更を黙って上書きしない。
+  // - 作業ステータス: 遷移の正当性は直前に読んだ最新状態で検証済みなので、その version で照合する
+  //   （連続タップで画面側の version が一瞬古くても自己競合にしない。#9-01）。
+  // - 資材・メモ等（数量に依存しない独立した項目）: 最新 version で照合し、間に別の更新が
+  //   挟まった場合は読み直して1回だけ再試行する。
+  const isMoneyOrQtyChange =
+    !('field_status' in input) &&
+    ((input.quantity != null && input.quantity !== current.quantity) ||
+      (input.unit_price != null && input.unit_price !== current.unit_price) ||
+      (input.tax_rate != null && input.tax_rate !== current.tax_rate))
+  if (isMoneyOrQtyChange && input.version !== current.version) {
+    return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
+  }
+
+  const casUpdate = (expectedVersion: number) =>
+    writeDroppingMissingColumns({ ...updates, version: expectedVersion + 1 }, (p) =>
+      admin.from('order_items').update(p).eq('id', params.id).eq('version', expectedVersion).select().maybeSingle(),
     )
-    updated = retryRes.data
-    updErr = retryRes.error
+
+  let { data: updated, error: updErr } = await casUpdate(current.version)
+  if (!updated && !updErr && !isMoneyOrQtyChange && !('field_status' in input)) {
+    const { data: fresh, error: freshErr } = await admin
+      .from('order_items')
+      .select('version')
+      .eq('id', params.id)
+      .maybeSingle()
+    if (freshErr) return NextResponse.json({ error: freshErr.message }, { status: 500 })
+    if (fresh) {
+      const retry = await casUpdate(fresh.version)
+      updated = retry.data
+      updErr = retry.error
+    }
   }
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   if (!updated) {

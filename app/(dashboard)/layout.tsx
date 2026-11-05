@@ -3,6 +3,7 @@ import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Sidebar } from '@/components/layouts/Sidebar'
 import { MobileNav } from '@/components/layouts/MobileNav'
+import { OpsTracker } from '@/components/layouts/OpsTracker'
 
 /**
  * 認証チェック＋サイドバー（structure.md）。
@@ -31,6 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex min-w-0 flex-1 flex-col">
         <MobileNav role={role} user={{ name, roleLabel }} />
         <main className="flex-1 p-4 lg:p-8">{children}</main>
+        <OpsTracker />
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { parseSpreadsheetToText } from '@/lib/excel/parse'
 import { buildClarificationQuestions } from '@/lib/orders/clarifications'
 import { parseNaturalOrderTextDeterministic } from '@/lib/orders/natural-parser'
+import { getStaffFeatures } from '@/lib/field/features'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -70,6 +71,10 @@ export async function POST(req: Request) {
   const role = profileRes.data?.role ?? jwtRole
   if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
     return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
+  }
+  // 現場スタッフは設定「現場スタッフの写真・FAX自動読取（OCR）を許可」がオンのときだけ（管理者は常に可）
+  if (role !== 'admin' && !(await getStaffFeatures()).ocr) {
+    return NextResponse.json({ error: '写真・FAXの読み取りは管理者が許可していません（設定 → 現場スタッフに任せること）' }, { status: 403 })
   }
 
   const { imageBase64, mimeType, fileName, text, clientNameHint, modelOverride } = parsed.data

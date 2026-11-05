@@ -1,10 +1,10 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -21,8 +21,8 @@ const updateSchema = z.object({
 
 /** 納入先の更新（略称・正式名・aliases・便名・出荷時間・有効/無効）。 */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const parsed = updateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
@@ -88,8 +88,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 /** 納入先の削除。過去の注文履歴を壊さず、実績0件なら物理削除、実績ありなら is_active=false（アーカイブ）に更新する。 */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const admin = createAdminClient()
 

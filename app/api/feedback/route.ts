@@ -1,8 +1,8 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -27,8 +27,8 @@ const SETTING_KEY = 'v5_feedback_reports'
  * 未適用環境やRLS制限を安全に回避するため app_settings JSON ストアを活用。
  */
 export async function GET() {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const admin = createAdminClient()
   const { data: setting } = await admin
@@ -53,8 +53,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => ({}))
   const what = typeof body.what === 'string' ? body.what.trim() : ''
@@ -120,15 +121,15 @@ export async function POST(req: NextRequest) {
     title: '💬【現場からの改善要望・バグ報告】',
     message: `【投稿者】${userName}\n【内容(What)】${what}${newReport.where ? `\n【場所】${newReport.where}` : ''}${newReport.when ? `\n【いつ】${newReport.when}` : ''}`,
     urgent: false,
-    url: '/admin/settings',
+    url: '/field/feedback',
   }).catch((err) => console.warn('[feedback] 通知スキップ:', err))
 
   return NextResponse.json({ ok: true, report: newReport }, { status: 201 })
 }
 
 export async function PATCH(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const body = await req.json().catch(() => ({}))
   const id = typeof body.id === 'string' ? body.id : ''

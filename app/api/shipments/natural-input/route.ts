@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { getAuthedUser } from '@/lib/supabase/server'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { DEFAULT_MAIN_GEMINI_MODEL, modelTryOrder } from '@/lib/gemini/models'
@@ -163,10 +163,8 @@ function buildDeterministicNaturalResult(
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const body = await req.json().catch(() => ({}))
   const text = typeof body.text === 'string' ? body.text.trim() : ''

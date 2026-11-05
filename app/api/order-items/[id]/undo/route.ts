@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { determineUndoEligibility } from '@/lib/orders/undo'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -12,8 +12,9 @@ export const runtime = 'nodejs'
  *   - Undo 自体も audit_log に action='undo' で記録。Redo は実装しない。
  */
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const supabase = createAdminClient()
 
@@ -84,6 +85,15 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     .maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!reverted) return NextResponse.json({ error: 'conflict' }, { status: 409 })
+
+  // 数量を戻したら収穫タスクの必要数も戻す（現場に出る必要数と注文数を食い違わせない）
+  if ('quantity' in restorable && restorable.quantity != null && restorable.quantity !== item.quantity) {
+    const { error: htErr } = await supabase
+      .from('harvest_tasks')
+      .update({ required_qty: Number(restorable.quantity) })
+      .eq('order_item_id', params.id)
+    if (htErr) console.error('[order-items/undo] 収穫タスクの数量同期に失敗:', htErr.message)
+  }
 
   await writeAudit(supabase, {
     entityType: 'order_items',

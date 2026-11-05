@@ -69,7 +69,7 @@ export default async function AdminApprovalsPage() {
             className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft"
           >
             <Inbox className="h-4 w-4 text-ink-soft" aria-hidden />
-            受注ボックス一覧
+            受信ボックス（読み取り失敗の処理）
           </Link>
         </div>
       </div>

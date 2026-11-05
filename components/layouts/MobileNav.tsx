@@ -18,14 +18,20 @@ const FOCUSABLE_SELECTOR =
  * - 現場画面間の遷移では URL の ?date= / ?week= と ?product= を自動的に維持する（#01）。
  * - ヘッダー右端に言語切替スイッチ（🇯🇵/🇹🇭）を統合し、下のスティッキーバーの横幅圧迫を解消（#05）。
  */
+/** 既定値は安定した参照にする（毎描画で新しい配列を作らない） */
+const EMPTY_HIDDEN: string[] = []
+
 export function MobileNav({
   role,
   persistent = false,
   user,
+  hiddenHrefs = EMPTY_HIDDEN,
 }: {
   role: 'admin' | 'staff'
   persistent?: boolean
   user?: SidebarUser
+  /** 設定でオフの現場機能（スタッフのメニューに出さない） */
+  hiddenHrefs?: string[]
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -33,8 +39,8 @@ export function MobileNav({
   const currentProduct = searchParams?.get('product') || null
 
   const [open, setOpen] = useState(false)
-  const nav = navFor(role)
-  const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
+  const nav = navFor(role, hiddenHrefs)
+  const { groups, activeHref, openGroups, toggleGroup } = useNavState(role, hiddenHrefs)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -224,9 +230,11 @@ export function MobileNav({
                 )
               })}
             </div>
+            {/* 管理者はメニューの「振り返り・記録」に同じリンクがあるため、スタッフにだけ出す（重複させない） */}
+            {role !== 'admin' && (
             <div className="pt-2 border-t border-forest-700/60">
               <Link
-                href={role === 'admin' ? '/admin/settings' : '/field/feedback'}
+                href="/field/feedback"
                 onClick={() => setOpen(false)}
                 className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-emerald-300 hover:bg-forest-700 hover:text-white transition-colors"
               >
@@ -234,6 +242,7 @@ export function MobileNav({
                 改善・バグ報告 (5W1H)
               </Link>
             </div>
+            )}
             <form action="/auth/signout" method="post" className="pt-1">
               <button
                 type="submit"

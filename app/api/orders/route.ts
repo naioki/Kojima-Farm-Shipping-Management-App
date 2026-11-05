@@ -52,6 +52,8 @@ const orderSchema = z.object({
   shipping_time: z.enum(['am', 'pm']).optional(),
   note: z.string().optional(),
   items: z.array(itemSchema).min(1),
+  /** 受注経路の内訳（電話・LINE・紙・その他）。評価指標「紙の卒業」の計測用。未指定は不明。 */
+  intake_channel: z.enum(['phone', 'line', 'paper', 'other', 'fax', 'email']).optional(),
   /** 同一取引先×納品日の既存注文があっても新規として登録を強行する（重複警告を承認した）。 */
   confirm_duplicate: z.boolean().optional(),
   /** 指定すると新規INSERTでなく、この注文を置き換える（訂正・再送）。 */
@@ -198,7 +200,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 過去90日の同取引先×商品の最大数量を取得（異常値検知）
-  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const since = shiftDateStr(jstTodayStr(), -90)
   const { data: histOrders, error: histOrdersErr } = await admin
     .from('orders')
     .select('id')
@@ -530,6 +532,10 @@ export async function POST(req: NextRequest) {
         shipping_time: shipping_time ?? null,
         note: note ?? null,
         created_by: userRow ? user.id : null,
+        // 手入力は登録＝承認（approved で直接登録）なので承認時刻＝登録時刻
+        intake_channel: parsed.data.intake_channel ?? null,
+        approved_at: new Date().toISOString(),
+        approved_by: userRow ? user.id : null,
       })
       .select('id')
       .single()

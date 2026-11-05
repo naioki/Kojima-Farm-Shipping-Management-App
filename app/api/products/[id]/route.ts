@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { productUpdateSchema } from '@/types/database'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -10,8 +10,8 @@ export const runtime = 'nodejs'
  * default_tax_rate はマスタ既定。請求計算には order_items.tax_rate を使う（tax.md）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const body = await req.json().catch(() => null)
   const parsed = productUpdateSchema.safeParse(body)
@@ -59,8 +59,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
  * - 過去の注文明細が存在する品目は、請求・出荷履歴を壊さないよう自動で is_active = false（アーカイブ削除）にし、一覧・選択肢から即座に除外する。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const id = params.id
   const admin = createAdminClient()

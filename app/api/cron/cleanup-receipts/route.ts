@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { verifyCronRequest } from '@/lib/config/ingestion'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 
@@ -11,7 +12,10 @@ export const runtime = 'nodejs'
  *
  * ※ テキスト本文、伝票番号、AI解析明細、注文履歴は永久温存し、容量の大きいPDFバイナリのみを消去します。
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!(await verifyCronRequest(req.headers))) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
   const admin = createAdminClient()
   const result = await purgeOldReceiptBase64(admin, 7)
   return NextResponse.json({

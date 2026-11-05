@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, ShieldCheck, AlertCircle, AlertTriangle, ChevronDown, Bell } from 'lucide-react'
+import { Check, ShieldCheck, AlertCircle, AlertTriangle, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
@@ -11,6 +11,7 @@ import {
   SECTION_LABELS,
   SECTION_DESCRIPTIONS,
   SECTION_ORDER,
+  COLLAPSED_SECTIONS,
   type SettingSection,
   type SettingKind,
 } from '@/lib/settings-spec'
@@ -140,15 +141,36 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
         </div>
 
         {it.kind === 'toggle' ? (
-          <select
-            id={`set-${it.key}`}
-            value={values[it.key] ?? 'on'}
-            onChange={(e) => set(it.key, e.target.value)}
-            className={cn(inputCls, 'w-36 font-bold text-base')}
-          >
-            <option value="on">ON（有効）</option>
-            <option value="off">OFF（無効）</option>
-          </select>
+          (() => {
+            const on = (values[it.key] ?? 'on') !== 'off'
+            return (
+              <button
+                id={`set-${it.key}`}
+                type="button"
+                role="switch"
+                aria-checked={on}
+                onClick={() => set(it.key, on ? 'off' : 'on')}
+                className="inline-flex min-h-[44px] items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-forest-300 focus:ring-offset-2"
+              >
+                <span
+                  className={cn(
+                    'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors',
+                    on ? 'bg-forest-600' : 'bg-slate-300 dark:bg-slate-600',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                      on ? 'translate-x-6' : 'translate-x-1',
+                    )}
+                  />
+                </span>
+                <span className={cn('text-base font-bold', on ? 'text-forest-800' : 'text-ink-soft')}>
+                  {on ? 'オン' : 'オフ'}
+                </span>
+              </button>
+            )
+          })()
         ) : it.kind === 'select' ? (
           <select
             id={`set-${it.key}`}
@@ -223,34 +245,75 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
     )
   }
 
+  // 区分ごとの「要対応」件数（未入力の自社情報・未設定のキー）。目次と見出しに出して、どこを見ればよいか分かるようにする
+  const pendingCount = (section: SettingSection) =>
+    items.filter(
+      (i) =>
+        i.section === section &&
+        ((i.secret && !i.isSet) || (section === 'issuer' && i.kind !== 'select' && !(values[i.key] ?? '').trim())),
+    ).length
+  const sections = SECTION_ORDER.filter((sec) => items.some((i) => i.section === sec))
+
+  const sectionHeader = (section: SettingSection, small = false) => {
+    const pending = pendingCount(section)
+    return (
+      <div>
+        <h2 className={cn('flex flex-wrap items-center gap-2 font-display font-black text-ink', small ? 'text-base' : 'text-lg')}>
+          {SECTION_LABELS[section]}
+          {pending > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-900">
+              <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+              未設定 {pending}件
+            </span>
+          )}
+        </h2>
+        <p className="mt-1 text-sm leading-relaxed text-ink-soft">{SECTION_DESCRIPTIONS[section]}</p>
+      </div>
+    )
+  }
+
   // セクションごとに描画
   return (
-    <div className="space-y-8">
-      {SECTION_ORDER.map((section) => {
+    <div className="space-y-6">
+      {/* 目次: 区分へジャンプ。未設定がある区分は件数を表示 */}
+      <nav aria-label="設定の区分" className="flex flex-wrap gap-2">
+        {sections.map((section) => {
+          const pending = pendingCount(section)
+          return (
+            <a
+              key={section}
+              href={`#settings-${section}`}
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-line bg-bg-card px-3 text-sm font-bold text-ink hover:bg-bg-soft focus:outline-none focus:ring-2 focus:ring-trust-500"
+            >
+              {SECTION_LABELS[section].replace(/（.*）$/, '')}
+              {pending > 0 && (
+                <span className="rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-900">{pending}</span>
+              )}
+            </a>
+          )
+        })}
+      </nav>
+
+      {sections.map((section) => {
         const sectionItems = items.filter((i) => i.section === section).filter(isVisible)
         if (!sectionItems.length) return null
 
-        const isAdvanced = section === 'advanced'
-
-        // 高度な設定はアコーディオンで折りたたむ
-        if (isAdvanced) {
+        // ふだん触らない区分は畳む（未設定があっても見出しに件数が出る）
+        if (COLLAPSED_SECTIONS.includes(section)) {
           return (
-            <details key={section} className="group rounded-2xl border border-line bg-bg-soft/40">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-5 select-none hover:bg-bg-soft/80 rounded-2xl">
-                <div>
-                  <h2 className="font-display text-base font-bold text-ink flex items-center gap-2">
-                    {SECTION_LABELS[section]}
-                  </h2>
-                  <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-                    {SECTION_DESCRIPTIONS[section]}
-                  </p>
-                </div>
+            <details
+              key={section}
+              id={`settings-${section}`}
+              className="group scroll-mt-20 rounded-2xl border border-line bg-bg-soft/40"
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl p-5 select-none hover:bg-bg-soft/80">
+                {sectionHeader(section, true)}
                 <ChevronDown
                   className="h-5 w-5 shrink-0 text-ink-muted transition-transform group-open:rotate-180"
                   aria-hidden
                 />
               </summary>
-              <div className="border-t border-line/80 p-5 space-y-6 bg-white rounded-b-2xl">
+              <div className="space-y-6 rounded-b-2xl border-t border-line/80 bg-white p-5">
                 {sectionItems.map(renderItem)}
               </div>
             </details>
@@ -258,28 +321,14 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
         }
 
         return (
-          <div key={section} className="rounded-2xl border border-line/80 bg-white p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="border-b border-line/60 pb-3">
-              <h2 className="font-display text-lg font-black text-ink">{SECTION_LABELS[section]}</h2>
-              <p className="mt-1 text-sm leading-relaxed text-ink-soft">{SECTION_DESCRIPTIONS[section]}</p>
-            </div>
-
-            {/* 通知セクション専用の目立つ案内バナー */}
-            {section === 'notify' && (
-              <div className="flex items-start gap-3 rounded-xl border border-sky-300 bg-sky-50/70 p-4 text-sky-950">
-                <Bell className="h-5 w-5 shrink-0 text-sky-700 mt-0.5" />
-                <div className="space-y-1 text-sm">
-                  <p className="font-bold text-sky-900">【通知の届く先について】</p>
-                  <p className="leading-relaxed text-sky-800">
-                    FAX読み取りエラーや要確認などのアラート通知は、以下の <strong>LINE WORKS Webhook URL</strong> に送信されます。
-                    現場画面にあった未接続の「遅れ通知」トグル等は廃止され、システム通知はこちらのLINE WORKSに一本化されています。
-                  </p>
-                </div>
-              </div>
-            )}
-
+          <section
+            key={section}
+            id={`settings-${section}`}
+            className="scroll-mt-20 space-y-5 rounded-2xl border border-line/80 bg-white p-5 shadow-xs sm:p-6"
+          >
+            <div className="border-b border-line/60 pb-3">{sectionHeader(section)}</div>
             <div className="space-y-6 pt-1">{sectionItems.map(renderItem)}</div>
-          </div>
+          </section>
         )
       })}
 

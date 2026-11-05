@@ -27,6 +27,7 @@ import type {
   PriceRuleRow,
   PrintJob,
   SpecReport,
+  OpsEvent,
 } from './database'
 
 /**
@@ -114,6 +115,9 @@ export interface Database {
           shipping_time?: Order['shipping_time']
           note?: string | null
           created_by?: string | null
+          intake_channel?: Order['intake_channel']
+          approved_at?: string | null
+          approved_by?: string | null
         },
         Partial<Order>
       >
@@ -501,6 +505,19 @@ export interface Database {
           handled_at?: string | null
         },
         Partial<SpecReport>
+      >
+      ops_events: Table<
+        OpsEvent,
+        {
+          user_id?: string | null
+          role?: string | null
+          path: string
+          event: OpsEvent['event']
+          name?: string | null
+          active_ms?: number | null
+          meta?: Record<string, unknown> | null
+        },
+        Partial<OpsEvent>
       >
     }
     Views: Record<string, never>

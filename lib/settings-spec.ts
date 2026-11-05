@@ -5,18 +5,20 @@
  *
  * 【2026-10 整理反映】
  * 1. 現場や運用に不要なダミー設定（未使用の遅れ通知、旧IMAP設定、不要なスタッフ微細トグル等）を全撤去。
- * 2. 真に必要な4グループに集約：
+ * 2. 目的別の6区分（2026-11 再整理。ふだん触る順に並べ、触らない区分は畳む）：
  *    - issuer: 自社情報（請求書・納品書の印字）
- *    - ai: AI解析モデル・自動確定
- *    - notify: 通知と外部連携（LINE WORKS・Kojima-FAX）
- *    - advanced: 高度なシステム設定（通常は変更不要・折りたたみ）
+ *    - staff: 現場スタッフに任せること（機能の解放）
+ *    - ai: AI読み取り・自動承認
+ *    - notify: 通知（LINE WORKS）
+ *    - integration: 外部連携のキー（Kojima-FAX・Gemini・cron）※畳む
+ *    - advanced: プロンプト・PDFフォント ※畳む
  */
 
 import { DELIVERY_AMOUNT_MODES } from '@/lib/delivery-notes/amount-mode'
 import { DEFAULT_GEMINI_PROMPT_NORMAL, DEFAULT_GEMINI_PROMPT_DIFF } from '@/lib/gemini/prompts'
 import { GEMINI_HIGH_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS } from '@/lib/gemini/models'
 
-export type SettingSection = 'issuer' | 'ai' | 'notify' | 'advanced'
+export type SettingSection = 'issuer' | 'staff' | 'ai' | 'notify' | 'integration' | 'advanced'
 export type SettingKind = 'text' | 'textarea' | 'toggle' | 'select' | 'prompt'
 
 export interface SettingSpec {
@@ -35,20 +37,27 @@ export interface SettingSpec {
   danger?: boolean
 }
 
-export const SECTION_ORDER: SettingSection[] = ['issuer', 'ai', 'notify', 'advanced']
+export const SECTION_ORDER: SettingSection[] = ['issuer', 'staff', 'ai', 'notify', 'integration', 'advanced']
+
+/** ふだん触らない区分（最初は畳んで表示する） */
+export const COLLAPSED_SECTIONS: SettingSection[] = ['integration', 'advanced']
 
 export const SECTION_LABELS: Record<SettingSection, string> = {
-  issuer: '🏢 自社・請求書情報（伝票に印字される内容）',
-  ai: '🤖 AIモデルと自動確定（FAX読取・承認設定）',
-  notify: '🔔 通知と外部連携（LINE WORKS・FAX接続）',
-  advanced: '⚙️ 高度なシステム設定（通常は変更不要）',
+  issuer: '自社情報（納品書・請求書に印字）',
+  staff: '現場スタッフに任せること',
+  ai: 'AI読み取りと自動承認',
+  notify: '通知（LINE WORKS）',
+  integration: '外部連携のキー（FAXサーバー・Gemini・定期実行）',
+  advanced: '上級者向け（AIへの指示文・PDFフォント）',
 }
 
 export const SECTION_DESCRIPTIONS: Record<SettingSection, string> = {
-  issuer: '納品書や請求書に印字される小島農園の事業者情報です。一度設定すれば、日常的に変更する必要はありません。',
-  ai: '日常のFAX読み取りは高速・省コストなメインモデル、要確認やルール学習は高精度モデルが自動で担当します。',
-  notify: 'FAXの読み取り失敗や要確認などのアラート通知は、ここに設定された LINE WORKS グループに届きます。',
-  advanced: 'Gemini APIキー、プロンプト、フォント設定などの内部接続項目です。',
+  issuer: '納品書・請求書に印字される小島農園の情報です。一度入れれば、ふだん変える必要はありません。',
+  staff: '現場スタッフの画面で使える機能を選びます。オフにした機能はスタッフの画面に出ません（管理者は常に使えます）。',
+  ai: 'FAXや写真を読み取るAIと、問題のない注文を自動で承認するかどうかを決めます。',
+  notify: '読み取りの失敗・要確認・出荷遅れなどのお知らせを LINE WORKS のグループに送ります。',
+  integration: 'FAXサーバー（Kojima-FAX）・Gemini・定期実行の合言葉です。保存後は値を表示しません（設定済み／未設定のみ）。',
+  advanced: 'AIへの指示文（プロンプト）とPDFのフォントです。通常は変更不要です。',
 }
 
 /** 互換性維持のためのスタッフ機能キー（lib/field/features.ts で参照） */
@@ -190,7 +199,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'FAX_INGEST_TOKEN',
     label: 'Kojima-FAX 連携トークン（X-Pipeline-Token）',
-    section: 'notify',
+    section: 'integration',
     secret: true,
     kind: 'text',
     placeholder: '（空欄の場合は認証なしで接続可能）',
@@ -199,7 +208,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'GEMINI_API_KEY',
     label: 'Gemini APIキー',
-    section: 'notify',
+    section: 'integration',
     secret: true,
     kind: 'text',
     hint: 'Google AI Studio で取得したAPIキーです。未入力の場合は環境変数から解決されます。',
@@ -211,7 +220,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'STAFF_CAN_OCR',
     label: '現場スタッフの写真・FAX自動読取（OCR）を許可',
-    section: 'advanced',
+    section: 'staff',
     secret: false,
     kind: 'toggle',
     toggleDefault: 'on',
@@ -220,7 +229,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'STAFF_CAN_CREATE_ORDER',
     label: '現場スタッフの新規注文追加・変更を許可',
-    section: 'advanced',
+    section: 'staff',
     secret: false,
     kind: 'toggle',
     toggleDefault: 'on',
@@ -229,7 +238,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'STAFF_CAN_APPROVE',
     label: '現場スタッフの注文承認（未確認注文の確定）を許可',
-    section: 'advanced',
+    section: 'staff',
     secret: false,
     kind: 'toggle',
     toggleDefault: 'on',
@@ -238,7 +247,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'STAFF_CAN_PRINT_DOCS',
     label: '現場スタッフの帳票・ラベル印刷を許可',
-    section: 'advanced',
+    section: 'staff',
     secret: false,
     kind: 'toggle',
     toggleDefault: 'on',
@@ -247,7 +256,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'STAFF_CAN_REPORT_SPEC',
     label: '現場スタッフの規格変更・現場報告を許可',
-    section: 'advanced',
+    section: 'staff',
     secret: false,
     kind: 'toggle',
     toggleDefault: 'on',
@@ -256,7 +265,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   {
     key: 'CRON_SECRET',
     label: 'cron 共有シークレット',
-    section: 'advanced',
+    section: 'integration',
     secret: true,
     kind: 'text',
     hint: 'Cloud Scheduler 等からの定期実行呼び出しを認証するシークレットです。',

@@ -124,6 +124,40 @@ export interface Order {
   created_by: UUID | null
   created_at: ISODateTime
   updated_at: ISODateTime
+  /** 受注経路の詳細（migrations/0030）。手入力の内訳＝電話・LINE・紙。NULL は不明（導入前の手入力）。 */
+  intake_channel: IntakeChannel | null
+  /** 承認時刻・承認者（migrations/0030。処理時間の計測用） */
+  approved_at: ISODateTime | null
+  approved_by: UUID | null
+}
+
+/** 受注経路の詳細（orders.intake_channel）。 */
+export type IntakeChannel = 'fax' | 'email' | 'portal' | 'phone' | 'line' | 'paper' | 'other'
+export const INTAKE_CHANNELS = ['fax', 'email', 'portal', 'phone', 'line', 'paper', 'other'] as const
+export const INTAKE_CHANNEL_LABELS: Record<IntakeChannel, string> = {
+  fax: 'FAX',
+  email: 'メール',
+  portal: 'ポータル',
+  phone: '電話',
+  line: 'LINE',
+  paper: '紙・口頭',
+  other: 'その他',
+}
+/** 手入力で選べる経路（FAX/メール/ポータルは自動取り込み側で付く） */
+export const MANUAL_INTAKE_CHANNELS = ['phone', 'line', 'paper', 'other'] as const
+export const intakeChannelSchema = z.enum(INTAKE_CHANNELS)
+
+/** 操作ログ（migrations/0030。事務作業時間の自動推定・現場観察の基盤） */
+export interface OpsEvent {
+  id: UUID
+  user_id: UUID | null
+  role: string | null
+  path: string
+  event: 'page_active' | 'action' | 'error'
+  name: string | null
+  active_ms: number | null
+  meta: Record<string, unknown> | null
+  created_at: ISODateTime
 }
 
 /** 納入先（取引先の配下の届け先）。migrations/0013。 */
@@ -537,6 +571,8 @@ export const shipmentAddSchema = z.object({
   mode: z.enum(['create', 'increase', 'decrease', 'set']).optional(),
   /** 出荷時間帯（am: 朝便・午前, pm: 昼便・午後） */
   shipping_time: z.enum(['am', 'pm']).optional(),
+  /** 受注経路の内訳（電話・LINE・紙・その他）。評価指標「紙の卒業」の計測用。未指定は不明。 */
+  intake_channel: z.enum(['phone', 'line', 'paper', 'other', 'fax', 'email']).optional(),
   /** 現場メモ・備考 */
   note: z.string().optional(),
   /** AI解析時の初回読取結果（ユーザー修正との差分を学習ループへ蓄積用） */
