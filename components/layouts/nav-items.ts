@@ -23,6 +23,7 @@ import {
   MessageSquarePlus,
   Camera,
   BrainCircuit,
+  Home,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -52,6 +53,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/admin/simple', label: 'かんたん画面', icon: Home, hint: '承認・明日の出荷・今月のお金の3つだけ（大きな文字）' },
       { href: '/field/concierge', label: 'AI相談窓口', icon: Sparkles },
     ],
   },
