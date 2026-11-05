@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { findPreflightIssues } from '@/lib/deliveries/preflight'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -76,7 +77,7 @@ export default async function DeliveriesPage({
   const itemsRes = orderIds.length
     ? await admin
         .from('order_items')
-        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id, field_status')
+        .select('id, order_id, product_id, product_name, quantity, unit, spec, container_type, has_card, line_note, pack_config_id, field_status, shipped_qty')
         .in('order_id', orderIds)
         .order('product_name')
     : null
@@ -428,6 +429,23 @@ export default async function DeliveriesPage({
   })
 
   const globalTotalCustomers = customerCards.length
+  // 出荷前の最終チェック（未パック・数量不足の明細だけ）
+  const preflight = findPreflightIssues(
+    items.map((it) => {
+      const order = orderById.get(it.order_id)
+      const cust = order ? custById.get(order.customer_id) : undefined
+      const dest = order?.destination_id ? destById.get(order.destination_id) : undefined
+      const destName = dest ? dest.code || dest.full_name : null
+      return {
+        id: it.id,
+        label: `${cust?.name ?? '—'}${destName ? ` ＞ ${destName}` : ''}`,
+        product_name: it.product_name,
+        quantity: Number(it.quantity) || 0,
+        field_status: (it as { field_status?: string | null }).field_status ?? null,
+        shipped_qty: (it as { shipped_qty?: number | null }).shipped_qty ?? null,
+      }
+    }),
+  )
   const todayStr = jstTodayStr()
   const tomorrowStr = shiftDateStr(todayStr, 1)
 
@@ -459,6 +477,26 @@ export default async function DeliveriesPage({
             確認する →
           </Link>
         </div>
+      )}
+
+      {preflight.length > 0 && (
+        <details className="rounded-xl border border-alert bg-alert-bg px-3.5 py-2 text-sm print:hidden" open={preflight.length <= 5}>
+          <summary className="cursor-pointer font-bold text-alert">
+            🚨 積込前チェック: 数量がそろっていない明細が {preflight.length} 件あります
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {preflight.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-2 text-ink">
+                <span className="min-w-0">
+                  <span className="text-ink-soft">{p.label}</span>　<strong>{p.product_name}</strong>
+                </span>
+                <span className="num shrink-0 font-bold tabular-nums text-alert">
+                  {p.kind === 'not_packed' ? `未パック 0/${p.quantity}` : `不足 ${p.done}/${p.quantity}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {globalTotalCustomers === 0 ? (
