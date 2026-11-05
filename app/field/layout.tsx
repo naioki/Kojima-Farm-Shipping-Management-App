@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { MobileNav } from '@/components/layouts/MobileNav'
 import { ConnectionStatus } from '@/components/field/ConnectionStatus'
 import { FieldLangProvider } from '@/lib/field/lang-context'
+import { getNavBadges } from '@/lib/nav/badges'
 import { OpsTracker } from '@/components/layouts/OpsTracker'
 import { getStaffFeatures } from '@/lib/field/features'
 
@@ -48,11 +49,12 @@ export default async function FieldLayout({ children }: { children: React.ReactN
   // 経営者欄には個人の名前を出さず、農園名「小島農園」を表示する
   const name = role === 'admin' ? '小島農園' : (profile?.full_name?.trim() || user.email?.split('@')[0] || 'スタッフ')
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
+  const badges = await getNavBadges(role)
 
   return (
     <FieldLangProvider>
       <div className="flex min-h-screen flex-col">
-        <MobileNav role={role} persistent user={{ name, roleLabel }} hiddenHrefs={hiddenHrefs} />
+        <MobileNav role={role} persistent user={{ name, roleLabel }} hiddenHrefs={hiddenHrefs} badges={badges} />
         <main className="flex-1 px-2.5 py-2 sm:p-4 lg:p-8">{children}</main>
         <OpsTracker />
         {/* 圏外インジケーター（features.md §10 失敗#4） */}

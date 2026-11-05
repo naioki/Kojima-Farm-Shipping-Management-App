@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { Menu, X, LogOut, ChevronDown, Leaf, UserRound, MessageSquarePlus } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navFor, buildPreservedFieldHref } from '@/components/layouts/nav-items'
+import { NavBadge } from '@/components/layouts/NavBadge'
 import { useNavState } from '@/components/layouts/use-nav'
 import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import type { SidebarUser } from '@/components/layouts/Sidebar'
@@ -26,12 +27,15 @@ export function MobileNav({
   persistent = false,
   user,
   hiddenHrefs = EMPTY_HIDDEN,
+  badges = {},
 }: {
   role: 'admin' | 'staff'
   persistent?: boolean
   user?: SidebarUser
   /** 設定でオフの現場機能（スタッフのメニューに出さない） */
   hiddenHrefs?: string[]
+  /** href → 未処理件数（0 は表示しない） */
+  badges?: Record<string, number>
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -191,7 +195,7 @@ export function MobileNav({
               {groups.map((group, gi) => {
                 const items = (
                   <ul className="space-y-1">
-                    {group.items.map(({ href, label, icon: Icon }) => {
+                    {group.items.map(({ href, label, icon: Icon, hint }) => {
                       const active = href === activeHref
                       const finalHref = buildPreservedFieldHref(href, currentDate, currentProduct)
                       return (
@@ -199,13 +203,15 @@ export function MobileNav({
                           <Link
                             href={finalHref}
                             aria-current={active ? 'page' : undefined}
+                            title={hint}
                             className={cn(
                               'flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium transition-colors',
                               active ? 'bg-forest-600 text-white' : 'text-forest-100/80 hover:bg-forest-700 hover:text-white',
                             )}
                           >
                             <Icon className="h-6 w-6 shrink-0" aria-hidden />
-                            {label}
+                            <span className="min-w-0 flex-1">{label}</span>
+                            <NavBadge count={badges[href]} />
                           </Link>
                         </li>
                       )
