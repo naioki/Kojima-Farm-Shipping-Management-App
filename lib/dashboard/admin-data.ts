@@ -2,6 +2,7 @@ import 'server-only'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
+import { summarizeReceivables } from '@/lib/invoices/receivables'
 import { yen } from '@/lib/format'
 import { formatJpDateShort, shiftDateStr } from '@/lib/dates'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
@@ -203,6 +204,13 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const failedReceipts = failedReceiptsRes.count ?? 0
   const missingSpecs = await getMissingSpecs(createAdminClient()).catch(() => [])
   const missingSpecsCount = missingSpecs.length
+  // 入金待ちの請求書（確定・送付済）。期日超過があれば要対応に出す
+  const arRes = await supabase
+    .from('invoices')
+    .select('status, billing_month, due_date, total_amount')
+    .in('status', ['finalized', 'sent'])
+  if (arRes.error) console.error('[dashboard] 入金待ち請求書の取得に失敗:', arRes.error.message)
+  const ar = summarizeReceivables(arRes.data ?? [], today)
   const alerts: AlertItem[] = []
   if (pendingOrders > 0)
     alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/approvals' })
@@ -210,6 +218,8 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   void pendingReceipts
   if (failedReceipts > 0)
     alerts.push({ id: 'fr', tone: 'alert', label: `読み取り失敗・取引先不明の受信が ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox' })
+  if (ar.overdueCount > 0)
+    alerts.push({ id: 'ar', tone: 'alert', label: `支払期日を過ぎた未入金の請求書が ${ar.overdueCount}件（${yen(ar.overdueAmount)}）あります`, count: ar.overdueCount, href: '/admin/invoices' })
   if (missingSpecsCount > 0)
     alerts.push({ id: 'ms', tone: 'info', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
   const notificationCount = pendingOrders + failedReceipts
