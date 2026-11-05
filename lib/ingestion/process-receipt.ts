@@ -9,7 +9,6 @@ import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
 import { shiftDateStr } from '@/lib/dates'
 import { foldKana } from '@/lib/normalize/kana'
-import { notify } from '@/lib/notify'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import {
@@ -1383,14 +1382,9 @@ export async function processReceipt(
       .filter(Boolean)
       .join('\n')
 
+    // notify() と sendMultiChannelAlert() の両方を呼ぶと LINE WORKS に同じ通知が2通届くため、
+    // 送信先を広く持つ sendMultiChannelAlert（LINE WORKS / Discord / LINE / メール）に一本化する。
     await Promise.allSettled([
-      notify({
-        event: 'pending_review',
-        level: anyPendingReview || receipt.is_revision ? 'warning' : 'info',
-        title: notifyTitle,
-        body: notifyBody,
-        url: anyPendingReview ? '/admin/approvals' : '/field/shipments',
-      }),
       sendMultiChannelAlert({
         title: notifyTitle,
         message: notifyBody,

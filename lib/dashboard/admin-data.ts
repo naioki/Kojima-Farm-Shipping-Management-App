@@ -7,15 +7,15 @@ import { formatJpDateShort, shiftDateStr } from '@/lib/dates'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
 import type { OrderStatusKey, RecentOrderRow, TomorrowPackStats, TrendPoint } from '@/components/dashboard/types'
-import { ClipboardList, CheckCircle2, PackageCheck, Sparkles, FileText, Settings, PlusCircle } from 'lucide-react'
+import { ClipboardList, CheckCircle2, PackageCheck, Gauge, FileText, Settings, PlusCircle } from 'lucide-react'
 
 const QUICK_ACTIONS: AdminDashboardData['actions'] = [
   { href: '/admin/orders/new', label: '注文の受付', icon: PlusCircle, tone: 'forest' },
   { href: '/admin/approvals', label: '承認待ち', icon: CheckCircle2, tone: 'harvest' },
   { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck, tone: 'forest' },
   { href: '/admin/orders', label: '受注台帳', icon: ClipboardList, tone: 'trust' },
-  { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles, tone: 'earth' },
-  { href: '/admin/invoices', label: '請求書作成', icon: FileText, tone: 'earth' },
+  { href: '/admin/metrics', label: '評価指標', icon: Gauge, tone: 'earth' },
+  { href: '/admin/invoices', label: '請求書', icon: FileText, tone: 'earth' },
   { href: '/admin/settings', label: '設定', icon: Settings, tone: 'trust' },
 ]
 
@@ -206,13 +206,13 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const alerts: AlertItem[] = []
   if (pendingOrders > 0)
     alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/approvals' })
-  if (pendingReceipts > 0)
-    alerts.push({ id: 'pr', tone: 'warning', label: `未処理の受信データが ${pendingReceipts}件 あります`, count: pendingReceipts, href: '/admin/inbox' })
+  // 受信データの pending_review は「承認待ち受注」と同じFAXを数え直すだけなので出さない（二重表示の防止）
+  void pendingReceipts
   if (failedReceipts > 0)
-    alerts.push({ id: 'fr', tone: 'alert', label: `解析失敗・未紐付けが ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox?filter=review' })
+    alerts.push({ id: 'fr', tone: 'alert', label: `読み取り失敗・取引先不明の受信が ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox' })
   if (missingSpecsCount > 0)
-    alerts.push({ id: 'ms', tone: 'warning', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
-  const notificationCount = pendingOrders + pendingReceipts + failedReceipts
+    alerts.push({ id: 'ms', tone: 'info', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
+  const notificationCount = pendingOrders + failedReceipts
 
   // --- 今月の出荷推移（日次） ---
   type ShipItem = { line_total: number | null; orders: { delivery_date: string | null } }

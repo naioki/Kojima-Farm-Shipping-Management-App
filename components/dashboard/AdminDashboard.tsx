@@ -33,7 +33,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
 
       {/* #45 未承認注文・OCR要確認などの重要アラートがある場合は最上部に明示 */}
       {activeAlerts.length > 0 && (
-        <AlertsPanel alerts={activeAlerts} allHref="/admin/approvals" />
+        <AlertsPanel alerts={activeAlerts} />
       )}
 
       {/* #44 本日パック作業（明日納品分）の箱数・パック数コックピット */}
