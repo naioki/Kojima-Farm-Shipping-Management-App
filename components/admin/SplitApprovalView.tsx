@@ -1021,6 +1021,12 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                               />
                               <span className="text-xs text-ink-soft">{row.unit}</span>
                             </div>
+                            {row.quantityAnomaly && row.usualQuantity != null && (
+                              <p className="mt-1 text-xs font-bold text-alert" role="note">
+                                ⚠ いつもは{Math.round(row.usualQuantity)}{row.unit}前後（
+                                {row.quantityAnomaly === 'high' ? '多すぎ' : '少なすぎ'}）。原本を確認
+                              </p>
+                            )}
                           </td>
 
                           <td className="num whitespace-nowrap px-3 py-3 text-right font-mono text-xs tabular-nums text-ink-soft">
