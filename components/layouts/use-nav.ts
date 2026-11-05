@@ -41,7 +41,9 @@ export function useNavState(role: 'admin' | 'staff', hiddenHrefs: readonly strin
     groups.flatMap((g) => g.items.map((it) => it.href)),
   )
 
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(groups.filter((g) => g.label && g.defaultOpen).map((g) => [g.label as string, true])),
+  )
 
   // ページ遷移のたびに現在地を含むグループを開く（ユーザーが閉じた他グループは維持）。
   useEffect(() => {

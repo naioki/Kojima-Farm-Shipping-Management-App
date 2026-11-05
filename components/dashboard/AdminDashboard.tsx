@@ -33,12 +33,12 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
 
       {/* #45 未承認注文・OCR要確認などの重要アラートがある場合は最上部に明示 */}
       {activeAlerts.length > 0 && (
-        <AlertsPanel alerts={activeAlerts} allHref="/admin/approvals" />
+        <AlertsPanel alerts={activeAlerts} />
       )}
 
       {/* #44 本日パック作業（明日納品分）の箱数・パック数コックピット */}
       {tp && (
-        <section className="rounded-2xl bg-[#155c39] p-4 text-white shadow-md space-y-3">
+        <section className="rounded-2xl bg-forest-700 p-4 text-white shadow-md space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/30 text-emerald-200">
@@ -104,20 +104,30 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
         <ShipmentStatusCards stats={data.stats} />
       </section>
 
+      {/* スマホ用の近道。PC では左メニューと同じ内容になるため出さない */}
+      <div className="lg:hidden">
+        <QuickActionsGrid actions={data.actions} />
+      </div>
+
+      {/* お金（今月の受注・出荷・請求・未請求）と最近の受注を、売上グラフより先に置く */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1 lg:order-2">
+          <MonthlySummary rows={data.summary} />
+        </div>
+        <div className="lg:col-span-2 lg:order-1">
+          <RecentOrdersTable orders={data.recentOrders} />
+        </div>
+      </div>
+
       <div>
         <SalesTrendChart data={data.trend} />
       </div>
 
-      <QuickActionsGrid actions={data.actions} />
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RecentOrdersTable orders={data.recentOrders} />
-        </div>
-        <div className="lg:col-span-1">
-          <MonthlySummary rows={data.summary} />
-        </div>
-      </div>
+      <p className="text-right text-xs">
+        <Link href="/admin/metrics" className="font-medium text-trust-600 hover:underline">
+          評価指標（処理時間・ミス・紙の卒業）を見る →
+        </Link>
+      </p>
     </div>
   )
 }

@@ -6,7 +6,8 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
 import { InvoiceCsvExport } from '@/components/admin/InvoiceCsvExport'
 import { formatYen } from '@/lib/calculations/tax'
-import { formatJpMonth } from '@/lib/dates'
+import { formatJpMonth, formatJpDateShort, jstTodayStr } from '@/lib/dates'
+import { dueDateOf, receivableState, summarizeReceivables } from '@/lib/invoices/receivables'
 import type { InvoiceStatus } from '@/types/database'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -32,7 +33,7 @@ export default async function InvoicesPage() {
   const [{ data: invoices, error }, { count: pendingCount }, { count: uninvoicedCount }] = await Promise.all([
     supabase
       .from('invoices')
-      .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date')
+      .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date, due_date')
       .order('created_at', { ascending: false }),
     supabase
       .from('orders')
@@ -51,6 +52,8 @@ export default async function InvoicesPage() {
     : { data: [] as { id: string; name: string }[], error: null }
   if (custErr) console.error('[invoices] 取引先名の解決に失敗:', custErr.message)
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
+  const today = jstTodayStr()
+  const ar = summarizeReceivables(invoices ?? [], today)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -81,6 +84,22 @@ export default async function InvoicesPage() {
         </div>
       )}
 
+      {/* 売掛金（入金待ち・期日超過）。期日は請求書の支払期日、無ければ請求月の翌月末 */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card>
+          <p className="text-xs text-ink-soft">入金待ち</p>
+          <p className="num text-xl font-bold tabular-nums text-ink">{formatYen(ar.unpaidAmount)}</p>
+          <p className="text-xs text-ink-faint">{ar.unpaidCount}件</p>
+        </Card>
+        <Card className={ar.overdueCount > 0 ? 'border-alert' : undefined}>
+          <p className="text-xs text-ink-soft">うち支払期日超過</p>
+          <p className={`num text-xl font-bold tabular-nums ${ar.overdueCount > 0 ? 'text-alert' : 'text-ink'}`}>
+            {formatYen(ar.overdueAmount)}
+          </p>
+          <p className="text-xs text-ink-faint">{ar.overdueCount}件（翌月末払いとして判定）</p>
+        </Card>
+      </div>
+
       <Card className="space-y-4">
         <div>
           <h2 className="font-display text-base font-bold text-ink">請求書を作成</h2>
@@ -104,6 +123,8 @@ export default async function InvoicesPage() {
         <div className="space-y-2">
           {invoices.map((inv) => {
             const s = STATUS_LABEL[inv.status as InvoiceStatus]
+            const rs = receivableState(inv, today)
+            const due = dueDateOf(inv)
             return (
               <Link key={inv.id} href={`/admin/invoices/${inv.id}`}>
                 <Card variant="elevated" interactive className="flex items-center justify-between gap-3">
@@ -111,10 +132,14 @@ export default async function InvoicesPage() {
                     <p className="num font-bold text-ink">{inv.invoice_number}</p>
                     <p className="truncate text-sm text-ink-soft">
                       {customerName.get(inv.customer_id) ?? '—'}・{formatJpMonth(inv.billing_month)}
+                      {rs && due && <>・期日 {formatJpDateShort(due)}</>}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="num font-bold tabular-nums text-ink">{formatYen(inv.total_amount)}</span>
+                    {rs === 'overdue' && (
+                      <span className="rounded-full bg-alert px-2 py-0.5 text-xs font-bold text-white">期日超過</span>
+                    )}
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>
                     <ChevronRight className="h-5 w-5 text-ink-faint" aria-hidden />
                   </div>

@@ -22,6 +22,8 @@ import {
   Ruler,
   MessageSquarePlus,
   Camera,
+  BrainCircuit,
+  Home,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -29,11 +31,15 @@ export interface NavItem {
   href: string
   label: string
   icon: typeof Inbox
+  /** ホバー時の補足説明（ラベルは短く、説明はここに） */
+  hint?: string
 }
 
 /** 業務フェーズで束ねたナビのグループ（label=null は見出し無しの単独項目）。 */
 export interface NavGroup {
   label: string | null
+  /** 初回表示で開いておく（毎日使うグループ）。未指定は閉じる */
+  defaultOpen?: boolean
   items: NavItem[]
 }
 
@@ -47,43 +53,46 @@ export const ADMIN_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: '/admin', label: 'ダッシュボード', icon: LayoutDashboard },
+      { href: '/admin/simple', label: 'かんたん画面', icon: Home, hint: '承認・明日の出荷・今月のお金の3つだけ（大きな文字）' },
       { href: '/field/concierge', label: 'AI相談窓口', icon: Sparkles },
     ],
   },
   {
     label: '毎日の出荷',
+    defaultOpen: true,
     items: [
       { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck },
-      { href: '/field/deliveries', label: '便別積込・配送リスト', icon: Truck },
-      { href: '/field/matrix', label: '週の管理（マトリックス）', icon: Sprout },
+      { href: '/field/deliveries', label: '積込・配送リスト', icon: Truck, hint: '便ごとの積込確認と配送' },
+      { href: '/field/matrix', label: '週の管理', icon: Sprout, hint: '週間マトリックス' },
       { href: '/field/print', label: '帳票・ラベル印刷', icon: Printer },
     ],
   },
   {
     label: '受注',
+    defaultOpen: true,
     items: [
-      { href: '/admin/orders/new', label: '注文の受付（電話・LINE・紙・写真）', icon: PlusCircle },
-      { href: '/admin/approvals', label: '承認待ち（原本と見比べて承認）', icon: CheckSquare },
-      { href: '/admin/inbox', label: '受信ボックス（読み取り失敗の処理）', icon: Inbox },
+      { href: '/admin/orders/new', label: '注文の受付', icon: PlusCircle, hint: '電話・LINE・紙・写真から注文を入れる' },
+      { href: '/admin/approvals', label: '承認待ち', icon: CheckSquare, hint: '原本と見比べて承認する' },
+      { href: '/admin/inbox', label: '読み取り失敗', icon: Inbox, hint: 'FAX・メールの読み取りに失敗した原本の処理' },
       { href: '/admin/orders', label: '受注台帳', icon: ClipboardList },
     ],
   },
   {
     label: '納品書・請求',
+    defaultOpen: true,
     items: [
       { href: '/admin/delivery-notes', label: '納品書の発行', icon: FileCheck2 },
-      { href: '/admin/pricing', label: '単価の確定（請求前）', icon: Coins },
-      { href: '/admin/invoices', label: '請求書の作成・確定', icon: FileText },
+      { href: '/admin/pricing', label: '請求前の単価確認', icon: Coins, hint: '出荷済みで単価が未確定の明細を確定する' },
+      { href: '/admin/invoices', label: '請求書', icon: FileText, hint: '作成・確定・送付' },
     ],
   },
   {
     label: '振り返り・記録',
     items: [
-      { href: '/admin/metrics', label: '評価指標（処理時間・ミス・紙の卒業）', icon: Gauge },
+      { href: '/admin/metrics', label: '評価指標', icon: Gauge, hint: '処理時間・ミス件数・紙の卒業' },
       { href: '/admin/deliveries-report', label: '配送実績', icon: BarChart3 },
-      { href: '/admin/lots', label: 'ロット管理（トレーサビリティ）', icon: Layers },
+      { href: '/admin/lots', label: 'ロット管理', icon: Layers, hint: 'トレーサビリティ' },
       { href: '/admin/spec-reports', label: '現場からの規格報告', icon: Ruler },
-      { href: '/field/feedback', label: '改善要望・バグ報告', icon: MessageSquarePlus },
     ],
   },
   {
@@ -91,11 +100,15 @@ export const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/customers', label: '取引先・納入先', icon: Users },
       { href: '/admin/products', label: '品目', icon: Carrot },
-      { href: '/admin/pricing-master', label: '単価・荷姿マスタ', icon: Tag },
-      { href: '/admin/rules', label: 'AI学習ルール', icon: Sparkles },
+      { href: '/admin/pricing-master', label: '単価・荷姿の設定', icon: Tag, hint: '取引先ごとの単価表と荷姿' },
+      { href: '/admin/rules', label: 'AI学習ルール', icon: BrainCircuit, hint: '取引先ごとの読み取りルール' },
       { href: '/admin/master-import', label: '写真でマスタ登録', icon: Camera },
       { href: '/admin/settings', label: '設定', icon: Settings },
     ],
+  },
+  {
+    label: null,
+    items: [{ href: '/field/feedback', label: '改善要望・バグ報告', icon: MessageSquarePlus }],
   },
 ]
 
@@ -106,10 +119,10 @@ export const STAFF_GROUPS: NavGroup[] = [
     items: [
       { href: '/field/concierge', label: 'AI相談窓口', icon: Sparkles },
       { href: '/field/shipments', label: '収穫・パックボード', icon: PackageCheck },
-      { href: '/field/deliveries', label: '便別積込・配送リスト', icon: Truck },
-      { href: '/field/matrix', label: '週の管理（マトリックス）', icon: Sprout },
+      { href: '/field/deliveries', label: '積込・配送リスト', icon: Truck },
+      { href: '/field/matrix', label: '週の管理', icon: Sprout },
       { href: '/field/print', label: '帳票・ラベル印刷', icon: Printer },
-      { href: '/field/approvals', label: '未確認注文の承認', icon: CheckSquare },
+      { href: '/field/approvals', label: '承認待ち', icon: CheckSquare },
       { href: '/field/report-spec', label: '規格の報告', icon: Ruler },
     ],
   },

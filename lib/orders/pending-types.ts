@@ -25,6 +25,10 @@ export interface PendingOrderItem {
   packConfigId: string | null
   /** この商品×取引先で選べる荷姿（0件＝マスタ未登録なのでゲート対象外） */
   packConfigOptions: PackConfigOption[]
+  /** 過去の承認済み数量と比べて多すぎ/少なすぎ（lib/orders/quantity-anomaly） */
+  quantityAnomaly?: 'high' | 'low' | null
+  /** いつもの数量（同じ取引先×品目の中央値） */
+  usualQuantity?: number | null
 }
 
 export interface DestinationOption {
@@ -90,5 +94,6 @@ export function pendingReasons(o: PendingOrder): string[] {
   if (o.needsDestination) r.push('のうにゅうさき みてい')
   if (o.items.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)) r.push('荷姿 みてい')
   if (o.minConfidence == null || o.minConfidence < 0.7) r.push('AI じしんなし')
+  if (o.items.some((it) => it.quantityAnomaly)) r.push('数量がいつもと違う')
   return r
 }

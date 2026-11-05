@@ -6,6 +6,7 @@ import { LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useNavState } from '@/components/layouts/use-nav'
 import { buildPreservedFieldHref } from '@/components/layouts/nav-items'
+import { NavBadge } from '@/components/layouts/NavBadge'
 
 export interface SidebarUser {
   name: string
@@ -13,7 +14,16 @@ export interface SidebarUser {
 }
 
 /** lg 以上で固定表示。それ以下は MobileNav（ハンバーガー）が担う（design.md）。深緑のナビ地。 */
-export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: SidebarUser }) {
+export function Sidebar({
+  role,
+  user,
+  badges = {},
+}: {
+  role: 'admin' | 'staff'
+  user?: SidebarUser
+  /** href → 未処理件数（0 は表示しない） */
+  badges?: Record<string, number>
+}) {
   const { groups, activeHref, openGroups, toggleGroup } = useNavState(role)
   const searchParams = useSearchParams()
   const currentDate = searchParams?.get('date') || searchParams?.get('week') || null
@@ -31,7 +41,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
         </span>
         <div className="leading-tight">
           <div className="font-display text-lg font-bold text-white">小島農園</div>
-          <div className="text-xs text-forest-200 font-bold">タスク管理</div>
+          <div className="text-xs text-forest-200 font-bold">受注・出荷管理</div>
         </div>
       </div>
 
@@ -39,7 +49,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
         {groups.map((group, gi) => {
           const items = (
             <ul className="space-y-0.5">
-              {group.items.map(({ href, label, icon: Icon }) => {
+              {group.items.map(({ href, label, icon: Icon, hint }) => {
                 const active = href === activeHref
                 const finalHref = buildPreservedFieldHref(href, currentDate, currentProduct)
                 return (
@@ -53,6 +63,7 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
                     <Link
                       href={finalHref}
                       aria-current={active ? 'page' : undefined}
+                      title={hint}
                       className={cn(
                         'flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60',
                         active
@@ -61,7 +72,8 @@ export function Sidebar({ role, user }: { role: 'admin' | 'staff'; user?: Sideba
                       )}
                     >
                       <Icon className="h-5 w-5 shrink-0" aria-hidden />
-                      {label}
+                      <span className="min-w-0 flex-1 truncate">{label}</span>
+                      <NavBadge count={badges[href]} />
                     </Link>
                   </li>
                 )

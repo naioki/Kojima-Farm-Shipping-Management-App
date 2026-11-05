@@ -3,6 +3,7 @@ import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Sidebar } from '@/components/layouts/Sidebar'
 import { MobileNav } from '@/components/layouts/MobileNav'
+import { getNavBadges } from '@/lib/nav/badges'
 import { OpsTracker } from '@/components/layouts/OpsTracker'
 
 /**
@@ -25,12 +26,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // 経営者欄には個人の名前を出さず、農園名「小島農園」を表示する
   const name = role === 'admin' ? '小島農園' : (profile?.full_name?.trim() || user.email?.split('@')[0] || 'スタッフ')
   const roleLabel = role === 'admin' ? '経営者' : '現場スタッフ'
+  const badges = await getNavBadges(role)
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar role={role} user={{ name, roleLabel }} />
+      <Sidebar role={role} user={{ name, roleLabel }} badges={badges} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav role={role} user={{ name, roleLabel }} />
+        <MobileNav role={role} user={{ name, roleLabel }} badges={badges} />
         <main className="flex-1 p-4 lg:p-8">{children}</main>
         <OpsTracker />
       </div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, FileDown, Table, Trash2 } from 'lucide-react'
+import { CheckCircle2, FileDown, Table, Trash2, Send, Wallet, Undo2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { PrintButton } from '@/components/admin/PrintButton'
@@ -14,22 +14,23 @@ export function InvoiceActions({ invoiceId, status }: { invoiceId: string; statu
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  async function finalize() {
+  async function setStatus(next: InvoiceStatus, done: string, confirmMsg?: string) {
+    if (confirmMsg && !window.confirm(confirmMsg)) return
     setBusy(true)
     try {
       const res = await fetch(`/api/invoices/${invoiceId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'finalized' }),
+        body: JSON.stringify({ status: next }),
       })
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(j.error ?? `確定に失敗 (${res.status})`)
+        throw new Error(j.error ?? `更新に失敗 (${res.status})`)
       }
-      toast.success('請求書を確定しました')
+      toast.success(done)
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '確定に失敗しました')
+      toast.error(e instanceof Error ? e.message : '更新に失敗しました')
     } finally {
       setBusy(false)
     }
@@ -79,9 +80,36 @@ export function InvoiceActions({ invoiceId, status }: { invoiceId: string; statu
       </a>
       <PrintButton />
       {status === 'draft' && (
-        <Button onClick={finalize} isLoading={busy} size="sm">
+        <Button onClick={() => setStatus('finalized', '請求書を確定しました')} isLoading={busy} size="sm">
           <CheckCircle2 className="h-4 w-4" aria-hidden />
           確定する
+        </Button>
+      )}
+      {status === 'finalized' && (
+        <Button variant="secondary" onClick={() => setStatus('sent', '送付済にしました')} isLoading={busy} size="sm">
+          <Send className="h-4 w-4" aria-hidden />
+          送付済にする
+        </Button>
+      )}
+      {(status === 'finalized' || status === 'sent') && (
+        <Button
+          onClick={() => setStatus('paid', '入金済にしました', '入金を確認しましたか？（入金済にします）')}
+          isLoading={busy}
+          size="sm"
+        >
+          <Wallet className="h-4 w-4" aria-hidden />
+          入金済にする
+        </Button>
+      )}
+      {status === 'paid' && (
+        <Button
+          variant="tertiary"
+          onClick={() => setStatus('sent', '入金済を取り消しました', '入金済を取り消しますか？')}
+          isLoading={busy}
+          size="sm"
+        >
+          <Undo2 className="h-4 w-4" aria-hidden />
+          入金を取り消す
         </Button>
       )}
       <button

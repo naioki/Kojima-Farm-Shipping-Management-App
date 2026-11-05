@@ -23,7 +23,7 @@ const toneCfg: Record<AlertTone, { icon: typeof Info; ring: string; chip: string
 /**
  * 要対応アラート。0件のときは「対応待ちはありません」を出す（空状態必須）。
  */
-export function AlertsPanel({ alerts, allHref = '/admin/inbox' }: { alerts: AlertItem[]; allHref?: string }) {
+export function AlertsPanel({ alerts, allHref }: { alerts: AlertItem[]; allHref?: string }) {
   return (
     <Card variant="elevated" className="h-full">
       <h2 className="mb-3 text-sm font-semibold text-ink">要対応アラート</h2>
@@ -61,11 +61,13 @@ export function AlertsPanel({ alerts, allHref = '/admin/inbox' }: { alerts: Aler
         </ul>
       )}
 
-      <div className="mt-2 border-t border-line/60 pt-2">
-        <Link href={allHref} className="text-xs font-medium text-trust-600 hover:underline">
-          すべてのアラートを見る →
-        </Link>
-      </div>
+      {allHref && (
+        <div className="mt-2 border-t border-line/60 pt-2">
+          <Link href={allHref} className="text-xs font-medium text-trust-600 hover:underline">
+            すべてのアラートを見る →
+          </Link>
+        </div>
+      )}
     </Card>
   )
 }

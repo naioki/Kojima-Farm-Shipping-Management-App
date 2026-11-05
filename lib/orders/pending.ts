@@ -18,6 +18,8 @@ import type {
 } from './pending-types'
 import { pendingReasons } from './pending-types'
 import { skipsDestinationGate } from '@/lib/customers/settings'
+import { detectQuantityAnomaly } from './quantity-anomaly'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 export type {
   PackConfigOption,
@@ -104,6 +106,25 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
     : { data: [] as { id: string; product_id: string; customer_id: string | null; label: string }[], error: null }
   if (packErr) throw new Error(`荷姿マスタの取得に失敗しました: ${packErr.message}`)
 
+  // いつもの数量（同じ取引先×品目の過去90日の承認済み実績）。取れなくても承認画面は出す
+  const historyByPair = new Map<string, number[]>()
+  if (productIds.length && customerIds.length) {
+    const { data: hist, error: histErr } = await supabase
+      .from('order_items')
+      .select('product_id, quantity, orders!inner(customer_id, status, delivery_date)')
+      .in('product_id', productIds)
+      .in('orders.customer_id', customerIds)
+      .in('orders.status', ['approved', 'shipped', 'invoiced'])
+      .gte('orders.delivery_date', shiftDateStr(jstTodayStr(), -90))
+      .limit(5000)
+    if (histErr) console.error('[pending] 過去の数量の取得に失敗:', histErr.message)
+    for (const h of (hist ?? []) as unknown as { product_id: string; quantity: number; orders: { customer_id: string } | null }[]) {
+      if (!h.orders) continue
+      const k = `${h.orders.customer_id}:${h.product_id}`
+      historyByPair.set(k, [...(historyByPair.get(k) ?? []), Number(h.quantity)])
+    }
+  }
+
   const { data: receiptRows, error: receiptErr } = await supabase
     .from('order_receipts')
     .select('id, order_id, channel, r2_key, raw_payload, is_revision, parent_id')
@@ -175,6 +196,13 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
               (pc.customer_id === o.customer_id || pc.customer_id === null),
           )
           .map((pc) => ({ id: pc.id, label: pc.label })),
+        ...(() => {
+          const { anomaly, usual } = detectQuantityAnomaly(
+            Number(it.quantity),
+            historyByPair.get(`${o.customer_id}:${it.product_id}`) ?? [],
+          )
+          return { quantityAnomaly: anomaly, usualQuantity: usual }
+        })(),
       }))
       const confidences = orderItems.map((i) => i.confidence)
       const minConfidence = confidences.length
@@ -208,8 +236,10 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
 
       const needsPackConfig = orderItems.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)
       const allConfident = orderItems.length > 0 && minConfidence != null && minConfidence >= threshold
+      // いつもと違う数量がある注文はスタッフ承認・自動承認の対象にせず、人が確かめる
+      const hasAnomaly = orderItems.some((it) => it.quantityAnomaly)
       const staffApprovable =
-        Boolean(o.customer_id) && !needsDeliveryDate && !needsDestination && !needsPackConfig && allConfident
+        Boolean(o.customer_id) && !needsDeliveryDate && !needsDestination && !needsPackConfig && allConfident && !hasAnomaly
 
       const rr = receiptByOrder.get(o.id)
       const receipt: ReceiptOriginalInfo | null = rr
