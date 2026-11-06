@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Check, ShieldCheck, AlertCircle, AlertTriangle, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -14,6 +15,7 @@ import {
   COLLAPSED_SECTIONS,
   type SettingSection,
   type SettingKind,
+  resolveToggle,
 } from '@/lib/settings-spec'
 
 export interface SettingItem {
@@ -33,6 +35,7 @@ export interface SettingItem {
   value?: string
   dependsOn?: { key: string; equals: string }
   danger?: boolean
+  managedAt?: { href: string; label: string }
 }
 
 /**
@@ -44,21 +47,24 @@ export interface SettingItem {
 export function SettingsForm({ items }: { items: SettingItem[] }) {
   const router = useRouter()
   // kind==='prompt' は PromptEditor が独立して保存するのでグローバル save から除外。
-  const nonPromptItems = items.filter((i) => i.kind !== 'prompt')
+  // 別の画面で編集する項目（managedAt）も保存対象外（表示とリンクのみ）。
+  const nonPromptItems = items.filter((i) => i.kind !== 'prompt' && !i.managedAt)
 
-  const [values, setValues] = useState<Record<string, string>>(() => {
+  const [initialValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {}
-    for (const it of nonPromptItems) {
+    for (const it of items) {
       v[it.key] = it.secret
         ? ''
         : it.kind === 'toggle'
-          ? it.value ?? it.toggleDefault ?? 'on'
+          ? // 未設定のときは実際の動作（toggleDefault）をそのまま表示する
+            resolveToggle(it.value, it.toggleDefault)
           : it.kind === 'select'
             ? it.value || it.selectDefault || it.options?.[0]?.value || ''
             : it.value ?? ''
     }
     return v
   })
+  const [values, setValues] = useState<Record<string, string>>(initialValues)
   const [saving, setSaving] = useState(false)
 
   const set = (k: string, val: string) => setValues((p) => ({ ...p, [k]: val }))
@@ -71,7 +77,14 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
   async function save() {
     setSaving(true)
     try {
-      const entries = nonPromptItems.map((it) => ({ key: it.key, value: values[it.key] ?? '' }))
+      // 変更した項目だけ送る（開きっぱなしの別タブで保存された値を黙って戻さないため）
+      const entries = nonPromptItems
+        .filter((it) => (values[it.key] ?? '') !== (initialValues[it.key] ?? ''))
+        .map((it) => ({ key: it.key, value: values[it.key] ?? '' }))
+      if (entries.length === 0) {
+        toast('変更はありません')
+        return
+      }
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -111,6 +124,35 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
       )
     }
 
+    if (it.managedAt) {
+      const label =
+        it.kind === 'toggle'
+          ? initialValues[it.key] === 'on'
+            ? 'オン'
+            : 'オフ'
+          : it.key === 'AUTO_APPROVE_THRESHOLD'
+            ? `${Math.round((Number(it.value) || 0.8) * 100)}%以上`
+            : it.value
+              ? '設定あり'
+              : '自動'
+      return (
+        <div key={it.key} className="space-y-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-base font-bold text-ink">{it.label}</span>
+            <span className="rounded-full border border-line bg-bg-soft px-2.5 py-0.5 text-sm font-bold text-ink">
+              {label}
+            </span>
+            <Link
+              href={it.managedAt.href}
+              className="inline-flex min-h-10 items-center text-sm font-bold text-trust-700 underline underline-offset-2"
+            >
+              「{it.managedAt.label}」で変更する
+            </Link>
+          </div>
+        </div>
+      )
+    }
+
     const hasSuggestions = it.kind === 'text' && (it.options?.length ?? 0) > 0
     const datalistId = hasSuggestions ? `datalist-${it.key}` : undefined
 
@@ -142,7 +184,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
 
         {it.kind === 'toggle' ? (
           (() => {
-            const on = (values[it.key] ?? 'on') !== 'off'
+            const on = resolveToggle(values[it.key], it.toggleDefault) === 'on'
             return (
               <button
                 id={`set-${it.key}`}
@@ -150,22 +192,22 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                 role="switch"
                 aria-checked={on}
                 onClick={() => set(it.key, on ? 'off' : 'on')}
-                className="inline-flex min-h-[44px] items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-forest-200 focus:ring-offset-2"
+                className="inline-flex min-h-11 items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-forest-200 focus:ring-offset-2"
               >
                 <span
                   className={cn(
                     'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors',
-                    on ? 'bg-forest-600' : 'bg-line-strong dark:bg-ink-soft',
+                    on ? 'bg-forest-600' : 'bg-line-strong',
                   )}
                 >
                   <span
                     className={cn(
-                      'inline-block h-5 w-5 rounded-full bg-bg-card shadow transition-transform',
-                      on ? 'translate-x-6' : 'translate-x-1',
+                      'inline-block h-5 w-5 rounded-full shadow transition-transform',
+                      on ? 'translate-x-6 bg-bg-card' : 'translate-x-1 bg-ink-faint',
                     )}
                   />
                 </span>
-                <span className={cn('text-base font-bold', on ? 'text-forest-800' : 'text-ink-soft')}>
+                <span className={cn('text-base font-bold', on ? 'text-forest-700' : 'text-ink-soft')}>
                   {on ? 'オン' : 'オフ'}
                 </span>
               </button>
@@ -214,7 +256,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                   ))}
                 </datalist>
                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-xs font-bold text-ink-soft">クイック選択:</span>
+                  <span className="text-xs font-bold text-ink-soft">よく使う候補:</span>
                   {it.options!.map((o) => {
                     const currentVal = (values[it.key] ?? '').trim()
                     const active = currentVal === o.value
@@ -274,7 +316,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
 
   // セクションごとに描画
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       {/* 目次: 区分へジャンプ。未設定がある区分は件数を表示 */}
       <nav aria-label="設定の区分" className="flex flex-wrap gap-2">
         {sections.map((section) => {
@@ -287,7 +329,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
             >
               {SECTION_LABELS[section].replace(/（.*）$/, '')}
               {pending > 0 && (
-                <span className="rounded-full bg-warning-bg px-1.5 text-xs font-bold text-ink">{pending}</span>
+                <span className="rounded-full bg-warning-bg px-1.5 text-xs font-bold text-ink">未設定 {pending}</span>
               )}
             </a>
           )

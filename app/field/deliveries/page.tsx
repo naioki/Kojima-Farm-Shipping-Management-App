@@ -14,13 +14,20 @@ import {
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
-import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 import { getStaffFeatures } from '@/lib/field/features'
+
+/** 総数と箱数の内訳（単位は「箱」に統一。端数は端数の箱も数えた合計を添える） */
+function formatBoxBreakdown(quantity: number, cases: number, loose: number): string {
+  if (loose > 0 && cases > 0) return `${quantity} / ${cases}箱＋端数1箱(${loose}P) 計${cases + 1}箱`
+  if (loose > 0) return `${quantity} / 端数1箱(${loose}P)`
+  if (cases > 0) return `${quantity} / ${cases}箱`
+  return String(quantity)
+}
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -346,11 +353,7 @@ export default async function DeliveriesPage({
     dEntry.items.push({
       id: it.id,
       productName: it.product_name,
-      quantityText: formatQty(
-        it.quantity,
-        safePerCase,
-        it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
-      ),
+      quantityText: formatBoxBreakdown(it.quantity, itemCases, itemLoose),
       unit: it.unit,
       quantity: it.quantity,
       fieldStatus: (it as { field_status?: string }).field_status ?? 'not_started',

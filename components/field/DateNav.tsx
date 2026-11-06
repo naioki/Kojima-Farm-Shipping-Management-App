@@ -138,7 +138,7 @@ export function DateNav({
       {!isDefaultSelected && (
         <Link
           href={hrefFor(targetDate)}
-          className="flex sm:hidden h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-forest-600 bg-forest-700 px-3 text-xs font-black text-white shadow-2xs transition hover:bg-forest-800 active:scale-[0.99]"
+          className="flex sm:hidden h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-forest-600 bg-forest-700 px-3 text-xs font-black text-white shadow-2xs transition hover:bg-forest-800 active:scale-[0.99]"
           title="明日納品（本日パック作業）へ戻る"
         >
           <RotateCcw className="h-3.5 w-3.5 shrink-0" />

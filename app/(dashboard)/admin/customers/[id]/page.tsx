@@ -221,7 +221,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
         <div>
           <h2 className="font-display text-base font-bold text-ink">取引ルール（品目別・規格）</h2>
           <p className="text-sm text-ink-soft">
-            P/C はケース記法（例 <span className="num">15c2</span>）の換算基準。「いつものセット」はポータルの初期表示に使われます。
+            入数はケース記法（例 <span className="num">15c2</span>）の換算基準。「いつものセット」はポータルの初期表示に使われます。
           </p>
         </div>
         {lock && !canEdit && (
@@ -234,7 +234,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
           </div>
         )}
         {!products?.length ? (
-          <EmptyState title="商品がありません" description="商品マスタを登録すると編集できます。" />
+          <EmptyState title="品目がありません" description="品目を登録すると編集できます。" />
         ) : (
           <CustomerRulesEditor
             customerId={customer.id}

@@ -115,183 +115,183 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
     }
   }
 
-  const cellInput =
-    'h-10 w-full rounded border border-line-strong bg-bg-card px-2.5 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
+  const fieldInput =
+    'h-10 w-full min-w-0 rounded border border-line-strong bg-bg-card px-2.5 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
+  const labelCls = 'block text-xs font-medium text-ink-soft mb-1'
 
   return (
-    <fieldset disabled={!canEdit} className="overflow-x-auto disabled:opacity-60">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="text-left text-xs text-ink-soft">
-            <th className="px-2 py-2 font-medium">品目</th>
-            <th className="px-2 py-2 font-medium">P/C（入数）</th>
-            <th className="px-2 py-2 font-medium">コンテナ・荷姿</th>
-            <th className="px-2 py-2 font-medium">規格</th>
-            <th className="px-2 py-2 font-medium">シール有無・表記</th>
-            <th className="px-2 py-2 font-medium">袋種別</th>
-            <th className="px-2 py-2 font-medium">カード</th>
-            <th className="px-2 py-2 font-medium">テープ色</th>
-            <th className="px-2 py-2 font-medium">固定の梱包指示</th>
-            <th className="px-2 py-2 font-medium">定番</th>
-            <th className="px-2 py-2 font-medium">既定数</th>
-            <th className="px-2 py-2 font-medium">端数</th>
-            <th className="px-2 py-2 font-medium"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((p) => {
-            const row = rows[p.id]!
-            return (
-              <tr key={p.id} className="border-t border-line align-middle">
-                <td className="px-2 py-2 font-bold text-ink whitespace-nowrap">
-                  {p.name}
-                  <span className="ml-1 text-xs font-normal text-ink-faint">/{p.unit}</span>
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    value={row.packs_per_case ?? ''}
-                    onChange={(e) => patch(p.id, { packs_per_case: numOrNull(e.target.value) })}
-                    className={cn(cellInput, 'num w-20 tabular-nums font-bold')}
-                    placeholder="20"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="text"
-                    value={row.container_type ?? ''}
-                    onChange={(e) => patch(p.id, { container_type: e.target.value })}
-                    className={cn(cellInput, 'w-28')}
-                    placeholder="青コン/茶コン"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="text"
-                    value={row.spec ?? row.label_spec ?? ''}
-                    onChange={(e) => patch(p.id, { spec: e.target.value, label_spec: e.target.value })}
-                    className={cn(cellInput, 'w-28')}
-                    placeholder="200gUP / 2〜3株"
-                  />
-                </td>
-                {/* #47 シール有無・シール表記 */}
-                <td className="px-2 py-2">
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={row.has_seal === true ? 'true' : row.has_seal === false ? 'false' : ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        const nextHasSeal = v === 'true' ? true : v === 'false' ? false : null
-                        patch(p.id, {
-                          has_seal: nextHasSeal,
-                          seal_text: nextHasSeal === true ? (row.seal_text || 'シールあり') : nextHasSeal === false ? 'シールなし' : null,
-                        })
-                      }}
-                      className={cn(cellInput, 'w-24 text-xs font-bold px-1.5')}
-                    >
-                      <option value="">自動判定</option>
-                      <option value="true">🏷️ あり</option>
-                      <option value="false">なし</option>
-                    </select>
-                    <input
-                      type="text"
-                      value={row.seal_text ?? ''}
-                      onChange={(e) => patch(p.id, { seal_text: e.target.value })}
-                      className={cn(cellInput, 'w-24 text-xs')}
-                      placeholder="シール表記"
-                    />
-                  </div>
-                </td>
-                {/* #47 袋種別 */}
-                <td className="px-2 py-2">
+    <fieldset disabled={!canEdit} className="min-w-0 space-y-3 disabled:opacity-60">
+      {products.map((p) => {
+        const row = rows[p.id]!
+        return (
+          <div key={p.id} className="min-w-0 rounded-xl border border-line bg-bg-card p-3 sm:p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="min-w-0 break-words text-base font-bold text-ink">
+                {p.name}
+                <span className="ml-1 text-xs font-normal text-ink-faint">/{p.unit}</span>
+              </h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="min-h-10 shrink-0 whitespace-nowrap"
+                onClick={() => save(p.id)}
+                isLoading={savingId === p.id}
+              >
+                {savedId === p.id ? <Check className="h-4 w-4 text-harvest-600" aria-hidden /> : null}
+                保存
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="min-w-0">
+                <span className={labelCls}>入数（1ケースの入り数）</span>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={row.packs_per_case ?? ''}
+                  onChange={(e) => patch(p.id, { packs_per_case: numOrNull(e.target.value) })}
+                  className={cn(fieldInput, 'num tabular-nums font-bold')}
+                  placeholder="例: 20"
+                />
+              </label>
+              <label className="min-w-0">
+                <span className={labelCls}>コンテナ・荷姿</span>
+                <input
+                  type="text"
+                  value={row.container_type ?? ''}
+                  onChange={(e) => patch(p.id, { container_type: e.target.value })}
+                  className={fieldInput}
+                  placeholder="例: 青コン"
+                />
+              </label>
+              <label className="min-w-0">
+                <span className={labelCls}>規格</span>
+                <input
+                  type="text"
+                  value={row.spec ?? row.label_spec ?? ''}
+                  onChange={(e) => patch(p.id, { spec: e.target.value, label_spec: e.target.value })}
+                  className={fieldInput}
+                  placeholder="例: 200gUP"
+                />
+              </label>
+
+              {/* #47 シール有無・シール表記 */}
+              <div className="min-w-0">
+                <span className={labelCls}>シールの有無・表記</span>
+                <div className="flex min-w-0 items-center gap-1.5">
                   <select
-                    value={row.bag_type ?? ''}
-                    onChange={(e) => patch(p.id, { bag_type: e.target.value || null })}
-                    className={cn(cellInput, 'w-28 text-xs font-bold')}
+                    aria-label={`${p.name} のシール有無`}
+                    value={row.has_seal === true ? 'true' : row.has_seal === false ? 'false' : ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      const nextHasSeal = v === 'true' ? true : v === 'false' ? false : null
+                      patch(p.id, {
+                        has_seal: nextHasSeal,
+                        seal_text: nextHasSeal === true ? (row.seal_text || 'シールあり') : nextHasSeal === false ? 'シールなし' : null,
+                      })
+                    }}
+                    className={cn(fieldInput, 'w-28 shrink-0 text-xs font-bold px-1.5')}
                   >
-                    <option value="">指定なし</option>
-                    <option value="印字袋(FG)">印字袋(FG)</option>
-                    <option value="無地袋">無地袋</option>
+                    <option value="">自動判定</option>
+                    <option value="true">あり</option>
+                    <option value="false">なし</option>
                   </select>
-                </td>
-                <td className="px-2 py-2 text-center">
+                  <input
+                    type="text"
+                    aria-label={`${p.name} のシール表記`}
+                    value={row.seal_text ?? ''}
+                    onChange={(e) => patch(p.id, { seal_text: e.target.value })}
+                    className={cn(fieldInput, 'flex-1 text-xs')}
+                    placeholder="シール表記"
+                  />
+                </div>
+              </div>
+              <label className="min-w-0">
+                <span className={labelCls}>袋の種類</span>
+                <select
+                  value={row.bag_type ?? ''}
+                  onChange={(e) => patch(p.id, { bag_type: e.target.value || null })}
+                  className={cn(fieldInput, 'text-xs font-bold')}
+                >
+                  <option value="">指定なし</option>
+                  <option value="印字袋(FG)">印字袋(FG)</option>
+                  <option value="無地袋">無地袋</option>
+                </select>
+              </label>
+              <label className="min-w-0">
+                <span className={labelCls}>テープの色</span>
+                <input
+                  type="text"
+                  value={row.tape_color ?? ''}
+                  onChange={(e) => patch(p.id, { tape_color: e.target.value })}
+                  className={fieldInput}
+                  placeholder="例: 紫"
+                />
+              </label>
+
+              <label className="min-w-0 sm:col-span-2 lg:col-span-3">
+                <span className={labelCls}>固定の梱包指示</span>
+                <input
+                  type="text"
+                  value={row.packing_notes ?? ''}
+                  onChange={(e) => patch(p.id, { packing_notes: e.target.value })}
+                  className={fieldInput}
+                  placeholder="毎回同じ注意事項があれば入力"
+                />
+              </label>
+
+              <label className="min-w-0">
+                <span className={labelCls}>いつもの数量</span>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={row.default_quantity ?? ''}
+                  onChange={(e) => patch(p.id, { default_quantity: numOrNull(e.target.value) })}
+                  className={cn(fieldInput, 'num tabular-nums')}
+                  placeholder="例: 10"
+                />
+              </label>
+              <label className="min-w-0">
+                <span className={labelCls}>端数の扱い</span>
+                <select
+                  value={row.fraction_policy}
+                  onChange={(e) => patch(p.id, { fraction_policy: e.target.value as FractionPolicy })}
+                  className={cn(fieldInput, 'text-xs')}
+                >
+                  {FRACTION_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 sm:col-span-2 lg:col-span-3">
+                <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm text-ink">
                   <input
                     type="checkbox"
                     checked={row.has_card}
                     onChange={(e) => patch(p.id, { has_card: e.target.checked })}
-                    aria-label={`${p.name} のカード同梱`}
                     className="h-5 w-5 accent-earth-600"
                   />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="text"
-                    value={row.tape_color ?? ''}
-                    onChange={(e) => patch(p.id, { tape_color: e.target.value })}
-                    className={cn(cellInput, 'w-20')}
-                    placeholder="紫/透明"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="text"
-                    value={row.packing_notes ?? ''}
-                    onChange={(e) => patch(p.id, { packing_notes: e.target.value })}
-                    className={cn(cellInput, 'w-36')}
-                    placeholder="毎回同じ注意事項"
-                  />
-                </td>
-                <td className="px-2 py-2 text-center">
+                  カードを同梱する
+                </label>
+                <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm text-ink">
                   <input
                     type="checkbox"
                     checked={row.is_default_set}
                     onChange={(e) => patch(p.id, { is_default_set: e.target.checked })}
-                    aria-label={`${p.name} をいつものセットに含める`}
                     className="h-5 w-5 accent-earth-600"
                   />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    value={row.default_quantity ?? ''}
-                    onChange={(e) => patch(p.id, { default_quantity: numOrNull(e.target.value) })}
-                    className={cn(cellInput, 'num w-20 tabular-nums')}
-                    placeholder="—"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={row.fraction_policy}
-                    onChange={(e) => patch(p.id, { fraction_policy: e.target.value as FractionPolicy })}
-                    className={cn(cellInput, 'w-20 text-xs')}
-                  >
-                    {FRACTION_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-2 py-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => save(p.id)}
-                    isLoading={savingId === p.id}
-                  >
-                    {savedId === p.id ? <Check className="h-4 w-4 text-harvest-600" aria-hidden /> : null}
-                    保存
-                  </Button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                  いつものセットに含める
+                </label>
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </fieldset>
   )
 }

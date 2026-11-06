@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { Sidebar } from '@/components/layouts/Sidebar'
 import { MobileNav } from '@/components/layouts/MobileNav'
 import { ConnectionStatus } from '@/components/field/ConnectionStatus'
 import { FieldLangProvider } from '@/lib/field/lang-context'
@@ -53,12 +54,22 @@ export default async function FieldLayout({ children }: { children: React.ReactN
 
   return (
     <FieldLangProvider>
-      <div className="flex min-h-screen flex-col">
-        <MobileNav role={role} persistent user={{ name, roleLabel }} hiddenHrefs={hiddenHrefs} badges={badges} />
-        <main className="flex-1 px-2.5 py-2 sm:p-4 lg:p-8">{children}</main>
-        <OpsTracker />
-        {/* 圏外インジケーター（features.md §10 失敗#4） */}
-        <ConnectionStatus />
+      <div className="flex min-h-screen">
+        {/* 管理者はPC幅で管理画面と同じ左サイドバー。スタッフは従来どおりハンバーガーのみ */}
+        {role === 'admin' && <Sidebar role={role} user={{ name, roleLabel }} badges={badges} />}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MobileNav
+            role={role}
+            persistent={role === 'staff'}
+            user={{ name, roleLabel }}
+            hiddenHrefs={hiddenHrefs}
+            badges={badges}
+          />
+          <main className="flex-1 px-2.5 py-2 sm:p-4 lg:p-8">{children}</main>
+          <OpsTracker />
+          {/* 圏外インジケーター（features.md §10 失敗#4） */}
+          <ConnectionStatus />
+        </div>
       </div>
     </FieldLangProvider>
   )

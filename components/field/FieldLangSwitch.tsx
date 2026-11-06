@@ -6,39 +6,35 @@ import { cn } from '@/lib/cn'
 export function FieldLangSwitch({ className }: { className?: string }) {
   const { langMode, setLangMode } = useFieldLang()
 
+  const base =
+    'inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 transition-all whitespace-nowrap'
+  const off = 'text-ink bg-transparent hover:bg-bg-card/70'
+
   return (
     <div
       className={cn(
-        'inline-flex items-center rounded-lg bg-black/20 p-0.5 border border-white/20 text-xs font-black shadow-2xs print:hidden',
+        'inline-flex items-center gap-0.5 rounded-lg border border-line-strong bg-bg-soft p-0.5 text-sm font-black shadow-2xs print:hidden',
         className,
       )}
       role="group"
-      aria-label="言語モード切替"
+      aria-label="言語切替"
     >
       <button
         type="button"
         onClick={() => setLangMode('ja')}
-        className={cn(
-          'px-2 py-0.5 rounded-md transition-all flex items-center gap-1',
-          langMode === 'ja'
-            ? 'bg-bg-card text-ink shadow-xs'
-            : 'text-white/80 hover:text-white hover:bg-white/10',
-        )}
+        aria-pressed={langMode === 'ja'}
+        className={cn(base, langMode === 'ja' ? 'bg-forest-700 text-white shadow-xs' : off)}
       >
-        <span>🇯🇵</span>
-        <span className="hidden sm:inline">日本語</span>
+        <span aria-hidden>🇯🇵</span>
+        <span>日本語</span>
       </button>
       <button
         type="button"
         onClick={() => setLangMode('th')}
-        className={cn(
-          'px-2 py-0.5 rounded-md transition-all flex items-center gap-1',
-          langMode === 'th'
-            ? 'bg-harvest-500 text-white shadow-xs font-black'
-            : 'text-white/80 hover:text-white hover:bg-white/10',
-        )}
+        aria-pressed={langMode === 'th'}
+        className={cn(base, langMode === 'th' ? 'bg-harvest-700 text-white shadow-xs' : off)}
       >
-        <span>🇹🇭</span>
+        <span aria-hidden>🇹🇭</span>
         <span>ไทย</span>
       </button>
     </div>

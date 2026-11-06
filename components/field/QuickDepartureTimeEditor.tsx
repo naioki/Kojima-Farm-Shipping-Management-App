@@ -6,7 +6,7 @@ import { Clock, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { useFieldLang } from '@/lib/field/lang-context'
-import { getThaiDepartureTime } from '@/lib/field/thai-dict'
+import { getThaiDepartureTime, THAI_LABELS } from '@/lib/field/thai-dict'
 import { cleanShippingRouteName } from '@/lib/field/shipment-sort'
 
 interface Props {
@@ -139,7 +139,7 @@ export function QuickDepartureTimeEditor({
             handleOpen()
           }}
           className={cn(
-            'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition active:scale-95 print:border-ink-faint print:bg-bg-card',
+            'inline-flex min-h-10 items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition active:scale-95 print:border-ink-faint print:bg-bg-card',
             currentDepartureTime?.startsWith('翌')
               ? 'bg-trust-50 hover:bg-trust-100 border-trust-400 text-trust-700'
               : currentDepartureTime || currentShippingRouteName
@@ -157,7 +157,7 @@ export function QuickDepartureTimeEditor({
           ) : (
             <span>{chipLabel}</span>
           )}
-          <span className="text-xs text-earth-700 underline ml-0.5 print:hidden">変更</span>
+          <span className="text-xs text-earth-700 underline ml-0.5 print:hidden">{isThaiMode ? THAI_LABELS.change : '変更'}</span>
         </button>
       ) : (
         <button
@@ -166,10 +166,10 @@ export function QuickDepartureTimeEditor({
             e.stopPropagation()
             handleOpen()
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-bg-card hover:bg-bg-soft px-2.5 py-1 text-xs font-bold text-ink-soft transition active:scale-95 print:hidden"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line bg-bg-card hover:bg-bg-soft px-2.5 py-1 text-xs font-bold text-ink-soft transition active:scale-95 print:hidden"
         >
           <Clock className="h-3.5 w-3.5 text-earth-600" />
-          <span>出荷時間</span>
+          <span>{currentDepartureTime ? (isThaiMode ? `${THAI_LABELS.shipTime}・${THAI_LABELS.change}` : '出荷時間を変更') : isThaiMode ? THAI_LABELS.setShipTime : '時間を設定'}</span>
         </button>
       )}
 
@@ -195,7 +195,7 @@ export function QuickDepartureTimeEditor({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-lg p-1 text-ink-soft hover:bg-bg-soft"
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-ink-soft hover:bg-bg-soft"
                 aria-label="閉じる"
               >
                 <X className="h-5 w-5" />
@@ -212,7 +212,7 @@ export function QuickDepartureTimeEditor({
                   type="button"
                   onClick={() => setScope('master')}
                   className={cn(
-                    'rounded-lg py-1.5 px-2 text-xs font-black transition',
+                    'min-h-10 rounded-lg py-1.5 px-2 text-xs font-black transition',
                     scope === 'master'
                       ? 'bg-forest-700 text-white shadow-2xs'
                       : 'text-ink-soft hover:text-ink',
@@ -224,7 +224,7 @@ export function QuickDepartureTimeEditor({
                   type="button"
                   onClick={() => setScope('date_only')}
                   className={cn(
-                    'rounded-lg py-1.5 px-2 text-xs font-black transition',
+                    'min-h-10 rounded-lg py-1.5 px-2 text-xs font-black transition',
                     scope === 'date_only'
                       ? 'bg-warning text-white shadow-2xs'
                       : 'text-ink-soft hover:text-ink',
@@ -257,7 +257,7 @@ export function QuickDepartureTimeEditor({
                         setRoute(p.route)
                       }}
                       className={cn(
-                        'flex items-center justify-between rounded-xl border px-3 py-2 text-xs font-black transition active:scale-98 text-left',
+                        'flex items-center justify-between min-h-10 rounded-xl border px-3 py-2 text-xs font-black transition active:scale-98 text-left',
                         isSelected
                           ? 'border-harvest-600 bg-harvest-50 text-forest-900 ring-1 ring-harvest-600'
                           : 'border-line bg-bg-card hover:bg-bg-soft text-ink',
@@ -299,7 +299,7 @@ export function QuickDepartureTimeEditor({
                   type="button"
                   onClick={() => setTime('')}
                   className={cn(
-                    'rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
+                    'min-h-10 rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
                     !time
                       ? 'bg-earth-700 text-white shadow-xs'
                       : 'bg-bg-soft text-ink hover:bg-line',
@@ -313,7 +313,7 @@ export function QuickDepartureTimeEditor({
                     type="button"
                     onClick={() => setTime(t)}
                     className={cn(
-                      'rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
+                      'min-h-10 rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
                       time === t
                         ? 'bg-earth-700 text-white shadow-xs'
                         : 'bg-bg-soft text-ink hover:bg-line',
@@ -345,7 +345,7 @@ export function QuickDepartureTimeEditor({
                     type="button"
                     onClick={() => setRoute(r)}
                     className={cn(
-                      'rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
+                      'min-h-10 rounded-lg px-2.5 py-1 text-xs font-bold transition active:scale-95',
                       route === r
                         ? 'bg-trust-700 text-white shadow-xs'
                         : 'bg-bg-soft text-ink hover:bg-line',

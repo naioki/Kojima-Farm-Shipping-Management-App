@@ -6,7 +6,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
-import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 import {
@@ -41,7 +40,12 @@ export default async function FieldPrintPage({
   const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const features = await getStaffFeatures()
   if (!canStaffUse('printDocs', role, features)) {
-    return <ErrorState message="帳票印刷は解放されていません（設定 → 現場機能の解放）" />
+    return (
+      <EmptyState
+        title="帳票・ラベル印刷はいま使えません"
+        description="現場での印刷は、管理者が設定で解放すると使えるようになります。必要なときは管理者にお声がけください。"
+      />
+    )
   }
 
   // #30 有効な確定注文（approved / shipped / invoiced）のみ抽出
@@ -95,7 +99,6 @@ export default async function FieldPrintPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="hidden sm:block font-display text-lg sm:text-xl font-black text-ink">帳票・ラベル印刷</h1>
-          <FieldViewSwitch active="day" date={date} product={selectedProduct} />
         </div>
         <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProduct} />
       </div>
@@ -107,7 +110,7 @@ export default async function FieldPrintPage({
         />
       ) : (
         <>
-          {/* 🚚 運転手渡し納品書（勘兵衛・オレンジファーム等）1タップ印刷パネル */}
+          {/* 運転手渡し納品書の1タップ印刷パネル */}
           {driverNoteCustomers.length > 0 && (
             <div className="rounded-2xl border-2 border-harvest-600/30 bg-harvest-50/70 p-4 space-y-3 shadow-2xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -120,7 +123,7 @@ export default async function FieldPrintPage({
                       運転手渡し納品書（A4上下2連：納品書＋控）
                     </h2>
                     <p className="text-xs text-forest-900/80">
-                      金額なし・箱数明記 ／ オレンジファームはFAX記載着日で自動印字
+                      金額なし・箱数入り ／ 発行元（会社名）を選んでPDFを開きます
                     </p>
                   </div>
                 </div>
@@ -153,7 +156,7 @@ export default async function FieldPrintPage({
                           <span className="font-black text-sm text-ink">{c.name}</span>
                           <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-harvest-100 border border-harvest-400 px-2 py-0.5 text-xs font-bold text-forest-900">
                             <Building2 className="h-3 w-3" />
-                            既定：{defaultIssuerLabel}
+                            発行元：{defaultIssuerLabel}
                           </span>
                         </div>
                       </div>
@@ -162,24 +165,24 @@ export default async function FieldPrintPage({
                           href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${defaultPreset}&layout=2up`}
                           target="_blank"
                           rel="noopener"
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-harvest-700 px-3 text-xs font-black text-white hover:bg-forest-800 shadow-2xs transition active:scale-95"
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-harvest-700 px-3 text-xs font-black text-white hover:bg-forest-800 shadow-2xs transition active:scale-95"
                         >
                           <FileDown className="h-3.5 w-3.5" />
-                          <span>納品書PDF（{defaultPreset === 'iplus' ? 'アイプラス' : '小島農園'}）</span>
+                          <span>{defaultIssuerLabel}の名前で納品書PDFを開く</span>
                         </a>
                         <a
                           href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${altPreset}&layout=2up`}
                           target="_blank"
                           rel="noopener"
-                          className="inline-flex h-9 items-center gap-1 rounded-lg border border-line-strong bg-bg-soft px-2.5 text-xs font-bold text-ink-soft hover:bg-earth-50 hover:text-ink transition"
-                          title={`発行元名義を「${altIssuerLabel}」に切り替えてPDFを開きます`}
+                          className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-line-strong bg-bg-soft px-2.5 text-xs font-bold text-ink-soft hover:bg-earth-50 hover:text-ink transition"
+                          title={`発行元を「${altIssuerLabel.replace('名義','')}」に切り替えてPDFを開きます`}
                         >
-                          <span>{altIssuerLabel}で開く</span>
+                          <span>発行元を{altIssuerLabel.replace('名義','')}にして開く</span>
                         </a>
                         {role === 'admin' && (
                           <Link
                             href={`/admin/delivery-notes/view?customer=${c.id}&date=${date}&amount=none&issuer=${defaultPreset}&layout=2up`}
-                            className="inline-flex h-9 items-center rounded-lg border border-line px-2.5 text-xs font-bold text-trust-600 hover:bg-bg-soft"
+                            className="inline-flex min-h-10 items-center rounded-lg border border-line px-2.5 text-xs font-bold text-trust-600 hover:bg-bg-soft"
                           >
                             プレビュー
                           </Link>
@@ -232,7 +235,7 @@ export default async function FieldPrintPage({
                       href={sheetHref(id)}
                       target="_blank"
                       rel="noopener"
-                      className="rounded-lg border border-line bg-bg-card px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
+                      className="inline-flex min-h-10 items-center rounded-lg border border-line bg-bg-card px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
                     >
                       出荷表 PDF
                     </a>
@@ -240,7 +243,7 @@ export default async function FieldPrintPage({
                       href={labelsHref(id)}
                       target="_blank"
                       rel="noopener"
-                      className="rounded-lg border border-line bg-bg-card px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
+                      className="inline-flex min-h-10 items-center rounded-lg border border-line bg-bg-card px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
                     >
                       ラベル PDF
                     </a>
