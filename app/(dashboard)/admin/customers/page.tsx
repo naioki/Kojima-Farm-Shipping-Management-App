@@ -29,7 +29,7 @@ export default async function CustomersPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-2xl font-bold text-ink">取引先設定</h1>
+      <h1 className="font-display text-2xl font-bold text-ink">取引先・納入先</h1>
 
       <Card className="space-y-3">
         <h2 className="font-display text-base font-bold text-ink">取引先を追加</h2>

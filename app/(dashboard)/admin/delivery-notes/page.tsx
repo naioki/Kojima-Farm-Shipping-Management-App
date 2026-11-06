@@ -134,12 +134,12 @@ export default async function DeliveryNotesPage({
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-black text-sm text-ink">{c.name}</span>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                  <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-900">
                     <Building2 className="h-3 w-3" />
                     既定：{issuerLabel}
                   </span>
                   {hasOrderOnTarget ? (
-                    <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-bold text-white">
+                    <span className="whitespace-nowrap rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-bold text-white">
                       {formatJpDateShort(targetDate)} 出荷あり
                     </span>
                   ) : (
@@ -195,7 +195,7 @@ export default async function DeliveryNotesPage({
                     <p className="num font-bold text-ink">{n.note_number}</p>
                     <p className="truncate text-sm text-ink-soft">
                       {n.customer_name}・納品 {formatJpDateShort(n.delivery_date)}
-                      <span className="ml-2 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
+                      <span className="whitespace-nowrap ml-2 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
                         {amountModeLabel(parseAmountMode(n.amount_mode))}
                       </span>
                     </p>

@@ -152,12 +152,12 @@ export function QuickDepartureTimeEditor({
           {thaiTime ? (
             <>
               <span className="text-xs sm:text-sm font-black">{thaiTime}</span>
-              <span className="text-[11px] font-bold opacity-85">({chipLabel})</span>
+              <span className="text-xs font-bold opacity-85">({chipLabel})</span>
             </>
           ) : (
             <span>{chipLabel}</span>
           )}
-          <span className="text-[10px] text-earth-700 underline ml-0.5 print:hidden">変更</span>
+          <span className="text-xs text-earth-700 underline ml-0.5 print:hidden">変更</span>
         </button>
       ) : (
         <button
@@ -233,7 +233,7 @@ export function QuickDepartureTimeEditor({
                   📅 この日({deliveryDate.slice(5)})だけ
                 </button>
               </div>
-              <p className="text-[11px] text-ink-muted">
+              <p className="text-xs text-ink-muted">
                 {scope === 'master'
                   ? '💡 一度設定すれば、明日以降も自動で同じ時刻・便名が引き継がれます。'
                   : '💡 今日・この日だけの臨時変更として保存します（翌日以降は元に戻ります）。'}

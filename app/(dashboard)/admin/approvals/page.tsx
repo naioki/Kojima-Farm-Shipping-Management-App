@@ -45,9 +45,9 @@ export default async function AdminApprovalsPage() {
           <div className="flex items-center gap-2">
             <Columns className="h-6 w-6 text-earth-700" aria-hidden />
             <h1 className="font-display text-2xl font-bold text-ink">
-              スプリットビュー注文承認
+              承認待ち
             </h1>
-            <span className="num rounded-full bg-earth-100 px-2.5 py-0.5 font-mono text-xs font-bold tabular-nums text-earth-800">
+            <span className="whitespace-nowrap num rounded-full bg-earth-100 px-2.5 py-0.5 font-mono text-xs font-bold tabular-nums text-earth-800">
               承認待ち {pendingOrders.length} 件
             </span>
           </div>

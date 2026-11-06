@@ -197,7 +197,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
       >
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-ink-soft">品目名</span>
+            <span className="text-xs font-bold text-ink-soft">品目名</span>
             <input
               className={cn(inp, 'w-32 font-bold')}
               value={r.name}
@@ -206,7 +206,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           </label>
 
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-ink-soft">グループ</span>
+            <span className="text-xs font-bold text-ink-soft">グループ</span>
             <input
               className={cn(inp, 'w-20')}
               list="products-table-category-list"
@@ -218,7 +218,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           </label>
 
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-ink-soft">単位</span>
+            <span className="text-xs font-bold text-ink-soft">単位</span>
             <input
               className={cn(inp, 'w-14 text-center')}
               value={r.base_unit}
@@ -228,7 +228,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
 
           {/* #49 標準1箱入数（container_capacity） */}
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-forest-800">標準1箱入数</span>
+            <span className="text-xs font-bold text-forest-800">標準1箱入数</span>
             <input
               className={cn(inp, 'num w-18 text-center font-bold')}
               inputMode="numeric"
@@ -240,7 +240,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
 
           {/* #49 標準単価（default_unit_price） */}
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-ink-soft">標準単価(円)</span>
+            <span className="text-xs font-bold text-ink-soft">標準単価(円)</span>
             <input
               className={cn(inp, 'num w-20 text-right')}
               inputMode="numeric"
@@ -251,7 +251,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           </label>
 
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-ink-soft">税率</span>
+            <span className="text-xs font-bold text-ink-soft">税率</span>
             <select
               className={cn(inp, 'w-16')}
               value={String(r.default_tax_rate)}
@@ -268,7 +268,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           </label>
 
           <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-bold text-ink-soft">在庫数</span>
+            <span className="text-xs font-bold text-ink-soft">在庫数</span>
             <input
               className={cn(inp, 'num w-20 tabular-nums text-right')}
               inputMode="numeric"

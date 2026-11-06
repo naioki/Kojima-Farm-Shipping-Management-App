@@ -127,7 +127,7 @@ export function HarvestPulseSummary({
                   : `前日からの持ち越し: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）`}
               </span>
             </span>
-            <span className="rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-[10px] font-black shrink-0">
+            <span className="whitespace-nowrap rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-xs font-black shrink-0">
               畑からの追加収穫目安: あと {Math.max(0, remainingBoxes - prevCarryover)} 箱
             </span>
           </div>
@@ -137,7 +137,7 @@ export function HarvestPulseSummary({
           <div className="grid grid-cols-2 divide-x divide-white/15 items-center">
             {/* ① 左カラム（主役）：完成箱数 / 目標箱数 */}
             <div className="flex flex-col items-center justify-center px-1">
-              <span className="text-[11px] font-black tracking-wider text-emerald-200 mb-0.5">
+              <span className="text-xs font-black tracking-wider text-emerald-200 mb-0.5">
                 {isThaiMode ? 'จำนวนลัง (箱数・ケース)' : '完成箱数 / 目標箱数'}
               </span>
               <div className="flex items-baseline justify-center gap-1 font-display">
@@ -156,7 +156,7 @@ export function HarvestPulseSummary({
 
             {/* ② 右カラム：完成パック数 / 総数 */}
             <div className="flex flex-col items-center justify-center px-1">
-              <span className="text-[11px] font-bold tracking-wider text-white/80 mb-0.5">
+              <span className="text-xs font-bold tracking-wider text-white/80 mb-0.5">
                 {isThaiMode ? 'จำนวนถุง (総パック数)' : '完成パック数 / 総数'}
               </span>
               <div className="flex items-baseline justify-center gap-1 font-display">
@@ -251,7 +251,7 @@ export function HarvestPulseSummary({
             <Box className="h-4 w-4 text-emerald-600 shrink-0" />
             <span>コンテナ別・規格別の詳細内訳 ／ 翌朝持ち越し登録</span>
             {carryover > 0 && (
-              <span className="rounded bg-amber-100 text-amber-900 px-1.5 py-0.5 text-[10px] font-black">
+              <span className="whitespace-nowrap rounded bg-amber-100 text-amber-900 px-1.5 py-0.5 text-xs font-black">
                 引継 {carryover}箱
               </span>
             )}

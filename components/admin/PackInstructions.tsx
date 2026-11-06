@@ -151,7 +151,7 @@ export function PackInstructions({
               />
               <span
                 className={cn(
-                  'absolute inset-x-0 bottom-0 text-center text-[9px] font-medium leading-tight text-white',
+                  'absolute inset-x-0 bottom-0 text-center text-xs font-medium leading-tight text-white',
                   p.kind === 'caution' ? 'bg-alert/80' : 'bg-harvest-600/80',
                 )}
               >

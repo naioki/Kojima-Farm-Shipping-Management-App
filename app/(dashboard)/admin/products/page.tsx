@@ -47,9 +47,9 @@ export default async function ProductsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold text-ink">商品（品目）設定</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">品目</h1>
           <p className="text-sm text-ink-soft">
-            品目は「何を作るか」と基準単位のみ。荷姿（ケース・箱等）と価格は「価格・荷姿」で管理します。
+            品目は「何を作るか」と基準単位のみ。荷姿（ケース・箱等）と価格は「単価・荷姿の設定」で管理します。
           </p>
         </div>
         <Link
@@ -72,7 +72,7 @@ export default async function ProductsPage() {
       ) : (
         <Card className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-display text-base font-bold text-ink">品目一覧・在庫</h2>
+            <h2 className="font-display text-base font-bold text-ink">品目一覧</h2>
             <span className="text-xs text-ink-soft">※内容を変更したら各行の「保存」を押してください（有効切替・削除は即時反映）</span>
           </div>
           <ProductsTable products={rows} categories={categories} />

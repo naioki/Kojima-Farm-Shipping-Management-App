@@ -88,7 +88,7 @@ export function DateNav({
             </span>
             <span
               className={cn(
-                'rounded-md px-1.5 sm:px-2 py-1 text-[11px] font-black whitespace-nowrap shrink-0',
+                'rounded-md px-1.5 sm:px-2 py-1 text-xs font-black whitespace-nowrap shrink-0',
                 isTodayPackWork
                   ? 'bg-emerald-700 text-white'
                   : isTodayDelivery

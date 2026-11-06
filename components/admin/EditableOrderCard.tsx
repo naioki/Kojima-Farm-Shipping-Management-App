@@ -235,11 +235,11 @@ export function EditableOrderCard({
           <span className="font-semibold text-ink text-base">{customerName}</span>
 
           {destinationName ? (
-            <span className="rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
+            <span title={`🏢 届先: ${destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
               🏢 届先: {destinationName}
             </span>
           ) : needsDestination ? (
-            <span className="rounded-lg bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-300">
+            <span className="whitespace-nowrap rounded-lg bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-300">
               ⚠️ 納入先未定
             </span>
           ) : null}
@@ -391,14 +391,14 @@ export function EditableOrderCard({
                       )}
                     </div>
                     {low && (
-                      <span className="num shrink-0 rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
+                      <span className="whitespace-nowrap num shrink-0 rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
                         {row.confidence != null ? `精度 ${Math.round(row.confidence * 100)}%` : '要確認'}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center justify-end gap-2">
                     {row.saving && (
-                      <span className="text-[11px] font-bold text-trust-600 animate-pulse">
+                      <span className="text-xs font-bold text-trust-600 animate-pulse">
                         保存中...
                       </span>
                     )}

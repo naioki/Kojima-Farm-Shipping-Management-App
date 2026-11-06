@@ -245,7 +245,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
       <div className="hidden print:flex items-center justify-between border-b-2 border-black pb-2 mb-3">
         <div>
           <h2 className="text-lg font-black text-black">
-            🚚 小島農園 便別積込・配送リスト（{formatJpDateShort(effectiveDate)} 納品分）
+            🚚 小島農園 積込・配送リスト（{formatJpDateShort(effectiveDate)} 納品分）
           </h2>
           <p className="text-xs font-bold text-slate-700">
             全 {totalCustomers} 取引先 ／ 総積込数 {totalContainers} 箱
@@ -296,7 +296,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
 
           <div className="flex items-center gap-1.5 shrink-0">
             <span
-              className="rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-[11px] text-white font-black tabular-nums"
+              className="rounded-md bg-white/15 border border-white/20 px-2 py-0.5 text-xs text-white font-black tabular-nums"
               title={`残り積込 ${remainingContainers}箱`}
             >
               {remainingContainers > 0 ? (
@@ -316,7 +316,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/30 px-2 py-1 text-xs text-white/90 border border-white/15 transition disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-              <span className="hidden sm:inline text-[11px] font-bold">更新</span>
+              <span className="hidden sm:inline text-xs font-bold">更新</span>
             </button>
           </div>
         </div>

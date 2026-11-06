@@ -143,12 +143,12 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                 </div>
                 <div className="flex items-center gap-1.5">
                   {r.default_container_type && (
-                    <span className="rounded bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-900">
+                    <span className="whitespace-nowrap rounded bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-900">
                       📦 {r.default_container_type}
                     </span>
                   )}
                   {r.departure_time && (
-                    <span className="rounded bg-earth-100 px-2 py-0.5 text-[11px] font-bold text-earth-800">
+                    <span title={`⏰ ${r.departure_time}発 ${r.shipping_route_name ? `(${r.shipping_route_name})` : ''}`} className="inline-block align-bottom truncate max-w-[12rem] rounded bg-earth-100 px-2 py-0.5 text-xs font-bold text-earth-800">
                       ⏰ {r.departure_time}発 {r.shipping_route_name ? `(${r.shipping_route_name})` : ''}
                     </span>
                   )}
@@ -156,15 +156,15 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-6">
                 <label className="block sm:col-span-1">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">略称（表示用）</span>
+                  <span className="mb-0.5 block text-xs text-ink-faint">略称（表示用）</span>
                   <input value={r.code ?? ''} onChange={(e) => patchRow(r.id, 'code', e.target.value)} className={fieldCls} placeholder="例: 4関東" />
                 </label>
                 <label className="block sm:col-span-2">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">正式名（伝票）</span>
+                  <span className="mb-0.5 block text-xs text-ink-faint">正式名（伝票）</span>
                   <input value={r.full_name} onChange={(e) => patchRow(r.id, 'full_name', e.target.value)} className={fieldCls} />
                 </label>
                 <label className="block sm:col-span-1">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">規定コンテナ</span>
+                  <span className="mb-0.5 block text-xs text-ink-faint">規定コンテナ</span>
                   <input
                     value={r.default_container_type ?? ''}
                     onChange={(e) => patchRow(r.id, 'default_container_type', e.target.value)}
@@ -173,7 +173,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                   />
                 </label>
                 <label className="block sm:col-span-1">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">出荷時間</span>
+                  <span className="mb-0.5 block text-xs text-ink-faint">出荷時間</span>
                   <input
                     type="time"
                     value={r.departure_time ?? ''}
@@ -182,7 +182,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                   />
                 </label>
                 <label className="block sm:col-span-1">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">便名・ルート</span>
+                  <span className="mb-0.5 block text-xs text-ink-faint">便名・ルート</span>
                   <input
                     value={r.shipping_route_name ?? ''}
                     onChange={(e) => patchRow(r.id, 'shipping_route_name', e.target.value)}
@@ -193,7 +193,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
               </div>
               <div className="mt-2">
                 <label className="block">
-                  <span className="mb-0.5 block text-[11px] text-ink-faint">表記ゆれ・OCR別表記（カンマ区切り）</span>
+                  <span className="mb-0.5 block text-xs text-ink-faint">表記ゆれ・OCR別表記（カンマ区切り）</span>
                   <input
                     value={r.aliases.join(', ')}
                     onChange={(e) => patchRow(r.id, 'aliases', e.target.value.split(/[,、]+/).map((s) => s.trim()).filter(Boolean))}

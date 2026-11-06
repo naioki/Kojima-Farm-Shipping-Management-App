@@ -2304,7 +2304,7 @@ export function ShipmentAddForm({
                     ? '🔄 数量上書き'
                     : '✨ 新規出荷登録'}
                 </span>
-                <span className="rounded-lg bg-forest-200/80 px-2.5 py-0.5 text-xs font-black text-forest-900">
+                <span className="whitespace-nowrap rounded-lg bg-forest-200/80 px-2.5 py-0.5 text-xs font-black text-forest-900">
                   {targetDate} 納品分
                 </span>
               </div>
@@ -2312,11 +2312,11 @@ export function ShipmentAddForm({
               {/* 取引先 & 納入先 */}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-[11px] font-bold text-ink-muted">取引先</p>
+                  <p className="text-xs font-bold text-ink-muted">取引先</p>
                   <p className="font-black text-base text-ink">{custObj?.name || '未指定'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-ink-muted">納入先</p>
+                  <p className="text-xs font-bold text-ink-muted">納入先</p>
                   <p className="font-bold text-sm text-ink">{destObj?.label || '（指定なし・通常便）'}</p>
                 </div>
               </div>
@@ -2324,12 +2324,12 @@ export function ShipmentAddForm({
               {/* 品目 & 荷姿（コンテナ・規格・シール・カード） */}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-[11px] font-bold text-ink-muted">出荷品目・規格</p>
+                  <p className="text-xs font-bold text-ink-muted">出荷品目・規格</p>
                   <p className="font-black text-base text-ink">{prodObj?.name || 'チンゲン菜'}</p>
                   <p className="text-xs font-bold text-forest-800 mt-0.5">{spec || `入数${inputPacksPerCase}`}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-ink-muted">容器・シール・カード</p>
+                  <p className="text-xs font-bold text-ink-muted">容器・シール・カード</p>
                   <p className="font-black text-sm text-ink">{containerType || '青コン'}</p>
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     <span className="text-xs font-bold text-ink-soft">
@@ -2346,7 +2346,7 @@ export function ShipmentAddForm({
 
               {/* 数量（差分表示） */}
               <div className="rounded-xl border border-forest-300 bg-white p-3.5 space-y-1">
-                <p className="text-[11px] font-bold text-ink-muted">出荷数量・ケース換算</p>
+                <p className="text-xs font-bold text-ink-muted">出荷数量・ケース換算</p>
                 {existingShipmentInfo ? (
                   <div className="space-y-1">
                     <div className="flex items-center gap-3 text-sm">
@@ -2467,7 +2467,7 @@ export function ShipmentAddForm({
                   注文書・写真・自然言語からAIスマート入力
                 </span>
                 {appliedRulesCount > 0 && (
-                  <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-[10px] font-black text-emerald-900">
+                  <span className="whitespace-nowrap rounded-full bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-xs font-black text-emerald-900">
                     ✓ 事前指示書 {appliedRulesCount}件 適用済
                   </span>
                 )}
@@ -2485,7 +2485,7 @@ export function ShipmentAddForm({
                   <Sparkles className="h-4 w-4 text-emerald-300" />
                   <span>📄 注文書・写真・ファイルから自動読込</span>
                 </span>
-                <span className="text-[11px] font-bold text-emerald-200 bg-white/10 px-2 py-0.5 rounded">
+                <span className="text-xs font-bold text-emerald-200 bg-white/10 px-2 py-0.5 rounded">
                   カメラ / 写真 / PDF / Excel ➜
                 </span>
               </button>
@@ -2507,7 +2507,7 @@ export function ShipmentAddForm({
                       <span className="text-xs font-black text-forest-950 block">
                         📎 {attachedFilePayload?.fileName || '注文書画像を添付中'}
                       </span>
-                      <span className="text-[10px] font-bold text-emerald-800">
+                      <span className="text-xs font-bold text-emerald-800">
                         下のテキスト欄に補足指示を書いて「AIで解析して入力」を押すと画像＋指示で再解析できます
                       </span>
                     </div>
@@ -2561,7 +2561,7 @@ export function ShipmentAddForm({
 
               {/* 解析ボタン（画像が添付されていればテキストが空でも押せる！） */}
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-ink-muted">
+                <span className="text-xs text-ink-muted">
                   画像選択時に自動解析されます。テキスト入力後や再解析時は右のボタンを押してください
                 </span>
                 <Button
@@ -2620,7 +2620,7 @@ export function ShipmentAddForm({
                           【AI読み取り結果まとめ】わかる範囲をすべて入力しました。この内容でよろしいですか？
                         </span>
                       </p>
-                      <p className="text-[11px] font-bold text-ink-muted mt-0.5">
+                      <p className="text-xs font-bold text-ink-muted mt-0.5">
                         取引先: <span className="text-ink font-black">{parsedCandidates[0]?.customer_name || custObj?.name || '自動判定'}</span>
                         {' ／ '}容器: <span className="text-ink font-black">{parsedCandidates[0]?.container_type || containerType}</span>
                         {' ／ '}入数: <span className="text-ink font-black">{parsedCandidates[0]?.packs_per_case || inputPacksPerCase}P/箱</span>
@@ -2630,7 +2630,7 @@ export function ShipmentAddForm({
                       type="button"
                       onClick={() => handleSaveRuleToMaster()}
                       disabled={savingAiRule}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-900 transition"
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-900 transition"
                       title="この取引先の読み取り特徴を事前指示書（AIルール）に保存します"
                     >
                       <BookmarkPlus className="h-3.5 w-3.5 text-emerald-700" />
@@ -2641,7 +2641,7 @@ export function ShipmentAddForm({
                   {/* ① 週間表・複数日が含まれる場合の「登録対象日スコープ」ワンタップ切替（質問①への回答機能） */}
                   {uniqueCandidateDates.length >= 2 && (
                     <div className="rounded-xl bg-forest-50/80 border border-forest-200 p-2.5 space-y-1.5">
-                      <p className="text-[11px] font-black text-forest-950">
+                      <p className="text-xs font-black text-forest-950">
                         📅 複数日（{uniqueCandidateDates.length}日分）の週間表が検出されました。反映する範囲を選択してください：
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -2689,7 +2689,7 @@ export function ShipmentAddForm({
                               📌 確認：{formatShortDateWithWeekday(cand.delivery_date)}「{cand.destination_name}（{cand.cases}箱＝{cand.quantity}P）」に欄外内訳があります
                             </span>
                           </p>
-                          <p className="text-[11px] font-bold text-amber-900">
+                          <p className="text-xs font-bold text-amber-900">
                             {cand.note} — 現場ボードでの登録方法を選べます：
                           </p>
                           <div className="flex flex-wrap gap-1.5 pt-0.5">
@@ -2774,7 +2774,7 @@ export function ShipmentAddForm({
                                 }}
                                 className="h-4 w-4 rounded border-forest-400 text-forest-700 focus:ring-forest-500"
                               />
-                              <span className="rounded-md bg-forest-900 text-white px-2 py-0.5 text-xs font-black shrink-0">
+                              <span className="whitespace-nowrap rounded-md bg-forest-900 text-white px-2 py-0.5 text-xs font-black shrink-0">
                                 {formatShortDateWithWeekday(cand.delivery_date)}
                               </span>
                               {/* 表示は常に「取引先 ＞ 納入先」（CLAUDE.md） */}
@@ -2789,31 +2789,31 @@ export function ShipmentAddForm({
                             {/* ステータス・差分バッジ */}
                             <div className="flex items-center gap-1 shrink-0">
                               {cand.registered ? (
-                                <span className="rounded bg-emerald-600 text-white px-2 py-0.5 text-[10px] font-black">
+                                <span className="whitespace-nowrap rounded bg-emerald-600 text-white px-2 py-0.5 text-xs font-black">
                                   ✓ 反映済
                                 </span>
                               ) : isZero ? (
                                 hasExisting ? (
-                                  <span className="rounded bg-red-100 border border-red-300 text-red-900 px-2 py-0.5 text-[10px] font-black">
+                                  <span className="whitespace-nowrap rounded bg-red-100 border border-red-300 text-red-900 px-2 py-0.5 text-xs font-black">
                                     🗑️ 既存取消 ({cand.existing_quantity}P→0P)
                                   </span>
                                 ) : (
-                                  <span className="rounded bg-slate-200 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                                  <span className="whitespace-nowrap rounded bg-slate-200 text-slate-700 px-2 py-0.5 text-xs font-bold">
                                     ー 注文なし (0P・スキップ)
                                   </span>
                                 )
                               ) : hasExisting ? (
                                 cand.existing_quantity === qNum ? (
-                                  <span className="rounded bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-black">
+                                  <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-900 px-2 py-0.5 text-xs font-black">
                                     ✓ 登録済と同数 ({qNum}P)
                                   </span>
                                 ) : (
-                                  <span className="rounded bg-amber-100 border border-amber-300 text-amber-950 px-2 py-0.5 text-[10px] font-black">
+                                  <span className="whitespace-nowrap rounded bg-amber-100 border border-amber-300 text-amber-950 px-2 py-0.5 text-xs font-black">
                                     🔄 変更 ({cand.existing_quantity}P ➔ {qNum}P)
                                   </span>
                                 )
                               ) : (
-                                <span className="rounded bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-black">
+                                <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-900 px-2 py-0.5 text-xs font-black">
                                   ✨ 新規登録
                                 </span>
                               )}
@@ -2827,14 +2827,14 @@ export function ShipmentAddForm({
                                 {cand.product_name || `明細${cIdx + 1}`}
                               </span>
                               {cand.spec && (
-                                <span className="rounded bg-sand-100 border border-sand-300 px-1.5 py-0.5 text-[10px] font-black text-ink">
+                                <span title={String(cand.spec)} className="inline-block align-bottom truncate max-w-[12rem] rounded bg-sand-100 border border-sand-300 px-1.5 py-0.5 text-xs font-black text-ink">
                                   {cand.spec}
                                 </span>
                               )}
                               {cand.has_seal !== null && cand.has_seal !== undefined && (
                                 <span
                                   className={cn(
-                                    'rounded px-1.5 py-0.5 text-[10px] font-black border',
+                                    'rounded px-1.5 py-0.5 text-xs font-black border',
                                     cand.has_seal
                                       ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                                       : 'bg-slate-100 border-slate-300 text-slate-600',
@@ -2844,12 +2844,12 @@ export function ShipmentAddForm({
                                 </span>
                               )}
                               {isRedModified && (
-                                <span className="rounded bg-red-50 border border-red-300 text-red-800 px-1.5 py-0.5 text-[10px] font-black">
+                                <span className="whitespace-nowrap rounded bg-red-50 border border-red-300 text-red-800 px-1.5 py-0.5 text-xs font-black">
                                   🔴 赤字・変更箇所
                                 </span>
                               )}
                               {cand.note && (
-                                <span className="text-[10px] font-bold text-ink-soft truncate max-w-[210px]">
+                                <span className="text-xs font-bold text-ink-soft truncate max-w-[210px]">
                                   📝 {cand.note}
                                 </span>
                               )}
@@ -2897,7 +2897,7 @@ export function ShipmentAddForm({
                           未登録の取引先「{newCustomerName || parsedCandidates[0]?.customer_name}」が検出されました。新規取引先として登録しますか？
                         </span>
                       </p>
-                      <p className="text-[11px] font-bold text-amber-900">
+                      <p className="text-xs font-bold text-amber-900">
                         別会社の納入先に混ざらないよう自動ストップしました。下の「✨ 新規取引先のワンストップ一括登録」で取引先を作成してから反映してください。
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -2960,7 +2960,7 @@ export function ShipmentAddForm({
                       type="button"
                       onClick={() => handleSaveRuleToMaster()}
                       disabled={savingAiRule}
-                      className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-0.5 text-[10px] font-black text-emerald-900 hover:bg-emerald-100"
+                      className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-0.5 text-xs font-black text-emerald-900 hover:bg-emerald-100"
                     >
                       <BookmarkPlus className="h-3 w-3" />
                       <span>指示書に記憶</span>
@@ -3090,7 +3090,7 @@ export function ShipmentAddForm({
                         type="button"
                         onClick={() => setShippingTime(opt.val)}
                         className={cn(
-                          'rounded-md py-1 text-[11px] font-black transition',
+                          'rounded-md py-1 text-xs font-black transition',
                           shippingTime === opt.val
                             ? 'bg-white text-forest-900 shadow-2xs ring-1 ring-forest-600/20'
                             : 'text-ink-muted hover:text-ink',
@@ -3167,7 +3167,7 @@ export function ShipmentAddForm({
                       </span>
                       <div>
                         <h4 className="text-xs font-black text-forest-950">✨ 新規取引先のワンストップ一括登録</h4>
-                        <p className="text-[10px] text-ink-muted">納入先・入数ルール・AI解析ルールも同時に登録し即座に適用します</p>
+                        <p className="text-xs text-ink-muted">納入先・入数ルール・AI解析ルールも同時に登録し即座に適用します</p>
                       </div>
                     </div>
                     <button
@@ -3253,7 +3253,7 @@ export function ShipmentAddForm({
                     <div className="sm:col-span-2 space-y-1">
                       <div className="flex items-center justify-between">
                         <label className="font-black text-ink">伝票上の表記・別名（AI自動認識用）</label>
-                        <span className="text-[10px] text-ink-muted">カンマ区切りで複数指定可</span>
+                        <span className="text-xs text-ink-muted">カンマ区切りで複数指定可</span>
                       </div>
                       <Input
                         placeholder="例: やなぎさわファーム, ランドローム, 株式会社 やなぎさわファーム"
@@ -3261,7 +3261,7 @@ export function ShipmentAddForm({
                         onChange={(e) => setNewAliases(e.target.value)}
                         className="h-9 text-xs"
                       />
-                      <p className="text-[10px] text-forest-800">
+                      <p className="text-xs text-forest-800">
                         💡 ここに入力した別名やルールは AI（ai_rules）にも即座に学習され、次回以降のFAX・注文書で自動認識されます。
                       </p>
                     </div>
@@ -3475,7 +3475,7 @@ export function ShipmentAddForm({
                   <label className="text-xs font-black text-forest-950 flex items-center gap-1.5">
                     <span>📦 数量入力（箱数・入数・総パック数の連動計算）</span>
                   </label>
-                  <span className="text-[11px] font-bold text-forest-700 bg-forest-100 px-2 py-0.5 rounded-full">
+                  <span className="text-xs font-bold text-forest-700 bg-forest-100 px-2 py-0.5 rounded-full">
                     どの枠に入力しても自動計算
                   </span>
                 </div>
@@ -3485,7 +3485,7 @@ export function ShipmentAddForm({
                   <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-ink">① 1箱の入数</span>
-                      <span className="text-[10px] font-bold text-ink-muted">P/箱</span>
+                      <span className="text-xs font-bold text-ink-muted">P/箱</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <input
@@ -3500,7 +3500,7 @@ export function ShipmentAddForm({
                           type="button"
                           onClick={() => handlePacksPerCaseChange(20)}
                           className={cn(
-                            'text-[10px] font-bold px-2 py-0.5 rounded transition-colors',
+                            'text-xs font-bold px-2 py-0.5 rounded transition-colors',
                             inputPacksPerCase === 20 ? 'bg-forest-600 text-white' : 'bg-sand-100 hover:bg-sand-200 text-ink',
                           )}
                         >
@@ -3510,7 +3510,7 @@ export function ShipmentAddForm({
                           type="button"
                           onClick={() => handlePacksPerCaseChange(24)}
                           className={cn(
-                            'text-[10px] font-bold px-2 py-0.5 rounded transition-colors',
+                            'text-xs font-bold px-2 py-0.5 rounded transition-colors',
                             inputPacksPerCase === 24 ? 'bg-forest-600 text-white' : 'bg-sand-100 hover:bg-sand-200 text-ink',
                           )}
                         >
@@ -3518,14 +3518,14 @@ export function ShipmentAddForm({
                         </button>
                       </div>
                     </div>
-                    <p className="text-[10px] text-ink-muted">標準: 20P（NSK: 24P）</p>
+                    <p className="text-xs text-ink-muted">標準: 20P（NSK: 24P）</p>
                   </div>
 
                   {/* ② 箱数（ケース数） */}
                   <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-forest-900">② 箱数（ケース）</span>
-                      <span className="text-[10px] font-bold text-forest-700">箱 / ケース</span>
+                      <span className="text-xs font-bold text-forest-700">箱 / ケース</span>
                     </div>
                     <input
                       type="number"
@@ -3556,7 +3556,7 @@ export function ShipmentAddForm({
                   <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-emerald-900">③ 総パック数</span>
-                      <span className="text-[10px] font-bold text-emerald-700">{unit}</span>
+                      <span className="text-xs font-bold text-emerald-700">{unit}</span>
                     </div>
                     <input
                       type="number"
@@ -3587,7 +3587,7 @@ export function ShipmentAddForm({
                           setInputTotalPacks('')
                           setQtyRaw('')
                         }}
-                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700 hover:bg-red-100"
+                        className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700 hover:bg-red-100"
                       >
                         クリア
                       </button>
@@ -3677,7 +3677,7 @@ export function ShipmentAddForm({
                 </div>
 
                 <div className="flex items-center gap-2 pt-0.5">
-                  <span className="text-[11px] font-bold text-ink-muted shrink-0">規格表記:</span>
+                  <span className="text-xs font-bold text-ink-muted shrink-0">規格表記:</span>
                   <input
                     type="text"
                     value={spec}

@@ -151,7 +151,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
 
   const handleQuickApprove = useCallback(
     async (order: PendingOrder) => {
-      const r = pendingReasons(order)
+      const r = pendingReasons(order, { kana: false })
       if (r.length > 0) return
       const curIdx = visibleOrders.findIndex((o) => o.id === order.id)
       const nextOrder = visibleOrders[curIdx + 1] ?? visibleOrders[curIdx - 1] ?? null
@@ -242,7 +242,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
 
   // 高確信度注文（警告理由が0件・日付・納入先確定済み）
   const confidentOrders = useMemo(
-    () => visibleOrders.filter((o) => pendingReasons(o).length === 0),
+    () => visibleOrders.filter((o) => pendingReasons(o, { kana: false }).length === 0),
     [visibleOrders],
   )
 
@@ -298,7 +298,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   }
 
   const currentRows = rowsByOrder[selectedOrder.id] ?? []
-  const reasons = pendingReasons(selectedOrder)
+  const reasons = pendingReasons(selectedOrder, { kana: false })
 
   function patchRow(orderId: string, itemId: string, patch: Partial<EditableRow>) {
     setRowsByOrder((prev) => ({
@@ -566,7 +566,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
             >
               <Zap className="h-3.5 w-3.5 text-warning-bg" aria-hidden />
               <span>安心・高確信な注文を一括承認</span>
-              <span className="rounded-full bg-white/20 px-2 py-0.2 font-mono text-[11px] font-bold">
+              <span className="whitespace-nowrap rounded-full bg-white/20 px-2 py-0.2 font-mono text-xs font-bold">
                 {confidentOrders.length}件
               </span>
             </Button>
@@ -648,7 +648,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
       <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
         {orders.map((o, idx) => {
           const isSelected = o.id === selectedOrder.id
-          const hasWarning = pendingReasons(o).length > 0
+          const hasWarning = pendingReasons(o, { kana: false }).length > 0
           const isChecked = selectedIdsForBulk.has(o.id)
           return (
             <div
@@ -682,7 +682,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                 }}
                 className="flex items-center gap-2 text-left"
               >
-                <span className="num rounded bg-black/10 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">
+                <span className="whitespace-nowrap num rounded bg-black/10 px-1.5 py-0.5 font-mono text-xs tabular-nums">
                   #{idx + 1}
                 </span>
                 <ColorDot color={o.customerColor} name={o.customerName} />
@@ -721,7 +721,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                 受信原本プレビュー（Kojima-FAX Google Drive 連携）
               </span>
               {selectedOrder.receipt?.isRevision && (
-                <span className="rounded bg-warning-bg px-2 py-0.5 text-[11px] font-bold text-warning">
+                <span className="whitespace-nowrap rounded bg-warning-bg px-2 py-0.5 text-xs font-bold text-warning">
                   再送・追記FAX
                 </span>
               )}
@@ -954,12 +954,12 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                         <tr key={row.id} className={cn('transition-colors', style.rowCls)}>
                           <td className="px-3 py-3">
                             <div className="font-medium text-ink">{row.productName}</div>
-                            <div className="mt-0.5 font-mono text-[10px] text-ink-faint" title="正規化注文キー (ARCHITECTURE.md §3.2)">
+                            <div className="mt-0.5 font-mono text-xs text-ink-faint" title="正規化注文キー (ARCHITECTURE.md §3.2)">
                               {orderKeyPreview}
                             </div>
                             <span
                               className={cn(
-                                'num mt-1 inline-block rounded px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums',
+                                'num mt-1 inline-block rounded px-2 py-0.5 font-mono text-xs font-bold tabular-nums',
                                 style.badgeCls,
                               )}
                             >
@@ -993,7 +993,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                                 標準（{breakdown.packsPerCase}入）
                               </span>
                             )}
-                            <div className="mt-1 text-[11px] font-medium text-earth-700">
+                            <div className="mt-1 text-xs font-medium text-earth-700">
                               📦 {breakdown.containerType}
                             </div>
                           </td>
@@ -1036,7 +1036,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                                 ({breakdown.cases}C+{breakdown.remainder}P)
                               </span>
                             </div>
-                            <div className="text-[10px] text-ink-faint">
+                            <div className="text-xs text-ink-faint">
                               {breakdown.quantityCaseText}
                             </div>
                           </td>
@@ -1092,7 +1092,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                 <MessageSquarePlus className="h-3.5 w-3.5 text-trust-600" aria-hidden />
                 💬 AIに対話で修正指示・ルール自動学習（旧Discordリプライ継承）
               </label>
-              <p className="mt-0.5 text-[11px] text-ink-soft">
+              <p className="mt-0.5 text-xs text-ink-soft">
                 例: 「数量を240Pに直して」「今後は〇〇を△△と読むようにして」と入力すると、AIが入数換算を再計算し、恒久ルールがあれば自動的に{' '}
                 <code className="font-mono">ai_rules</code> に追加学習します。
               </p>
@@ -1226,7 +1226,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           </p>
           <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-line bg-bg-soft p-2.5 text-xs">
             {bulkTargetOrders.map((o) => {
-              const warns = pendingReasons(o)
+              const warns = pendingReasons(o, { kana: false })
               return (
                 <div
                   key={o.id}
@@ -1243,11 +1243,11 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                     </span>
                   </div>
                   {warns.length > 0 ? (
-                    <span className="rounded bg-alert-bg px-1.5 py-0.5 text-[10px] font-bold text-alert">
+                    <span className="min-w-0 rounded bg-alert-bg px-1.5 py-0.5 text-xs font-bold text-alert">
                       {warns.join(', ')}
                     </span>
                   ) : (
-                    <span className="rounded bg-forest-100 px-1.5 py-0.5 text-[10px] font-bold text-forest-700">
+                    <span className="whitespace-nowrap rounded bg-forest-100 px-1.5 py-0.5 text-xs font-bold text-forest-700">
                       高確信
                     </span>
                   )}

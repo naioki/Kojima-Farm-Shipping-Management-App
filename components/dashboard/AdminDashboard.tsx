@@ -64,7 +64,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 rounded-xl bg-black/25 border border-white/15 p-3 text-center">
             <div>
-              <span className="block text-[11px] font-bold text-emerald-200">完成箱数 / 目標箱数</span>
+              <span className="block text-xs font-bold text-emerald-200">完成箱数 / 目標箱数</span>
               <span className="num text-2xl sm:text-3xl font-black text-white tabular-nums">
                 {tp.completedBoxes.toLocaleString()}
                 <small className="text-base font-bold text-white/50 mx-1">/</small>
@@ -73,7 +73,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
               </span>
             </div>
             <div>
-              <span className="block text-[11px] font-bold text-white/80">完成パック数 / 総パック数</span>
+              <span className="block text-xs font-bold text-white/80">完成パック数 / 総パック数</span>
               <span className="num text-xl sm:text-2xl font-black text-white tabular-nums">
                 {tp.completedPacks.toLocaleString()}
                 <small className="text-sm font-bold text-white/50 mx-1">/</small>

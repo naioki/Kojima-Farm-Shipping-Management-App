@@ -197,7 +197,7 @@ export default function ReceiptViewerPage() {
             lightMode ? 'bg-slate-200 border-slate-300' : 'bg-slate-800/90 border-slate-700',
           )}
         >
-          <span className="text-[11px] font-black opacity-75 shrink-0">📄 原本切替:</span>
+          <span className="text-xs font-black opacity-75 shrink-0">📄 原本切替:</span>
           {receipts.map((r) => (
             <button
               key={r.id}
@@ -236,7 +236,7 @@ export default function ReceiptViewerPage() {
             <button
               type="button"
               onClick={() => setShowTargetItems((prev) => !prev)}
-              className="rounded bg-amber-400/80 hover:bg-amber-400 px-2 py-0.5 text-[11px] font-black text-amber-950"
+              className="rounded bg-amber-400/80 hover:bg-amber-400 px-2 py-0.5 text-xs font-black text-amber-950"
             >
               {showTargetItems ? '明細を隠す ▲' : '明細を表示 ▼'}
             </button>
@@ -258,11 +258,11 @@ export default function ReceiptViewerPage() {
                     <span className="text-amber-950 text-sm font-black bg-white/80 px-1.5 py-0.2 rounded shadow-2xs">
                       {it.boxCount}箱 ({it.quantity}{it.unit})
                     </span>
-                    <span className="text-amber-900 text-[11px] font-bold">
+                    <span className="text-amber-900 text-xs font-bold">
                       [{it.container}]
                     </span>
                     {it.spec && (
-                      <span className="text-amber-800 text-[11px] font-bold hidden sm:inline">
+                      <span className="text-amber-800 text-xs font-bold hidden sm:inline">
                         規格: {it.spec}
                       </span>
                     )}

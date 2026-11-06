@@ -552,7 +552,7 @@ export function PackingAndShippingViews({
                   href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${preset}&layout=2up`}
                   target="_blank"
                   rel="noopener"
-                  className="inline-flex h-7 items-center rounded-lg border border-emerald-300 bg-white px-2 text-[11px] font-bold text-emerald-900 hover:bg-emerald-100"
+                  className="inline-flex h-7 items-center rounded-lg border border-emerald-300 bg-white px-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
                 >
                   {c.name}のみ
                 </a>
@@ -612,22 +612,22 @@ export function PackingAndShippingViews({
                       <span className="text-xs sm:text-sm">{groupInfo.icon}</span>
                       <span className="text-xs sm:text-sm font-black text-ink">{groupInfo.title}</span>
                       {isThaiMode && sortMode === 'time' && getThaiDepartureTime(item.departureTime) && (
-                        <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[11px] font-black print:hidden">
+                        <span className="whitespace-nowrap rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-xs font-black print:hidden">
                           🇹🇭 {getThaiDepartureTime(item.departureTime)}
                         </span>
                       )}
                       {isThaiMode && sortMode === 'container' && getThaiContainer(item.initialContainer) && (
-                        <span className="rounded bg-sky-100 text-sky-900 border border-sky-300 px-1.5 py-0.5 text-[11px] font-black print:hidden">
+                        <span className="whitespace-nowrap rounded bg-sky-100 text-sky-900 border border-sky-300 px-1.5 py-0.5 text-xs font-black print:hidden">
                           🇹🇭 {getThaiContainer(item.initialContainer)}
                         </span>
                       )}
                       {groupInfo.badge && (
-                        <span className="rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-[10px] font-bold">
+                        <span className="whitespace-nowrap rounded bg-sky-100 text-sky-800 px-1.5 py-0.5 text-xs font-bold">
                           {groupInfo.badge}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-black">
+                    <div className="flex items-center gap-1.5 shrink-0 text-xs font-black">
                       {sectionRemBoxes > 0 ? (
                         <span className="rounded-md bg-white border border-line px-2 py-0.5 text-ink tabular-nums">
                           残 {sectionRemBoxes}箱 ({sectionTotalPacks.toLocaleString()}P)
@@ -668,18 +668,18 @@ export function PackingAndShippingViews({
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-base">📅</span>
               <span>翌日作業予定（先行枠：{nextItems.length}件）</span>
-              <span className="rounded-md bg-slate-800 text-white px-2 py-0.5 text-[11px] font-black tabular-nums">
+              <span className="whitespace-nowrap rounded-md bg-slate-800 text-white px-2 py-0.5 text-xs font-black tabular-nums">
                 計 {nextDayTotalBoxes}箱（{nextDayTotalPacks.toLocaleString()} P）
               </span>
             </div>
-            <div className="flex items-center gap-1 text-[11px] text-slate-700 font-bold">
+            <div className="flex items-center gap-1 text-xs text-slate-700 font-bold">
               <span>{nextDayExpanded || (incompleteCount === 0 && sortedPackItems.length > 0) ? '閉じる ▲' : '開く ▼'}</span>
             </div>
           </button>
 
           {(nextDayExpanded || (incompleteCount === 0 && sortedPackItems.length > 0)) && (
             <div className="space-y-2.5 pt-1">
-              <p className="px-1 text-[11px] text-slate-500 font-medium">
+              <p className="px-1 text-xs text-slate-500 font-medium">
                 ※ 翌々日納品分の先行作業または確認用です。本日の目標・完成には含まれません。
               </p>
               <div className="space-y-2.5">
@@ -792,7 +792,7 @@ export function PackingAndShippingViews({
                         setBusyReorder(false)
                       }
                     }}
-                    className="rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-[11px] font-black text-emerald-900 transition"
+                    className="rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-900 transition"
                   >
                     未完了を上に集める
                   </button>
@@ -802,7 +802,7 @@ export function PackingAndShippingViews({
                     type="button"
                     disabled={busyReorder}
                     onClick={handleResetOrder}
-                    className="rounded-lg border border-line bg-bg-soft hover:bg-slate-200 px-2.5 py-1 text-[11px] font-bold text-ink-soft transition"
+                    className="rounded-lg border border-line bg-bg-soft hover:bg-slate-200 px-2.5 py-1 text-xs font-bold text-ink-soft transition"
                   >
                     自動順に戻す
                   </button>
@@ -903,7 +903,7 @@ export function PackingAndShippingViews({
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span
                           className={cn(
-                            'inline-flex items-center justify-center h-5 min-w-5 px-1 rounded text-[11px] font-black',
+                            'inline-flex items-center justify-center h-5 min-w-5 px-1 rounded text-xs font-black',
                             idx === 0 && !isDoneItem
                               ? 'bg-emerald-700 text-white'
                               : 'bg-slate-200 text-slate-700',
@@ -917,12 +917,12 @@ export function PackingAndShippingViews({
                             : it.customerName}
                         </span>
                         {it.departureTime && (
-                          <span className="rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.2 text-[10px] font-bold">
+                          <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.2 text-xs font-bold">
                             {it.departureTime.startsWith('翌') ? `${it.departureTime}迄` : `当日${it.departureTime}迄`}
                           </span>
                         )}
                         {isDoneItem && (
-                          <span className="rounded bg-emerald-600 text-white px-1.5 py-0.2 text-[10px] font-bold">
+                          <span className="whitespace-nowrap rounded bg-emerald-600 text-white px-1.5 py-0.2 text-xs font-bold">
                             済
                           </span>
                         )}

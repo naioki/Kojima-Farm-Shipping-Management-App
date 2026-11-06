@@ -130,7 +130,7 @@ export function PromptEditor({
           )}
         />
         {isDirty && (
-          <span className="absolute right-2 top-2 rounded-full bg-earth-100 px-1.5 py-0.5 text-[10px] font-medium text-earth-700">
+          <span className="whitespace-nowrap absolute right-2 top-2 rounded-full bg-earth-100 px-1.5 py-0.5 text-xs font-medium text-earth-700">
             未保存
           </span>
         )}

@@ -151,7 +151,7 @@ export default async function FieldPrintPage({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-black text-sm text-ink">{c.name}</span>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                          <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-900">
                             <Building2 className="h-3 w-3" />
                             既定：{defaultIssuerLabel}
                           </span>

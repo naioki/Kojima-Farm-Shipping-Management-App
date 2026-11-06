@@ -377,10 +377,11 @@ export default async function ShipmentsPage({
 
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
   if (orderIds.length > 0) {
-    const { data: directReceipts } = await admin
+    const { data: directReceipts, error: directReceiptsErr } = await admin
       .from('order_receipts')
       .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
       .in('order_id', orderIds)
+    if (directReceiptsErr) console.error('[field/shipments] 原本(order_receipts)の取得に失敗:', directReceiptsErr.message)
 
     for (const rr of directReceipts ?? []) {
       if (rr.order_id) {
@@ -399,12 +400,13 @@ export default async function ShipmentsPage({
 
     const missingOrderIds = orderIds.filter((oid) => !receiptByOrder.has(oid))
     if (missingOrderIds.length > 0 && customerIds.length > 0) {
-      const { data: candidateReceipts } = await admin
+      const { data: candidateReceipts, error: candidateReceiptsErr } = await admin
         .from('order_receipts')
         .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
         .in('customer_id', customerIds)
         .order('created_at', { ascending: false })
         .limit(40)
+      if (candidateReceiptsErr) console.error('[field/shipments] 原本候補(order_receipts)の取得に失敗:', candidateReceiptsErr.message)
 
       for (const cr of candidateReceipts ?? []) {
         const p = (cr.raw_payload ?? {}) as Record<string, unknown>
@@ -621,11 +623,12 @@ export default async function ShipmentsPage({
   const nextShipmentItems: ShipmentItemData[] = []
 
   if (selectedProductId) {
-    const { data: nextOrders } = await admin
+    const { data: nextOrders, error: nextOrdersErr } = await admin
       .from('orders')
       .select('id, customer_id, destination_id')
       .eq('delivery_date', nextDateStr)
       .in('status', ['approved', 'shipped', 'invoiced'])
+    if (nextOrdersErr) console.error('[field/shipments] 翌日注文の取得に失敗:', nextOrdersErr.message)
 
     const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
     const nextOrderCustMap = new Map((nextOrders ?? []).map((o) => [o.id, o.customer_id]))

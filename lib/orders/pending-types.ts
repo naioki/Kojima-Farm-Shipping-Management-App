@@ -86,14 +86,15 @@ export interface PendingOrder {
   receipt: ReceiptOriginalInfo | null
 }
 
-/** 要確認の理由（やさしい日本語のバッジ／注意喚起に使う・admin/field 共通）。 */
-export function pendingReasons(o: PendingOrder): string[] {
+/** 要確認の理由（kana=false で漢字表記＝管理画面用。既定はやさしい日本語＝現場用）。 */
+export function pendingReasons(o: PendingOrder, opts: { kana?: boolean } = {}): string[] {
+  const kana = opts.kana ?? true
   const r: string[] = []
-  if (!o.customerId) r.push('取引先 みとうろく')
-  if (o.needsDeliveryDate) r.push('のうひん日 みてい')
-  if (o.needsDestination) r.push('のうにゅうさき みてい')
-  if (o.items.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)) r.push('荷姿 みてい')
-  if (o.minConfidence == null || o.minConfidence < 0.7) r.push('AI じしんなし')
+  if (!o.customerId) r.push(kana ? '取引先 みとうろく' : '取引先 未登録')
+  if (o.needsDeliveryDate) r.push(kana ? 'のうひん日 みてい' : '納品日 未定')
+  if (o.needsDestination) r.push(kana ? 'のうにゅうさき みてい' : '納入先 未定')
+  if (o.items.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)) r.push(kana ? '荷姿 みてい' : '荷姿 未定')
+  if (o.minConfidence == null || o.minConfidence < 0.7) r.push(kana ? 'AI じしんなし' : 'AIの確信度が低い')
   if (o.items.some((it) => it.quantityAnomaly)) r.push('数量がいつもと違う')
   return r
 }

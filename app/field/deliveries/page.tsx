@@ -48,7 +48,8 @@ export default async function DeliveriesPage({
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : defaultDate
   const selectedProduct = searchParams.product ?? null
   const admin = createAdminClient()
-  const { data: profile } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
+  if (profileErr) console.error('[field/deliveries] ロール取得に失敗:', profileErr.message)
   const isAdmin = profile?.role === 'admin'
   const allowAiRead = isAdmin || (await getStaffFeatures()).ocr
 
@@ -461,7 +462,7 @@ export default async function DeliveriesPage({
       <div className="space-y-2 print:hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <h1 className="hidden sm:block font-display text-lg font-black text-ink shrink-0">便別積込・配送リスト</h1>
+            <h1 className="hidden sm:block font-display text-lg font-black text-ink shrink-0">積込・配送リスト</h1>
             <div className="flex-1 sm:flex-initial min-w-0">
               <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
             </div>

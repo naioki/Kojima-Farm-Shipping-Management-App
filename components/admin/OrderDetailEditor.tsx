@@ -224,7 +224,7 @@ export function OrderDetailEditor({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="font-black text-base text-ink">{it.productName}</span>
-                    <span className="rounded-md bg-forest-100 text-forest-900 px-2 py-0.5 text-xs font-black tabular-nums">
+                    <span title={`📦 ${boxes} 箱（${qNum.toLocaleString()} ${it.unit} / 1箱${ppc}入）`} className="inline-block align-bottom truncate max-w-[12rem] rounded-md bg-forest-100 text-forest-900 px-2 py-0.5 text-xs font-black tabular-nums">
                       📦 {boxes} 箱（{qNum.toLocaleString()} {it.unit} / 1箱{ppc}入）
                     </span>
                   </div>
@@ -251,7 +251,7 @@ export function OrderDetailEditor({
 
                 <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                   <label className="space-y-1">
-                    <span className="block text-[11px] font-bold text-ink-soft">
+                    <span className="block text-xs font-bold text-ink-soft">
                       総パック数（{it.unit}）
                     </span>
                     <input
@@ -265,7 +265,7 @@ export function OrderDetailEditor({
                   </label>
 
                   <label className="space-y-1">
-                    <span className="block text-[11px] font-bold text-ink-soft">規格</span>
+                    <span className="block text-xs font-bold text-ink-soft">規格</span>
                     <input
                       type="text"
                       value={it.draftSpec}
@@ -276,7 +276,7 @@ export function OrderDetailEditor({
                   </label>
 
                   <label className="space-y-1">
-                    <span className="block text-[11px] font-bold text-ink-soft">コンテナ・容器</span>
+                    <span className="block text-xs font-bold text-ink-soft">コンテナ・容器</span>
                     <input
                       type="text"
                       value={it.draftContainer}
@@ -287,7 +287,7 @@ export function OrderDetailEditor({
                   </label>
 
                   <label className="space-y-1">
-                    <span className="block text-[11px] font-bold text-ink-soft">単価（円）</span>
+                    <span className="block text-xs font-bold text-ink-soft">単価（円）</span>
                     <input
                       type="number"
                       min={0}

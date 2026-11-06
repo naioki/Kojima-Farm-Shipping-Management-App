@@ -299,7 +299,7 @@ export function PricingPrep({ items }: { items: PricingFlatItem[] }) {
                       {it.priceStatus === 'unpriced' ? (
                         <span className="text-alert">未</span>
                       ) : (
-                        <span className="text-ink">¥{it.unitPrice.toLocaleString()}{it.priceStatus === 'provisional' && <span className="ml-1 text-[10px] text-warning">暫定</span>}</span>
+                        <span className="text-ink">¥{it.unitPrice.toLocaleString()}{it.priceStatus === 'provisional' && <span className="ml-1 text-xs text-warning">暫定</span>}</span>
                       )}
                     </td>
                   </tr>

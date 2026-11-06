@@ -168,7 +168,7 @@ const QUICK_PRESETS = [
     category: '🏢 画面の案内・使い方',
     icon: Users,
     items: [
-      '便別積込・配送リストを開きたい',
+      '積込・配送リストを開きたい',
       '週間表（マトリックス）を開きたい',
       'このアプリの使い方をわかりやすく教えて',
     ],
@@ -231,7 +231,7 @@ function describeProposalTargetLocation(action: ConciergeAction, defaultDate: st
   if (action.type === 'update_departure_time') {
     const p = action.payload
     return {
-      breadcrumb: `🚚 便別積込・配送リスト（${p.customer_name}）`,
+      breadcrumb: `🚚 積込・配送リスト（${p.customer_name}）`,
       previewItems: [
         { label: '対象取引先', value: p.customer_name },
         { label: '新しい出発時刻', value: p.departure_time },
@@ -784,9 +784,9 @@ export function ConciergeChat({
           id: `rec-${Date.now()}`,
           executedAt: nowTimeStr,
           title: `${matchedCust.name} の出発時間を「${p.departure_time}」に設定`,
-          locationBreadcrumb: `🚚 便別積込・配送リスト ➔ ${targetDate} 出荷便`,
+          locationBreadcrumb: `🚚 積込・配送リスト ➔ ${targetDate} 出荷便`,
           targetHref: `/field/deliveries?date=${targetDate}`,
-          targetButtonLabel: `👉 ${targetDate}の便別積込リストを開いて確認する`,
+          targetButtonLabel: `👉 ${targetDate}の積込・配送リストを開いて確認する`,
           details: [
             { label: '対象取引先', value: matchedCust.name },
             ...(matchedDest ? [{ label: '対象納入先', value: matchedDest.code || matchedDest.full_name }] : []),
@@ -956,14 +956,14 @@ export function ConciergeChat({
               {receipt.undone ? '↩️ 取り消し済み（元の状態に戻しました）' : '✅ おまかせ実行証明レシート（完了）'}
             </span>
           </div>
-          <span className="rounded-md bg-white px-2 py-0.5 text-[11px] font-black text-ink-soft border border-line">
+          <span className="whitespace-nowrap rounded-md bg-white px-2 py-0.5 text-xs font-black text-ink-soft border border-line">
             🕒 {receipt.executedAt} 実行
           </span>
         </div>
 
         {/* 📍 どこに登録・反映されたか（パンくず） */}
         <div className="rounded-xl bg-white border border-emerald-300 px-3 py-2 space-y-1">
-          <div className="flex items-center gap-1 text-[11px] font-black text-emerald-800">
+          <div className="flex items-center gap-1 text-xs font-black text-emerald-800">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
             <span>どこに登録・反映されたか（保存場所）:</span>
           </div>
@@ -973,7 +973,7 @@ export function ConciergeChat({
         {/* 🔀 Before → After（どう変わったか） */}
         {receipt.diffs.length > 0 && (
           <div className="rounded-xl bg-white border border-emerald-200 px-3 py-2 space-y-1.5">
-            <div className="text-[11px] font-black text-emerald-800">🔀 変更内容（Before ➔ After）:</div>
+            <div className="text-xs font-black text-emerald-800">🔀 変更内容（Before ➔ After）:</div>
             <div className="space-y-1">
               {receipt.diffs.map((d, idx) => (
                 <div key={idx} className="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm font-black">
@@ -1054,7 +1054,7 @@ export function ConciergeChat({
             <span className="flex items-center gap-2 text-xs sm:text-sm font-black text-forest-950">
               <History className="h-4 w-4 text-forest-700 shrink-0" />
               <span>🕒 最近のおまかせ実行履歴（どこに何が登録されたか一覧）</span>
-              <span className="rounded-full bg-forest-700 px-2 py-0.5 text-[11px] font-black text-white">
+              <span className="whitespace-nowrap rounded-full bg-forest-700 px-2 py-0.5 text-xs font-black text-white">
                 {historyReceipts.length}件
               </span>
             </span>
@@ -1177,7 +1177,7 @@ export function ConciergeChat({
                           <div className="text-sm font-black text-forest-950">{prop.title}</div>
                           <div className="text-xs font-bold text-forest-800">{prop.summary}</div>
                         </div>
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-forest-700 px-3 py-1.5 text-xs font-black text-white shrink-0">
+                        <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-forest-700 px-3 py-1.5 text-xs font-black text-white shrink-0">
                           <span>{prop.payload.button_label}</span>
                           <ArrowRight className="h-3.5 w-3.5" />
                         </span>
@@ -1198,7 +1198,7 @@ export function ConciergeChat({
                       className="rounded-2xl border-2 border-emerald-500 bg-white p-3.5 sm:p-4 space-y-3 shadow-sm transition"
                     >
                       <div>
-                        <span className="inline-block rounded-md bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[11px] font-black mb-1">
+                        <span className="whitespace-nowrap inline-block rounded-md bg-emerald-100 text-emerald-900 px-2 py-0.5 text-xs font-black mb-1">
                           ✨ AIおまかせ実行プラン（確認）
                         </span>
                         <h4 className="text-sm sm:text-base font-black text-ink">{prop.title}</h4>
@@ -1207,7 +1207,7 @@ export function ConciergeChat({
 
                       {/* 実行前の「どこに・何が登録されるか」透明プレビュー */}
                       <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 p-2.5 space-y-1.5">
-                        <div className="flex items-center gap-1 text-[11px] font-black text-emerald-900">
+                        <div className="flex items-center gap-1 text-xs font-black text-emerald-900">
                           <MapPin className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
                           <span>登録・反映される場所: {previewInfo.breadcrumb}</span>
                         </div>

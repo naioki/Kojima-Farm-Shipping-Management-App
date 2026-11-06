@@ -165,7 +165,7 @@ export function DeliveryCheckCard({
             <h2 className="font-display text-lg font-black text-ink">
               {destinationName ? `【${destinationName}】` : customerName}
             </h2>
-            <span className="rounded-md bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft">
+            <span className="whitespace-nowrap rounded-md bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft">
               {items.length}件
             </span>
           </div>
@@ -250,7 +250,7 @@ export function DeliveryCheckCard({
                     <details className="group pt-0.5 text-xs text-ink-soft">
                       <summary className="cursor-pointer select-none font-semibold text-ink-muted hover:text-ink list-none inline-flex items-center gap-1">
                         <span>詳細・メモを確認</span>
-                        <span className="text-[10px] group-open:rotate-180 transition-transform">▼</span>
+                        <span className="text-xs group-open:rotate-180 transition-transform">▼</span>
                       </summary>
                       <div className="mt-1 rounded-md bg-bg-soft/90 border border-line px-2.5 py-1.5 text-xs text-ink space-y-0.5">
                         <p className="font-medium">規格・指示: {it.noteText}</p>

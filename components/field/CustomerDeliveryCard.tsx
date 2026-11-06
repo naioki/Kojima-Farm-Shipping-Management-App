@@ -306,7 +306,7 @@ export function CustomerDeliveryCard({
           title="タップしてカードを展開"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
+            <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
               <Check className="h-3.5 w-3.5" />
               <span>積込済</span>
             </span>
@@ -315,13 +315,13 @@ export function CustomerDeliveryCard({
               {customerName}
             </span>
             {destinations.length === 1 && destinations[0]?.destinationName && destinations[0].destinationName !== customerName && (
-              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
+              <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
                 <span>▶</span>
                 <span className="truncate max-w-[120px]">{destinations[0].destinationName}</span>
               </span>
             )}
             {destinations.length > 1 && (
-              <span className="rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 text-[11px] font-bold shrink-0">
+              <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 text-xs font-bold shrink-0">
                 {destinations.length}納品先
               </span>
             )}
@@ -423,7 +423,7 @@ export function CustomerDeliveryCard({
 
                   {allDeliveryItems.length > 0 && (
                     unpackedItemCount > 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-950 shadow-2xs">
+                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-950 shadow-2xs">
                         {isThaiMode ? (
                           <span>⚠️ {THAI_LABELS.notCompletedWarn} ({unpackedItemCount})</span>
                         ) : (
@@ -431,7 +431,7 @@ export function CustomerDeliveryCard({
                         )}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800">
+                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800">
                         {isThaiMode ? (
                           <span>✓ {THAI_LABELS.allPackedDone}</span>
                         ) : (
@@ -497,7 +497,7 @@ export function CustomerDeliveryCard({
 
               {/* 右側: 特大フォントの総積込箱数 ＋ 総パック数 */}
               <div className="text-right shrink-0">
-                <div className="text-[11px] font-bold text-ink-muted">
+                <div className="text-xs font-bold text-ink-muted">
                   {isThaiMode ? THAI_LABELS.totalLoadBoxes : '総積込箱数'}
                 </div>
                 <div
@@ -701,7 +701,7 @@ export function CustomerDeliveryCard({
                         <span className="num text-base sm:text-lg font-black text-ink tabular-nums">
                           {dest.totalBoxes} 箱
                           {dest.fractionBoxes > 0 && (
-                            <span className="ml-1.5 rounded bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-xs font-black text-amber-950">
+                            <span className="whitespace-nowrap ml-1.5 rounded bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-xs font-black text-amber-950">
                               うち端数 {dest.fractionBoxes}箱 ({dest.loose}P)
                             </span>
                           )}
@@ -766,7 +766,7 @@ export function CustomerDeliveryCard({
                                 </span>
                                 <div className="flex items-center gap-2 shrink-0">
                                   {cleanedItemNote && (
-                                    <span className="rounded bg-bg-soft px-1.5 py-0.5 text-[11px] font-bold text-ink-muted">
+                                    <span className="whitespace-nowrap rounded bg-bg-soft px-1.5 py-0.5 text-xs font-bold text-ink-muted">
                                       {cleanedItemNote}
                                     </span>
                                   )}

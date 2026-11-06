@@ -58,7 +58,7 @@ export default async function MatrixPage({
   if (!products?.length) {
     return (
       <div className="mx-auto max-w-5xl space-y-4">
-        <h1 className="font-display text-2xl font-bold text-ink">週の管理（週間マトリックス）</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">週の管理</h1>
         <EmptyState title="商品が登録されていません" description="商品マスタを登録すると品目タブが表示されます。" />
       </div>
     )

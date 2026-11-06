@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
-import { OrderStatusBadge, sourceLabel, ORDER_STATUS_OPTIONS } from '@/components/admin/OrderStatusBadge'
+import { OrderStatusBadge, intakeLabel, ORDER_STATUS_OPTIONS } from '@/components/admin/OrderStatusBadge'
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -235,7 +235,7 @@ export default async function AdminOrdersPage({
                     <td className="whitespace-nowrap px-3 py-3 text-xs font-bold text-ink-soft">
                       {o.fieldProgressLabel}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-xs text-ink-faint">{sourceLabel(o.source)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs text-ink-faint">{intakeLabel(o.source, o.intakeChannel)}</td>
                     <td className="num whitespace-nowrap px-3 py-3 text-right text-ink">{yen(o.amount)}</td>
                     <td className="px-3 py-3"><OrderStatusBadge status={o.status} /></td>
                     <td className="px-2 py-3">

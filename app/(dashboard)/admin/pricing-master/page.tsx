@@ -50,7 +50,7 @@ export default async function PricingMasterPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">単価・荷姿マスタ</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">単価・荷姿の設定</h1>
         <p className="text-sm text-ink-soft">
           荷姿（多形態）と価格（期間×取引先）を管理します。過去の請求には遡及しません。
         </p>

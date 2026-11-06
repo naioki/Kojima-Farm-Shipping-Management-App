@@ -56,7 +56,7 @@ export default async function InboxPage({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">受信ボックス（FAX・メール）</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">読み取り失敗</h1>
         <p className="mt-1 text-sm text-ink-soft">
           届いたFAX・メールの読み取り状況です。読み取りに失敗したもの・取引先が分からないものをここで直します。承認は「承認待ち」で行います。
         </p>

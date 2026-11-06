@@ -100,7 +100,7 @@ export function ApprovalPipelineToggle({
             </span>
             <span
               className={cn(
-                'rounded-full px-2 py-0.5 text-[11px] font-bold',
+                'rounded-full px-2 py-0.5 text-xs font-bold',
                 autoApprove
                   ? 'bg-harvest-600 text-white'
                   : 'bg-earth-100 text-earth-800',

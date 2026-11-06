@@ -72,12 +72,13 @@ export default async function DeliveryNoteView({
   // オレンジファームで FAX着日（木・土）が指定された場合、前日の水・金出荷分をフォールバック検索
   if (allOrders.length === 0 && (customer?.name ?? '').includes('オレンジファーム')) {
     const prevDate = shiftDateStr(date, -1)
-    const { data: prevOrders } = await supabase
+    const { data: prevOrders, error: prevOrdersErr } = await supabase
       .from('orders')
       .select('id, destination_id, delivery_date')
       .eq('customer_id', customerId)
       .eq('delivery_date', prevDate)
       .in('status', ['approved', 'shipped', 'invoiced'])
+    if (prevOrdersErr) console.error('[delivery-notes/view] 前日注文の取得に失敗:', prevOrdersErr.message)
     if (prevOrders && prevOrders.length > 0) {
       allOrders = prevOrders
       effectiveOrderDate = prevDate
@@ -192,7 +193,7 @@ export default async function DeliveryNoteView({
         <div className="flex flex-wrap items-center gap-2">
           {/* 発行元名義の1タップ切替（小島農園 ⇔ 株式会社アイプラス） */}
           <div className="inline-flex items-center rounded-lg border border-line-strong bg-white p-0.5 shadow-2xs" title="発行元の会社名を切り替えます">
-            <span className="px-2 text-[11px] font-bold text-ink-faint flex items-center gap-1">
+            <span className="px-2 text-xs font-bold text-ink-faint flex items-center gap-1">
               <Building2 className="h-3 w-3" />
               名義
             </span>
@@ -216,7 +217,7 @@ export default async function DeliveryNoteView({
 
           {/* 用紙レイアウトの切替（A4上下2連［納品書＋控］ ⇔ A4全面1枚） */}
           <div className="inline-flex items-center rounded-lg border border-line-strong bg-white p-0.5 shadow-2xs" title="用紙レイアウトを切り替えます">
-            <span className="px-2 text-[11px] font-bold text-ink-faint flex items-center gap-1">
+            <span className="px-2 text-xs font-bold text-ink-faint flex items-center gap-1">
               <Columns2 className="h-3 w-3" />
               用紙
             </span>

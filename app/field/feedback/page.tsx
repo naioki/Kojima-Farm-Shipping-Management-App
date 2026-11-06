@@ -12,7 +12,8 @@ export default async function FieldFeedbackPage() {
   if (!user) redirect('/login')
 
   const supabase = createAdminClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+  if (profileErr) console.error('[field/feedback] ロール取得に失敗:', profileErr.message)
   const isAdmin = profile?.role === 'admin'
 
   return (
@@ -21,7 +22,7 @@ export default async function FieldFeedbackPage() {
         <FieldViewSwitch active="day" date={shiftDateStr(jstTodayStr(), 1)} />
       </div>
       <div className="space-y-1">
-        <h1 className="font-display text-2xl font-black text-ink">💬 改善要望・バグ報告フォーム</h1>
+        <h1 className="font-display text-2xl font-black text-ink">改善要望・バグ報告</h1>
         <p className="text-sm font-medium text-ink-soft">
           小島農園の日々の受発注・出荷・パック作業で気づいた改善点や操作のしづらさ、不具合を気軽にお知らせください。
         </p>

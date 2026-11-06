@@ -803,7 +803,7 @@ export function ShipmentRow({
           <button
             type="button"
             onClick={() => setIsSpotlighted(false)}
-            className="rounded-md bg-white/20 px-2 py-0.5 text-[11px] font-bold hover:bg-white/30"
+            className="rounded-md bg-white/20 px-2 py-0.5 text-xs font-bold hover:bg-white/30"
           >
             閉じる
           </button>
@@ -829,7 +829,7 @@ export function ShipmentRow({
       )}
 
       {offlinePending && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-800">
           <span>📡 圏外のため一時保存中（電波復帰時に自動送信されます）</span>
         </div>
       )}
@@ -841,7 +841,7 @@ export function ShipmentRow({
           title="タップしてカードを展開"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
+            <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
               <Check className="h-3.5 w-3.5" />
               <span>{status === 'shipped' ? '出荷済' : '済'}</span>
             </span>
@@ -850,7 +850,7 @@ export function ShipmentRow({
               {customerName}
             </span>
             {destinationName && customerName !== destinationName && (
-              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
+              <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
                 <span>▶</span>
                 <span className="truncate max-w-[120px] sm:max-w-[180px]">{destinationName}</span>
               </span>
@@ -910,12 +910,12 @@ export function ShipmentRow({
                       ? `${THAI_LABELS.sampleOrder} / サンプル依頼（小口・別口手渡し用）`
                       : 'サンプル依頼（小口・手渡し／荷上げ用）'}
                   </div>
-                  <div className="text-[11px] font-bold text-purple-100 truncate">
+                  <div className="text-xs font-bold text-purple-100 truncate">
                     ※ 大口コンテナとは別口で {orderedQty} パック調製してください
                   </div>
                 </div>
               </div>
-              <span className="shrink-0 rounded-lg bg-amber-300 px-2.5 py-1 text-xs font-black text-purple-950 shadow-2xs">
+              <span className="whitespace-nowrap shrink-0 rounded-lg bg-amber-300 px-2.5 py-1 text-xs font-black text-purple-950 shadow-2xs">
                 バラ {orderedQty}P
               </span>
             </div>
@@ -926,7 +926,7 @@ export function ShipmentRow({
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 {isNextUp && !isDone && !isFutureOrNextDay && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-700 px-2 py-0.5 text-[11px] font-black text-white shadow-2xs shrink-0">
+                  <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-emerald-700 px-2 py-0.5 text-xs font-black text-white shadow-2xs shrink-0">
                     <span>🔥 次</span>
                   </span>
                 )}
@@ -958,7 +958,7 @@ export function ShipmentRow({
                   </span>
                 )}
                 {needsManualConfirm && !changeDiffBadge && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900">
+                  <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs font-black text-amber-900">
                     ⚠️ 要確認
                   </span>
                 )}
@@ -976,11 +976,11 @@ export function ShipmentRow({
 
             {/* 規格 ＋ 資材レシピタグ（#06 規格バッジから冗長な (入数20) を除去し、数量バーの (20入) との重複を解消） */}
             <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-slate-300">
+              <span className="truncate max-w-[14rem] inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-slate-300">
                 {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) ? (
                   <>
                     <span>📐 {getThaiSpec(spec || masterLabelSpec, masterPacksPerCase)}</span>
-                    <span className="text-[11px] font-bold text-ink-muted">({cleanSpecLabel})</span>
+                    <span className="text-xs font-bold text-ink-muted">({cleanSpecLabel})</span>
                   </>
                 ) : (
                   <span>📐 {cleanSpecLabel}</span>
@@ -988,11 +988,11 @@ export function ShipmentRow({
               </span>
 
               {container && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2.5 py-1 text-xs sm:text-sm font-black text-sky-950 border border-sky-300">
+                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2.5 py-1 text-xs sm:text-sm font-black text-sky-950 border border-sky-300">
                   {isThaiMode && getThaiContainer(container) ? (
                     <>
                       <span>{getContainerColorEmoji(container)} {getThaiContainer(container)}</span>
-                      <span className="text-[11px] font-bold text-sky-700">({container})</span>
+                      <span className="text-xs font-bold text-sky-700">({container})</span>
                     </>
                   ) : (
                     <span>
@@ -1004,30 +1004,30 @@ export function ShipmentRow({
               )}
 
               {(hasSeal || sealText) && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1 text-xs sm:text-sm font-black text-rose-900 border border-rose-300">
-                  <span>🏷️ {sealText || 'シールあり'}</span>
+                <span title={sealText || 'シールあり'} className="max-w-[12rem] min-w-0 inline-flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1 text-xs sm:text-sm font-black text-rose-900 border border-rose-300">
+                  <span className="truncate">🏷️ {sealText || 'シールあり'}</span>
                 </span>
               )}
               {hasSeal === false && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 border border-slate-300">
+                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 border border-slate-300">
                   <span>シールなし</span>
                 </span>
               )}
 
               {hasCard && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs sm:text-sm font-black text-indigo-900 border border-indigo-300">
+                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs sm:text-sm font-black text-indigo-900 border border-indigo-300">
                   <span>🃏 カード有</span>
                 </span>
               )}
 
               {bagType && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1 text-xs sm:text-sm font-black text-amber-950 border border-amber-300">
+                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1 text-xs sm:text-sm font-black text-amber-950 border border-amber-300">
                   <span>{getBagEmoji(bagType)} {bagType}</span>
                 </span>
               )}
 
               {masterTapeColor && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs sm:text-sm font-black text-emerald-950 border border-emerald-300">
+                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs sm:text-sm font-black text-emerald-950 border border-emerald-300">
                   <span>{getTapeColorEmoji(masterTapeColor)} テープ: {masterTapeColor}</span>
                 </span>
               )}
@@ -1045,7 +1045,7 @@ export function ShipmentRow({
                     {partialCases}箱（{shippedPacks}P）完了
                   </span>
                 </span>
-                <span className="rounded-md bg-amber-600 text-white px-2 py-0.5 text-xs font-black shrink-0">
+                <span className="whitespace-nowrap rounded-md bg-amber-600 text-white px-2 py-0.5 text-xs font-black shrink-0">
                   残り {remainingCases}箱（{remainingPacks}P）✎
                 </span>
               </button>
@@ -1062,7 +1062,7 @@ export function ShipmentRow({
                   <span>📝</span>
                   <span>{[memoText, masterPackingNotes].filter(Boolean).join(' / ')}</span>
                 </span>
-                <span className="text-[10px] font-black text-orange-800 shrink-0 underline">編集</span>
+                <span className="text-xs font-black text-orange-800 shrink-0 underline">編集</span>
               </button>
             )}
           </div>
@@ -1082,7 +1082,7 @@ export function ShipmentRow({
           >
             {isSmallSample ? (
               <div className="flex items-baseline gap-2.5 flex-wrap">
-                <span className="rounded-md bg-amber-300 px-2 py-0.5 text-xs font-black text-purple-950">
+                <span className="whitespace-nowrap rounded-md bg-amber-300 px-2 py-0.5 text-xs font-black text-purple-950">
                   🧪 サンプル（小口バラ）
                 </span>
                 <span className="num text-3xl sm:text-4xl font-black tracking-tight text-white tabular-nums leading-none">
@@ -1104,7 +1104,7 @@ export function ShipmentRow({
                   </span>
                 </span>
                 {loosePacks > 0 && (
-                  <span className="rounded-lg bg-amber-300 text-amber-950 px-2 py-0.5 text-xs sm:text-sm font-black shadow-2xs">
+                  <span className="whitespace-nowrap rounded-lg bg-amber-300 text-amber-950 px-2 py-0.5 text-xs sm:text-sm font-black shadow-2xs">
                     ＋端数 {looseText}P (計{totalBoxes}箱)
                   </span>
                 )}
@@ -1112,13 +1112,13 @@ export function ShipmentRow({
             )}
 
             <div className="flex items-baseline gap-1.5 rounded-lg bg-black/20 border border-white/15 px-3 py-1 tabular-nums">
-              <span className="text-[11px] font-bold text-white/80">総数</span>
+              <span className="text-xs font-bold text-white/80">総数</span>
               <span className="num text-lg sm:text-xl font-black text-white">
                 {orderedQty.toLocaleString()}
               </span>
               <span className="text-xs font-bold text-white/90">P</span>
               {!isSmallSample && (
-                <span className="text-[11px] font-bold text-white/70 ml-0.5">
+                <span className="text-xs font-bold text-white/70 ml-0.5">
                   ({packsPerCase}入)
                 </span>
               )}
@@ -1405,7 +1405,7 @@ export function ShipmentRow({
                 ⚡ 資材・コンテナ 1タップ切替（タップで即時保存＆次回から自動適用）
               </span>
               {savingDetails && (
-                <span className="text-[11px] font-bold text-emerald-700 animate-pulse">保存中...</span>
+                <span className="text-xs font-bold text-emerald-700 animate-pulse">保存中...</span>
               )}
             </div>
 
@@ -1467,7 +1467,7 @@ export function ShipmentRow({
                         disabled={savingMaterialOpt}
                         onClick={() => void handleRemoveCustomMaterial('bag', bt)}
                         title={`「${bt}」を選択肢から削除`}
-                        className="h-6 w-6 rounded-full text-[11px] font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        className="h-6 w-6 rounded-full text-xs font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                       >
                         ×
                       </button>
@@ -1481,7 +1481,7 @@ export function ShipmentRow({
                   setAddingMaterialCat(addingMaterialCat === 'bag' ? null : 'bag')
                   setNewMaterialInput('')
                 }}
-                className="min-h-[34px] px-2.5 rounded-xl border border-dashed border-slate-300 bg-white text-[11px] font-bold text-ink-soft hover:border-slate-500 hover:text-ink"
+                className="min-h-[34px] px-2.5 rounded-xl border border-dashed border-slate-300 bg-white text-xs font-bold text-ink-soft hover:border-slate-500 hover:text-ink"
               >
                 ＋袋・資材を追加
               </button>
@@ -1523,14 +1523,14 @@ export function ShipmentRow({
             {/* 🟦 コンテナ種別 1タップピルボタン */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-ink-soft block">📦 コンテナ種別（1タップで切替）</span>
+                <span className="text-xs font-bold text-ink-soft block">📦 コンテナ種別（1タップで切替）</span>
                 <button
                   type="button"
                   onClick={() => {
                     setAddingMaterialCat(addingMaterialCat === 'container' ? null : 'container')
                     setNewMaterialInput('')
                   }}
-                  className="text-[11px] font-bold text-sky-700 hover:underline"
+                  className="text-xs font-bold text-sky-700 hover:underline"
                 >
                   ＋新しいコンテナを追加
                 </button>
@@ -1571,7 +1571,7 @@ export function ShipmentRow({
                           disabled={savingMaterialOpt}
                           onClick={() => void handleRemoveCustomMaterial('container', cOpt.value)}
                           title={`「${cOpt.value}」を選択肢から削除`}
-                          className="h-6 w-6 rounded-full text-[11px] font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                          className="h-6 w-6 rounded-full text-xs font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                         >
                           ×
                         </button>
@@ -1617,7 +1617,7 @@ export function ShipmentRow({
             {/* 📐 1箱の入数 ＆ 規格プリセット（1タップで即時保存・箱数再計算・次回から自動適用） */}
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-1.5">
-                <span className="text-[11px] font-bold text-ink-soft">🔢 1箱の入数（1タップで箱数再計算＆記憶）</span>
+                <span className="text-xs font-bold text-ink-soft">🔢 1箱の入数（1タップで箱数再計算＆記憶）</span>
                 <div className="flex flex-wrap items-center gap-1">
                   {[10, 20, 24, 25, 30].map((ppcOpt) => {
                     const active = packsPerCase === ppcOpt
@@ -1649,7 +1649,7 @@ export function ShipmentRow({
                 </div>
               </div>
 
-              <span className="text-[11px] font-bold text-ink-soft block">📐 規格（プリセット1タップ または 直接入力）</span>
+              <span className="text-xs font-bold text-ink-soft block">📐 規格（プリセット1タップ または 直接入力）</span>
               <div className="flex flex-wrap items-center gap-1.5">
                 {[
                   `2〜3株 (入数${packsPerCase})`,
