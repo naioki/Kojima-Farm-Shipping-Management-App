@@ -829,7 +829,7 @@ export function ShipmentRow({
       )}
 
       {offlinePending && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-warning-bg border border-warning px-2.5 py-1 text-xs font-bold text-earth-900">
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-warning-bg border border-warning px-2.5 py-1 text-xs font-bold text-ink">
           <span>📡 圏外のため一時保存中（電波復帰時に自動送信されます）</span>
         </div>
       )}
@@ -915,7 +915,7 @@ export function ShipmentRow({
                   </div>
                 </div>
               </div>
-              <span className="whitespace-nowrap shrink-0 rounded-lg bg-warning-bg px-2.5 py-1 text-xs font-black text-grape-700 shadow-2xs">
+              <span className="whitespace-nowrap shrink-0 rounded-lg bg-warning-bg px-2.5 py-1 text-xs font-black text-ink shadow-2xs">
                 バラ {orderedQty}P
               </span>
             </div>
@@ -958,7 +958,7 @@ export function ShipmentRow({
                   </span>
                 )}
                 {needsManualConfirm && !changeDiffBadge && (
-                  <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-black text-earth-900">
+                  <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-black text-ink">
                     ⚠️ 要確認
                   </span>
                 )}
@@ -1021,7 +1021,7 @@ export function ShipmentRow({
               )}
 
               {bagType && (
-                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-warning-bg px-2.5 py-1 text-xs sm:text-sm font-black text-earth-900 border border-warning">
+                <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-warning-bg px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-warning">
                   <span>{getBagEmoji(bagType)} {bagType}</span>
                 </span>
               )}
@@ -1056,7 +1056,7 @@ export function ShipmentRow({
               <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="w-full mt-1 rounded-xl border-l-4 border-warning bg-warning-bg hover:bg-warning-bg/70 px-3 py-1.5 text-left text-xs font-bold text-earth-900 flex items-center justify-between gap-2 transition"
+                className="w-full mt-1 rounded-xl border-l-4 border-warning bg-warning-bg hover:bg-warning-bg/70 px-3 py-1.5 text-left text-xs font-bold text-ink flex items-center justify-between gap-2 transition"
               >
                 <span className="flex items-center gap-1.5">
                   <span>📝</span>
@@ -1082,7 +1082,7 @@ export function ShipmentRow({
           >
             {isSmallSample ? (
               <div className="flex items-baseline gap-2.5 flex-wrap">
-                <span className="whitespace-nowrap rounded-md bg-warning-bg px-2 py-0.5 text-xs font-black text-grape-700">
+                <span className="whitespace-nowrap rounded-md bg-warning-bg px-2 py-0.5 text-xs font-black text-ink">
                   🧪 サンプル（小口バラ）
                 </span>
                 <span className="num text-3xl sm:text-4xl font-black tracking-tight text-white tabular-nums leading-none">
@@ -1104,7 +1104,7 @@ export function ShipmentRow({
                   </span>
                 </span>
                 {loosePacks > 0 && (
-                  <span className="whitespace-nowrap rounded-lg bg-warning-bg text-earth-900 px-2 py-0.5 text-xs sm:text-sm font-black shadow-2xs">
+                  <span className="whitespace-nowrap rounded-lg bg-warning-bg text-ink px-2 py-0.5 text-xs sm:text-sm font-black shadow-2xs">
                     ＋端数 {looseText}P (計{totalBoxes}箱)
                   </span>
                 )}
@@ -1197,7 +1197,7 @@ export function ShipmentRow({
                 open
                   ? 'border-forest-700 bg-forest-700 text-white'
                   : isPartial || memoText
-                  ? 'border-warning bg-warning-bg text-earth-900 hover:bg-warning-bg'
+                  ? 'border-warning bg-warning-bg text-ink hover:bg-warning-bg'
                   : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
               )}
               title={open ? '詳細を閉じる' : '途中数・メモ・詳細を開く'}

@@ -423,7 +423,7 @@ export function CustomerDeliveryCard({
 
                   {allDeliveryItems.length > 0 && (
                     unpackedItemCount > 0 ? (
-                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-warning bg-warning-bg px-2 py-0.5 text-xs font-black text-earth-900 shadow-2xs">
+                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-warning bg-warning-bg px-2 py-0.5 text-xs font-black text-ink shadow-2xs">
                         {isThaiMode ? (
                           <span>⚠️ {THAI_LABELS.notCompletedWarn} ({unpackedItemCount})</span>
                         ) : (
@@ -512,7 +512,7 @@ export function CustomerDeliveryCard({
                   </span>
                 </div>
                 {totalFractionBoxes > 0 && (
-                  <div className="inline-block rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-black text-earth-900 my-0.5">
+                  <div className="inline-block rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-black text-ink my-0.5">
                     ＋端数 {totalFractionBoxes}箱 ({totalFractionPacks}P)
                   </div>
                 )}
@@ -526,7 +526,7 @@ export function CustomerDeliveryCard({
             {hasNote && !editingNote && (
               <div
                 onClick={() => setEditingNote(true)}
-                className="rounded-xl border-l-4 border-warning bg-warning-bg/90 p-2.5 text-xs sm:text-sm font-bold text-earth-900 flex items-center justify-between gap-2 cursor-pointer hover:bg-warning-bg/90 transition-colors shadow-2xs"
+                className="rounded-xl border-l-4 border-warning bg-warning-bg/90 p-2.5 text-xs sm:text-sm font-bold text-ink flex items-center justify-between gap-2 cursor-pointer hover:bg-warning-bg/90 transition-colors shadow-2xs"
                 title="タップして編集"
               >
                 <span className="flex items-center gap-1.5 min-w-0">
@@ -701,7 +701,7 @@ export function CustomerDeliveryCard({
                         <span className="num text-base sm:text-lg font-black text-ink tabular-nums">
                           {dest.totalBoxes} 箱
                           {dest.fractionBoxes > 0 && (
-                            <span className="whitespace-nowrap ml-1.5 rounded bg-warning-bg border border-warning px-1.5 py-0.5 text-xs font-black text-earth-900">
+                            <span className="whitespace-nowrap ml-1.5 rounded bg-warning-bg border border-warning px-1.5 py-0.5 text-xs font-black text-ink">
                               うち端数 {dest.fractionBoxes}箱 ({dest.loose}P)
                             </span>
                           )}

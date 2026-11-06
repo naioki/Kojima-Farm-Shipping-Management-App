@@ -251,7 +251,7 @@ export function HarvestPulseSummary({
             <Box className="h-4 w-4 text-harvest-600 shrink-0" />
             <span>コンテナ別・規格別の詳細内訳 ／ 翌朝持ち越し登録</span>
             {carryover > 0 && (
-              <span className="whitespace-nowrap rounded bg-warning-bg text-earth-900 px-1.5 py-0.5 text-xs font-black">
+              <span className="whitespace-nowrap rounded bg-warning-bg text-ink px-1.5 py-0.5 text-xs font-black">
                 引継 {carryover}箱
               </span>
             )}

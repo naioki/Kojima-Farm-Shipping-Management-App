@@ -633,7 +633,7 @@ export function AiRulesManager({
               'rounded-full border px-3 py-1.5 text-xs font-bold transition-all shadow-2xs',
               selectedClient === 'AUTO_LOOP'
                 ? 'border-warning bg-warning text-white'
-                : 'border-warning bg-warning-bg text-earth-900 hover:bg-warning-bg',
+                : 'border-warning bg-warning-bg text-ink hover:bg-warning-bg',
             )}
           >
             ⚡ 自動学習ループ ({autoLoopCount})
@@ -713,7 +713,7 @@ export function AiRulesManager({
                         優先度: {rule.priority}
                       </span>
                       {(rule.source === 'auto_loop' || rule.category === 'mistake_correction') && (
-                        <span className="whitespace-nowrap rounded-full bg-warning-bg text-earth-900 border border-warning px-2.5 py-0.5 text-xs font-black shadow-2xs">
+                        <span className="whitespace-nowrap rounded-full bg-warning-bg text-ink border border-warning px-2.5 py-0.5 text-xs font-black shadow-2xs">
                           ⚡ 誤読・修正から自動蓄積
                         </span>
                       )}
@@ -1066,7 +1066,7 @@ export function AiRulesManager({
                       <div className="flex items-center gap-2">
                         <span className="font-display text-sm font-black text-ink">{p.client_name}</span>
                         {p.original_count > 1 && (
-                          <span className="whitespace-nowrap rounded-full bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-earth-900">
+                          <span className="whitespace-nowrap rounded-full bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-ink">
                             {p.original_count}件のルールを1枠に統合
                           </span>
                         )}
@@ -1076,7 +1076,7 @@ export function AiRulesManager({
 
                     {p.conflicts && p.conflicts.length > 0 && (
                       <div className="rounded-lg border border-warning bg-warning-bg p-2.5 space-y-2">
-                        <p className="text-xs font-black text-earth-900">
+                        <p className="text-xs font-black text-ink">
                           ⚠️ 矛盾・食い違いが検出されました（クリックすると下のカルテ文面に反映されます）：
                         </p>
                         {p.conflicts.map((c, cIdx) => (

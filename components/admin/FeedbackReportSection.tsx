@@ -296,7 +296,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                   ? 'bg-trust-100 text-trust-700 border-trust-100'
                   : r.status === 'archived'
                   ? 'bg-bg-soft text-ink-soft border-line'
-                  : 'bg-warning-bg text-earth-900 border-warning'
+                  : 'bg-warning-bg text-ink border-warning'
 
               const statusLabel =
                 r.status === 'resolved'

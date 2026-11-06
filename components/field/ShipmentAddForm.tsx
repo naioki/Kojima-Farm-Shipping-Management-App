@@ -2699,7 +2699,7 @@ export function ShipmentAddForm({
                             <button
                               type="button"
                               onClick={() => handleSplitCandidateBreakdown(cand.id)}
-                              className="rounded-lg border border-warning bg-white hover:bg-warning-bg text-earth-900 px-2.5 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                              className="rounded-lg border border-warning bg-white hover:bg-warning-bg text-ink px-2.5 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
                             >
                               <Split className="h-3.5 w-3.5" />
                               <span>
@@ -2808,7 +2808,7 @@ export function ShipmentAddForm({
                                     ✓ 登録済と同数 ({qNum}P)
                                   </span>
                                 ) : (
-                                  <span className="whitespace-nowrap rounded bg-warning-bg border border-warning text-earth-900 px-2 py-0.5 text-xs font-black">
+                                  <span className="whitespace-nowrap rounded bg-warning-bg border border-warning text-ink px-2 py-0.5 text-xs font-black">
                                     🔄 変更 ({cand.existing_quantity}P ➔ {qNum}P)
                                   </span>
                                 )
@@ -2891,8 +2891,8 @@ export function ShipmentAddForm({
                   {/* 🚨 未登録取引先が検出された場合、まとめ一覧内で即座に確認・新規作成できるバナー */}
                   {showNewCustomer && (
                     <div className="rounded-xl border-2 border-warning bg-warning-bg p-3 space-y-2 shadow-2xs">
-                      <p className="text-xs font-black text-earth-900 flex items-center gap-1.5">
-                        <UserPlus className="h-4 w-4 text-earth-800 shrink-0" />
+                      <p className="text-xs font-black text-ink flex items-center gap-1.5">
+                        <UserPlus className="h-4 w-4 text-ink shrink-0" />
                         <span>
                           未登録の取引先「{newCustomerName || parsedCandidates[0]?.customer_name}」が検出されました。新規取引先として登録しますか？
                         </span>
@@ -2984,7 +2984,7 @@ export function ShipmentAddForm({
               {/* 🟡 【確認・不足項目】提示カード（事前指示書で解決できない不明点のみピンポイントで質問） */}
               {uncertainItems.length > 0 && !analyzingNatural && !analyzingPhoto && (
                 <div className="rounded-xl border-2 border-warning bg-warning-bg p-3.5 space-y-2.5">
-                  <p className="text-xs font-black text-earth-900 flex items-center gap-1.5">
+                  <p className="text-xs font-black text-ink flex items-center gap-1.5">
                     <AlertCircle className="h-4 w-4 text-warning shrink-0" />
                     <span>【確認・不足項目】不明な点があります。以下から選択してください</span>
                   </p>
@@ -2998,7 +2998,7 @@ export function ShipmentAddForm({
                               key={sIdx}
                               type="button"
                               onClick={() => handleSelectSuggestion(item, sug)}
-                              className="rounded-lg border border-warning bg-warning-bg/70 hover:bg-warning-bg px-2.5 py-1 text-xs font-black text-earth-900 transition-colors shadow-2xs active:scale-95"
+                              className="rounded-lg border border-warning bg-warning-bg/70 hover:bg-warning-bg px-2.5 py-1 text-xs font-black text-ink transition-colors shadow-2xs active:scale-95"
                             >
                               👉 {sug}
                             </button>
@@ -3436,7 +3436,7 @@ export function ShipmentAddForm({
                         'rounded-xl py-1.5 px-2 text-xs font-black border transition-all',
                         mode === 'set'
                           ? 'border-warning bg-warning text-white shadow-2xs'
-                          : 'border-warning bg-white text-earth-900 hover:bg-warning-bg',
+                          : 'border-warning bg-white text-ink hover:bg-warning-bg',
                       )}
                     >
                       🔄 数量を上書き
@@ -3448,7 +3448,7 @@ export function ShipmentAddForm({
                         'rounded-xl py-1.5 px-2 text-xs font-black border transition-all',
                         mode === 'increase'
                           ? 'border-forest-700 bg-forest-700 text-white shadow-2xs'
-                          : 'border-warning bg-white text-earth-900 hover:bg-warning-bg',
+                          : 'border-warning bg-white text-ink hover:bg-warning-bg',
                       )}
                     >
                       ⚡ 追加（増量）
@@ -3460,7 +3460,7 @@ export function ShipmentAddForm({
                         'rounded-xl py-1.5 px-2 text-xs font-black border transition-all',
                         mode === 'decrease'
                           ? 'border-alert bg-alert text-white shadow-2xs'
-                          : 'border-warning bg-white text-earth-900 hover:bg-warning-bg',
+                          : 'border-warning bg-white text-ink hover:bg-warning-bg',
                       )}
                     >
                       📉 減量する
@@ -3790,7 +3790,7 @@ export function ShipmentAddForm({
                   }}
                   className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-warning-bg/50 hover:border-warning transition text-left active:scale-[0.99] shadow-2xs"
                 >
-                  <div className="w-11 h-11 rounded-xl bg-warning-bg text-earth-900 flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-warning-bg text-ink flex items-center justify-center shrink-0">
                     <Clipboard className="h-6 w-6" />
                   </div>
                   <div>

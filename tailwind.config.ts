@@ -2,40 +2,61 @@ import type { Config } from 'tailwindcss'
 
 // 色は globals.css の CSS Variables を参照する。
 // ここに hex を直書きしない理由：ダークモード切替を CSS 側だけで完結させるため。
+// 透明度（bg-harvest-50/70 など）を効かせるため、/NN 付きのときだけ CSS 変数を color-mix で包む。
+// 以前は変数をそのまま渡していたので /NN 付きのクラスは CSS が1行も出ていなかった。
+// /NN なしのときは素の var() を返す（color-mix 非対応の古い端末でも通常の色は必ず出る）。
+// そのために *-opacity 系のコアプラグインを切っている（bg-opacity-50 等は使っていない）。
+// Tailwind の型は色に関数を受け付けないが、実行時は関数の色をサポートしている（v3）。
+const c = (name: string): string =>
+  (({ opacityValue }: { opacityValue?: string }) =>
+    opacityValue === undefined || opacityValue === '1'
+      ? `var(--${name})`
+      : `color-mix(in srgb, var(--${name}) calc(${opacityValue} * 100%), transparent)`) as unknown as string
+
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   darkMode: 'class',
+  corePlugins: {
+    backgroundOpacity: false,
+    textOpacity: false,
+    borderOpacity: false,
+    divideOpacity: false,
+    placeholderOpacity: false,
+    ringOpacity: false,
+  },
   theme: {
     extend: {
       colors: {
         earth: {
-          50: 'var(--earth-50)', 100: 'var(--earth-100)', 200: 'var(--earth-200)',
-          300: 'var(--earth-300)', 400: 'var(--earth-400)', 500: 'var(--earth-500)',
-          600: 'var(--earth-600)', 700: 'var(--earth-700)', 800: 'var(--earth-800)',
-          900: 'var(--earth-900)',
+          50: c('earth-50'), 100: c('earth-100'), 200: c('earth-200'),
+          300: c('earth-300'), 400: c('earth-400'), 500: c('earth-500'),
+          600: c('earth-600'), 700: c('earth-700'), 800: c('earth-800'),
+          900: c('earth-900'),
         },
         harvest: {
-          50: 'var(--harvest-50)', 100: 'var(--harvest-100)', 400: 'var(--harvest-400)',
-          500: 'var(--harvest-500)', 600: 'var(--harvest-600)', 700: 'var(--harvest-700)',
+          50: c('harvest-50'), 100: c('harvest-100'), 400: c('harvest-400'),
+          500: c('harvest-500'), 600: c('harvest-600'), 700: c('harvest-700'),
         },
         trust: {
-          50: 'var(--trust-50)', 100: 'var(--trust-100)', 400: 'var(--trust-400)',
-          500: 'var(--trust-500)', 600: 'var(--trust-600)', 700: 'var(--trust-700)',
+          50: c('trust-50'), 100: c('trust-100'), 400: c('trust-400'),
+          500: c('trust-500'), 600: c('trust-600'), 700: c('trust-700'),
         },
         forest: {
-          50: 'var(--forest-50)', 100: 'var(--forest-100)', 200: 'var(--forest-200)',
-          400: 'var(--forest-400)', 500: 'var(--forest-500)', 600: 'var(--forest-600)',
-          700: 'var(--forest-700)', 800: 'var(--forest-800)', 900: 'var(--forest-900)',
+          50: c('forest-50'), 100: c('forest-100'), 200: c('forest-200'),
+          400: c('forest-400'), 500: c('forest-500'), 600: c('forest-600'),
+          700: c('forest-700'), 800: c('forest-800'), 900: c('forest-900'),
         },
         grape: {
-          50: 'var(--grape-50)', 100: 'var(--grape-100)', 200: 'var(--grape-200)',
-          500: 'var(--grape-500)', 600: 'var(--grape-600)', 700: 'var(--grape-700)',
+          50: c('grape-50'), 100: c('grape-100'), 200: c('grape-200'),
+          500: c('grape-500'), 600: c('grape-600'), 700: c('grape-700'),
         },
-        alert: { DEFAULT: 'var(--alert)', bg: 'var(--alert-bg)' },
-        warning: { DEFAULT: 'var(--warning)', bg: 'var(--warning-bg)' },
-        bg: { DEFAULT: 'var(--bg)', soft: 'var(--bg-soft)', card: 'var(--bg-card)' },
-        ink: { DEFAULT: 'var(--ink)', soft: 'var(--ink-soft)', faint: 'var(--ink-faint)' },
-        line: { DEFAULT: 'var(--line)', strong: 'var(--line-strong)' },
+        alert: { DEFAULT: c('alert'), bg: c('alert-bg') },
+        warning: { DEFAULT: c('warning'), bg: c('warning-bg') },
+        bg: { DEFAULT: c('bg'), soft: c('bg-soft'), card: c('bg-card') },
+        ink: { DEFAULT: c('ink'), soft: c('ink-soft'), faint: c('ink-faint') },
+        line: { DEFAULT: c('line'), strong: c('line-strong') },
+        // 暗いパネル（ビューア・積込ヘッダー等）用。ダークモードでも反転しない（ink は反転するので暗い地には使わない）
+        night: { DEFAULT: c('night'), soft: c('night-soft') },
       },
       fontFamily: {
         // フォールバックは明朝体(serif)ではなくゴシック体(sans-serif)にする。

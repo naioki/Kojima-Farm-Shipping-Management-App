@@ -107,7 +107,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
               {r.alerts.map((a, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-earth-800"
+                  className="inline-flex items-center gap-1 rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-ink"
                 >
                   <AlertCircle className="h-3 w-3" aria-hidden />
                   {a.message}

@@ -69,6 +69,8 @@
   --warning-bg: #fffaeb;
 
   /* Surface（暖色グレー — 純グレー禁止） */
+  --night: #1e293b;
+  --night-soft: #334155;
   --bg: #fdfcfa;
   --bg-soft: #f7f4ef;
   --bg-card: #ffffff;

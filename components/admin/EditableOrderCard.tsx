@@ -239,7 +239,7 @@ export function EditableOrderCard({
               🏢 届先: {destinationName}
             </span>
           ) : needsDestination ? (
-            <span className="whitespace-nowrap rounded-lg bg-warning-bg px-2.5 py-0.5 text-xs font-bold text-earth-800 border border-warning">
+            <span className="whitespace-nowrap rounded-lg bg-warning-bg px-2.5 py-0.5 text-xs font-bold text-ink border border-warning">
               ⚠️ 納入先未定
             </span>
           ) : null}
@@ -324,7 +324,7 @@ export function EditableOrderCard({
 
       {/* 注文備考・FAXメモ表示（システムタグを除去した純粋な伝達事項のみ表示 #23） */}
       {extractActionableNote(notes) && (
-        <div className="rounded-lg border border-warning/80 bg-warning-bg/70 px-3 py-1.5 text-xs text-earth-900">
+        <div className="rounded-lg border border-warning/80 bg-warning-bg/70 px-3 py-1.5 text-xs text-ink">
           <span className="font-bold">📝 注文備考・OCR情報: </span>
           <span>{extractActionableNote(notes)}</span>
         </div>

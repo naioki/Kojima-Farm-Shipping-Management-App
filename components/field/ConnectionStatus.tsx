@@ -113,7 +113,7 @@ export function ConnectionStatus() {
             'pointer-events-auto flex items-center gap-2 rounded-full border px-4 py-2 text-xs sm:text-sm font-bold shadow-md',
             state.online && pendingCount === 0
               ? 'border-harvest-400 bg-harvest-50 text-forest-800'
-              : 'border-warning bg-warning-bg text-earth-900',
+              : 'border-warning bg-warning-bg text-ink',
           )}
         >
           {state.online && pendingCount === 0 ? (

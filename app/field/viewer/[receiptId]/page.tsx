@@ -168,7 +168,7 @@ export default function ReceiptViewerPage() {
               rotation === 180
                 ? 'bg-warning text-white shadow-xs'
                 : lightMode
-                ? 'bg-warning-bg text-earth-900 hover:bg-warning-bg'
+                ? 'bg-warning-bg text-ink hover:bg-warning-bg'
                 : 'bg-warning/20 border border-warning/50 text-warning-bg hover:bg-warning/30',
             )}
             title="上下180°反転（逆さまFAXを正立）"

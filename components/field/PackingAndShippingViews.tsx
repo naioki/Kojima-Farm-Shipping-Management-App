@@ -612,7 +612,7 @@ export function PackingAndShippingViews({
                       <span className="text-xs sm:text-sm">{groupInfo.icon}</span>
                       <span className="text-xs sm:text-sm font-black text-ink">{groupInfo.title}</span>
                       {isThaiMode && sortMode === 'time' && getThaiDepartureTime(item.departureTime) && (
-                        <span className="whitespace-nowrap rounded bg-warning-bg text-earth-900 border border-warning px-1.5 py-0.5 text-xs font-black print:hidden">
+                        <span className="whitespace-nowrap rounded bg-warning-bg text-ink border border-warning px-1.5 py-0.5 text-xs font-black print:hidden">
                           🇹🇭 {getThaiDepartureTime(item.departureTime)}
                         </span>
                       )}

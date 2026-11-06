@@ -121,7 +121,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
             {it.label}
           </label>
           {it.danger && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg border border-warning px-2.5 py-0.5 text-xs font-bold text-earth-900">
+            <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg border border-warning px-2.5 py-0.5 text-xs font-bold text-ink">
               <AlertTriangle className="h-3.5 w-3.5 text-warning" aria-hidden />
               動作注意
             </span>
@@ -261,7 +261,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
         <h2 className={cn('flex flex-wrap items-center gap-2 font-display font-black text-ink', small ? 'text-base' : 'text-lg')}>
           {SECTION_LABELS[section]}
           {pending > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-warning bg-warning-bg px-2 py-0.5 text-xs font-bold text-earth-900">
+            <span className="inline-flex items-center gap-1 rounded-full border border-warning bg-warning-bg px-2 py-0.5 text-xs font-bold text-ink">
               <AlertCircle className="h-3.5 w-3.5" aria-hidden />
               未設定 {pending}件
             </span>
@@ -287,7 +287,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
             >
               {SECTION_LABELS[section].replace(/（.*）$/, '')}
               {pending > 0 && (
-                <span className="rounded-full bg-warning-bg px-1.5 text-xs font-bold text-earth-900">{pending}</span>
+                <span className="rounded-full bg-warning-bg px-1.5 text-xs font-bold text-ink">{pending}</span>
               )}
             </a>
           )

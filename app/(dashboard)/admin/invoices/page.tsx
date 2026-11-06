@@ -60,7 +60,7 @@ export default async function InvoicesPage() {
       <h1 className="font-display text-2xl font-bold text-ink">請求</h1>
 
       {((pendingCount ?? 0) > 0 || (uninvoicedCount ?? 0) > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3.5 py-2.5 text-xs font-bold text-earth-900">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3.5 py-2.5 text-xs font-bold text-ink">
           <div className="flex flex-wrap items-center gap-3">
             {(pendingCount ?? 0) > 0 && (
               <span>

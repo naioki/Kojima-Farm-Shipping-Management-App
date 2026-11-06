@@ -58,7 +58,7 @@ export function ProductSelectorTabs({
                 isActive
                   ? 'bg-forest-700 text-white shadow-md ring-2 ring-harvest-700/30'
                   : incomplete > 0
-                  ? 'border-2 border-warning bg-warning-bg text-earth-900 hover:bg-warning-bg shadow-2xs'
+                  ? 'border-2 border-warning bg-warning-bg text-ink hover:bg-warning-bg shadow-2xs'
                   : 'border border-line bg-white text-ink-soft hover:bg-bg-soft hover:text-ink',
               )}
             >
@@ -99,7 +99,7 @@ export function ProductSelectorTabs({
 
       {/* 他品目に未完了がある場合の横断作り忘れ防止バナー */}
       {otherIncompleteTabs.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3 py-1.5 text-xs font-black text-earth-900 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3 py-1.5 text-xs font-black text-ink shadow-2xs">
           <div className="flex items-center gap-1.5">
             <span>🚨</span>
             <span>

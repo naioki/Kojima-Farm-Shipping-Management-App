@@ -78,7 +78,7 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
         </Link>
       </div>
       {receiptId && !fromReceipt?.attachment && (
-        <p role="alert" className="rounded-lg border border-warning bg-warning-bg p-3 text-sm text-earth-900">
+        <p role="alert" className="rounded-lg border border-warning bg-warning-bg p-3 text-sm text-ink">
           受信ボックスの原本を取り出せませんでした。お手数ですが、原本の画像・PDFを下の欄に貼り付けるかドロップしてください。
         </p>
       )}

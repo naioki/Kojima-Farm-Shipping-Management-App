@@ -73,7 +73,7 @@ export function RejectOrderButton({ orderId, customerName, deliveryDate, size = 
         title="注文を承認せず却下しますか？"
       >
         <div className="space-y-4 p-5">
-          <div className="flex items-start gap-2.5 rounded-lg border border-warning bg-warning-bg p-3 text-xs text-earth-900">
+          <div className="flex items-start gap-2.5 rounded-lg border border-warning bg-warning-bg p-3 text-xs text-ink">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div>
               <p className="font-bold">この注文を受注ボックスから取り消します</p>
