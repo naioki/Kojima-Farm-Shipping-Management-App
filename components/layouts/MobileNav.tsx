@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { Menu, X, LogOut, ChevronDown, Leaf, UserRound, MessageSquarePlus } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { navFor, buildPreservedFieldHref } from '@/components/layouts/nav-items'
+import { ThemeToggle } from '@/components/layouts/ThemeToggle'
 import { NavBadge } from '@/components/layouts/NavBadge'
 import { useNavState } from '@/components/layouts/use-nav'
 import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
@@ -249,6 +250,7 @@ export function MobileNav({
               </Link>
             </div>
             )}
+            <div className="pt-2"><ThemeToggle /></div>
             <form action="/auth/signout" method="post" className="pt-1">
               <button
                 type="submit"

@@ -115,6 +115,27 @@
   --shadow-xl: 0 20px 48px rgb(0 0 0 / 0.6);
 }
 
+/* 印刷は常に明るい配色 */
+@media print {
+  .dark {
+    --bg: #fdfcfa;
+    --bg-soft: #f7f4ef;
+    --bg-card: #ffffff;
+    --ink: #211a12;
+    --ink-soft: #5c5142;
+    --ink-faint: #7a6e5b;
+    --line: #e9e1d4;
+    --line-strong: #d6c9b4;
+    --alert-bg: #fef3f2;
+    --warning-bg: #fffaeb;
+    --shadow-sm: 0 1px 2px rgb(69 51 29 / 0.06);
+    --shadow-md: 0 2px 8px rgb(69 51 29 / 0.08), 0 1px 2px rgb(69 51 29 / 0.06);
+    --shadow-lg: 0 8px 24px rgb(69 51 29 / 0.12), 0 2px 6px rgb(69 51 29 / 0.06);
+    --shadow-xl: 0 20px 48px rgb(69 51 29 / 0.16);
+  }
+}
+
+
 @layer base {
   html {
     scroll-behavior: smooth;
