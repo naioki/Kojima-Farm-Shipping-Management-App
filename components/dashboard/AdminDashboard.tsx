@@ -55,7 +55,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
             </div>
             <Link
               href={`/field/shipments?date=${tp.deliveryDate}`}
-              className="inline-flex items-center gap-1 rounded-xl bg-white px-3.5 py-2 text-xs font-black text-forest-900 shadow-xs hover:bg-harvest-50 transition"
+              className="inline-flex items-center gap-1 rounded-xl bg-bg-card px-3.5 py-2 text-xs font-black text-ink shadow-xs hover:bg-bg-soft transition"
             >
               <span>収穫・パックボードを開く</span>
               <ArrowRight className="h-3.5 w-3.5" />
