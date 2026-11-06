@@ -84,7 +84,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     todayItemsRes,
     tomorrowItemsRes,
     pendingOrdersRes,
-    pendingReceiptsRes,
     failedReceiptsRes,
     curShipRes,
     prevShipRes,
@@ -109,7 +108,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .in('orders.status', ['approved', 'shipped', 'invoiced'])
       .gt('quantity', 0),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
-    supabase.from('order_receipts').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).in('status', ['ai_failed', 'unmatched']),
     supabase
       .from('order_items')
@@ -200,7 +198,6 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
 
   // --- 要対応アラート ---
   const pendingOrders = pendingOrdersRes.count ?? 0
-  const pendingReceipts = pendingReceiptsRes.count ?? 0
   const failedReceipts = failedReceiptsRes.count ?? 0
   const missingSpecs = await getMissingSpecs(createAdminClient()).catch(() => [])
   const missingSpecsCount = missingSpecs.length
@@ -214,8 +211,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const alerts: AlertItem[] = []
   if (pendingOrders > 0)
     alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/approvals' })
-  // 受信データの pending_review は「承認待ち受注」と同じFAXを数え直すだけなので出さない（二重表示の防止）
-  void pendingReceipts
+  // 受信データの pending_review は「承認待ち受注」と同じFAXを数え直すだけなので数えない（二重表示の防止）
   if (failedReceipts > 0)
     alerts.push({ id: 'fr', tone: 'alert', label: `読み取り失敗・取引先不明の受信が ${failedReceipts}件 あります`, count: failedReceipts, href: '/admin/inbox' })
   if (ar.overdueCount > 0)

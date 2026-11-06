@@ -36,5 +36,8 @@ describe('売掛金の判定', () => {
     expect(canTransitionInvoice('paid', 'sent')).toBe(true)
     expect(canTransitionInvoice('paid', 'draft')).toBe(false)
     expect(canTransitionInvoice('sent', 'paid')).toBe(true)
+    // 確定後は下書きに戻せない
+    expect(canTransitionInvoice('finalized', 'draft')).toBe(false)
+    expect(canTransitionInvoice('sent', 'finalized')).toBe(false)
   })
 })

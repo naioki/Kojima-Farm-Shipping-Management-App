@@ -8,6 +8,8 @@ import { getSetting } from '@/lib/settings'
 import { getStaffFeatures } from '@/lib/field/features'
 import { decideReceiptApproval, parseThreshold } from '@/lib/ingestion/auto-approve'
 import { foldKana } from '@/lib/normalize/kana'
+import { loadQuantityHistory } from './quantity-history'
+import { detectQuantityAnomaly } from './quantity-anomaly'
 import { skipsDestinationGate } from '@/lib/customers/settings'
 
 type AdminClient = SupabaseClient<Database>
@@ -166,6 +168,24 @@ export async function approveOrder(
         status: 403,
         error: 'この注文はスタッフでは承認できません（管理者に依頼してください）',
         reason: decision.reason,
+      }
+    }
+    // いつもと違う数量がある注文は管理者が原本を確かめる（承認画面の表示と同じ判定）
+    if (order.customer_id) {
+      const pids = [...new Set(items.map((it) => it.product_id).filter(Boolean))] as string[]
+      const history = await loadQuantityHistory(admin as unknown as SupabaseClient, [order.customer_id], pids)
+      const odd = items.find(
+        (it) =>
+          it.product_id &&
+          detectQuantityAnomaly(Number(it.quantity), history.get(`${order.customer_id}:${it.product_id}`) ?? []).anomaly,
+      )
+      if (odd) {
+        return {
+          ok: false,
+          status: 403,
+          error: `「${odd.product_name}」の数量がいつもと大きく違うため、管理者の確認が必要です`,
+          reason: 'quantity_anomaly',
+        }
       }
     }
   }
