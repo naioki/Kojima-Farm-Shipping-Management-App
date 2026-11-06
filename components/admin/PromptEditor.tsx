@@ -231,7 +231,7 @@ export function PromptEditor({
                     'transition-[border-color,box-shadow] duration-150',
                     'focus:outline-none focus:ring-2',
                     phraseMatches
-                      ? 'border-harvest-400 bg-harvest-50 text-harvest-900 focus:border-harvest-500 focus:ring-harvest-100'
+                      ? 'border-harvest-400 bg-harvest-50 text-harvest-700 focus:border-harvest-500 focus:ring-harvest-100'
                       : 'border-line-strong bg-bg-card text-ink focus:border-trust-500 focus:ring-trust-100',
                   )}
                   autoComplete="off"

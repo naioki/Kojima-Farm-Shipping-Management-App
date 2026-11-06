@@ -239,7 +239,7 @@ export function DeliveryCheckCard({
                     {/* 入数（総数量） */}
                     <div className="inline-flex items-center gap-1 rounded-lg bg-bg-soft border border-line px-2.5 py-1 text-ink">
                       <span className="text-xs font-medium text-ink-muted">入数:</span>
-                      <span className="text-base font-bold tabular-nums text-trust-900">
+                      <span className="text-base font-bold tabular-nums text-trust-700">
                         {it.quantity} <span className="text-xs font-bold text-ink-soft">{it.unit}</span>
                       </span>
                     </div>
@@ -270,7 +270,7 @@ export function DeliveryCheckCard({
                     'shrink-0 h-12 w-12 rounded-full border-2 flex items-center justify-center transition active:scale-95 shadow-xs',
                     isChecked
                       ? 'border-harvest-600 bg-harvest-600 text-white'
-                      : 'border-line-strong bg-white text-transparent hover:border-harvest-400',
+                      : 'border-line-strong bg-bg-card text-transparent hover:border-harvest-400',
                     status !== 'planned' && 'cursor-default',
                   )}
                 >

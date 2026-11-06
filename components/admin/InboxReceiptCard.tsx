@@ -141,7 +141,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
           </div>
 
           {r.items.length > 0 ? (
-            <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-xs">
+            <div className="overflow-x-auto rounded-lg border border-line bg-bg-card shadow-xs">
               <table className="w-full text-left text-xs">
                 <thead className="border-b border-line bg-earth-50 text-ink-soft">
                   <tr>
@@ -190,7 +190,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
 
           {/* 原本FAXのインラインプレビュー */}
           {r.hasR2Key && (
-            <div className="rounded-lg border border-line bg-white p-2">
+            <div className="rounded-lg border border-line bg-bg-card p-2">
               <p className="text-xs font-bold text-ink-soft mb-1">原本プレビュー（縮小表示）:</p>
               <div className="flex justify-center bg-earth-100/50 rounded overflow-hidden max-h-64">
                 <img

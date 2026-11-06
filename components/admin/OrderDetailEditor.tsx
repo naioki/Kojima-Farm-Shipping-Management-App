@@ -154,7 +154,7 @@ export function OrderDetailEditor({
   }
 
   const inputCls =
-    'h-9 rounded-lg border border-line-strong bg-white px-2.5 text-sm text-ink focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-100'
+    'h-9 rounded-lg border border-line-strong bg-bg-card px-2.5 text-sm text-ink focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-100'
 
   return (
     <div className="space-y-4">

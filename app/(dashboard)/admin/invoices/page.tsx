@@ -76,7 +76,7 @@ export default async function InvoicesPage() {
           {(pendingCount ?? 0) > 0 && (
             <Link
               href="/admin/orders?status=pending_review"
-              className="rounded-lg bg-warning px-2.5 py-1 text-xs font-black text-white hover:bg-warning"
+              className="rounded-lg bg-warning px-2.5 py-1 text-xs font-black text-white hover:opacity-90"
             >
               未承認を確認 →
             </Link>

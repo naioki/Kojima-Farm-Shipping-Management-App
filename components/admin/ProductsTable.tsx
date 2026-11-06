@@ -192,7 +192,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
         key={id}
         className={cn(
           'flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 transition-colors',
-          isDirty ? 'border-harvest-500 bg-harvest-50/30' : 'border-line bg-white',
+          isDirty ? 'border-harvest-500 bg-harvest-50/30' : 'border-line bg-bg-card',
         )}
       >
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
@@ -299,7 +299,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
             onClick={() => openMerge(id)}
             aria-label={`${r.name} を他品目の荷姿に統合`}
             title="統合（重複品目を別品目の荷姿へ）"
-            className="flex h-9 items-center gap-1 rounded border border-line bg-white px-2.5 text-xs font-medium text-ink-soft hover:border-trust-400 hover:bg-trust-50 hover:text-trust-600 focus-visible:outline-none"
+            className="flex h-9 items-center gap-1 rounded border border-line bg-bg-card px-2.5 text-xs font-medium text-ink-soft hover:border-trust-400 hover:bg-trust-50 hover:text-trust-600 focus-visible:outline-none"
           >
             <Combine className="h-3.5 w-3.5" aria-hidden />
             <span className="hidden sm:inline">統合</span>
@@ -348,7 +348,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
               return (
                 <div
                   key={id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-line bg-white/70 px-3 py-2 text-sm opacity-80"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-line bg-bg-card/70 px-3 py-2 text-sm opacity-80"
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-ink line-through">{r.name}</span>

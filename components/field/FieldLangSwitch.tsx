@@ -21,7 +21,7 @@ export function FieldLangSwitch({ className }: { className?: string }) {
         className={cn(
           'px-2 py-0.5 rounded-md transition-all flex items-center gap-1',
           langMode === 'ja'
-            ? 'bg-white text-ink shadow-xs'
+            ? 'bg-bg-card text-ink shadow-xs'
             : 'text-white/80 hover:text-white hover:bg-white/10',
         )}
       >

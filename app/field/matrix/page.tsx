@@ -193,19 +193,19 @@ export default async function MatrixPage({
         <div className="grid grid-cols-3 sm:inline-flex items-center gap-1.5 w-full sm:w-auto">
           <Link
             href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-white px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
+            className="h-10 rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
           >
             ← 前週
           </Link>
           <Link
             href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-forest-300 bg-forest-50 px-3 text-xs sm:text-sm font-black leading-10 text-forest-900 hover:bg-forest-100 text-center"
+            className="h-10 rounded-xl border border-forest-200 bg-forest-50 px-3 text-xs sm:text-sm font-black leading-10 text-forest-900 hover:bg-forest-100 text-center"
           >
             今日〜1週間
           </Link>
           <Link
             href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-white px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
+            className="h-10 rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
           >
             翌週 →
           </Link>
@@ -226,7 +226,7 @@ export default async function MatrixPage({
                   'rounded-full border px-4 py-2 text-sm font-black transition-all flex items-center gap-2',
                   active
                     ? 'border-forest-600 bg-forest-600 text-white shadow-sm'
-                    : 'border-line bg-white text-ink-soft hover:bg-bg-soft hover:text-ink',
+                    : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
                 )}
               >
                 <span>{p.name}</span>
@@ -247,7 +247,7 @@ export default async function MatrixPage({
                 if (e.target.value) e.target.form?.submit()
               }}
               defaultValue=""
-              className="h-8 rounded-lg border border-line bg-white px-2.5 text-xs font-semibold text-ink hover:bg-bg-card focus:outline-none"
+              className="h-8 rounded-lg border border-line bg-bg-card px-2.5 text-xs font-semibold text-ink hover:bg-bg-soft focus:outline-none"
             >
               <option value="" disabled>
                 品目を選択して予定を入力...

@@ -479,7 +479,7 @@ export default async function DeliveriesPage({
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後にここへ表示されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:bg-warning transition"
+            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition"
           >
             確認する →
           </Link>

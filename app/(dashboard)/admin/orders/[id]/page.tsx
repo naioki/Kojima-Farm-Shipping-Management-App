@@ -75,7 +75,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
           {order.deliveryDate && (
             <Link
               href={`/field/shipments?date=${order.deliveryDate}`}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-forest-300 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
+              className="inline-flex h-9 items-center gap-1 rounded-lg border border-forest-200 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
             >
               <span>🥬 この日のパックボードを見る</span>
               <ExternalLink className="h-3.5 w-3.5" />

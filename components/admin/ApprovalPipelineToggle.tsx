@@ -157,7 +157,7 @@ export function ApprovalPipelineToggle({
           >
             <span
               className={cn(
-                'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow transition duration-200',
+                'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-bg-card shadow transition duration-200',
                 autoApprove ? 'translate-x-5' : 'translate-x-0',
               )}
             />

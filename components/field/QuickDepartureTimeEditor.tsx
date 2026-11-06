@@ -139,7 +139,7 @@ export function QuickDepartureTimeEditor({
             handleOpen()
           }}
           className={cn(
-            'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition active:scale-95 print:border-ink-faint print:bg-white',
+            'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition active:scale-95 print:border-ink-faint print:bg-bg-card',
             currentDepartureTime?.startsWith('翌')
               ? 'bg-trust-50 hover:bg-trust-100 border-trust-400 text-trust-700'
               : currentDepartureTime || currentShippingRouteName
@@ -260,7 +260,7 @@ export function QuickDepartureTimeEditor({
                         'flex items-center justify-between rounded-xl border px-3 py-2 text-xs font-black transition active:scale-98 text-left',
                         isSelected
                           ? 'border-harvest-600 bg-harvest-50 text-forest-900 ring-1 ring-harvest-600'
-                          : 'border-line bg-white hover:bg-bg-soft text-ink',
+                          : 'border-line bg-bg-card hover:bg-bg-soft text-ink',
                       )}
                     >
                       <span>{p.label}</span>

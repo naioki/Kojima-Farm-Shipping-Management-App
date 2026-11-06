@@ -426,7 +426,7 @@ export function PackingAndShippingViews({
             className={cn(
               'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'time'
-                ? 'bg-white text-forest-900 shadow-2xs ring-1 ring-harvest-600/20'
+                ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-harvest-600/20'
                 : 'text-ink-soft hover:text-ink',
             )}
           >
@@ -439,7 +439,7 @@ export function PackingAndShippingViews({
             className={cn(
               'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'destination'
-                ? 'bg-white text-forest-900 shadow-2xs ring-1 ring-harvest-600/20'
+                ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-harvest-600/20'
                 : 'text-ink-soft hover:text-ink',
             )}
           >
@@ -452,7 +452,7 @@ export function PackingAndShippingViews({
             className={cn(
               'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'container'
-                ? 'bg-white text-forest-900 shadow-2xs ring-1 ring-harvest-600/20'
+                ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-harvest-600/20'
                 : 'text-ink-soft hover:text-ink',
             )}
           >
@@ -470,7 +470,7 @@ export function PackingAndShippingViews({
               className={cn(
                 'px-3 py-1 rounded-lg transition tabular-nums',
                 filterMode === 'all'
-                  ? 'bg-white text-ink shadow-2xs font-black'
+                  ? 'bg-bg-card text-ink shadow-2xs font-black'
                   : 'text-ink-muted hover:text-ink',
               )}
             >
@@ -519,7 +519,7 @@ export function PackingAndShippingViews({
               disabled={isRefreshing}
               title="最新データを再取得"
               aria-label="最新データを再取得"
-              className="inline-flex items-center justify-center gap-1 h-8 px-2.5 rounded-xl border border-line bg-white hover:bg-bg-soft text-xs font-bold text-ink-soft transition active:scale-95 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1 h-8 px-2.5 rounded-xl border border-line bg-bg-card hover:bg-bg-soft text-xs font-bold text-ink-soft transition active:scale-95 disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
               <span className="hidden sm:inline">更新</span>
@@ -552,7 +552,7 @@ export function PackingAndShippingViews({
                   href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${preset}&layout=2up`}
                   target="_blank"
                   rel="noopener"
-                  className="inline-flex h-7 items-center rounded-lg border border-harvest-400 bg-white px-2 text-xs font-bold text-forest-900 hover:bg-harvest-100"
+                  className="inline-flex h-7 items-center rounded-lg border border-harvest-400 bg-bg-card px-2 text-xs font-bold text-forest-900 hover:bg-harvest-100"
                 >
                   {c.name}のみ
                 </a>
@@ -571,7 +571,7 @@ export function PackingAndShippingViews({
           <button
             type="button"
             onClick={() => setFilterMode('all')}
-            className="inline-flex items-center rounded-lg bg-white border border-harvest-400 px-3 py-1.5 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
+            className="inline-flex items-center rounded-lg bg-bg-card border border-harvest-400 px-3 py-1.5 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
           >
             完了済みのカードを表示する
           </button>
@@ -629,7 +629,7 @@ export function PackingAndShippingViews({
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 text-xs font-black">
                       {sectionRemBoxes > 0 ? (
-                        <span className="rounded-md bg-white border border-line px-2 py-0.5 text-ink tabular-nums">
+                        <span className="rounded-md bg-bg-card border border-line px-2 py-0.5 text-ink tabular-nums">
                           残 {sectionRemBoxes}箱 ({sectionTotalPacks.toLocaleString()}P)
                         </span>
                       ) : (
@@ -668,7 +668,7 @@ export function PackingAndShippingViews({
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-base">📅</span>
               <span>翌日作業予定（先行枠：{nextItems.length}件）</span>
-              <span className="whitespace-nowrap rounded-md bg-ink text-white px-2 py-0.5 text-xs font-black tabular-nums">
+              <span className="whitespace-nowrap rounded-md bg-night text-white px-2 py-0.5 text-xs font-black tabular-nums">
                 計 {nextDayTotalBoxes}箱（{nextDayTotalPacks.toLocaleString()} P）
               </span>
             </div>
@@ -745,7 +745,7 @@ export function PackingAndShippingViews({
       {/* 📋 スマート並び替えモーダル */}
       {isReorderModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
-          <div className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl bg-white shadow-2xl flex flex-col max-h-[88vh] animate-in slide-in-from-bottom duration-200">
+          <div className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl bg-bg-card shadow-2xl flex flex-col max-h-[88vh] animate-in slide-in-from-bottom duration-200">
             <div className="flex items-center justify-between p-4 border-b border-line shrink-0">
               <div>
                 <h3 className="text-base font-black text-ink flex items-center gap-1.5">
@@ -861,7 +861,7 @@ export function PackingAndShippingViews({
                         ? 'border-harvest-400 bg-harvest-50/30 shadow-2xs'
                         : isDoneItem
                         ? 'border-line bg-bg-soft opacity-65'
-                        : 'border-line bg-white shadow-2xs',
+                        : 'border-line bg-bg-card shadow-2xs',
                     )}
                   >
                     <div
@@ -951,7 +951,7 @@ export function PackingAndShippingViews({
                         type="button"
                         disabled={busyReorder || idx === 0}
                         onClick={() => handleMove(idx, 'up')}
-                        className="h-8 w-8 rounded-lg border border-line bg-white hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
+                        className="h-8 w-8 rounded-lg border border-line bg-bg-card hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
                         title="1つ上へ"
                       >
                         <ChevronUp className="h-4 w-4" />
@@ -960,7 +960,7 @@ export function PackingAndShippingViews({
                         type="button"
                         disabled={busyReorder || idx === sortedPackItems.length - 1}
                         onClick={() => handleMove(idx, 'down')}
-                        className="h-8 w-8 rounded-lg border border-line bg-white hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
+                        className="h-8 w-8 rounded-lg border border-line bg-bg-card hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
                         title="1つ下へ"
                       >
                         <ChevronDown className="h-4 w-4" />

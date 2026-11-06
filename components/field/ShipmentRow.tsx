@@ -744,7 +744,7 @@ export function ShipmentRow({
   }
 
   const fieldInput =
-    'h-10 w-full rounded-lg border border-line-strong bg-white px-2.5 text-base sm:text-sm text-ink focus:outline-none focus:border-forest-600 focus:ring-2 focus:ring-forest-100'
+    'h-10 w-full rounded-lg border border-line-strong bg-bg-card px-2.5 text-base sm:text-sm text-ink focus:outline-none focus:border-forest-600 focus:ring-2 focus:ring-forest-100'
 
   const todayStr = jstTodayStr()
   const tomorrowStr = shiftDateStr(todayStr, 1)
@@ -782,14 +782,14 @@ export function ShipmentRow({
             ? 'border-harvest-400 bg-harvest-100/80'
             : status === 'packed'
             ? 'border-harvest-400 bg-harvest-50/80 ring-1 ring-harvest-400'
-            : 'border-harvest-400/80 bg-white shadow-xs'
+            : 'border-harvest-400/80 bg-bg-card shadow-xs'
           : status === 'shipped'
           ? 'border-trust-400 bg-trust-50/30'
           : status === 'packed'
           ? 'border-harvest-400 bg-harvest-50/30'
-          : 'border-line bg-white shadow-xs',
+          : 'border-line bg-bg-card shadow-xs',
         isNextUp && !isDone && !isFutureOrNextDay
-          ? 'ring-2 ring-harvest-600 border-harvest-600 bg-white shadow-md'
+          ? 'ring-2 ring-harvest-600 border-harvest-600 bg-bg-card shadow-md'
           : '',
         isSpotlighted
           ? 'ring-4 ring-warning border-warning bg-warning-bg/95 shadow-xl scale-[1.01]'
@@ -878,7 +878,7 @@ export function ShipmentRow({
                 e.stopPropagation()
                 setConfirmOpen(true)
               }}
-              className="h-8 rounded-lg border border-line-strong bg-white px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
+              className="h-8 rounded-lg border border-line-strong bg-bg-card px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
               title="未完了に戻す"
             >
               <span>戻す</span>
@@ -889,7 +889,7 @@ export function ShipmentRow({
                 e.stopPropagation()
                 setExpandedWhenDone(true)
               }}
-              className="h-8 w-8 rounded-lg border border-line bg-white/80 flex items-center justify-center text-ink-soft hover:text-ink"
+              className="h-8 w-8 rounded-lg border border-line bg-bg-card/80 flex items-center justify-center text-ink-soft hover:text-ink"
               title="カードを展開"
               aria-label="カードを展開"
             >
@@ -966,7 +966,7 @@ export function ShipmentRow({
                   <button
                     type="button"
                     onClick={() => setExpandedWhenDone(false)}
-                    className="rounded-lg border border-line bg-white px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                    className="rounded-lg border border-line bg-bg-card px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
                   >
                     1行に畳む ▲
                   </button>
@@ -1074,7 +1074,7 @@ export function ShipmentRow({
               isSampleOrder
                 ? 'bg-grape-700 border-2 border-warning'
                 : isFutureOrNextDay
-                ? 'bg-ink-soft border border-ink-faint/30'
+                ? 'bg-night-soft border border-white/20'
                 : isTodayOrder
                 ? 'bg-trust-600 border border-trust-600/30'
                 : 'bg-forest-800',
@@ -1087,7 +1087,7 @@ export function ShipmentRow({
                 </span>
                 <span className="num text-3xl sm:text-4xl font-black tracking-tight text-white tabular-nums leading-none">
                   {orderedQty}
-                  <span className="text-base sm:text-xl font-black text-warning-bg ml-1.5">
+                  <span className="text-base sm:text-xl font-black text-earth-100 ml-1.5">
                     {isThaiMode ? `${THAI_LABELS.samplePacks} (パック)` : 'パック（箱なし・バラ）'}
                   </span>
                 </span>
@@ -1152,8 +1152,8 @@ export function ShipmentRow({
                   : status === 'shipped'
                   ? 'border border-line bg-bg-soft/70 text-ink-muted'
                   : isFutureOrNextDay
-                  ? 'border-2 border-ink-faint bg-white text-ink hover:bg-bg-soft'
-                  : 'border-2 border-harvest-600 bg-white text-forest-800 hover:bg-harvest-50',
+                  ? 'border-2 border-ink-faint bg-bg-card text-ink hover:bg-bg-soft'
+                  : 'border-2 border-harvest-600 bg-bg-card text-ink hover:bg-harvest-50',
               )}
             >
               {status === 'packed' ? (
@@ -1181,7 +1181,7 @@ export function ShipmentRow({
                   status === 'shipped'
                     ? 'bg-trust-600 text-white ring-2 ring-trust-600 ring-offset-1'
                     : status === 'packed'
-                    ? 'border-2 border-trust-600/60 bg-white text-trust-700 hover:bg-trust-50'
+                    ? 'border-2 border-trust-600/60 bg-bg-card text-ink hover:bg-trust-50'
                     : 'border border-line bg-bg-soft/40 text-ink-muted opacity-50 cursor-not-allowed',
                 )}
               >
@@ -1197,8 +1197,8 @@ export function ShipmentRow({
                 open
                   ? 'border-forest-700 bg-forest-700 text-white'
                   : isPartial || memoText
-                  ? 'border-warning bg-warning-bg text-ink hover:bg-warning-bg'
-                  : 'border-line-strong bg-white text-ink hover:bg-bg-soft',
+                  ? 'border-warning bg-warning-bg text-ink hover:opacity-90'
+                  : 'border-line-strong bg-bg-card text-ink hover:bg-bg-soft',
               )}
               title={open ? '詳細を閉じる' : '途中数・メモ・詳細を開く'}
             >
@@ -1212,7 +1212,7 @@ export function ShipmentRow({
       {undoGrace && (
         <div
           data-guide="undo-bar"
-          className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-harvest-200 bg-harvest-50/80 px-3 py-2"
+          className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-harvest-100 bg-harvest-50/80 px-3 py-2"
         >
           <span className="flex items-center gap-1.5 text-xs font-bold text-harvest-700">
             <Check className="h-4 w-4" aria-hidden />
@@ -1222,7 +1222,7 @@ export function ShipmentRow({
             type="button"
             onClick={undoAdvance}
             disabled={busy}
-            className="inline-flex min-h-[40px] h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line-strong bg-white px-3 text-xs font-black text-ink hover:bg-bg-soft active:scale-95 transition"
+            className="inline-flex min-h-[40px] h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line-strong bg-bg-card px-3 text-xs font-black text-ink hover:bg-bg-soft active:scale-95 transition"
           >
             <Undo2 className="h-3.5 w-3.5" aria-hidden />
             <span>元に戻す</span>
@@ -1279,12 +1279,12 @@ export function ShipmentRow({
                   setPartialBoxesStr(next === 0 ? '' : String(next))
                   void savePartialBoxes(next === 0 ? null : next)
                 }}
-                className="min-h-[44px] h-11 px-3 rounded-xl border border-line-strong bg-white hover:bg-bg-soft text-xs sm:text-sm font-black text-ink shrink-0 active:scale-95 transition"
+                className="min-h-[44px] h-11 px-3 rounded-xl border border-line-strong bg-bg-card hover:bg-bg-soft text-xs sm:text-sm font-black text-ink shrink-0 active:scale-95 transition"
               >
                 -1箱
               </button>
 
-              <div className="flex items-center gap-1 bg-white border border-line-strong rounded-xl px-2.5 min-h-[44px] h-11 w-24 shrink-0">
+              <div className="flex items-center gap-1 bg-bg-card border border-line-strong rounded-xl px-2.5 min-h-[44px] h-11 w-24 shrink-0">
                 <input
                   type="number"
                   inputMode="numeric"
@@ -1387,7 +1387,7 @@ export function ShipmentRow({
               <span className="text-xs font-bold text-ink-soft">📄 受注原本（FAX・注文書画像）</span>
               <Link
                 href={viewerHref}
-                className="h-8 px-3 rounded-lg bg-trust-700 text-white text-xs font-black shadow-2xs hover:bg-trust-800 active:scale-95 transition inline-flex items-center"
+                className="h-8 px-3 rounded-lg bg-trust-700 text-white text-xs font-black shadow-2xs hover:bg-trust-600 active:scale-95 transition inline-flex items-center"
               >
                 原本を見る →
               </Link>
@@ -1419,7 +1419,7 @@ export function ShipmentRow({
                   'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
                   hasCard
                     ? 'border-grape-500 bg-grape-600 text-white shadow-2xs'
-                    : 'border-line-strong bg-white text-ink-soft hover:bg-bg-soft',
+                    : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                 )}
               >
                 {hasCard ? '🃏 カード有（タップで無へ）' : '🃏 カードなし（タップで有へ）'}
@@ -1437,7 +1437,7 @@ export function ShipmentRow({
                   'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
                   hasSeal
                     ? 'border-alert bg-alert text-white shadow-2xs'
-                    : 'border-line-strong bg-white text-ink-soft hover:bg-bg-soft',
+                    : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                 )}
               >
                 {hasSeal ? '🏷️ シールあり' : '🏷️ シールなし'}
@@ -1456,7 +1456,7 @@ export function ShipmentRow({
                         'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
                         active
                           ? 'border-warning bg-warning text-white shadow-2xs'
-                          : 'border-line-strong bg-white text-ink-soft hover:bg-bg-soft',
+                          : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                       )}
                     >
                       🛍️ {bt}
@@ -1481,7 +1481,7 @@ export function ShipmentRow({
                   setAddingMaterialCat(addingMaterialCat === 'bag' ? null : 'bag')
                   setNewMaterialInput('')
                 }}
-                className="min-h-[34px] px-2.5 rounded-xl border border-dashed border-line-strong bg-white text-xs font-bold text-ink-soft hover:border-ink-faint hover:text-ink"
+                className="min-h-[34px] px-2.5 rounded-xl border border-dashed border-line-strong bg-bg-card text-xs font-bold text-ink-soft hover:border-ink-faint hover:text-ink"
               >
                 ＋袋・資材を追加
               </button>
@@ -1560,7 +1560,7 @@ export function ShipmentRow({
                           'min-h-[36px] px-2.5 rounded-xl border text-xs font-black transition active:scale-95',
                           active
                             ? 'border-trust-700 bg-trust-700 text-white shadow-2xs'
-                            : 'border-line-strong bg-white text-ink-soft hover:bg-bg-soft',
+                            : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                         )}
                       >
                         {cOpt.label}
@@ -1639,7 +1639,7 @@ export function ShipmentRow({
                           'min-h-[32px] px-2.5 rounded-lg border text-xs font-black transition active:scale-95',
                           active
                             ? 'border-harvest-700 bg-harvest-700 text-white shadow-2xs'
-                            : 'border-line-strong bg-white text-ink-soft hover:bg-bg-soft',
+                            : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                         )}
                       >
                         {ppcOpt}入
@@ -1667,7 +1667,7 @@ export function ShipmentRow({
                         'min-h-[34px] px-2.5 rounded-lg border text-xs font-bold transition active:scale-95',
                         active
                           ? 'border-forest-700 bg-forest-700 text-white font-black'
-                          : 'border-line-strong bg-white text-ink-soft hover:bg-bg-soft',
+                          : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                       )}
                     >
                       {spPreset}
@@ -1678,7 +1678,7 @@ export function ShipmentRow({
             </div>
 
             {/* 📦 注文数の変更 ＆ 規格手入力（普段は折りたたんで途中数と誤認しない設計） */}
-            <div className="rounded-xl border border-line bg-white p-2.5 space-y-2">
+            <div className="rounded-xl border border-line bg-bg-card p-2.5 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-ink-soft">
                   📦 現在の注文数：<strong className="font-black text-ink">{fullCases}箱{loosePacks > 0 ? `＋${loosePacks}P` : ''}（計{orderedQty}P / 1箱{packsPerCase}入）</strong>
@@ -1689,8 +1689,8 @@ export function ShipmentRow({
                   className={cn(
                     'rounded-lg border px-2.5 py-1 text-xs font-black transition',
                     showOrderEdit
-                      ? 'border-ink-soft bg-ink text-white'
-                      : 'border-line-strong bg-bg-soft text-ink hover:bg-bg-soft',
+                      ? 'border-night-soft bg-night text-white'
+                      : 'border-line-strong bg-bg-soft text-ink hover:opacity-90',
                   )}
                 >
                   {showOrderEdit ? '閉じる ▲' : '📦 注文数・規格を変更する ✎'}
@@ -1788,7 +1788,7 @@ export function ShipmentRow({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+              className="rounded-lg border border-line bg-bg-card px-3 py-2 text-xs font-bold text-ink-soft hover:bg-bg-soft"
             >
               閉じる ▲
             </button>

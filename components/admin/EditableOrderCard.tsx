@@ -247,7 +247,7 @@ export function EditableOrderCard({
           <span
             className={`rounded-lg px-2.5 py-0.5 text-xs font-bold border ${
               deliveryDate
-                ? 'bg-trust-50 text-trust-800 border-trust-200'
+                ? 'bg-trust-50 text-trust-700 border-trust-100'
                 : 'bg-warning-bg text-warning border-warning/40'
             }`}
           >
@@ -262,7 +262,7 @@ export function EditableOrderCard({
               return (
                 <span
                   key={r.id}
-                  className="inline-flex items-center gap-1 rounded-md border border-forest-300 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
+                  className="inline-flex items-center gap-1 rounded-md border border-forest-200 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
                 >
                   <span className="font-bold">{r.productName}</span>
                   <span className="font-black tabular-nums text-forest-800">

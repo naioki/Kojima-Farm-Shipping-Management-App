@@ -81,7 +81,7 @@ export default async function DeliveryNotesPage({
           </span>
           <Link
             href="/admin/orders?status=pending_review"
-            className="rounded-lg bg-warning px-2.5 py-1 text-xs font-black text-white hover:bg-warning"
+            className="rounded-lg bg-warning px-2.5 py-1 text-xs font-black text-white hover:opacity-90"
           >
             確認待ちを開く →
           </Link>
@@ -130,7 +130,7 @@ export default async function DeliveryNotesPage({
             return (
               <div
                 key={c.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-white px-3.5 py-2.5 shadow-2xs"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-bg-card px-3.5 py-2.5 shadow-2xs"
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-black text-sm text-ink">{c.name}</span>

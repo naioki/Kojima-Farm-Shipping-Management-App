@@ -58,8 +58,8 @@ export function ProductSelectorTabs({
                 isActive
                   ? 'bg-forest-700 text-white shadow-md ring-2 ring-harvest-700/30'
                   : incomplete > 0
-                  ? 'border-2 border-warning bg-warning-bg text-ink hover:bg-warning-bg shadow-2xs'
-                  : 'border border-line bg-white text-ink-soft hover:bg-bg-soft hover:text-ink',
+                  ? 'border-2 border-warning bg-warning-bg text-ink hover:opacity-90 shadow-2xs'
+                  : 'border border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
               )}
             >
               <span>
@@ -110,7 +110,7 @@ export function ProductSelectorTabs({
           <button
             type="button"
             onClick={() => handleSelect(otherIncompleteTabs[0]!.id)}
-            className="rounded-lg bg-warning px-2.5 py-1 text-white hover:bg-warning transition shrink-0"
+            className="rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition shrink-0"
           >
             {otherIncompleteTabs[0]!.name}を開く →
           </button>

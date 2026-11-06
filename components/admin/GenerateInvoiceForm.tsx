@@ -168,7 +168,7 @@ export function GenerateInvoiceForm() {
                 setFrom(firstOfMonth())
                 setTo(iso(new Date()))
               }}
-              className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-bold text-ink hover:bg-bg-soft"
+              className="rounded-lg border border-line bg-bg-card px-2.5 py-1 text-xs font-bold text-ink hover:bg-bg-soft"
             >
               今月（本日まで）
             </button>
@@ -178,7 +178,7 @@ export function GenerateInvoiceForm() {
                 setFrom(firstOfMonth())
                 setTo(lastOfMonth())
               }}
-              className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-bold text-ink hover:bg-bg-soft"
+              className="rounded-lg border border-line bg-bg-card px-2.5 py-1 text-xs font-bold text-ink hover:bg-bg-soft"
             >
               今月全体
             </button>
@@ -188,7 +188,7 @@ export function GenerateInvoiceForm() {
                 setFrom(prevMonthFirst())
                 setTo(prevMonthLast())
               }}
-              className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-bold text-ink hover:bg-bg-soft"
+              className="rounded-lg border border-line bg-bg-card px-2.5 py-1 text-xs font-bold text-ink hover:bg-bg-soft"
             >
               先月全体
             </button>
@@ -208,7 +208,7 @@ export function GenerateInvoiceForm() {
           <button
             type="button"
             onClick={() => setRetryCount((c) => c + 1)}
-            className="rounded-lg border border-alert/30 bg-white px-2.5 py-1 text-xs font-bold text-alert hover:bg-alert-bg transition-colors"
+            className="rounded-lg border border-alert/30 bg-bg-card px-2.5 py-1 text-xs font-bold text-alert hover:bg-alert-bg transition-colors"
           >
             再試行
           </button>
@@ -246,7 +246,7 @@ export function GenerateInvoiceForm() {
             指定された期間（{from} 〜 {to}）に出荷実績のある取引先はありません。期間を変更してください。
           </div>
         ) : (
-          <div className="divide-y divide-line/60 rounded-xl border border-line bg-white overflow-hidden shadow-xs">
+          <div className="divide-y divide-line/60 rounded-xl border border-line bg-bg-card overflow-hidden shadow-xs">
             {candidates.map((c) => (
               <div
                 key={c.customerId}

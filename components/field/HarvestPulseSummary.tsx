@@ -114,11 +114,11 @@ export function HarvestPulseSummary({
       <div
         className={cn(
           'rounded-2xl p-3 text-white shadow-sm space-y-2.5 transition-colors',
-          isTodayWork ? 'bg-forest-700' : 'bg-ink border border-ink-soft',
+          isTodayWork ? 'bg-forest-700' : 'bg-night border border-night-soft',
         )}
       >
         {prevCarryover > 0 && (
-          <div className="flex items-center justify-between gap-2 rounded-xl bg-warning/20 border border-warning/40 px-3 py-1.5 text-xs font-black text-warning-bg">
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-warning/20 border border-warning/40 px-3 py-1.5 text-xs font-black text-earth-100">
             <span className="flex items-center gap-1.5">
               <span>🌅</span>
               <span>
@@ -127,7 +127,7 @@ export function HarvestPulseSummary({
                   : `前日からの持ち越し: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）`}
               </span>
             </span>
-            <span className="whitespace-nowrap rounded bg-warning text-white px-1.5 py-0.5 text-xs font-black shrink-0">
+            <span className="whitespace-nowrap rounded bg-warning-bg text-ink border border-warning px-1.5 py-0.5 text-xs font-black shrink-0">
               畑からの追加収穫目安: あと {Math.max(0, remainingBoxes - prevCarryover)} 箱
             </span>
           </div>
@@ -245,7 +245,7 @@ export function HarvestPulseSummary({
       </div>
 
       {/* 折りたたみ内訳アコーディオン（コンテナ別・規格別・翌朝持ち越し） */}
-      <details className="group rounded-xl border border-line bg-white shadow-2xs">
+      <details className="group rounded-xl border border-line bg-bg-card shadow-2xs">
         <summary className="flex cursor-pointer items-center justify-between px-3.5 py-2.5 text-xs font-black text-ink-soft select-none hover:bg-bg-soft/50">
           <span className="flex items-center gap-1.5 flex-wrap">
             <Box className="h-4 w-4 text-harvest-600 shrink-0" />
@@ -270,7 +270,7 @@ export function HarvestPulseSummary({
                 {activeContainers.map((cb) => (
                   <div
                     key={cb.type}
-                    className="rounded-lg border border-line bg-white p-2 text-center"
+                    className="rounded-lg border border-line bg-bg-card p-2 text-center"
                   >
                     <span className="block text-xs font-black text-ink truncate">
                       {isThaiMode && getThaiContainer(cb.type)
@@ -296,7 +296,7 @@ export function HarvestPulseSummary({
                 {activeSpecs.map((sb) => (
                   <div
                     key={sb.spec}
-                    className="flex items-center justify-between rounded bg-white px-2.5 py-1.5 border border-line"
+                    className="flex items-center justify-between rounded bg-bg-card px-2.5 py-1.5 border border-line"
                   >
                     <span className="font-bold text-ink">{sb.spec || '標準規格'}</span>
                     <span className="font-black text-ink tabular-nums">
@@ -329,7 +329,7 @@ export function HarvestPulseSummary({
             </div>
 
             {isEditingCarryover && (
-              <div className="rounded-xl bg-white p-2.5 border border-line shadow-xs space-y-2 mt-1">
+              <div className="rounded-xl bg-bg-card p-2.5 border border-line shadow-xs space-y-2 mt-1">
                 <div className="grid grid-cols-4 gap-1">
                   {[-5, -1, 1, 5].map((delta) => (
                     <button
@@ -353,7 +353,7 @@ export function HarvestPulseSummary({
                     min={0}
                     value={tempCarryoverStr}
                     onChange={(e) => setTempCarryoverStr(e.target.value)}
-                    className="h-9 w-20 rounded border border-line bg-white px-2 py-1 text-center font-bold text-base shadow-inner outline-none"
+                    className="h-9 w-20 rounded border border-line bg-bg-card px-2 py-1 text-center font-bold text-base shadow-inner outline-none"
                   />
                   <button
                     type="button"

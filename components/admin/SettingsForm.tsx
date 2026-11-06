@@ -150,7 +150,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                 role="switch"
                 aria-checked={on}
                 onClick={() => set(it.key, on ? 'off' : 'on')}
-                className="inline-flex min-h-[44px] items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-forest-300 focus:ring-offset-2"
+                className="inline-flex min-h-[44px] items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-forest-200 focus:ring-offset-2"
               >
                 <span
                   className={cn(
@@ -160,7 +160,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                 >
                   <span
                     className={cn(
-                      'inline-block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                      'inline-block h-5 w-5 rounded-full bg-bg-card shadow transition-transform',
                       on ? 'translate-x-6' : 'translate-x-1',
                     )}
                   />
@@ -313,7 +313,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                   aria-hidden
                 />
               </summary>
-              <div className="space-y-6 rounded-b-2xl border-t border-line/80 bg-white p-5">
+              <div className="space-y-6 rounded-b-2xl border-t border-line/80 bg-bg-card p-5">
                 {sectionItems.map(renderItem)}
               </div>
             </details>
@@ -324,7 +324,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
           <section
             key={section}
             id={`settings-${section}`}
-            className="scroll-mt-20 space-y-5 rounded-2xl border border-line/80 bg-white p-5 shadow-xs sm:p-6"
+            className="scroll-mt-20 space-y-5 rounded-2xl border border-line/80 bg-bg-card p-5 shadow-xs sm:p-6"
           >
             <div className="border-b border-line/60 pb-3">{sectionHeader(section)}</div>
             <div className="space-y-6 pt-1">{sectionItems.map(renderItem)}</div>
@@ -333,7 +333,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
       })}
 
       {/* フローティング保存バー */}
-      <div className="sticky bottom-0 z-10 flex justify-end rounded-2xl border border-line bg-white/95 p-4 shadow-lg backdrop-blur">
+      <div className="sticky bottom-0 z-10 flex justify-end rounded-2xl border border-line bg-bg-card/95 p-4 shadow-lg backdrop-blur">
         <Button onClick={save} isLoading={saving} size="lg" className="h-12 px-8 text-base font-black">
           <Check className="h-5 w-5" aria-hidden />
           設定を保存する

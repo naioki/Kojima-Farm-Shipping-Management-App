@@ -141,7 +141,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
   })
 
   return (
-    <div className="rounded-2xl border-2 border-harvest-400 bg-white p-6 shadow-sm space-y-6">
+    <div className="rounded-2xl border-2 border-harvest-400 bg-bg-card p-6 shadow-sm space-y-6">
       {/* 見出し */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -168,7 +168,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
             onChange={(e) => setWhat(e.target.value)}
             rows={3}
             placeholder="例: 出荷一覧の右下ボタンが押しづらい、この画面で〇〇のボタンを追加してほしい、など"
-            className="mt-1.5 w-full rounded-xl border border-ink/20 bg-white p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none focus:ring-2 focus:ring-harvest-400"
+            className="mt-1.5 w-full rounded-xl border border-ink/20 bg-bg-card p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none focus:ring-2 focus:ring-harvest-400"
             required
           />
         </div>
@@ -193,7 +193,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={when}
                 onChange={(e) => setWhen(e.target.value)}
                 placeholder="例: 今日の15時頃、朝の出荷作業中"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -204,7 +204,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={where}
                 onChange={(e) => setWhere(e.target.value)}
                 placeholder="例: 出荷一覧、新規出荷追加、FAX原本画面"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -215,7 +215,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={who}
                 onChange={(e) => setWho(e.target.value)}
                 placeholder="例: パートさん、現場リーダー"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -226,7 +226,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={why}
                 onChange={(e) => setWhy(e.target.value)}
                 placeholder="例: 電波が悪かった、急いでいて押し間違えた"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -237,7 +237,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={how}
                 onChange={(e) => setHow(e.target.value)}
                 placeholder="例: ボタンを大きくして色を変えてほしい、確認画面を出してほしい"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
           </div>
@@ -269,7 +269,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded-lg border border-ink/20 bg-white px-2 py-1 text-xs text-ink"
+              className="rounded-lg border border-ink/20 bg-bg-card px-2 py-1 text-xs text-ink"
             >
               <option value="all">すべて表示</option>
               <option value="pending">未着手のみ</option>
@@ -310,7 +310,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
               return (
                 <div
                   key={r.id}
-                  className="rounded-xl border border-ink/10 bg-white p-4 space-y-2.5 shadow-2xs hover:border-harvest-400 transition-colors"
+                  className="rounded-xl border border-ink/10 bg-bg-card p-4 space-y-2.5 shadow-2xs hover:border-harvest-400 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -327,7 +327,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                       <select
                         value={r.status}
                         onChange={(e) => handleStatusChange(r.id, e.target.value as FeedbackReport['status'])}
-                        className="rounded-lg border border-ink/20 bg-white px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
+                        className="rounded-lg border border-ink/20 bg-bg-card px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
                       >
                         <option value="pending">未着手にする</option>
                         <option value="in_progress">対応中にする</option>

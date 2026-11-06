@@ -59,7 +59,7 @@ export function RejectOrderButton({ orderId, customerName, deliveryDate, size = 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`inline-flex items-center gap-1 rounded-lg border border-line-strong bg-white px-2.5 py-1 text-xs font-semibold text-ink-muted hover:border-alert/50 hover:bg-alert/5 hover:text-alert transition-all ${
+        className={`inline-flex items-center gap-1 rounded-lg border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-semibold text-ink-muted hover:border-alert/50 hover:bg-alert/5 hover:text-alert transition-all ${
           size === 'lg' ? 'h-11 px-4 text-sm' : size === 'md' ? 'h-9 px-3 text-xs' : 'h-8 px-2.5 text-xs'
         }`}
       >

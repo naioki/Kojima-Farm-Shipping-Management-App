@@ -956,13 +956,13 @@ export function ConciergeChat({
               {receipt.undone ? '↩️ 取り消し済み（元の状態に戻しました）' : '✅ おまかせ実行証明レシート（完了）'}
             </span>
           </div>
-          <span className="whitespace-nowrap rounded-md bg-white px-2 py-0.5 text-xs font-black text-ink-soft border border-line">
+          <span className="whitespace-nowrap rounded-md bg-bg-card px-2 py-0.5 text-xs font-black text-ink-soft border border-line">
             🕒 {receipt.executedAt} 実行
           </span>
         </div>
 
         {/* 📍 どこに登録・反映されたか（パンくず） */}
-        <div className="rounded-xl bg-white border border-harvest-400 px-3 py-2 space-y-1">
+        <div className="rounded-xl bg-bg-card border border-harvest-400 px-3 py-2 space-y-1">
           <div className="flex items-center gap-1 text-xs font-black text-forest-800">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-harvest-600" />
             <span>どこに登録・反映されたか（保存場所）:</span>
@@ -972,7 +972,7 @@ export function ConciergeChat({
 
         {/* 🔀 Before → After（どう変わったか） */}
         {receipt.diffs.length > 0 && (
-          <div className="rounded-xl bg-white border border-harvest-400 px-3 py-2 space-y-1.5">
+          <div className="rounded-xl bg-bg-card border border-harvest-400 px-3 py-2 space-y-1.5">
             <div className="text-xs font-black text-forest-800">🔀 変更内容（Before ➔ After）:</div>
             <div className="space-y-1">
               {receipt.diffs.map((d, idx) => (
@@ -993,7 +993,7 @@ export function ConciergeChat({
 
         {/* 📋 登録された明細一覧 */}
         {receipt.details.length > 0 && (
-          <div className="rounded-xl bg-white/90 border border-line px-3 py-2 grid gap-1 sm:grid-cols-2">
+          <div className="rounded-xl bg-bg-card/90 border border-line px-3 py-2 grid gap-1 sm:grid-cols-2">
             {receipt.details.map((dt, idx) => (
               <div key={idx} className="text-xs font-bold flex items-baseline gap-1.5">
                 <span className="text-ink-soft shrink-0">・{dt.label}:</span>
@@ -1020,7 +1020,7 @@ export function ConciergeChat({
                 type="button"
                 disabled={isUndoing}
                 onClick={() => void handleUndoReceipt(receipt)}
-                className="rounded-xl border-2 border-alert bg-white hover:bg-alert-bg text-alert py-2.5 px-3.5 text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition active:scale-95 shrink-0"
+                className="rounded-xl border-2 border-alert bg-bg-card hover:bg-alert-bg text-alert py-2.5 px-3.5 text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition active:scale-95 shrink-0"
               >
                 {isUndoing ? (
                   <>
@@ -1045,13 +1045,13 @@ export function ConciergeChat({
     <div className="space-y-4">
       {/* ⓪ いつでも見返せる「おまかせ実行履歴（タイムライン台帳）」 */}
       {historyReceipts.length > 0 && (
-        <div className="rounded-2xl border-2 border-forest-400 bg-white shadow-xs overflow-hidden">
+        <div className="rounded-2xl border-2 border-forest-400 bg-bg-card shadow-xs overflow-hidden">
           <button
             type="button"
             onClick={() => setHistoryOpen((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-left bg-forest-50/70 hover:bg-forest-100/70 transition"
           >
-            <span className="flex items-center gap-2 text-xs sm:text-sm font-black text-forest-950">
+            <span className="flex items-center gap-2 text-xs sm:text-sm font-black text-forest-900">
               <History className="h-4 w-4 text-forest-700 shrink-0" />
               <span>🕒 最近のおまかせ実行履歴（どこに何が登録されたか一覧）</span>
               <span className="whitespace-nowrap rounded-full bg-forest-700 px-2 py-0.5 text-xs font-black text-white">
@@ -1071,7 +1071,7 @@ export function ConciergeChat({
       )}
 
       {/* ① 文字入力が苦手な方のための「ワンタップ定型お願いボタン集」 */}
-      <details className="group rounded-2xl border-2 border-harvest-400 bg-white shadow-xs" open>
+      <details className="group rounded-2xl border-2 border-harvest-400 bg-bg-card shadow-xs" open>
         <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-black text-forest-900 select-none">
           <span className="flex items-center gap-2">
             <HelpCircle className="h-4 w-4 text-harvest-600 shrink-0" />
@@ -1081,7 +1081,7 @@ export function ConciergeChat({
         </summary>
         <div className="border-t border-harvest-100 p-3.5 grid gap-3 sm:grid-cols-2 bg-harvest-50/40">
           {QUICK_PRESETS.map((group) => (
-            <div key={group.category} className="rounded-xl bg-white p-3 border border-harvest-400/80 space-y-2">
+            <div key={group.category} className="rounded-xl bg-bg-card p-3 border border-harvest-400/80 space-y-2">
               <div className="text-xs font-black text-forest-900">{group.category}</div>
               <div className="flex flex-wrap gap-1.5">
                 {group.items.map((item) => (
@@ -1102,7 +1102,7 @@ export function ConciergeChat({
       </details>
 
       {/* ② チャットタイムライン */}
-      <div className="rounded-2xl border border-line bg-white p-3.5 sm:p-4 space-y-4 min-h-[320px] max-h-[620px] overflow-y-auto shadow-xs">
+      <div className="rounded-2xl border border-line bg-bg-card p-3.5 sm:p-4 space-y-4 min-h-[320px] max-h-[620px] overflow-y-auto shadow-xs">
         {messages.map((msg) => (
           <div
             key={msg.id}
@@ -1145,7 +1145,7 @@ export function ConciergeChat({
                       aria-label={r === 'up' ? '役に立った' : '役に立たなかった'}
                       className={cn(
                         'inline-flex h-9 w-9 items-center justify-center rounded-lg border text-ink-soft transition-colors disabled:cursor-default',
-                        active ? 'border-forest-600 bg-forest-50 text-forest-800' : 'border-line bg-white hover:bg-sand-100',
+                        active ? 'border-forest-600 bg-forest-50 text-forest-800' : 'border-line bg-bg-card hover:bg-sand-100',
                         msg.rating && !active && 'opacity-40',
                       )}
                     >
@@ -1174,7 +1174,7 @@ export function ConciergeChat({
                         className="w-full rounded-xl border-2 border-forest-600 bg-forest-50 hover:bg-forest-100 p-3 flex items-center justify-between gap-2 text-left transition active:scale-[0.99] shadow-2xs"
                       >
                         <div>
-                          <div className="text-sm font-black text-forest-950">{prop.title}</div>
+                          <div className="text-sm font-black text-forest-900">{prop.title}</div>
                           <div className="text-xs font-bold text-forest-800">{prop.summary}</div>
                         </div>
                         <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-forest-700 px-3 py-1.5 text-xs font-black text-white shrink-0">
@@ -1195,7 +1195,7 @@ export function ConciergeChat({
                   return (
                     <div
                       key={pIdx}
-                      className="rounded-2xl border-2 border-harvest-500 bg-white p-3.5 sm:p-4 space-y-3 shadow-sm transition"
+                      className="rounded-2xl border-2 border-harvest-500 bg-bg-card p-3.5 sm:p-4 space-y-3 shadow-sm transition"
                     >
                       <div>
                         <span className="whitespace-nowrap inline-block rounded-md bg-harvest-100 text-forest-900 px-2 py-0.5 text-xs font-black mb-1">
@@ -1268,7 +1268,7 @@ export function ConciergeChat({
               type="button"
               disabled={sending}
               onClick={() => void sendMessage(s)}
-              className="shrink-0 rounded-full border border-forest-300 bg-white hover:bg-forest-50 px-3 py-1 text-xs font-black text-forest-900 transition active:scale-95"
+              className="shrink-0 rounded-full border border-forest-200 bg-bg-card hover:bg-forest-50 px-3 py-1 text-xs font-black text-ink transition active:scale-95"
             >
               {s}
             </button>
@@ -1277,7 +1277,7 @@ export function ConciergeChat({
       )}
 
       {/* ④ 音声マイク付き・大型入力バー */}
-      <div className="rounded-2xl border-2 border-forest-500 bg-white p-2.5 shadow-md space-y-2">
+      <div className="rounded-2xl border-2 border-forest-500 bg-bg-card p-2.5 shadow-md space-y-2">
         <div className="flex items-end gap-2">
           <button
             type="button"
@@ -1305,7 +1305,7 @@ export function ConciergeChat({
             }}
             rows={2}
             placeholder="ここにやりたいことを書くか、左の「🎤 声で入力」を押してお話しください（例：明日 和郷園に20箱追加して）"
-            className="flex-1 rounded-xl border border-line bg-bg-soft/40 p-2.5 text-sm sm:text-base font-bold text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:bg-white focus:outline-none"
+            className="flex-1 rounded-xl border border-line bg-bg-soft/40 p-2.5 text-sm sm:text-base font-bold text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:bg-bg-card focus:outline-none"
           />
 
           <button

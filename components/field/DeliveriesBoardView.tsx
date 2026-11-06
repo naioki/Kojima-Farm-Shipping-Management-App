@@ -264,7 +264,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             ? 'bg-trust-700 border-trust-600'
             : isTomorrow
             ? 'bg-forest-900 border-harvest-600'
-            : 'bg-ink border-ink-soft',
+            : 'bg-night border-night-soft',
         )}
       >
         <div className="flex items-center justify-between gap-2 text-xs">
@@ -276,7 +276,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                   ? 'bg-trust-400 text-trust-700'
                   : isTomorrow
                   ? 'bg-harvest-400 text-forest-900'
-                  : 'bg-ink-soft text-bg-soft border border-ink-faint',
+                  : 'bg-night-soft text-white/80 border border-white/20',
               )}
             >
               <span>🚚</span>
@@ -331,7 +331,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             className={cn(
               'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition',
               groupMode === 'route'
-                ? 'bg-white text-forest-800 shadow-2xs font-black ring-1 ring-harvest-600/20'
+                ? 'bg-bg-card text-ink shadow-2xs font-black ring-1 ring-harvest-600/20'
                 : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -344,7 +344,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             className={cn(
               'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition',
               groupMode === 'customer'
-                ? 'bg-white text-forest-800 shadow-2xs font-black ring-1 ring-harvest-600/20'
+                ? 'bg-bg-card text-ink shadow-2xs font-black ring-1 ring-harvest-600/20'
                 : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -360,7 +360,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             className={cn(
               'px-3 py-1.5 rounded-lg transition',
               filterMode === 'all'
-                ? 'bg-white text-ink shadow-2xs font-black'
+                ? 'bg-bg-card text-ink shadow-2xs font-black'
                 : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -390,7 +390,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
           <button
             type="button"
             onClick={() => setFilterMode('all')}
-            className="inline-flex items-center rounded-lg bg-white border border-harvest-400 px-3 py-1.5 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
+            className="inline-flex items-center rounded-lg bg-bg-card border border-harvest-400 px-3 py-1.5 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
           >
             完了済みのカードを表示する
           </button>
@@ -412,7 +412,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                       ? 'border-line-strong bg-bg-soft text-ink-soft'
                       : grp.isUnassigned
                       ? 'border-line-strong bg-bg-soft text-ink'
-                      : 'border-earth-300 bg-earth-100/90 text-earth-950',
+                      : 'border-earth-300 bg-earth-100/90 text-earth-900',
                   )}
                 >
                   <div className="flex items-center gap-1.5 font-black text-sm min-w-0">
@@ -435,7 +435,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                         ✓ 全{grpTotalBoxes}箱済
                       </span>
                     ) : (
-                      <span className="rounded-md bg-white/90 border border-earth-300 px-2 py-0.5 text-earth-900 tabular-nums">
+                      <span className="rounded-md bg-bg-card/90 border border-earth-300 px-2 py-0.5 text-ink tabular-nums">
                         残 {grpRemBoxes} / {grpTotalBoxes}箱
                       </span>
                     )}

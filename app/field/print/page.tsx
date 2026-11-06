@@ -146,7 +146,7 @@ export default async function FieldPrintPage({
                   return (
                     <div
                       key={c.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-white px-3.5 py-2.5 shadow-2xs"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-bg-card px-3.5 py-2.5 shadow-2xs"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -232,7 +232,7 @@ export default async function FieldPrintPage({
                       href={sheetHref(id)}
                       target="_blank"
                       rel="noopener"
-                      className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
+                      className="rounded-lg border border-line bg-bg-card px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
                     >
                       出荷表 PDF
                     </a>
@@ -240,7 +240,7 @@ export default async function FieldPrintPage({
                       href={labelsHref(id)}
                       target="_blank"
                       rel="noopener"
-                      className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
+                      className="rounded-lg border border-line bg-bg-card px-3 py-1.5 text-xs font-bold text-ink hover:bg-bg-soft"
                     >
                       ラベル PDF
                     </a>

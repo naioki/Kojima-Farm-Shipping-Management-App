@@ -790,7 +790,7 @@ export default async function ShipmentsPage({
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後に作業リストへ反映されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:bg-warning transition"
+            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition"
           >
             確認・承認する →
           </Link>
@@ -821,7 +821,7 @@ export default async function ShipmentsPage({
           isTodayTarget={date === defaultDate || date === jstTodayStr()}
         />
       ) : (
-        <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted space-y-3">
+        <div className="rounded-2xl border border-dashed border-line bg-bg-card p-8 text-center text-ink-muted space-y-3">
           <p className="font-bold text-sm text-ink">この日の【{selectedProduct?.name || '選択品目'}】の出荷データはありません。</p>
           <p className="text-xs text-ink-faint">他の品目タブを選ぶか、翌日の出荷予定を確認できます。</p>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">

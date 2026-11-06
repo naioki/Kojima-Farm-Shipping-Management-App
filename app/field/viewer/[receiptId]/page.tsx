@@ -68,14 +68,14 @@ export default function ReceiptViewerPage() {
     <div
       className={cn(
         'fixed inset-0 z-50 flex h-[100dvh] w-full flex-col overflow-hidden select-none transition-colors',
-        lightMode ? 'bg-bg-soft text-ink' : 'bg-ink text-white',
+        lightMode ? 'bg-bg-soft text-ink' : 'bg-night text-white',
       )}
     >
       {/* ① 最上部固定操作バー */}
       <header
         className={cn(
           'flex h-14 sm:h-16 shrink-0 items-center justify-between border-b px-3 sm:px-6',
-          lightMode ? 'border-line-strong bg-white' : 'border-ink-soft bg-ink',
+          lightMode ? 'border-line-strong bg-white' : 'border-night-soft bg-night',
         )}
       >
         <button
@@ -85,7 +85,7 @@ export default function ReceiptViewerPage() {
             'inline-flex h-10 sm:h-12 items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-bold shadow active:scale-95 transition',
             lightMode
               ? 'bg-forest-700 text-white hover:bg-forest-800'
-              : 'bg-ink-soft text-white hover:opacity-90',
+              : 'bg-night-soft text-white hover:opacity-90',
           )}
         >
           <ArrowLeft className="h-5 w-5" />
@@ -101,7 +101,7 @@ export default function ReceiptViewerPage() {
               'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2.5 text-xs font-bold transition active:scale-95',
               lightMode
                 ? 'border border-line-strong bg-bg-soft text-ink hover:bg-line'
-                : 'bg-ink-soft text-warning-bg hover:bg-ink-soft',
+                : 'bg-night-soft text-earth-100 hover:opacity-90',
             )}
             title="背景の明るさを切り替え"
           >
@@ -114,7 +114,7 @@ export default function ReceiptViewerPage() {
             onClick={() => setZoom((prev) => Math.max(50, prev - 25))}
             className={cn(
               'inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl active:scale-95 transition',
-              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-ink-soft text-white hover:opacity-90',
+              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-night-soft text-white hover:opacity-90',
             )}
             aria-label="縮小"
           >
@@ -128,7 +128,7 @@ export default function ReceiptViewerPage() {
             onClick={() => setZoom((prev) => Math.min(300, prev + 25))}
             className={cn(
               'inline-flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-xl active:scale-95 transition',
-              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-ink-soft text-white hover:opacity-90',
+              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-night-soft text-white hover:opacity-90',
             )}
             aria-label="拡大"
           >
@@ -139,7 +139,7 @@ export default function ReceiptViewerPage() {
             onClick={() => setRotation((prev) => (prev + 270) % 360)}
             className={cn(
               'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2 sm:px-2.5 text-xs font-bold active:scale-95 transition',
-              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-ink-soft text-white hover:opacity-90',
+              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-night-soft text-white hover:opacity-90',
             )}
             title="左へ90°回転"
             aria-label="左へ90°回転"
@@ -152,7 +152,7 @@ export default function ReceiptViewerPage() {
             onClick={() => setRotation((prev) => (prev + 90) % 360)}
             className={cn(
               'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2 sm:px-2.5 text-xs font-bold active:scale-95 transition',
-              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-ink-soft text-white hover:opacity-90',
+              lightMode ? 'bg-line text-ink hover:bg-line-strong' : 'bg-night-soft text-white hover:opacity-90',
             )}
             title="右へ90°回転"
             aria-label="右へ90°回転"
@@ -166,10 +166,10 @@ export default function ReceiptViewerPage() {
             className={cn(
               'inline-flex h-9 sm:h-11 items-center gap-1 rounded-xl px-2.5 text-xs font-black active:scale-95 transition',
               rotation === 180
-                ? 'bg-warning text-white shadow-xs'
+                ? 'border border-warning bg-warning-bg text-ink shadow-xs'
                 : lightMode
-                ? 'bg-warning-bg text-ink hover:bg-warning-bg'
-                : 'bg-warning/20 border border-warning/50 text-warning-bg hover:bg-warning/30',
+                ? 'bg-warning-bg text-ink hover:opacity-90'
+                : 'bg-warning/20 border border-warning/50 text-earth-100 hover:bg-warning/30',
             )}
             title="上下180°反転（逆さまFAXを正立）"
             aria-label="上下180°反転"
@@ -194,7 +194,7 @@ export default function ReceiptViewerPage() {
         <div
           className={cn(
             'flex items-center gap-1.5 overflow-x-auto px-3 py-1.5 border-b scrollbar-none shrink-0',
-            lightMode ? 'bg-line border-line-strong' : 'bg-ink/90 border-ink-soft',
+            lightMode ? 'bg-line border-line-strong' : 'bg-night/90 border-night-soft',
           )}
         >
           <span className="text-xs font-black opacity-75 shrink-0">📄 原本切替:</span>
@@ -212,19 +212,19 @@ export default function ReceiptViewerPage() {
                 r.isCurrent
                   ? 'bg-trust-600 text-white shadow-xs'
                   : lightMode
-                  ? 'bg-white text-ink-soft hover:bg-bg-soft'
-                  : 'bg-ink-soft/80 text-line hover:bg-ink-soft',
+                  ? 'bg-bg-card text-ink-soft hover:bg-bg-soft'
+                  : 'bg-night-soft/80 text-white/80 hover:bg-night-soft',
               )}
             >
               <span>{r.name}</span>
-              {r.isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />}
+              {r.isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-bg-card animate-pulse" />}
             </button>
           ))}
         </div>
       )}
 
       {/* ③ 本日該当明細の照合ハイライト帯（1タップで開閉可能にし、スマホでの原本表示面積を最大化 #26） */}
-      <div className="bg-warning text-white border-b border-warning px-3 py-1.5 shadow-xs shrink-0 select-text">
+      <div className="bg-warning-bg text-ink border-b border-warning px-3 py-1.5 shadow-xs shrink-0 select-text">
         <div className="max-w-5xl mx-auto space-y-1">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 shrink-0">
@@ -236,14 +236,14 @@ export default function ReceiptViewerPage() {
             <button
               type="button"
               onClick={() => setShowTargetItems((prev) => !prev)}
-              className="rounded bg-warning/80 hover:opacity-90 px-2 py-0.5 text-xs font-black text-white"
+              className="rounded bg-warning hover:opacity-90 px-2 py-0.5 text-xs font-black text-white"
             >
               {showTargetItems ? '明細を隠す ▲' : '明細を表示 ▼'}
             </button>
           </div>
           {showTargetItems && (
             loadingMeta ? (
-              <span className="text-xs font-bold text-earth-900 animate-pulse">照合データ読込中...</span>
+              <span className="text-xs font-bold text-ink animate-pulse">照合データ読込中...</span>
             ) : targetItems.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {targetItems.map((it, idx) => (
@@ -251,18 +251,18 @@ export default function ReceiptViewerPage() {
                     key={it.id || idx}
                     className="flex items-center gap-1.5 rounded-lg bg-warning/95 border border-warning/80 px-2.5 py-1 shadow-2xs text-xs font-black"
                   >
-                    <span className="text-earth-900 font-black">
+                    <span className="text-ink font-black">
                       【{it.destinationName || it.customerName}】
                     </span>
-                    <span className="text-earth-900 font-extrabold">{it.productName}</span>
-                    <span className="text-earth-900 text-sm font-black bg-white/80 px-1.5 py-0.2 rounded shadow-2xs">
+                    <span className="text-ink font-extrabold">{it.productName}</span>
+                    <span className="text-ink text-sm font-black bg-bg-card/80 px-1.5 py-0.2 rounded shadow-2xs">
                       {it.boxCount}箱 ({it.quantity}{it.unit})
                     </span>
-                    <span className="text-earth-900 text-xs font-bold">
+                    <span className="text-ink text-xs font-bold">
                       [{it.container}]
                     </span>
                     {it.spec && (
-                      <span className="text-earth-800 text-xs font-bold hidden sm:inline">
+                      <span className="text-ink-soft text-xs font-bold hidden sm:inline">
                         規格: {it.spec}
                       </span>
                     )}
@@ -270,7 +270,7 @@ export default function ReceiptViewerPage() {
                 ))}
               </div>
             ) : (
-              <span className="text-xs font-bold text-earth-900">
+              <span className="text-xs font-bold text-ink">
                 このFAXには指定日（{returnDate}）の出荷明細は含まれていません
               </span>
             )
@@ -282,7 +282,7 @@ export default function ReceiptViewerPage() {
       <main
         className={cn(
           'relative flex-1 overflow-auto p-2 flex items-center justify-center',
-          lightMode ? 'bg-line' : 'bg-ink',
+          lightMode ? 'bg-line' : 'bg-night',
         )}
       >
         <div
@@ -292,7 +292,7 @@ export default function ReceiptViewerPage() {
           <iframe
             src={originalUrl}
             title="FAX原本プレビュー"
-            className="h-full w-full max-w-5xl rounded-lg border border-ink-faint bg-white shadow-2xl"
+            className="h-full w-full max-w-5xl rounded-lg border border-ink-faint bg-bg-card shadow-2xl"
           />
         </div>
       </main>

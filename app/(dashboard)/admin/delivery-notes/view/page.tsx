@@ -192,7 +192,7 @@ export default async function DeliveryNoteView({
         </Link>
         <div className="flex flex-wrap items-center gap-2">
           {/* 発行元名義の1タップ切替（小島農園 ⇔ 株式会社アイプラス） */}
-          <div className="inline-flex items-center rounded-lg border border-line-strong bg-white p-0.5 shadow-2xs" title="発行元の会社名を切り替えます">
+          <div className="inline-flex items-center rounded-lg border border-line-strong bg-bg-card p-0.5 shadow-2xs" title="発行元の会社名を切り替えます">
             <span className="px-2 text-xs font-bold text-ink-faint flex items-center gap-1">
               <Building2 className="h-3 w-3" />
               名義
@@ -216,7 +216,7 @@ export default async function DeliveryNoteView({
           </div>
 
           {/* 用紙レイアウトの切替（A4上下2連［納品書＋控］ ⇔ A4全面1枚） */}
-          <div className="inline-flex items-center rounded-lg border border-line-strong bg-white p-0.5 shadow-2xs" title="用紙レイアウトを切り替えます">
+          <div className="inline-flex items-center rounded-lg border border-line-strong bg-bg-card p-0.5 shadow-2xs" title="用紙レイアウトを切り替えます">
             <span className="px-2 text-xs font-bold text-ink-faint flex items-center gap-1">
               <Columns2 className="h-3 w-3" />
               用紙
@@ -240,7 +240,7 @@ export default async function DeliveryNoteView({
           </div>
 
           {/* 書面の種類の切替（納品書 / ご注文確認書） */}
-          <div className="inline-flex rounded-lg border border-line-strong bg-white p-0.5">
+          <div className="inline-flex rounded-lg border border-line-strong bg-bg-card p-0.5">
             {DELIVERY_DOC_TYPES.map((d) => (
               <Link
                 key={d.value}
@@ -257,7 +257,7 @@ export default async function DeliveryNoteView({
           </div>
 
           {/* 金額表示の切替 */}
-          <div className="inline-flex rounded-lg border border-line-strong bg-white p-0.5">
+          <div className="inline-flex rounded-lg border border-line-strong bg-bg-card p-0.5">
             {DELIVERY_AMOUNT_MODES.map((m) => (
               <Link
                 key={m.value}

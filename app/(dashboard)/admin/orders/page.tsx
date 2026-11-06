@@ -242,7 +242,7 @@ export default async function AdminOrdersPage({
                       <Link
                         href={`/admin/orders/${o.id}`}
                         aria-label={`${o.customerName} の受注詳細・編集`}
-                        className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-lg border border-trust-200 bg-trust-50/70 px-2 py-1 text-xs font-bold text-trust-700 hover:bg-trust-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                        className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-lg border border-trust-100 bg-trust-50/70 px-2 py-1 text-xs font-bold text-trust-700 hover:bg-trust-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
                       >
                         詳細・編集<ChevronRight className="h-3.5 w-3.5" aria-hidden />
                       </Link>

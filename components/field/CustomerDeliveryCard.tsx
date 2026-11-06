@@ -295,7 +295,7 @@ export function CustomerDeliveryCard({
           ? 'border-harvest-400 bg-harvest-50/70 px-3.5 py-2.5 shadow-2xs'
           : isCompleted
           ? 'border-line-strong bg-bg-soft/80 shadow-2xs'
-          : 'border-line-strong bg-white shadow-md border-l-4 border-l-emerald-600',
+          : 'border-line-strong bg-bg-card shadow-md border-l-4 border-l-emerald-600',
       )}
     >
       {/* 積込済1行スリム表示 */}
@@ -340,7 +340,7 @@ export function CustomerDeliveryCard({
                 target="_blank"
                 rel="noopener"
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-harvest-400 bg-white px-2 text-xs font-black text-forest-900 hover:bg-harvest-50 transition"
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-harvest-400 bg-bg-card px-2 text-xs font-black text-forest-900 hover:bg-harvest-50 transition"
                 title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
               >
                 <FileDown className="h-3.5 w-3.5 text-harvest-700" />
@@ -354,7 +354,7 @@ export function CustomerDeliveryCard({
                 e.stopPropagation()
                 void toggleLoaded()
               }}
-              className="h-8 rounded-lg border border-line-strong bg-white px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
+              className="h-8 rounded-lg border border-line-strong bg-bg-card px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
               title="未積込に戻す"
             >
               <span>戻す</span>
@@ -365,7 +365,7 @@ export function CustomerDeliveryCard({
                 e.stopPropagation()
                 setExpandedWhenDone(true)
               }}
-              className="h-8 w-8 rounded-lg border border-line bg-white/80 flex items-center justify-center text-ink-soft hover:text-ink"
+              className="h-8 w-8 rounded-lg border border-line bg-bg-card/80 flex items-center justify-center text-ink-soft hover:text-ink"
               title="カードを展開"
               aria-label="カードを展開"
             >
@@ -399,7 +399,7 @@ export function CustomerDeliveryCard({
                     <button
                       type="button"
                       onClick={() => setExpandedWhenDone(false)}
-                      className="rounded-lg border border-line bg-white px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                      className="rounded-lg border border-line bg-bg-card px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
                     >
                       1行に畳む ▲
                     </button>
@@ -526,7 +526,7 @@ export function CustomerDeliveryCard({
             {hasNote && !editingNote && (
               <div
                 onClick={() => setEditingNote(true)}
-                className="rounded-xl border-l-4 border-warning bg-warning-bg/90 p-2.5 text-xs sm:text-sm font-bold text-ink flex items-center justify-between gap-2 cursor-pointer hover:bg-warning-bg/90 transition-colors shadow-2xs"
+                className="rounded-xl border-l-4 border-warning bg-warning-bg/90 p-2.5 text-xs sm:text-sm font-bold text-ink flex items-center justify-between gap-2 cursor-pointer hover:opacity-90 transition-colors shadow-2xs"
                 title="タップして編集"
               >
                 <span className="flex items-center gap-1.5 min-w-0">
@@ -557,14 +557,14 @@ export function CustomerDeliveryCard({
                   value={noteInput}
                   onChange={(e) => setNoteInput(e.target.value)}
                   placeholder="例: 空コンテナ20個持参 / 手前に積むこと / 伝票別添え 等"
-                  className="w-full h-10 rounded-lg border border-warning bg-white px-3 text-xs sm:text-sm font-bold text-ink focus:outline-none focus:ring-2 focus:ring-warning"
+                  className="w-full h-10 rounded-lg border border-warning bg-bg-card px-3 text-xs sm:text-sm font-bold text-ink focus:outline-none focus:ring-2 focus:ring-warning"
                   autoFocus
                 />
                 <div className="flex items-center justify-end gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setEditingNote(false)}
-                    className="rounded-lg border border-line bg-white px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                    className="rounded-lg border border-line bg-bg-card px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
                   >
                     キャンセル
                   </button>
@@ -618,7 +618,7 @@ export function CustomerDeliveryCard({
                 className={cn(
                   'h-12 px-5 sm:px-7 rounded-xl font-black text-sm sm:text-base transition-all active:scale-97 shadow-sm flex items-center justify-center gap-2 shrink-0',
                   isCompleted
-                    ? 'border-2 border-line-strong bg-white text-ink-soft hover:bg-bg-soft'
+                    ? 'border-2 border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft'
                     : unpackedItemCount > 0
                     ? 'bg-warning hover:opacity-90 text-white ring-2 ring-warning ring-offset-1 shadow-warning/20'
                     : 'bg-harvest-600 hover:bg-harvest-700 text-white ring-2 ring-harvest-600 ring-offset-1 shadow-harvest-600/20',
@@ -659,7 +659,7 @@ export function CustomerDeliveryCard({
                     className={cn(
                       'rounded-xl border p-3 space-y-2 transition-all border-l-4 shadow-xs',
                       colorStyle.leftBorder,
-                      isDestLoaded ? 'border-harvest-400 bg-harvest-50/40 opacity-75' : 'border-line bg-white',
+                      isDestLoaded ? 'border-harvest-400 bg-harvest-50/40 opacity-75' : 'border-line bg-bg-card',
                     )}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 pb-1.5">
@@ -735,8 +735,8 @@ export function CustomerDeliveryCard({
                         className={cn(
                           'h-9 px-3.5 rounded-xl text-xs sm:text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1 print:hidden',
                           isDestLoaded
-                            ? 'bg-harvest-100 text-forest-800 border border-harvest-400 hover:bg-harvest-100'
-                            : 'border-2 border-harvest-600 bg-white text-harvest-700 hover:bg-harvest-50',
+                            ? 'bg-harvest-100 text-forest-800 border border-harvest-400 hover:opacity-90'
+                            : 'border-2 border-harvest-600 bg-bg-card text-ink hover:bg-harvest-50',
                         )}
                       >
                         {isDestLoaded ? (

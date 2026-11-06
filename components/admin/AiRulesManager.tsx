@@ -633,7 +633,7 @@ export function AiRulesManager({
               'rounded-full border px-3 py-1.5 text-xs font-bold transition-all shadow-2xs',
               selectedClient === 'AUTO_LOOP'
                 ? 'border-warning bg-warning text-white'
-                : 'border-warning bg-warning-bg text-ink hover:bg-warning-bg',
+                : 'border-warning bg-warning-bg text-ink hover:opacity-90',
             )}
           >
             ⚡ 自動学習ループ ({autoLoopCount})
@@ -767,7 +767,7 @@ export function AiRulesManager({
                     >
                       <span
                         className={cn(
-                          'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow transition duration-200',
+                          'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-bg-card shadow transition duration-200',
                           rule.is_active ? 'translate-x-5' : 'translate-x-0',
                         )}
                       />
@@ -1101,7 +1101,7 @@ export function AiRulesManager({
                                   )
                                   toast.success(`「${opt}」をカルテに反映しました`)
                                 }}
-                                className="rounded-lg border border-warning bg-white px-2.5 py-1 text-xs font-black text-ink hover:bg-warning hover:text-white transition"
+                                className="rounded-lg border border-warning bg-bg-card px-2.5 py-1 text-xs font-black text-ink hover:bg-warning hover:text-white transition"
                               >
                                 「{opt}」を採用する
                               </button>
@@ -1120,7 +1120,7 @@ export function AiRulesManager({
                           prev.map((item, i) => (i === idx ? { ...item, proposed_rule_text: val } : item)),
                         )
                       }}
-                      className="w-full rounded-lg border border-line-strong bg-white p-2.5 text-xs leading-relaxed text-ink focus:border-trust-500 focus:outline-none"
+                      className="w-full rounded-lg border border-line-strong bg-bg-card p-2.5 text-xs leading-relaxed text-ink focus:border-trust-500 focus:outline-none"
                     />
                   </div>
                 ))}

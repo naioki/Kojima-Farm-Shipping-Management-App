@@ -152,7 +152,7 @@ export function MobileNav({
             type="button"
             aria-label="メニューを閉じる"
             onClick={() => setOpen(false)}
-            className="absolute inset-0 bg-ink/40"
+            className="absolute inset-0 bg-black/40"
           />
           <nav
             ref={drawerRef}

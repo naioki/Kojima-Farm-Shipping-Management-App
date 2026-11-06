@@ -73,7 +73,7 @@ function confidenceBadgeStyle(confidence: number | null) {
   }
   return {
     label: `高確信 ${Math.round(confidence * 100)}%`,
-    badgeCls: 'bg-harvest-50 text-harvest-700 border border-harvest-300',
+    badgeCls: 'bg-harvest-50 text-harvest-700 border border-harvest-400',
     rowCls: '',
     inputCls: 'border-line-strong focus:border-trust-500',
   }
@@ -564,7 +564,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               onClick={() => openBulkApproveModal(confidentOrders)}
               className="gap-1.5 bg-forest-600 text-white hover:bg-forest-700"
             >
-              <Zap className="h-3.5 w-3.5 text-warning-bg" aria-hidden />
+              <Zap className="h-3.5 w-3.5 text-earth-100" aria-hidden />
               <span>安心・高確信な注文を一括承認</span>
               <span className="whitespace-nowrap rounded-full bg-white/20 px-2 py-0.2 font-mono text-xs font-bold">
                 {confidentOrders.length}件
@@ -613,7 +613,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               onClick={() => setViewMode('split')}
               className={cn(
                 'flex items-center gap-1 rounded-md px-2.5 py-1 transition',
-                viewMode === 'split' ? 'bg-white text-ink shadow-xs' : 'text-ink-soft hover:text-ink',
+                viewMode === 'split' ? 'bg-bg-card text-ink shadow-xs' : 'text-ink-soft hover:text-ink',
               )}
             >
               <Columns2 className="h-3.5 w-3.5" />
@@ -624,7 +624,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               onClick={() => setViewMode('single')}
               className={cn(
                 'flex items-center gap-1 rounded-md px-2.5 py-1 transition',
-                viewMode === 'single' ? 'bg-white text-ink shadow-xs' : 'text-ink-soft hover:text-ink',
+                viewMode === 'single' ? 'bg-bg-card text-ink shadow-xs' : 'text-ink-soft hover:text-ink',
               )}
             >
               <LayoutList className="h-3.5 w-3.5" />
@@ -695,7 +695,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                 </span>
                 {hasWarning && (
                   <AlertTriangle
-                    className={cn('h-3.5 w-3.5 shrink-0', isSelected ? 'text-warning-bg' : 'text-warning')}
+                    className={cn('h-3.5 w-3.5 shrink-0', isSelected ? 'text-earth-100' : 'text-warning')}
                     aria-hidden
                   />
                 )}
@@ -793,7 +793,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                   key={activeReceipt?.id ?? previewSrc}
                   src={previewSrc}
                   title="FAX原本プレビュー（Google Drive）"
-                  className="h-[640px] w-full rounded border border-line bg-white shadow-sm"
+                  className="h-[640px] w-full rounded border border-line bg-bg-card shadow-sm"
                 />
               </div>
             ) : activeReceipt?.emailText ? (
@@ -1214,7 +1214,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               isLoading={bulkApproving}
               className="gap-1.5 bg-forest-600 hover:bg-forest-700"
             >
-              <Zap className="h-4 w-4 text-warning-bg" aria-hidden />
+              <Zap className="h-4 w-4 text-earth-100" aria-hidden />
               {bulkTargetOrders.length}件を一括承認する
             </Button>
           </>

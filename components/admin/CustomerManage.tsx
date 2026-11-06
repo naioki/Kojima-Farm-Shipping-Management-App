@@ -125,7 +125,7 @@ export function CustomerManage({ customer }: CustomerManageProps) {
             <Building2 className="h-4 w-4 text-harvest-700" />
             <span>納品書の発行元名義（デフォルト）</span>
           </div>
-          <div className="inline-flex rounded-lg border border-harvest-400 bg-white p-0.5 shadow-2xs">
+          <div className="inline-flex rounded-lg border border-harvest-400 bg-bg-card p-0.5 shadow-2xs">
             <button
               type="button"
               onClick={() => setIssuerPreset('kojima')}
