@@ -976,7 +976,7 @@ export function ShipmentRow({
 
             {/* 規格 ＋ 資材レシピタグ（#06 規格バッジから冗長な (入数20) を除去し、数量バーの (20入) との重複を解消） */}
             <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <span className="truncate max-w-[14rem] inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-slate-300">
+              <span title={cleanSpecLabel ? String(cleanSpecLabel) : undefined} className="truncate max-w-[14rem] inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-slate-300">
                 {isThaiMode && getThaiSpec(spec || masterLabelSpec, masterPacksPerCase) ? (
                   <>
                     <span>📐 {getThaiSpec(spec || masterLabelSpec, masterPacksPerCase)}</span>
