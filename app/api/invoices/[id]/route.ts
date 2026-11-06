@@ -59,8 +59,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 /**
- * 請求書の削除（admin のみ）。
- * 誤作成した請求書の取り消し・再作成用。invoice_items はカスケード削除。
+ * 請求書の削除（admin のみ）。下書きのときだけ。
+ * 誤作成した下書きの取り消し・再作成用。invoice_items はカスケード削除。
+ * 確定後は取引先に出た帳票なので消さず「無効」にする（PATCH status=void。番号と履歴が残る: tax.md）。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const guard = await requireAdminApi()
@@ -75,15 +76,27 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     .maybeSingle()
   if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 })
   if (!current) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (current.status !== 'draft') {
+    return NextResponse.json(
+      { error: '確定済みの請求書は削除できません。「無効にする」を使ってください（番号と履歴を残すため）' },
+      { status: 409 },
+    )
+  }
 
   const admin = createAdminClient()
-  const { error: delErr } = await admin
+  // 読んだ時点で下書きだったものだけ消す（同時に確定された場合は消さない）
+  const { data: deleted, error: delErr } = await admin
     .from('invoices')
     .delete()
     .eq('id', params.id)
+    .eq('status', 'draft')
+    .select('id')
 
   if (delErr) {
     return NextResponse.json({ error: delErr.message }, { status: 500 })
+  }
+  if (!deleted || deleted.length === 0) {
+    return NextResponse.json({ error: '他の操作で状態が変わりました。再読み込みしてください' }, { status: 409 })
   }
 
   await writeAudit(admin, {

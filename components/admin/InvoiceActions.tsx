@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, FileDown, Table, Trash2, Send, Wallet, Undo2 } from 'lucide-react'
+import { CheckCircle2, FileDown, Table, Trash2, Send, Wallet, Undo2, Ban } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { PrintButton } from '@/components/admin/PrintButton'
@@ -112,16 +112,37 @@ export function InvoiceActions({ invoiceId, status }: { invoiceId: string; statu
           入金を取り消す
         </Button>
       )}
-      <button
-        type="button"
-        onClick={handleDelete}
-        disabled={deleting}
-        className="inline-flex h-8 items-center gap-1 rounded border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 disabled:opacity-50 transition"
-        title="この請求書を削除"
-      >
-        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        {deleting ? '削除中...' : '削除'}
-      </button>
+      {/* 下書きは削除できる。確定後は番号と履歴を残すため「無効にする」だけ（tax.md: 欠番禁止） */}
+      {status === 'draft' && (
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="inline-flex h-8 items-center gap-1 rounded border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 disabled:opacity-50 transition"
+          title="この下書きを削除"
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          {deleting ? '削除中...' : '削除'}
+        </button>
+      )}
+      {(status === 'finalized' || status === 'sent') && (
+        <button
+          type="button"
+          onClick={() =>
+            setStatus(
+              'void',
+              '請求書を無効にしました',
+              'この請求書を無効にしますか？\n（番号と履歴は残ります。元に戻せません。明細は再び請求できる状態に戻ります）',
+            )
+          }
+          disabled={busy}
+          className="inline-flex h-8 items-center gap-1 rounded border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 disabled:opacity-50 transition"
+          title="この請求書を無効にする（削除はしない）"
+        >
+          <Ban className="h-3.5 w-3.5" aria-hidden />
+          無効にする
+        </button>
+      )}
     </div>
   )
 }
