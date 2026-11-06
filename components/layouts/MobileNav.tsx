@@ -133,8 +133,8 @@ export function MobileNav({
               className={cn(
                 'inline-flex items-center gap-1 rounded-lg border px-2 sm:px-2.5 py-1 text-xs font-black transition active:scale-95 shadow-2xs',
                 pathname === '/field/concierge'
-                  ? 'border-emerald-700 bg-emerald-700 text-white'
-                  : 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-950',
+                  ? 'border-harvest-700 bg-harvest-700 text-white'
+                  : 'border-harvest-400 bg-harvest-50 hover:bg-harvest-100 text-forest-900',
               )}
               title="AIに話しかけて注文追加・品目追加・設定変更を頼む"
             >
@@ -242,7 +242,7 @@ export function MobileNav({
               <Link
                 href="/field/feedback"
                 onClick={() => setOpen(false)}
-                className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-emerald-300 hover:bg-forest-700 hover:text-white transition-colors"
+                className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-harvest-100 hover:bg-forest-700 hover:text-white transition-colors"
               >
                 <MessageSquarePlus className="h-5 w-5 shrink-0" aria-hidden />
                 改善・バグ報告 (5W1H)

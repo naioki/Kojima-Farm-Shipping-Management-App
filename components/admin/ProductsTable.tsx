@@ -192,7 +192,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
         key={id}
         className={cn(
           'flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 transition-colors',
-          isDirty ? 'border-emerald-500 bg-emerald-50/30' : 'border-line bg-white',
+          isDirty ? 'border-harvest-500 bg-harvest-50/30' : 'border-line bg-white',
         )}
       >
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">

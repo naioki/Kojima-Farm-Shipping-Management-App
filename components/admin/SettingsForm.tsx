@@ -121,20 +121,20 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
             {it.label}
           </label>
           {it.danger && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-xs font-bold text-amber-900">
-              <AlertTriangle className="h-3.5 w-3.5 text-amber-600" aria-hidden />
+            <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg border border-warning px-2.5 py-0.5 text-xs font-bold text-earth-900">
+              <AlertTriangle className="h-3.5 w-3.5 text-warning" aria-hidden />
               動作注意
             </span>
           )}
           {it.secret &&
             (it.isSet ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+              <span className="inline-flex items-center gap-1 rounded-full bg-harvest-100 border border-harvest-400 px-2.5 py-0.5 text-xs font-bold text-forest-800">
+                <ShieldCheck className="h-3.5 w-3.5 text-harvest-600" aria-hidden />
                 設定済み
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 border border-slate-300 px-2.5 py-0.5 text-xs font-bold text-slate-700">
-                <AlertCircle className="h-3.5 w-3.5 text-slate-500" aria-hidden />
+              <span className="inline-flex items-center gap-1 rounded-full bg-bg-soft border border-line-strong px-2.5 py-0.5 text-xs font-bold text-ink-soft">
+                <AlertCircle className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
                 未設定
               </span>
             ))}
@@ -155,7 +155,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
                 <span
                   className={cn(
                     'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors',
-                    on ? 'bg-forest-600' : 'bg-slate-300 dark:bg-slate-600',
+                    on ? 'bg-forest-600' : 'bg-line-strong dark:bg-ink-soft',
                   )}
                 >
                   <span
@@ -261,7 +261,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
         <h2 className={cn('flex flex-wrap items-center gap-2 font-display font-black text-ink', small ? 'text-base' : 'text-lg')}>
           {SECTION_LABELS[section]}
           {pending > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-900">
+            <span className="inline-flex items-center gap-1 rounded-full border border-warning bg-warning-bg px-2 py-0.5 text-xs font-bold text-earth-900">
               <AlertCircle className="h-3.5 w-3.5" aria-hidden />
               未設定 {pending}件
             </span>
@@ -287,7 +287,7 @@ export function SettingsForm({ items }: { items: SettingItem[] }) {
             >
               {SECTION_LABELS[section].replace(/（.*）$/, '')}
               {pending > 0 && (
-                <span className="rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-900">{pending}</span>
+                <span className="rounded-full bg-warning-bg px-1.5 text-xs font-bold text-earth-900">{pending}</span>
               )}
             </a>
           )

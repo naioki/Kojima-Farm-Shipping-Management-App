@@ -292,10 +292,10 @@ export function CustomerDeliveryCard({
       className={cn(
         'rounded-2xl border transition-all duration-200 overflow-hidden',
         isCollapsedDone
-          ? 'border-emerald-300 bg-emerald-50/70 px-3.5 py-2.5 shadow-2xs'
+          ? 'border-harvest-400 bg-harvest-50/70 px-3.5 py-2.5 shadow-2xs'
           : isCompleted
-          ? 'border-slate-300 bg-slate-50/80 shadow-2xs'
-          : 'border-slate-300 bg-white shadow-md border-l-4 border-l-emerald-600',
+          ? 'border-line-strong bg-bg-soft/80 shadow-2xs'
+          : 'border-line-strong bg-white shadow-md border-l-4 border-l-emerald-600',
       )}
     >
       {/* 積込済1行スリム表示 */}
@@ -306,7 +306,7 @@ export function CustomerDeliveryCard({
           title="タップしてカードを展開"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
+            <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded-md bg-harvest-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
               <Check className="h-3.5 w-3.5" />
               <span>積込済</span>
             </span>
@@ -315,13 +315,13 @@ export function CustomerDeliveryCard({
               {customerName}
             </span>
             {destinations.length === 1 && destinations[0]?.destinationName && destinations[0].destinationName !== customerName && (
-              <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded bg-emerald-100/90 border border-emerald-300 px-1.5 py-0.5 text-xs font-black text-emerald-900 shrink-0">
+              <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded bg-harvest-100/90 border border-harvest-400 px-1.5 py-0.5 text-xs font-black text-forest-900 shrink-0">
                 <span>▶</span>
                 <span className="truncate max-w-[120px]">{destinations[0].destinationName}</span>
               </span>
             )}
             {destinations.length > 1 && (
-              <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-900 px-1.5 py-0.5 text-xs font-bold shrink-0">
+              <span className="whitespace-nowrap rounded bg-harvest-100 text-forest-900 px-1.5 py-0.5 text-xs font-bold shrink-0">
                 {destinations.length}納品先
               </span>
             )}
@@ -340,10 +340,10 @@ export function CustomerDeliveryCard({
                 target="_blank"
                 rel="noopener"
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-white px-2 text-xs font-black text-emerald-900 hover:bg-emerald-50 transition"
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-harvest-400 bg-white px-2 text-xs font-black text-forest-900 hover:bg-harvest-50 transition"
                 title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
               >
-                <FileDown className="h-3.5 w-3.5 text-emerald-700" />
+                <FileDown className="h-3.5 w-3.5 text-harvest-700" />
                 <span>納品書</span>
               </a>
             )}
@@ -384,14 +384,14 @@ export function CustomerDeliveryCard({
                   <h2
                     className={cn(
                       'font-display text-lg sm:text-xl font-black leading-snug',
-                      isCompleted ? 'text-slate-600' : 'text-ink',
+                      isCompleted ? 'text-ink-soft' : 'text-ink',
                     )}
                   >
                     {customerName}
                   </h2>
                   {destinations.length === 1 && destinations[0]?.destinationName && destinations[0].destinationName !== customerName && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-black text-sm tracking-tight leading-snug shadow-2xs">
-                      <span className="text-emerald-700 text-xs">▶</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-harvest-50 border border-harvest-400 text-forest-900 font-black text-sm tracking-tight leading-snug shadow-2xs">
+                      <span className="text-harvest-700 text-xs">▶</span>
                       <span>{destinations[0].destinationName}</span>
                     </span>
                   )}
@@ -423,7 +423,7 @@ export function CustomerDeliveryCard({
 
                   {allDeliveryItems.length > 0 && (
                     unpackedItemCount > 0 ? (
-                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-950 shadow-2xs">
+                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-warning bg-warning-bg px-2 py-0.5 text-xs font-black text-earth-900 shadow-2xs">
                         {isThaiMode ? (
                           <span>⚠️ {THAI_LABELS.notCompletedWarn} ({unpackedItemCount})</span>
                         ) : (
@@ -431,7 +431,7 @@ export function CustomerDeliveryCard({
                         )}
                       </span>
                     ) : (
-                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800">
+                      <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-harvest-400 bg-harvest-50 px-2 py-0.5 text-xs font-black text-forest-800">
                         {isThaiMode ? (
                           <span>✓ {THAI_LABELS.allPackedDone}</span>
                         ) : (
@@ -445,10 +445,10 @@ export function CustomerDeliveryCard({
                       href={driverNotePdfHref}
                       target="_blank"
                       rel="noopener"
-                      className="inline-flex items-center gap-1 rounded-md border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-950 hover:bg-emerald-100 shadow-2xs transition"
+                      className="inline-flex items-center gap-1 rounded-md border border-harvest-400 bg-harvest-50 px-2 py-0.5 text-xs font-black text-forest-900 hover:bg-harvest-100 shadow-2xs transition"
                       title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
                     >
-                      <FileDown className="h-3 w-3 text-emerald-700" />
+                      <FileDown className="h-3 w-3 text-harvest-700" />
                       <span>📄 納品書PDF</span>
                     </a>
                   )}
@@ -486,7 +486,7 @@ export function CustomerDeliveryCard({
                     {productSummary.map((ps) => (
                       <span
                         key={ps.name}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-black text-ink"
+                        className="inline-flex items-center gap-1 rounded-lg border border-line-strong bg-bg-soft px-2 py-0.5 text-xs font-black text-ink"
                       >
                         <span>🥬 {ps.name}</span>
                       </span>
@@ -503,7 +503,7 @@ export function CustomerDeliveryCard({
                 <div
                   className={cn(
                     'num text-3xl sm:text-4xl font-black tabular-nums tracking-tight leading-none my-0.5',
-                    isCompleted ? 'text-slate-500' : 'text-ink',
+                    isCompleted ? 'text-ink-faint' : 'text-ink',
                   )}
                 >
                   {grandTotalContainers}
@@ -512,7 +512,7 @@ export function CustomerDeliveryCard({
                   </span>
                 </div>
                 {totalFractionBoxes > 0 && (
-                  <div className="inline-block rounded-md bg-amber-200 border border-amber-400 px-2 py-0.5 text-xs font-black text-amber-950 my-0.5">
+                  <div className="inline-block rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-black text-earth-900 my-0.5">
                     ＋端数 {totalFractionBoxes}箱 ({totalFractionPacks}P)
                   </div>
                 )}
@@ -526,14 +526,14 @@ export function CustomerDeliveryCard({
             {hasNote && !editingNote && (
               <div
                 onClick={() => setEditingNote(true)}
-                className="rounded-xl border-l-4 border-amber-500 bg-amber-50/90 p-2.5 text-xs sm:text-sm font-bold text-amber-950 flex items-center justify-between gap-2 cursor-pointer hover:bg-amber-100/90 transition-colors shadow-2xs"
+                className="rounded-xl border-l-4 border-warning bg-warning-bg/90 p-2.5 text-xs sm:text-sm font-bold text-earth-900 flex items-center justify-between gap-2 cursor-pointer hover:bg-warning-bg/90 transition-colors shadow-2xs"
                 title="タップして編集"
               >
                 <span className="flex items-center gap-1.5 min-w-0">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
                   <span className="truncate">📝 {noteDisplay}</span>
                 </span>
-                <span className="text-xs text-amber-800 underline shrink-0 flex items-center gap-0.5">
+                <span className="text-xs text-earth-800 underline shrink-0 flex items-center gap-0.5">
                   <Edit3 className="h-3 w-3" />
                   編集
                 </span>
@@ -541,9 +541,9 @@ export function CustomerDeliveryCard({
             )}
 
             {editingNote && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-2">
+              <div className="rounded-xl border border-warning bg-warning-bg p-2.5 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-950">📝 特記事項・積み込み前メモ:</span>
+                  <span className="text-xs font-bold text-earth-900">📝 特記事項・積み込み前メモ:</span>
                   <button
                     type="button"
                     onClick={() => setNoteInput('')}
@@ -557,7 +557,7 @@ export function CustomerDeliveryCard({
                   value={noteInput}
                   onChange={(e) => setNoteInput(e.target.value)}
                   placeholder="例: 空コンテナ20個持参 / 手前に積むこと / 伝票別添え 等"
-                  className="w-full h-10 rounded-lg border border-amber-300 bg-white px-3 text-xs sm:text-sm font-bold text-ink focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full h-10 rounded-lg border border-warning bg-white px-3 text-xs sm:text-sm font-bold text-ink focus:outline-none focus:ring-2 focus:ring-warning"
                   autoFocus
                 />
                 <div className="flex items-center justify-end gap-2 pt-1">
@@ -584,7 +584,7 @@ export function CustomerDeliveryCard({
                   className={cn(
                     'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors active:scale-98',
                     open
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                      ? 'border-harvest-400 bg-harvest-50 text-forest-900'
                       : 'border-line bg-bg-soft/70 text-ink-soft hover:text-ink hover:bg-bg-soft',
                   )}
                 >
@@ -618,17 +618,17 @@ export function CustomerDeliveryCard({
                 className={cn(
                   'h-12 px-5 sm:px-7 rounded-xl font-black text-sm sm:text-base transition-all active:scale-97 shadow-sm flex items-center justify-center gap-2 shrink-0',
                   isCompleted
-                    ? 'border-2 border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                    ? 'border-2 border-line-strong bg-white text-ink-soft hover:bg-bg-soft'
                     : unpackedItemCount > 0
-                    ? 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-500 ring-offset-1 shadow-amber-600/20'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-600 ring-offset-1 shadow-emerald-600/20',
+                    ? 'bg-warning hover:opacity-90 text-white ring-2 ring-warning ring-offset-1 shadow-warning/20'
+                    : 'bg-harvest-600 hover:bg-harvest-700 text-white ring-2 ring-harvest-600 ring-offset-1 shadow-harvest-600/20',
                 )}
               >
                 {busy ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : isCompleted ? (
                   <div className="flex items-center gap-1.5">
-                    <Check className="h-5 w-5 text-emerald-600 stroke-[3]" />
+                    <Check className="h-5 w-5 text-harvest-600 stroke-[3]" />
                     <span>✓ 積込済 (戻す)</span>
                   </div>
                 ) : (
@@ -659,7 +659,7 @@ export function CustomerDeliveryCard({
                     className={cn(
                       'rounded-xl border p-3 space-y-2 transition-all border-l-4 shadow-xs',
                       colorStyle.leftBorder,
-                      isDestLoaded ? 'border-emerald-200 bg-emerald-50/40 opacity-75' : 'border-line bg-white',
+                      isDestLoaded ? 'border-harvest-400 bg-harvest-50/40 opacity-75' : 'border-line bg-white',
                     )}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 pb-1.5">
@@ -701,7 +701,7 @@ export function CustomerDeliveryCard({
                         <span className="num text-base sm:text-lg font-black text-ink tabular-nums">
                           {dest.totalBoxes} 箱
                           {dest.fractionBoxes > 0 && (
-                            <span className="whitespace-nowrap ml-1.5 rounded bg-amber-100 border border-amber-300 px-1.5 py-0.5 text-xs font-black text-amber-950">
+                            <span className="whitespace-nowrap ml-1.5 rounded bg-warning-bg border border-warning px-1.5 py-0.5 text-xs font-black text-earth-900">
                               うち端数 {dest.fractionBoxes}箱 ({dest.loose}P)
                             </span>
                           )}
@@ -735,13 +735,13 @@ export function CustomerDeliveryCard({
                         className={cn(
                           'h-9 px-3.5 rounded-xl text-xs sm:text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1 print:hidden',
                           isDestLoaded
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
-                            : 'border-2 border-emerald-600 bg-white text-emerald-700 hover:bg-emerald-50',
+                            ? 'bg-harvest-100 text-forest-800 border border-harvest-400 hover:bg-harvest-100'
+                            : 'border-2 border-harvest-600 bg-white text-harvest-700 hover:bg-harvest-50',
                         )}
                       >
                         {isDestLoaded ? (
                           <>
-                            <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />
+                            <Check className="h-3.5 w-3.5 text-harvest-600 stroke-[3]" />
                             <span>積込済 (戻す)</span>
                           </>
                         ) : (

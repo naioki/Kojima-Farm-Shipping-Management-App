@@ -119,19 +119,19 @@ export function CustomerManage({ customer }: CustomerManageProps) {
       </div>
 
       {/* 📄 納品書の発行元名義 ＆ 運転手渡し対象設定 */}
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 space-y-3">
+      <div className="rounded-xl border border-harvest-400 bg-harvest-50/50 p-3.5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-sm font-black text-emerald-950">
-            <Building2 className="h-4 w-4 text-emerald-700" />
+          <div className="flex items-center gap-1.5 text-sm font-black text-forest-900">
+            <Building2 className="h-4 w-4 text-harvest-700" />
             <span>納品書の発行元名義（デフォルト）</span>
           </div>
-          <div className="inline-flex rounded-lg border border-emerald-300 bg-white p-0.5 shadow-2xs">
+          <div className="inline-flex rounded-lg border border-harvest-400 bg-white p-0.5 shadow-2xs">
             <button
               type="button"
               onClick={() => setIssuerPreset('kojima')}
               className={
                 issuerPreset === 'kojima'
-                  ? 'rounded-md bg-emerald-700 px-3 py-1 text-xs font-black text-white'
+                  ? 'rounded-md bg-harvest-700 px-3 py-1 text-xs font-black text-white'
                   : 'rounded-md px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft'
               }
             >
@@ -142,7 +142,7 @@ export function CustomerManage({ customer }: CustomerManageProps) {
               onClick={() => setIssuerPreset('iplus')}
               className={
                 issuerPreset === 'iplus'
-                  ? 'rounded-md bg-emerald-700 px-3 py-1 text-xs font-black text-white'
+                  ? 'rounded-md bg-harvest-700 px-3 py-1 text-xs font-black text-white'
                   : 'rounded-md px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft'
               }
             >
@@ -154,12 +154,12 @@ export function CustomerManage({ customer }: CustomerManageProps) {
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            className="h-4 w-4 accent-emerald-700"
+            className="h-4 w-4 accent-harvest-700"
             checked={requiresDeliveryNote}
             onChange={(e) => setRequiresDeliveryNote(e.target.checked)}
           />
           <span className="text-xs font-bold text-ink flex items-center gap-1">
-            <FileText className="h-3.5 w-3.5 text-emerald-700" />
+            <FileText className="h-3.5 w-3.5 text-harvest-700" />
             <span>運転手渡し納品書の対象にする（積込リスト・帳票印刷画面に「📄 納品書PDF」ボタンを表示）</span>
           </span>
         </label>

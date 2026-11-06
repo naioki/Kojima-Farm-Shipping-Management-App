@@ -203,12 +203,12 @@ export function GenerateInvoiceForm() {
 
       {/* エラー表示 */}
       {candidateError && (
-        <div className="flex items-center justify-between rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-900 shadow-xs">
+        <div className="flex items-center justify-between rounded-xl border border-alert/30 bg-alert-bg p-3 text-xs font-bold text-alert shadow-xs">
           <span>⚠️ {candidateError}</span>
           <button
             type="button"
             onClick={() => setRetryCount((c) => c + 1)}
-            className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-xs font-bold text-red-900 hover:bg-red-50 transition-colors"
+            className="rounded-lg border border-alert/30 bg-white px-2.5 py-1 text-xs font-bold text-alert hover:bg-alert-bg transition-colors"
           >
             再試行
           </button>

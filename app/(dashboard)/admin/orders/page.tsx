@@ -213,7 +213,7 @@ export default async function AdminOrdersPage({
                         <span className="min-w-0 truncate">
                           {o.customerName}
                           {o.destinationName && (
-                            <span className="ml-1.5 inline-flex items-center rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-xs font-black text-emerald-900">
+                            <span className="ml-1.5 inline-flex items-center rounded bg-harvest-50 border border-harvest-400 px-1.5 py-0.5 text-xs font-black text-forest-900">
                               ▶ {o.destinationName}
                             </span>
                           )}

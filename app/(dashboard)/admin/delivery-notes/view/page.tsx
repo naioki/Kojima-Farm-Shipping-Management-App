@@ -206,7 +206,7 @@ export default async function DeliveryNoteView({
                 href={buildViewUrl({ issuer: opt.value })}
                 className={
                   opt.value === issuerPreset
-                    ? 'rounded-md bg-emerald-700 px-2.5 py-1 text-xs font-bold text-white'
+                    ? 'rounded-md bg-harvest-700 px-2.5 py-1 text-xs font-bold text-white'
                     : 'rounded-md px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft'
                 }
               >
@@ -279,7 +279,7 @@ export default async function DeliveryNoteView({
               href={`/api/delivery-notes/pdf?${baseQs}&amount=${mode}&type=${docType}&issuer=${issuerPreset}&layout=${layout}`}
               target="_blank"
               rel="noopener"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800 shadow-2xs"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-harvest-600 bg-harvest-700 px-3 text-xs font-bold text-white hover:bg-forest-800 shadow-2xs"
             >
               <FileDown className="h-4 w-4" aria-hidden />
               A4 PDFを開く
@@ -320,11 +320,11 @@ export default async function DeliveryNoteView({
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3.5 py-2 text-xs text-emerald-950 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-harvest-50/70 px-3.5 py-2 text-xs text-forest-900 print:hidden">
             <span>
               📄 <strong>発行名義:</strong> {issuerName} ／ <strong>印字納品日:</strong> {printedDate}
               {printedDate !== effectiveOrderDate && (
-                <span className="ml-1 text-emerald-800">（FAX記載の着日で自動印字）</span>
+                <span className="ml-1 text-forest-800">（FAX記載の着日で自動印字）</span>
               )}
             </span>
             <span className="text-ink-soft">

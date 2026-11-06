@@ -112,18 +112,18 @@ export function ConnectionStatus() {
           className={cn(
             'pointer-events-auto flex items-center gap-2 rounded-full border px-4 py-2 text-xs sm:text-sm font-bold shadow-md',
             state.online && pendingCount === 0
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-              : 'border-amber-300 bg-amber-50 text-amber-900',
+              ? 'border-harvest-400 bg-harvest-50 text-forest-800'
+              : 'border-warning bg-warning-bg text-earth-900',
           )}
         >
           {state.online && pendingCount === 0 ? (
             <>
-              <Wifi className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+              <Wifi className="h-4 w-4 shrink-0 text-harvest-600" aria-hidden />
               <span>つながりました（最新データと同期しました）</span>
             </>
           ) : (
             <>
-              <Radio className="h-4 w-4 shrink-0 text-amber-600 animate-pulse" aria-hidden />
+              <Radio className="h-4 w-4 shrink-0 text-warning animate-pulse" aria-hidden />
               <span>
                 {pendingCount > 0
                   ? `📡 端末に一時保存中の記録が ${pendingCount} 件あります`
@@ -134,7 +134,7 @@ export function ConnectionStatus() {
                   type="button"
                   disabled={syncing}
                   onClick={handleManualFlush}
-                  className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-0.5 text-xs font-black transition active:scale-95 disabled:opacity-50"
+                  className="ml-1 inline-flex items-center gap-1 rounded-full bg-warning hover:opacity-90 text-white px-2.5 py-0.5 text-xs font-black transition active:scale-95 disabled:opacity-50"
                 >
                   <RefreshCw className={cn('h-3 w-3', syncing && 'animate-spin')} />
                   <span>{syncing ? '送信中...' : '今すぐ再送信'}</span>

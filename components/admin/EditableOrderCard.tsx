@@ -235,11 +235,11 @@ export function EditableOrderCard({
           <span className="font-semibold text-ink text-base">{customerName}</span>
 
           {destinationName ? (
-            <span title={`🏢 届先: ${destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
+            <span title={`🏢 届先: ${destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-trust-50 px-2.5 py-0.5 text-xs font-bold text-trust-700 border border-trust-100">
               🏢 届先: {destinationName}
             </span>
           ) : needsDestination ? (
-            <span className="whitespace-nowrap rounded-lg bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-300">
+            <span className="whitespace-nowrap rounded-lg bg-warning-bg px-2.5 py-0.5 text-xs font-bold text-earth-800 border border-warning">
               ⚠️ 納入先未定
             </span>
           ) : null}
@@ -324,7 +324,7 @@ export function EditableOrderCard({
 
       {/* 注文備考・FAXメモ表示（システムタグを除去した純粋な伝達事項のみ表示 #23） */}
       {extractActionableNote(notes) && (
-        <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-950">
+        <div className="rounded-lg border border-warning/80 bg-warning-bg/70 px-3 py-1.5 text-xs text-earth-900">
           <span className="font-bold">📝 注文備考・OCR情報: </span>
           <span>{extractActionableNote(notes)}</span>
         </div>

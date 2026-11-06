@@ -102,7 +102,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
               <h1 className="font-display text-xl font-bold text-ink">
                 {order.customerName}
                 {order.destinationName && (
-                  <span className="ml-1.5 text-base font-bold text-emerald-800">＞{order.destinationName}</span>
+                  <span className="ml-1.5 text-base font-bold text-forest-800">＞{order.destinationName}</span>
                 )}
               </h1>
               <p className="text-xs text-ink-faint">受注元: {intakeLabel(order.source, order.intakeChannel)}</p>

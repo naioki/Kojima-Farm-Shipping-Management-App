@@ -61,13 +61,13 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
             )}
 
             {r.deliveryDate && (
-              <span className="whitespace-nowrap rounded-lg bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+              <span className="whitespace-nowrap rounded-lg bg-harvest-50 px-2.5 py-0.5 text-xs font-bold text-forest-800 border border-harvest-400">
                 納品: {formatJpDateShort(r.deliveryDate)}
               </span>
             )}
 
             {r.destinationName && (
-              <span title={`届先: ${r.destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
+              <span title={`届先: ${r.destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-trust-50 px-2.5 py-0.5 text-xs font-bold text-trust-700 border border-trust-100">
                 届先: {r.destinationName}
               </span>
             )}
@@ -107,7 +107,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
               {r.alerts.map((a, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-bold text-amber-800"
+                  className="inline-flex items-center gap-1 rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-earth-800"
                 >
                   <AlertCircle className="h-3 w-3" aria-hidden />
                   {a.message}
@@ -160,7 +160,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
                       <td className="px-3 py-2 font-bold text-ink">
                         {it.name}
                         {it.isNewAddition && (
-                          <span className="whitespace-nowrap ml-1 rounded bg-emerald-100 px-1 text-xs font-bold text-emerald-800">
+                          <span className="whitespace-nowrap ml-1 rounded bg-harvest-100 px-1 text-xs font-bold text-forest-800">
                             新規
                           </span>
                         )}

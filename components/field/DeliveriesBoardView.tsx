@@ -247,11 +247,11 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
           <h2 className="text-lg font-black text-black">
             🚚 小島農園 積込・配送リスト（{formatJpDateShort(effectiveDate)} 納品分）
           </h2>
-          <p className="text-xs font-bold text-slate-700">
+          <p className="text-xs font-bold text-ink-soft">
             全 {totalCustomers} 取引先 ／ 総積込数 {totalContainers} 箱
           </p>
         </div>
-        <div className="text-xs font-bold text-slate-700">
+        <div className="text-xs font-bold text-ink-soft">
           積込済: {completedCustomers} / {totalCustomers} 社（{completedContainers}/{totalContainers}箱）
         </div>
       </div>
@@ -261,10 +261,10 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
         className={cn(
           'sticky top-13 z-20 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200 print:hidden',
           isToday
-            ? 'bg-[#0c2e4e] border-sky-600'
+            ? 'bg-trust-700 border-trust-600'
             : isTomorrow
-            ? 'bg-[#0f2e1e] border-emerald-600'
-            : 'bg-[#1e293b] border-slate-600',
+            ? 'bg-forest-900 border-harvest-600'
+            : 'bg-ink border-ink-soft',
         )}
       >
         <div className="flex items-center justify-between gap-2 text-xs">
@@ -273,10 +273,10 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               className={cn(
                 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black shrink-0',
                 isToday
-                  ? 'bg-sky-400 text-sky-950'
+                  ? 'bg-trust-400 text-trust-700'
                   : isTomorrow
-                  ? 'bg-emerald-400 text-emerald-950'
-                  : 'bg-slate-700 text-slate-100 border border-slate-500',
+                  ? 'bg-harvest-400 text-forest-900'
+                  : 'bg-ink-soft text-bg-soft border border-ink-faint',
               )}
             >
               <span>🚚</span>
@@ -289,7 +289,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               </span>
             </span>
 
-            <span className="text-emerald-300 font-black tabular-nums text-xs sm:text-sm truncate">
+            <span className="text-harvest-100 font-black tabular-nums text-xs sm:text-sm truncate">
               {completedContainers}/{totalContainers}箱済 ({progressPct}%)
             </span>
           </div>
@@ -302,7 +302,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
               {remainingContainers > 0 ? (
                 `残 ${remainingContainers}箱 (${remainingCustomers}社)`
               ) : (
-                <span className="inline-flex items-center gap-1 text-emerald-200">
+                <span className="inline-flex items-center gap-1 text-harvest-100">
                   <CheckCircle2 className="h-3 w-3" /> 完了
                 </span>
               )}
@@ -324,14 +324,14 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
 
       {/* 表示順（便・時間順 / 取引先順） ＆ ワンタップ未積込フィルタ */}
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 border border-line text-xs font-bold">
+        <div className="inline-flex items-center rounded-xl bg-bg-soft p-1 border border-line text-xs font-bold">
           <button
             type="button"
             onClick={() => setGroupMode('route')}
             className={cn(
               'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition',
               groupMode === 'route'
-                ? 'bg-white text-emerald-800 shadow-2xs font-black ring-1 ring-emerald-600/20'
+                ? 'bg-white text-forest-800 shadow-2xs font-black ring-1 ring-harvest-600/20'
                 : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -344,7 +344,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             className={cn(
               'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg transition',
               groupMode === 'customer'
-                ? 'bg-white text-emerald-800 shadow-2xs font-black ring-1 ring-emerald-600/20'
+                ? 'bg-white text-forest-800 shadow-2xs font-black ring-1 ring-harvest-600/20'
                 : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -353,7 +353,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
           </button>
         </div>
 
-        <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 border border-line text-xs font-bold">
+        <div className="inline-flex items-center rounded-xl bg-bg-soft p-1 border border-line text-xs font-bold">
           <button
             type="button"
             onClick={() => setFilterMode('all')}
@@ -372,7 +372,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             className={cn(
               'px-3 py-1.5 rounded-lg transition',
               filterMode === 'incomplete'
-                ? 'bg-emerald-700 text-white shadow-2xs font-black'
+                ? 'bg-harvest-700 text-white shadow-2xs font-black'
                 : 'text-ink-muted hover:text-ink',
             )}
           >
@@ -383,14 +383,14 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
 
       {/* 取引先カード一覧 */}
       {visibleCards.length === 0 && filterMode === 'incomplete' ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center space-y-2">
-          <p className="text-base font-black text-emerald-900">
+        <div className="rounded-2xl border border-harvest-400 bg-harvest-50/70 p-6 text-center space-y-2">
+          <p className="text-base font-black text-forest-900">
             🎉 すべての取引先の積込チェックが完了しています！
           </p>
           <button
             type="button"
             onClick={() => setFilterMode('all')}
-            className="inline-flex items-center rounded-lg bg-white border border-emerald-300 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition"
+            className="inline-flex items-center rounded-lg bg-white border border-harvest-400 px-3 py-1.5 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
           >
             完了済みのカードを表示する
           </button>
@@ -409,9 +409,9 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                   className={cn(
                     'flex items-center justify-between gap-2 rounded-xl px-3.5 py-2 border shadow-2xs',
                     grpAllDone
-                      ? 'border-slate-300 bg-slate-100 text-slate-600'
+                      ? 'border-line-strong bg-bg-soft text-ink-soft'
                       : grp.isUnassigned
-                      ? 'border-slate-300 bg-slate-100 text-slate-800'
+                      ? 'border-line-strong bg-bg-soft text-ink'
                       : 'border-earth-300 bg-earth-100/90 text-earth-950',
                   )}
                 >
@@ -431,7 +431,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
                   </div>
                   <div className="flex items-center gap-1.5 text-xs font-black shrink-0">
                     {grpAllDone ? (
-                      <span className="rounded-md bg-emerald-600 text-white px-2 py-0.5">
+                      <span className="rounded-md bg-harvest-600 text-white px-2 py-0.5">
                         ✓ 全{grpTotalBoxes}箱済
                       </span>
                     ) : (

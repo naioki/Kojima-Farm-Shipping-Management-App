@@ -2336,7 +2336,7 @@ export function ShipmentAddForm({
                       {hasCard ? '🏷 品名カードあり' : 'カードなし'}
                     </span>
                     {hasSeal !== null && (
-                      <span className={cn('text-xs font-bold px-1.5 rounded', hasSeal ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-100 text-slate-600')}>
+                      <span className={cn('text-xs font-bold px-1.5 rounded', hasSeal ? 'bg-harvest-100 text-forest-900' : 'bg-bg-soft text-ink-soft')}>
                         {hasSeal ? sealText || 'シールあり' : 'シールなし'}
                       </span>
                     )}
@@ -2448,7 +2448,7 @@ export function ShipmentAddForm({
                 }
               }}
               className={cn(
-                'rounded-2xl border-2 bg-gradient-to-br from-forest-50/70 to-emerald-50/40 p-4 space-y-3 shadow-2xs',
+                'rounded-2xl border-2 bg-gradient-to-br from-forest-50/70 to-harvest-50/40 p-4 space-y-3 shadow-2xs',
                 dragOver ? 'border-dashed border-forest-600' : 'border-forest-200',
               )}
             >
@@ -2467,7 +2467,7 @@ export function ShipmentAddForm({
                   注文書・写真・自然言語からAIスマート入力
                 </span>
                 {appliedRulesCount > 0 && (
-                  <span className="whitespace-nowrap rounded-full bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-xs font-black text-emerald-900">
+                  <span className="whitespace-nowrap rounded-full bg-harvest-100 border border-harvest-400 px-2 py-0.5 text-xs font-black text-forest-900">
                     ✓ 事前指示書 {appliedRulesCount}件 適用済
                   </span>
                 )}
@@ -2482,10 +2482,10 @@ export function ShipmentAddForm({
                 className="w-full py-2.5 px-3.5 rounded-xl bg-forest-800 hover:bg-forest-900 text-white font-bold text-xs flex items-center justify-between shadow-2xs active:scale-[0.99] transition"
               >
                 <span className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-emerald-300" />
+                  <Sparkles className="h-4 w-4 text-harvest-100" />
                   <span>📄 注文書・写真・ファイルから自動読込</span>
                 </span>
-                <span className="text-xs font-bold text-emerald-200 bg-white/10 px-2 py-0.5 rounded">
+                <span className="text-xs font-bold text-harvest-100 bg-white/10 px-2 py-0.5 rounded">
                   カメラ / 写真 / PDF / Excel ➜
                 </span>
               </button>
@@ -2507,7 +2507,7 @@ export function ShipmentAddForm({
                       <span className="text-xs font-black text-forest-950 block">
                         📎 {attachedFilePayload?.fileName || '注文書画像を添付中'}
                       </span>
-                      <span className="text-xs font-bold text-emerald-800">
+                      <span className="text-xs font-bold text-forest-800">
                         下のテキスト欄に補足指示を書いて「AIで解析して入力」を押すと画像＋指示で再解析できます
                       </span>
                     </div>
@@ -2611,11 +2611,11 @@ export function ShipmentAddForm({
               {/* 📋 3/3 確定事項・読み取り結果まとめ一覧（「この内容でよいか？」ワンタップ確認ボード） */}
               {/* ===================================================================== */}
               {parsedCandidates.length > 0 && !analyzingNatural && !analyzingPhoto && (
-                <div className="rounded-2xl border-2 border-emerald-400 bg-white p-3.5 space-y-3 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2">
+                <div className="rounded-2xl border-2 border-harvest-400 bg-white p-3.5 space-y-3 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-harvest-100 pb-2">
                     <div>
-                      <p className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <p className="text-xs font-black text-forest-900 flex items-center gap-1.5">
+                        <CheckCircle2 className="h-4 w-4 text-harvest-600 shrink-0" />
                         <span>
                           【AI読み取り結果まとめ】わかる範囲をすべて入力しました。この内容でよろしいですか？
                         </span>
@@ -2630,10 +2630,10 @@ export function ShipmentAddForm({
                       type="button"
                       onClick={() => handleSaveRuleToMaster()}
                       disabled={savingAiRule}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-900 transition"
+                      className="inline-flex items-center gap-1 rounded-lg border border-harvest-400 bg-harvest-50 hover:bg-harvest-100 px-2.5 py-1 text-xs font-black text-forest-900 transition"
                       title="この取引先の読み取り特徴を事前指示書（AIルール）に保存します"
                     >
-                      <BookmarkPlus className="h-3.5 w-3.5 text-emerald-700" />
+                      <BookmarkPlus className="h-3.5 w-3.5 text-harvest-700" />
                       <span>{savingAiRule ? '保存中...' : '指示書に記憶'}</span>
                     </button>
                   </div>
@@ -2681,25 +2681,25 @@ export function ShipmentAddForm({
                       return (
                         <div
                           key={`breakdown-${cand.id}`}
-                          className="rounded-xl border-2 border-amber-300 bg-amber-50/90 p-2.5 space-y-1.5"
+                          className="rounded-xl border-2 border-warning bg-warning-bg/90 p-2.5 space-y-1.5"
                         >
-                          <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                            <Split className="h-4 w-4 text-amber-700 shrink-0" />
+                          <p className="text-xs font-black text-earth-900 flex items-center gap-1.5">
+                            <Split className="h-4 w-4 text-earth-800 shrink-0" />
                             <span>
                               📌 確認：{formatShortDateWithWeekday(cand.delivery_date)}「{cand.destination_name}（{cand.cases}箱＝{cand.quantity}P）」に欄外内訳があります
                             </span>
                           </p>
-                          <p className="text-xs font-bold text-amber-900">
+                          <p className="text-xs font-bold text-earth-900">
                             {cand.note} — 現場ボードでの登録方法を選べます：
                           </p>
                           <div className="flex flex-wrap gap-1.5 pt-0.5">
-                            <span className="rounded-lg border border-amber-600 bg-amber-600 text-white px-2.5 py-1 text-xs font-black">
+                            <span className="rounded-lg border border-warning bg-warning text-white px-2.5 py-1 text-xs font-black">
                               ✓ 現在：「{cand.destination_name}（{cand.cases}箱）」1件にまとめメモに内訳記載
                             </span>
                             <button
                               type="button"
                               onClick={() => handleSplitCandidateBreakdown(cand.id)}
-                              className="rounded-lg border border-amber-400 bg-white hover:bg-amber-100 text-amber-950 px-2.5 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                              className="rounded-lg border border-warning bg-white hover:bg-warning-bg text-earth-900 px-2.5 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
                             >
                               <Split className="h-3.5 w-3.5" />
                               <span>
@@ -2717,15 +2717,15 @@ export function ShipmentAddForm({
                   {Array.from(new Set(parsedCandidates.map((c) => c.parentGroupId).filter(Boolean))).map((groupId) => (
                     <div
                       key={`merge-${groupId}`}
-                      className="rounded-xl border border-emerald-300 bg-emerald-50/70 p-2 flex items-center justify-between gap-2"
+                      className="rounded-xl border border-harvest-400 bg-harvest-50/70 p-2 flex items-center justify-between gap-2"
                     >
-                      <span className="text-xs font-bold text-emerald-950">
+                      <span className="text-xs font-bold text-forest-900">
                         ✓ 欄外内訳を店舗別の2件に分割中です
                       </span>
                       <button
                         type="button"
                         onClick={() => handleMergeSplitCandidates(groupId!)}
-                        className="rounded-lg border border-emerald-400 bg-white hover:bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-900 flex items-center gap-1"
+                        className="rounded-lg border border-harvest-400 bg-white hover:bg-harvest-100 px-2.5 py-1 text-xs font-black text-forest-900 flex items-center gap-1"
                       >
                         <Merge className="h-3.5 w-3.5" />
                         <span>1件（60箱・メモに内訳）に戻す</span>
@@ -2751,12 +2751,12 @@ export function ShipmentAddForm({
                           className={cn(
                             'rounded-xl border p-2.5 transition cursor-pointer flex flex-col gap-1.5',
                             cand.registered
-                              ? 'border-emerald-300 bg-emerald-50/60 opacity-75'
+                              ? 'border-harvest-400 bg-harvest-50/60 opacity-75'
                               : isCurrent
                               ? 'border-forest-600 bg-forest-50/50 ring-1 ring-forest-500'
                               : cand.selected
                               ? 'border-line bg-white hover:border-forest-300'
-                              : 'border-line bg-slate-50 opacity-60',
+                              : 'border-line bg-bg-soft opacity-60',
                           )}
                         >
                           <div className="flex items-center justify-between gap-2">
@@ -2789,31 +2789,31 @@ export function ShipmentAddForm({
                             {/* ステータス・差分バッジ */}
                             <div className="flex items-center gap-1 shrink-0">
                               {cand.registered ? (
-                                <span className="whitespace-nowrap rounded bg-emerald-600 text-white px-2 py-0.5 text-xs font-black">
+                                <span className="whitespace-nowrap rounded bg-harvest-600 text-white px-2 py-0.5 text-xs font-black">
                                   ✓ 反映済
                                 </span>
                               ) : isZero ? (
                                 hasExisting ? (
-                                  <span className="whitespace-nowrap rounded bg-red-100 border border-red-300 text-red-900 px-2 py-0.5 text-xs font-black">
+                                  <span className="whitespace-nowrap rounded bg-alert-bg border border-alert text-alert px-2 py-0.5 text-xs font-black">
                                     🗑️ 既存取消 ({cand.existing_quantity}P→0P)
                                   </span>
                                 ) : (
-                                  <span className="whitespace-nowrap rounded bg-slate-200 text-slate-700 px-2 py-0.5 text-xs font-bold">
+                                  <span className="whitespace-nowrap rounded bg-line text-ink-soft px-2 py-0.5 text-xs font-bold">
                                     ー 注文なし (0P・スキップ)
                                   </span>
                                 )
                               ) : hasExisting ? (
                                 cand.existing_quantity === qNum ? (
-                                  <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-900 px-2 py-0.5 text-xs font-black">
+                                  <span className="whitespace-nowrap rounded bg-harvest-100 text-forest-900 px-2 py-0.5 text-xs font-black">
                                     ✓ 登録済と同数 ({qNum}P)
                                   </span>
                                 ) : (
-                                  <span className="whitespace-nowrap rounded bg-amber-100 border border-amber-300 text-amber-950 px-2 py-0.5 text-xs font-black">
+                                  <span className="whitespace-nowrap rounded bg-warning-bg border border-warning text-earth-900 px-2 py-0.5 text-xs font-black">
                                     🔄 変更 ({cand.existing_quantity}P ➔ {qNum}P)
                                   </span>
                                 )
                               ) : (
-                                <span className="whitespace-nowrap rounded bg-emerald-100 text-emerald-900 px-2 py-0.5 text-xs font-black">
+                                <span className="whitespace-nowrap rounded bg-harvest-100 text-forest-900 px-2 py-0.5 text-xs font-black">
                                   ✨ 新規登録
                                 </span>
                               )}
@@ -2836,15 +2836,15 @@ export function ShipmentAddForm({
                                   className={cn(
                                     'rounded px-1.5 py-0.5 text-xs font-black border',
                                     cand.has_seal
-                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                                      : 'bg-slate-100 border-slate-300 text-slate-600',
+                                      ? 'bg-harvest-50 border-harvest-400 text-forest-900'
+                                      : 'bg-bg-soft border-line-strong text-ink-soft',
                                   )}
                                 >
                                   {cand.has_seal ? '🏷️ シールあり' : 'シールなし'}
                                 </span>
                               )}
                               {isRedModified && (
-                                <span className="whitespace-nowrap rounded bg-red-50 border border-red-300 text-red-800 px-1.5 py-0.5 text-xs font-black">
+                                <span className="whitespace-nowrap rounded bg-alert-bg border border-alert text-alert px-1.5 py-0.5 text-xs font-black">
                                   🔴 赤字・変更箇所
                                 </span>
                               )}
@@ -2890,14 +2890,14 @@ export function ShipmentAddForm({
 
                   {/* 🚨 未登録取引先が検出された場合、まとめ一覧内で即座に確認・新規作成できるバナー */}
                   {showNewCustomer && (
-                    <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3 space-y-2 shadow-2xs">
-                      <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                        <UserPlus className="h-4 w-4 text-amber-700 shrink-0" />
+                    <div className="rounded-xl border-2 border-warning bg-warning-bg p-3 space-y-2 shadow-2xs">
+                      <p className="text-xs font-black text-earth-900 flex items-center gap-1.5">
+                        <UserPlus className="h-4 w-4 text-earth-800 shrink-0" />
                         <span>
                           未登録の取引先「{newCustomerName || parsedCandidates[0]?.customer_name}」が検出されました。新規取引先として登録しますか？
                         </span>
                       </p>
-                      <p className="text-xs font-bold text-amber-900">
+                      <p className="text-xs font-bold text-earth-900">
                         別会社の納入先に混ざらないよう自動ストップしました。下の「✨ 新規取引先のワンストップ一括登録」で取引先を作成してから反映してください。
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -2928,7 +2928,7 @@ export function ShipmentAddForm({
                       type="button"
                       onClick={handleBatchRegisterAllCandidates}
                       disabled={batchRegistering}
-                      className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm py-3 px-4 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] transition"
+                      className="w-full rounded-xl bg-harvest-600 hover:bg-harvest-700 disabled:opacity-50 text-white font-black text-sm py-3 px-4 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] transition"
                     >
                       {batchRegistering ? (
                         <>
@@ -2950,17 +2950,17 @@ export function ShipmentAddForm({
 
               {/* 🟢 単発入力時の【確定事項】バッジ表示 */}
               {confirmedBadges.length > 0 && parsedCandidates.length === 0 && !analyzingNatural && !analyzingPhoto && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 space-y-1.5">
+                <div className="rounded-xl border border-harvest-400 bg-harvest-50/80 p-3 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <p className="text-xs font-black text-forest-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4 text-harvest-600 shrink-0" />
                       <span>【確定事項】以下の項目を特定し、下の入力欄へ反映しました</span>
                     </p>
                     <button
                       type="button"
                       onClick={() => handleSaveRuleToMaster()}
                       disabled={savingAiRule}
-                      className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-0.5 text-xs font-black text-emerald-900 hover:bg-emerald-100"
+                      className="inline-flex items-center gap-1 rounded-md border border-harvest-400 bg-white px-2 py-0.5 text-xs font-black text-forest-900 hover:bg-harvest-100"
                     >
                       <BookmarkPlus className="h-3 w-3" />
                       <span>指示書に記憶</span>
@@ -2968,13 +2968,13 @@ export function ShipmentAddForm({
                   </div>
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
                     {confirmedBadges.map((b, i) => (
-                      <span key={i} className="rounded-md bg-white border border-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-800 shadow-2xs">
+                      <span key={i} className="rounded-md bg-white border border-harvest-400 px-2 py-0.5 text-xs font-bold text-forest-800 shadow-2xs">
                         ✓ {b}
                       </span>
                     ))}
                   </div>
                   {aiExplanation && (
-                    <p className="text-xs text-emerald-950 font-medium pt-1 border-t border-emerald-200/60">
+                    <p className="text-xs text-forest-900 font-medium pt-1 border-t border-harvest-400/60">
                       💡 {aiExplanation}
                     </p>
                   )}
@@ -2983,14 +2983,14 @@ export function ShipmentAddForm({
 
               {/* 🟡 【確認・不足項目】提示カード（事前指示書で解決できない不明点のみピンポイントで質問） */}
               {uncertainItems.length > 0 && !analyzingNatural && !analyzingPhoto && (
-                <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3.5 space-y-2.5">
-                  <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                <div className="rounded-xl border-2 border-warning bg-warning-bg p-3.5 space-y-2.5">
+                  <p className="text-xs font-black text-earth-900 flex items-center gap-1.5">
+                    <AlertCircle className="h-4 w-4 text-warning shrink-0" />
                     <span>【確認・不足項目】不明な点があります。以下から選択してください</span>
                   </p>
                   <div className="space-y-2">
                     {uncertainItems.map((item, idx) => (
-                      <div key={idx} className="rounded-lg bg-white p-2.5 border border-amber-200 space-y-1.5">
+                      <div key={idx} className="rounded-lg bg-white p-2.5 border border-warning space-y-1.5">
                         <p className="text-xs font-bold text-ink">{item.question}</p>
                         <div className="flex flex-wrap gap-1.5">
                           {item.suggestions.map((sug, sIdx) => (
@@ -2998,7 +2998,7 @@ export function ShipmentAddForm({
                               key={sIdx}
                               type="button"
                               onClick={() => handleSelectSuggestion(item, sug)}
-                              className="rounded-lg border border-amber-300 bg-amber-50/70 hover:bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-900 transition-colors shadow-2xs active:scale-95"
+                              className="rounded-lg border border-warning bg-warning-bg/70 hover:bg-warning-bg px-2.5 py-1 text-xs font-black text-earth-900 transition-colors shadow-2xs active:scale-95"
                             >
                               👉 {sug}
                             </button>
@@ -3320,7 +3320,7 @@ export function ShipmentAddForm({
                             className={cn(
                               'min-h-[38px] rounded-xl border px-3 py-1.5 text-xs font-black transition-all active:scale-95',
                               destinationId === d.id
-                                ? 'border-emerald-700 bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-300'
+                                ? 'border-harvest-700 bg-harvest-700 text-white shadow-xs ring-2 ring-harvest-400'
                                 : 'border-line bg-white text-ink hover:bg-bg-soft',
                             )}
                           >
@@ -3418,11 +3418,11 @@ export function ShipmentAddForm({
 
               {/* 💡 既存注文がすでにある場合のリアルタイム検知＆ワンタップ切替バナー */}
               {existingShipmentInfo && (
-                <div className="rounded-2xl border-2 border-amber-400 bg-amber-50/90 p-3.5 space-y-2 shadow-2xs">
+                <div className="rounded-2xl border-2 border-warning bg-warning-bg/90 p-3.5 space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-black text-amber-950 flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-black text-earth-900 flex items-center gap-1.5 flex-wrap">
                       <span>💡 この納入先・品目には現在</span>
-                      <span className="rounded bg-amber-600 text-white px-2 py-0.5 text-sm font-black tabular-nums">
+                      <span className="rounded bg-warning text-white px-2 py-0.5 text-sm font-black tabular-nums">
                         {Math.floor(existingShipmentInfo.current_quantity / (inputPacksPerCase || 20))} 箱（{existingShipmentInfo.current_quantity.toLocaleString()} {unit}）
                       </span>
                       <span>登録されています</span>
@@ -3435,8 +3435,8 @@ export function ShipmentAddForm({
                       className={cn(
                         'rounded-xl py-1.5 px-2 text-xs font-black border transition-all',
                         mode === 'set'
-                          ? 'border-amber-700 bg-amber-700 text-white shadow-2xs'
-                          : 'border-amber-300 bg-white text-amber-950 hover:bg-amber-100',
+                          ? 'border-warning bg-warning text-white shadow-2xs'
+                          : 'border-warning bg-white text-earth-900 hover:bg-warning-bg',
                       )}
                     >
                       🔄 数量を上書き
@@ -3448,7 +3448,7 @@ export function ShipmentAddForm({
                         'rounded-xl py-1.5 px-2 text-xs font-black border transition-all',
                         mode === 'increase'
                           ? 'border-forest-700 bg-forest-700 text-white shadow-2xs'
-                          : 'border-amber-300 bg-white text-amber-950 hover:bg-amber-100',
+                          : 'border-warning bg-white text-earth-900 hover:bg-warning-bg',
                       )}
                     >
                       ⚡ 追加（増量）
@@ -3459,8 +3459,8 @@ export function ShipmentAddForm({
                       className={cn(
                         'rounded-xl py-1.5 px-2 text-xs font-black border transition-all',
                         mode === 'decrease'
-                          ? 'border-red-700 bg-red-700 text-white shadow-2xs'
-                          : 'border-amber-300 bg-white text-amber-950 hover:bg-amber-100',
+                          ? 'border-alert bg-alert text-white shadow-2xs'
+                          : 'border-warning bg-white text-earth-900 hover:bg-warning-bg',
                       )}
                     >
                       📉 減量する
@@ -3470,7 +3470,7 @@ export function ShipmentAddForm({
               )}
 
               {/* 📦 3連動数量エディタ（箱数・入数・総パック数の完全連動） */}
-              <div className="rounded-2xl border-2 border-forest-300 bg-gradient-to-br from-forest-50/60 to-emerald-50/40 p-4 space-y-3">
+              <div className="rounded-2xl border-2 border-forest-300 bg-gradient-to-br from-forest-50/60 to-harvest-50/40 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black text-forest-950 flex items-center gap-1.5">
                     <span>📦 数量入力（箱数・入数・総パック数の連動計算）</span>
@@ -3555,8 +3555,8 @@ export function ShipmentAddForm({
                   {/* ③ 総パック数 (P) */}
                   <div className="rounded-xl bg-white p-3 border border-forest-200 shadow-2xs space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-emerald-900">③ 総パック数</span>
-                      <span className="text-xs font-bold text-emerald-700">{unit}</span>
+                      <span className="text-xs font-black text-forest-900">③ 総パック数</span>
+                      <span className="text-xs font-bold text-harvest-700">{unit}</span>
                     </div>
                     <input
                       type="number"
@@ -3564,7 +3564,7 @@ export function ShipmentAddForm({
                       placeholder="例: 300"
                       value={inputTotalPacks}
                       onChange={(e) => handleTotalPacksChange(e.target.value)}
-                      className="w-full h-12 rounded-xl border-2 border-emerald-500 bg-emerald-50/30 px-3 font-mono tabular-nums font-black text-xl text-emerald-950 focus:border-emerald-600 focus:outline-none"
+                      className="w-full h-12 rounded-xl border-2 border-harvest-500 bg-harvest-50/30 px-3 font-mono tabular-nums font-black text-xl text-forest-900 focus:border-harvest-600 focus:outline-none"
                     />
                     <div className="flex items-center gap-1 pt-0.5">
                       {[50, 100, 200].map((n) => (
@@ -3575,7 +3575,7 @@ export function ShipmentAddForm({
                             const cur = Number(inputTotalPacks) || 0
                             handleTotalPacksChange(String(cur + n))
                           }}
-                          className="flex-1 h-9 text-xs font-black rounded-lg border border-line bg-sand-100 hover:bg-emerald-100 text-ink active:scale-95 transition"
+                          className="flex-1 h-9 text-xs font-black rounded-lg border border-line bg-sand-100 hover:bg-harvest-100 text-ink active:scale-95 transition"
                         >
                           +{n}
                         </button>
@@ -3587,7 +3587,7 @@ export function ShipmentAddForm({
                           setInputTotalPacks('')
                           setQtyRaw('')
                         }}
-                        className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700 hover:bg-red-100"
+                        className="text-xs font-bold px-1.5 py-0.5 rounded bg-alert-bg text-alert hover:bg-alert/10"
                       >
                         クリア
                       </button>
@@ -3611,7 +3611,7 @@ export function ShipmentAddForm({
                     <span
                       className={cn(
                         'text-xs font-bold px-2 py-0.5 rounded',
-                        previewText.kind === 'error' ? 'bg-red-100 text-alert' : 'bg-forest-100 text-forest-900',
+                        previewText.kind === 'error' ? 'bg-alert-bg text-alert' : 'bg-forest-100 text-forest-900',
                       )}
                     >
                       {previewText.text}
@@ -3637,7 +3637,7 @@ export function ShipmentAddForm({
                       className={cn(
                         'rounded-lg px-2.5 py-1 text-xs font-black border transition-colors',
                         hasSeal
-                          ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                          ? 'border-harvest-500 bg-harvest-50 text-forest-900'
                           : 'border-line bg-white text-ink-muted',
                       )}
                     >
@@ -3649,7 +3649,7 @@ export function ShipmentAddForm({
                       className={cn(
                         'rounded-lg px-2.5 py-1 text-xs font-black border transition-colors',
                         hasCard
-                          ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                          ? 'border-harvest-500 bg-harvest-50 text-forest-900'
                           : 'border-line bg-white text-ink-muted',
                       )}
                     >
@@ -3736,9 +3736,9 @@ export function ShipmentAddForm({
                     setActionSheetOpen(false)
                     fileInputRef.current?.click()
                   }}
-                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-emerald-50/50 hover:border-emerald-300 transition text-left active:scale-[0.99] shadow-2xs"
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-harvest-50/50 hover:border-harvest-400 transition text-left active:scale-[0.99] shadow-2xs"
                 >
-                  <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-harvest-100 text-forest-800 flex items-center justify-center shrink-0">
                     <Camera className="h-6 w-6" />
                   </div>
                   <div>
@@ -3753,9 +3753,9 @@ export function ShipmentAddForm({
                     setActionSheetOpen(false)
                     galleryInputRef.current?.click()
                   }}
-                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-sky-50/50 hover:border-sky-300 transition text-left active:scale-[0.99] shadow-2xs"
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-trust-50/50 hover:border-trust-400 transition text-left active:scale-[0.99] shadow-2xs"
                 >
-                  <div className="w-11 h-11 rounded-xl bg-sky-100 text-sky-800 flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-trust-100 text-trust-700 flex items-center justify-center shrink-0">
                     <ImageIcon className="h-6 w-6" />
                   </div>
                   <div>
@@ -3770,9 +3770,9 @@ export function ShipmentAddForm({
                     setActionSheetOpen(false)
                     fileSelectorRef.current?.click()
                   }}
-                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-purple-50/50 hover:border-purple-300 transition text-left active:scale-[0.99] shadow-2xs"
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-grape-50/50 hover:border-grape-200 transition text-left active:scale-[0.99] shadow-2xs"
                 >
-                  <div className="w-11 h-11 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-grape-100 text-grape-700 flex items-center justify-center shrink-0">
                     <FileText className="h-6 w-6" />
                   </div>
                   <div>
@@ -3788,9 +3788,9 @@ export function ShipmentAddForm({
                     const area = document.getElementById('shipment-natural-text-area')
                     area?.focus()
                   }}
-                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-amber-50/50 hover:border-amber-300 transition text-left active:scale-[0.99] shadow-2xs"
+                  className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:bg-warning-bg/50 hover:border-warning transition text-left active:scale-[0.99] shadow-2xs"
                 >
-                  <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-warning-bg text-earth-900 flex items-center justify-center shrink-0">
                     <Clipboard className="h-6 w-6" />
                   </div>
                   <div>
@@ -3803,7 +3803,7 @@ export function ShipmentAddForm({
               <button
                 type="button"
                 onClick={() => setActionSheetOpen(false)}
-                className="w-full py-3 rounded-xl border border-line bg-bg-soft text-ink font-bold text-sm hover:bg-slate-200"
+                className="w-full py-3 rounded-xl border border-line bg-bg-soft text-ink font-bold text-sm hover:bg-line"
               >
                 キャンセル
               </button>

@@ -143,7 +143,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                 </div>
                 <div className="flex items-center gap-1.5">
                   {r.default_container_type && (
-                    <span className="whitespace-nowrap rounded bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-900">
+                    <span className="whitespace-nowrap rounded bg-trust-100 px-2 py-0.5 text-xs font-bold text-trust-700">
                       📦 {r.default_container_type}
                     </span>
                   )}

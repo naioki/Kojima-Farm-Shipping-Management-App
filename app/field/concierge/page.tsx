@@ -70,14 +70,14 @@ export default async function ConciergePage({
       </div>
 
       {/* タイトル＆やさしい説明ヘッダー */}
-      <div className="rounded-2xl bg-gradient-to-r from-forest-800 to-emerald-800 p-4 sm:p-5 text-white shadow-sm space-y-1.5">
+      <div className="rounded-2xl bg-gradient-to-r from-forest-800 to-forest-800 p-4 sm:p-5 text-white shadow-sm space-y-1.5">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🤖</span>
           <h1 className="font-display text-lg sm:text-2xl font-black tracking-tight">
             AI総合相談窓口（おまかせコンシェルジュ）
           </h1>
         </div>
-        <p className="text-xs sm:text-sm font-bold text-emerald-100 leading-relaxed">
+        <p className="text-xs sm:text-sm font-bold text-harvest-100 leading-relaxed">
           細かい画面操作が苦手な方でも大丈夫！やりたいことを選ぶか話しかけるだけで、明日の注文追加・新しい品目や取引先の登録・面倒な設定のオン/オフをAIが代わりに準備します。
         </p>
       </div>

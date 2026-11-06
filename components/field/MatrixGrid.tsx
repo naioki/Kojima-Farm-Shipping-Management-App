@@ -406,10 +406,10 @@ export function MatrixGrid({
                     className={cn(
                       'num min-w-[78px] border border-line p-0 text-center font-bold transition-colors',
                       isTomorrowCol
-                        ? 'bg-emerald-100/90 text-forest-900 hover:bg-emerald-200/80'
+                        ? 'bg-harvest-100/90 text-forest-900 hover:bg-harvest-100/80'
                         : isTodayCol
-                        ? 'bg-sky-100/90 text-sky-900 hover:bg-sky-200/80'
-                        : 'bg-bg-soft text-ink-soft hover:bg-slate-200/70',
+                        ? 'bg-trust-100/90 text-trust-700 hover:bg-trust-100/80'
+                        : 'bg-bg-soft text-ink-soft hover:bg-line/70',
                     )}
                   >
                     <Link
@@ -422,12 +422,12 @@ export function MatrixGrid({
                         <ExternalLink className="h-3 w-3 opacity-50 group-hover:opacity-100" />
                       </span>
                       {isTomorrowCol && (
-                        <span className="block text-xs font-black text-emerald-800">
+                        <span className="block text-xs font-black text-forest-800">
                           明日納品(今日作業)
                         </span>
                       )}
                       {isTodayCol && (
-                        <span className="block text-xs font-black text-sky-800">
+                        <span className="block text-xs font-black text-trust-700">
                           今日納品
                         </span>
                       )}
@@ -477,7 +477,7 @@ export function MatrixGrid({
                                 'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs font-black shrink-0 transition active:scale-95',
                                 isExpanded
                                   ? 'border-forest-600 bg-forest-600 text-white'
-                                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100',
+                                  : 'border-harvest-400 bg-harvest-50 text-forest-900 hover:bg-harvest-100',
                               )}
                               title="納入先別の内訳を開閉"
                             >
@@ -516,7 +516,7 @@ export function MatrixGrid({
                               onClick={() => {
                                 if (!isExpanded) toggleExpandCustomer(c.id)
                               }}
-                              className="border border-line p-1 text-center cursor-pointer hover:bg-emerald-50/50 transition"
+                              className="border border-line p-1 text-center cursor-pointer hover:bg-harvest-50/50 transition"
                               title="タップして納入先別の内訳を展開・編集"
                             >
                               {numPacks > 0 ? (
@@ -650,11 +650,11 @@ export function MatrixGrid({
                         return (
                           <tr
                             key={`${c.id}:${dest.id}`}
-                            className="bg-emerald-50/30 hover:bg-emerald-50/60 text-xs"
+                            className="bg-harvest-50/30 hover:bg-harvest-50/60 text-xs"
                           >
-                            <th className="sticky left-0 z-10 border border-line bg-emerald-50/90 pl-5 pr-2.5 py-1.5 text-left font-bold text-emerald-950">
+                            <th className="sticky left-0 z-10 border border-line bg-harvest-50/90 pl-5 pr-2.5 py-1.5 text-left font-bold text-forest-900">
                               <div className="flex items-center gap-1">
-                                <span className="text-emerald-600">↳</span>
+                                <span className="text-harvest-600">↳</span>
                                 <span className="truncate">{dest.label}</span>
                               </div>
                             </th>
@@ -693,7 +693,7 @@ export function MatrixGrid({
                                         st === 'saved' && 'bg-harvest-50',
                                       )}
                                     >
-                                      <span className="num text-xs sm:text-sm font-black text-emerald-900 leading-tight">
+                                      <span className="num text-xs sm:text-sm font-black text-forest-900 leading-tight">
                                         {dBoxes}箱
                                       </span>
                                       <span className="num text-xs font-bold text-ink-soft leading-tight">
@@ -732,7 +732,7 @@ export function MatrixGrid({
                                       aria-label={`${c.name} ${dest.label} ${mmdd(d)}`}
                                       className={cn(
                                         'num h-10 w-full min-w-[68px] bg-white/60 px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-xs placeholder:font-normal placeholder:text-ink-faint',
-                                        'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-600 focus:bg-white',
+                                        'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-harvest-600 focus:bg-white',
                                         st === 'saving' && 'bg-trust-50',
                                         st === 'saved' && 'bg-harvest-50',
                                         st === 'error' && 'bg-alert/10 ring-1 ring-inset ring-alert',
@@ -742,7 +742,7 @@ export function MatrixGrid({
                                 </td>
                               )
                             })}
-                            <td className="num border border-line bg-emerald-100/40 px-2 py-1 text-center font-bold tabular-nums text-emerald-950">
+                            <td className="num border border-line bg-harvest-100/40 px-2 py-1 text-center font-bold tabular-nums text-forest-900">
                               {destRowTotalPacks > 0 ? (
                                 unitMode === 'boxes' ? (
                                   <span>

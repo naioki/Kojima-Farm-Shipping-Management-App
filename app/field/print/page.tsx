@@ -109,17 +109,17 @@ export default async function FieldPrintPage({
         <>
           {/* 🚚 運転手渡し納品書（勘兵衛・オレンジファーム等）1タップ印刷パネル */}
           {driverNoteCustomers.length > 0 && (
-            <div className="rounded-2xl border-2 border-emerald-600/30 bg-emerald-50/70 p-4 space-y-3 shadow-2xs">
+            <div className="rounded-2xl border-2 border-harvest-600/30 bg-harvest-50/70 p-4 space-y-3 shadow-2xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-2xs">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-harvest-700 text-white shadow-2xs">
                     <Truck className="h-4 w-4" aria-hidden />
                   </span>
                   <div>
-                    <h2 className="font-display text-sm sm:text-base font-black text-emerald-950">
+                    <h2 className="font-display text-sm sm:text-base font-black text-forest-900">
                       運転手渡し納品書（A4上下2連：納品書＋控）
                     </h2>
-                    <p className="text-xs text-emerald-900/80">
+                    <p className="text-xs text-forest-900/80">
                       金額なし・箱数明記 ／ オレンジファームはFAX記載着日で自動印字
                     </p>
                   </div>
@@ -129,7 +129,7 @@ export default async function FieldPrintPage({
                     href={`/api/delivery-notes/pdf?customers=${driverNoteCustomers.map((c) => c.id).join(',')}&date=${date}&amount=none&layout=2up`}
                     target="_blank"
                     rel="noopener"
-                    className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs sm:text-sm font-black text-white shadow-sm hover:bg-emerald-800 transition active:scale-95"
+                    className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-harvest-700 px-3.5 py-2 text-xs sm:text-sm font-black text-white shadow-sm hover:bg-forest-800 transition active:scale-95"
                   >
                     <FileDown className="h-4 w-4 shrink-0" />
                     <span>対象{driverNoteCustomers.length}社をまとめてA4印刷</span>
@@ -146,12 +146,12 @@ export default async function FieldPrintPage({
                   return (
                     <div
                       key={c.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-white px-3.5 py-2.5 shadow-2xs"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-white px-3.5 py-2.5 shadow-2xs"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-black text-sm text-ink">{c.name}</span>
-                          <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-900">
+                          <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-harvest-100 border border-harvest-400 px-2 py-0.5 text-xs font-bold text-forest-900">
                             <Building2 className="h-3 w-3" />
                             既定：{defaultIssuerLabel}
                           </span>
@@ -162,7 +162,7 @@ export default async function FieldPrintPage({
                           href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${defaultPreset}&layout=2up`}
                           target="_blank"
                           rel="noopener"
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-xs font-black text-white hover:bg-emerald-800 shadow-2xs transition active:scale-95"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-harvest-700 px-3 text-xs font-black text-white hover:bg-forest-800 shadow-2xs transition active:scale-95"
                         >
                           <FileDown className="h-3.5 w-3.5" />
                           <span>納品書PDF（{defaultPreset === 'iplus' ? 'アイプラス' : '小島農園'}）</span>

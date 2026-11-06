@@ -188,8 +188,8 @@ export function DeliveryCheckCard({
           <span
             className={cn(
               'rounded-full px-3 py-1 text-xs font-extrabold shadow-xs',
-              status === 'delivered' && 'bg-emerald-100 text-emerald-800 border border-emerald-300',
-              status === 'loaded' && 'bg-sky-100 text-sky-800 border border-sky-300',
+              status === 'delivered' && 'bg-harvest-100 text-forest-800 border border-harvest-400',
+              status === 'loaded' && 'bg-trust-100 text-trust-700 border border-trust-400',
               status === 'planned' && 'bg-bg-soft text-ink-soft border border-line',
             )}
           >
@@ -215,7 +215,7 @@ export function DeliveryCheckCard({
                 'rounded-xl border p-3 transition-all',
                 status === 'planned' && 'cursor-pointer active:scale-[0.99]',
                 isChecked
-                  ? 'border-emerald-300 bg-emerald-50/50 shadow-xs'
+                  ? 'border-harvest-400 bg-harvest-50/50 shadow-xs'
                   : 'border-line bg-bg-card hover:border-line-strong',
               )}
             >
@@ -229,9 +229,9 @@ export function DeliveryCheckCard({
                   {/* 箱数（コンテナ数）と入数のみを主表示 */}
                   <div className="flex flex-wrap items-baseline gap-2 pt-0.5">
                     {/* コンテナ数（箱数） */}
-                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 shadow-2xs">
-                      <span className="text-xs font-bold text-emerald-800">箱数:</span>
-                      <span className="text-base sm:text-lg font-black text-emerald-950 tabular-nums">
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-harvest-100/90 border border-harvest-400 px-2.5 py-1 shadow-2xs">
+                      <span className="text-xs font-bold text-forest-800">箱数:</span>
+                      <span className="text-base sm:text-lg font-black text-forest-900 tabular-nums">
                         {it.quantityText.includes('/') ? it.quantityText.split('/')[1]?.trim() : it.quantityText}
                       </span>
                     </div>
@@ -269,8 +269,8 @@ export function DeliveryCheckCard({
                   className={cn(
                     'shrink-0 h-12 w-12 rounded-full border-2 flex items-center justify-center transition active:scale-95 shadow-xs',
                     isChecked
-                      ? 'border-emerald-600 bg-emerald-600 text-white'
-                      : 'border-line-strong bg-white text-transparent hover:border-emerald-400',
+                      ? 'border-harvest-600 bg-harvest-600 text-white'
+                      : 'border-line-strong bg-white text-transparent hover:border-harvest-400',
                     status !== 'planned' && 'cursor-default',
                   )}
                 >

@@ -475,11 +475,11 @@ export default async function DeliveriesPage({
 
       {/* 未承認データがある場合の控えめな通知バー */}
       {pendingReviewCount > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950 print:hidden">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-earth-900 print:hidden">
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後にここへ表示されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
+            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:bg-warning transition"
           >
             確認する →
           </Link>

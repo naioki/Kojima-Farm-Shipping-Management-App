@@ -114,11 +114,11 @@ export function HarvestPulseSummary({
       <div
         className={cn(
           'rounded-2xl p-3 text-white shadow-sm space-y-2.5 transition-colors',
-          isTodayWork ? 'bg-[#155c39]' : 'bg-[#1e293b] border border-slate-700',
+          isTodayWork ? 'bg-forest-700' : 'bg-ink border border-ink-soft',
         )}
       >
         {prevCarryover > 0 && (
-          <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-400/20 border border-amber-300/40 px-3 py-1.5 text-xs font-black text-amber-100">
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-warning/20 border border-warning/40 px-3 py-1.5 text-xs font-black text-warning-bg">
             <span className="flex items-center gap-1.5">
               <span>🌅</span>
               <span>
@@ -127,7 +127,7 @@ export function HarvestPulseSummary({
                   : `前日からの持ち越し: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）`}
               </span>
             </span>
-            <span className="whitespace-nowrap rounded bg-amber-300 text-amber-950 px-1.5 py-0.5 text-xs font-black shrink-0">
+            <span className="whitespace-nowrap rounded bg-warning text-white px-1.5 py-0.5 text-xs font-black shrink-0">
               畑からの追加収穫目安: あと {Math.max(0, remainingBoxes - prevCarryover)} 箱
             </span>
           </div>
@@ -137,7 +137,7 @@ export function HarvestPulseSummary({
           <div className="grid grid-cols-2 divide-x divide-white/15 items-center">
             {/* ① 左カラム（主役）：完成箱数 / 目標箱数 */}
             <div className="flex flex-col items-center justify-center px-1">
-              <span className="text-xs font-black tracking-wider text-emerald-200 mb-0.5">
+              <span className="text-xs font-black tracking-wider text-harvest-100 mb-0.5">
                 {isThaiMode ? 'จำนวนลัง (箱数・ケース)' : '完成箱数 / 目標箱数'}
               </span>
               <div className="flex items-baseline justify-center gap-1 font-display">
@@ -145,10 +145,10 @@ export function HarvestPulseSummary({
                   {completedBoxes.toLocaleString()}
                 </span>
                 <span className="text-lg font-bold text-white/40">/</span>
-                <span className="text-2xl sm:text-3xl font-extrabold tabular-nums text-emerald-200">
+                <span className="text-2xl sm:text-3xl font-extrabold tabular-nums text-harvest-100">
                   {totalBoxes.toLocaleString()}
                 </span>
-                <span className="text-xs sm:text-sm font-black ml-0.5 text-emerald-300">
+                <span className="text-xs sm:text-sm font-black ml-0.5 text-harvest-100">
                   {isThaiMode ? 'ลัง' : '箱'}
                 </span>
               </div>
@@ -178,8 +178,8 @@ export function HarvestPulseSummary({
           <div className="space-y-1.5 pt-1.5 border-t border-white/10">
             <div className="flex items-center justify-between gap-2 px-1">
               {remainingPacks > 0 ? (
-                <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-emerald-100">
-                  <Clock className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
+                <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-harvest-100">
+                  <Clock className="h-3.5 w-3.5 text-harvest-100 shrink-0" />
                   <span>残り:</span>
                   <span className="font-black text-white text-sm sm:text-base tabular-nums">
                     あと {remainingBoxes.toLocaleString()} 箱
@@ -189,7 +189,7 @@ export function HarvestPulseSummary({
                   </span>
                 </div>
               ) : totalPacks > 0 ? (
-                <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-emerald-300">
+                <div className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-black text-harvest-100">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <span>🎉 全 {totalBoxes}箱（{totalPacks.toLocaleString()}P）完了！</span>
                 </div>
@@ -205,8 +205,8 @@ export function HarvestPulseSummary({
                 className={cn(
                   'h-full rounded-full transition-all duration-300',
                   progressPct >= 100
-                    ? 'bg-gradient-to-r from-emerald-300 to-teal-200'
-                    : 'bg-gradient-to-r from-emerald-400 to-teal-300',
+                    ? 'bg-gradient-to-r from-harvest-100 to-harvest-500'
+                    : 'bg-gradient-to-r from-harvest-400 to-harvest-500',
                 )}
               />
             </div>
@@ -236,7 +236,7 @@ export function HarvestPulseSummary({
                   <span className="truncate">
                     {isThaiMode && getThaiContainer(cb.type) ? getThaiContainer(cb.type) : shortLabel}:
                   </span>
-                  <span className="text-emerald-200 tabular-nums shrink-0">{cb.boxes}箱</span>
+                  <span className="text-harvest-100 tabular-nums shrink-0">{cb.boxes}箱</span>
                 </span>
               )
             })}
@@ -248,10 +248,10 @@ export function HarvestPulseSummary({
       <details className="group rounded-xl border border-line bg-white shadow-2xs">
         <summary className="flex cursor-pointer items-center justify-between px-3.5 py-2.5 text-xs font-black text-ink-soft select-none hover:bg-bg-soft/50">
           <span className="flex items-center gap-1.5 flex-wrap">
-            <Box className="h-4 w-4 text-emerald-600 shrink-0" />
+            <Box className="h-4 w-4 text-harvest-600 shrink-0" />
             <span>コンテナ別・規格別の詳細内訳 ／ 翌朝持ち越し登録</span>
             {carryover > 0 && (
-              <span className="whitespace-nowrap rounded bg-amber-100 text-amber-900 px-1.5 py-0.5 text-xs font-black">
+              <span className="whitespace-nowrap rounded bg-warning-bg text-earth-900 px-1.5 py-0.5 text-xs font-black">
                 引継 {carryover}箱
               </span>
             )}
@@ -263,7 +263,7 @@ export function HarvestPulseSummary({
           {activeContainers.length > 0 && (
             <div>
               <div className="font-extrabold text-ink mb-1.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-harvest-600"></span>
                 <span>コンテナ種別内訳</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
@@ -289,7 +289,7 @@ export function HarvestPulseSummary({
           {activeSpecs.length > 0 && (
             <div>
               <div className="font-extrabold text-ink mb-1.5 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-harvest-600"></span>
                 <span>規格別内訳（畑への収穫指示用）</span>
               </div>
               <div className="space-y-1">
@@ -318,7 +318,7 @@ export function HarvestPulseSummary({
                   setTempCarryoverStr(String(carryover))
                   setIsEditingCarryover(!isEditingCarryover)
                 }}
-                className="text-xs font-bold text-emerald-700 underline"
+                className="text-xs font-bold text-harvest-700 underline"
               >
                 {isEditingCarryover
                   ? '閉じる'
@@ -339,7 +339,7 @@ export function HarvestPulseSummary({
                         const cur = Math.max(0, parseInt(tempCarryoverStr, 10) || 0)
                         setTempCarryoverStr(String(Math.max(0, cur + delta)))
                       }}
-                      className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-slate-200 active:scale-95 border border-line"
+                      className="h-8 rounded bg-bg-soft text-xs font-black text-ink hover:bg-line active:scale-95 border border-line"
                     >
                       {delta > 0 ? `+${delta}` : delta}
                     </button>
@@ -359,7 +359,7 @@ export function HarvestPulseSummary({
                     type="button"
                     disabled={busy}
                     onClick={() => saveCarryover(Math.max(0, parseInt(tempCarryoverStr, 10) || 0))}
-                    className="h-9 rounded-lg bg-[#155c39] px-3 text-xs font-bold text-white hover:bg-[#10482c] disabled:opacity-50 active:scale-95 shadow-xs"
+                    className="h-9 rounded-lg bg-forest-700 px-3 text-xs font-bold text-white hover:bg-forest-800 disabled:opacity-50 active:scale-95 shadow-xs"
                   >
                     {busy ? '保存中...' : '確定'}
                   </button>

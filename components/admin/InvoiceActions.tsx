@@ -118,7 +118,7 @@ export function InvoiceActions({ invoiceId, status }: { invoiceId: string; statu
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="inline-flex h-8 items-center gap-1 rounded border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 disabled:opacity-50 transition"
+          className="inline-flex h-8 items-center gap-1 rounded border border-alert/30 bg-alert-bg px-2.5 text-xs font-semibold text-alert hover:bg-alert-bg hover:text-alert disabled:opacity-50 transition"
           title="この下書きを削除"
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -136,7 +136,7 @@ export function InvoiceActions({ invoiceId, status }: { invoiceId: string; statu
             )
           }
           disabled={busy}
-          className="inline-flex h-8 items-center gap-1 rounded border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 disabled:opacity-50 transition"
+          className="inline-flex h-8 items-center gap-1 rounded border border-alert/30 bg-alert-bg px-2.5 text-xs font-semibold text-alert hover:bg-alert-bg hover:text-alert disabled:opacity-50 transition"
           title="この請求書を無効にする（削除はしない）"
         >
           <Ban className="h-3.5 w-3.5" aria-hidden />
