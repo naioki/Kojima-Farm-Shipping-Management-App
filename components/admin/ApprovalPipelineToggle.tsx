@@ -100,7 +100,7 @@ export function ApprovalPipelineToggle({
             </span>
             <span
               className={cn(
-                'rounded-full px-2 py-0.5 text-[11px] font-bold',
+                'rounded-full px-2 py-0.5 text-xs font-bold',
                 autoApprove
                   ? 'bg-harvest-600 text-white'
                   : 'bg-earth-100 text-earth-800',
@@ -157,7 +157,7 @@ export function ApprovalPipelineToggle({
           >
             <span
               className={cn(
-                'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow transition duration-200',
+                'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-bg-card shadow transition duration-200',
                 autoApprove ? 'translate-x-5' : 'translate-x-0',
               )}
             />

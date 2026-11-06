@@ -46,7 +46,7 @@ export default async function LotsPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="flex items-center gap-2 font-display text-2xl font-bold text-ink">
         <Tags className="h-6 w-6 text-earth-600" aria-hidden />
-        ロット（トレーサビリティ）
+        ロット管理
       </h1>
 
       <Card className="space-y-2">

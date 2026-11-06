@@ -235,11 +235,11 @@ export function EditableOrderCard({
           <span className="font-semibold text-ink text-base">{customerName}</span>
 
           {destinationName ? (
-            <span className="rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
+            <span title={`🏢 届先: ${destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-trust-50 px-2.5 py-0.5 text-xs font-bold text-trust-700 border border-trust-100">
               🏢 届先: {destinationName}
             </span>
           ) : needsDestination ? (
-            <span className="rounded-lg bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-300">
+            <span className="whitespace-nowrap rounded-lg bg-warning-bg px-2.5 py-0.5 text-xs font-bold text-ink border border-warning">
               ⚠️ 納入先未定
             </span>
           ) : null}
@@ -247,7 +247,7 @@ export function EditableOrderCard({
           <span
             className={`rounded-lg px-2.5 py-0.5 text-xs font-bold border ${
               deliveryDate
-                ? 'bg-trust-50 text-trust-800 border-trust-200'
+                ? 'bg-trust-50 text-trust-700 border-trust-100'
                 : 'bg-warning-bg text-warning border-warning/40'
             }`}
           >
@@ -262,7 +262,7 @@ export function EditableOrderCard({
               return (
                 <span
                   key={r.id}
-                  className="inline-flex items-center gap-1 rounded-md border border-forest-300 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
+                  className="inline-flex items-center gap-1 rounded-md border border-forest-200 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
                 >
                   <span className="font-bold">{r.productName}</span>
                   <span className="font-black tabular-nums text-forest-800">
@@ -324,7 +324,7 @@ export function EditableOrderCard({
 
       {/* 注文備考・FAXメモ表示（システムタグを除去した純粋な伝達事項のみ表示 #23） */}
       {extractActionableNote(notes) && (
-        <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-950">
+        <div className="rounded-lg border border-warning/80 bg-warning-bg/70 px-3 py-1.5 text-xs text-ink">
           <span className="font-bold">📝 注文備考・OCR情報: </span>
           <span>{extractActionableNote(notes)}</span>
         </div>
@@ -391,14 +391,14 @@ export function EditableOrderCard({
                       )}
                     </div>
                     {low && (
-                      <span className="num shrink-0 rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
+                      <span className="whitespace-nowrap num shrink-0 rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
                         {row.confidence != null ? `精度 ${Math.round(row.confidence * 100)}%` : '要確認'}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center justify-end gap-2">
                     {row.saving && (
-                      <span className="text-[11px] font-bold text-trust-600 animate-pulse">
+                      <span className="text-xs font-bold text-trust-600 animate-pulse">
                         保存中...
                       </span>
                     )}

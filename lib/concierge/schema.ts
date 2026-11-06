@@ -178,7 +178,7 @@ export function buildConciergeSystemPrompt(ctx: ConciergeContextData): string {
    - お客様が「明日の注文」「今日作業する分」と言ったら、納品日は原則として **明日（${ctx.tomorrowStr}）** です。
 2. **主な画面の役割**:
    - **収穫・パックボード（/field/shipments）**: 今日パックする野菜の目標箱数・残り箱数と、出荷先ごとのカード一覧。上部コックピットの箱数は一律「総パック数 ÷ 20」で計算されます。
-   - **便別積込・配送リスト（/field/deliveries）**: トラックへの積み込みチェック画面。早い便（16:00 NSK便 → 18:00 和郷園便 → 翌午前 農業総研便）の順に並びます。
+   - **積込・配送リスト（/field/deliveries）**: トラックへの積み込みチェック画面。早い便（16:00 NSK便 → 18:00 和郷園便 → 翌午前 農業総研便）の順に並びます。
    - **週の管理・週間表（/field/matrix）**: 1週間分の出荷予定を箱数またはパック数で一覧・直接入力できる表。
    - **帳票・ラベル印刷（/field/print）**: 現場の出荷指示書やコンテナラベルの印刷画面。
    - **承認待ち（/admin/approvals）**: AIが読み取った注文を原本と見比べて確認・承認する画面（承認はここに一本化）。
@@ -397,7 +397,7 @@ export function buildDeterministicConciergeResponse(
           },
         },
       ],
-      followUpSuggestions: ['明日 和郷園に青梗菜 20箱追加して', '便別積込・配送リストを見る'],
+      followUpSuggestions: ['明日 和郷園に青梗菜 20箱追加して', '積込・配送リストを見る'],
     }
   }
 

@@ -63,7 +63,7 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
       {hasR2Key && (
         <a
           href={`/admin/orders/new?receipt=${receiptId}`}
-          className="inline-flex items-center gap-1.5 rounded border border-harvest-300 bg-harvest-50 px-2.5 py-1 text-xs font-medium text-harvest-700 hover:bg-harvest-100"
+          className="inline-flex items-center gap-1.5 rounded border border-harvest-400 bg-harvest-50 px-2.5 py-1 text-xs font-medium text-harvest-700 hover:bg-harvest-100"
         >
           <ScanLine className="h-3.5 w-3.5" aria-hidden />
           読み取る

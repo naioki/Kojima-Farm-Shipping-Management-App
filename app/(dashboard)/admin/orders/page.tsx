@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { ColorDot } from '@/components/ui/ColorDot'
-import { OrderStatusBadge, sourceLabel, ORDER_STATUS_OPTIONS } from '@/components/admin/OrderStatusBadge'
+import { OrderStatusBadge, intakeLabel, ORDER_STATUS_OPTIONS } from '@/components/admin/OrderStatusBadge'
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -213,7 +213,7 @@ export default async function AdminOrdersPage({
                         <span className="min-w-0 truncate">
                           {o.customerName}
                           {o.destinationName && (
-                            <span className="ml-1.5 inline-flex items-center rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-xs font-black text-emerald-900">
+                            <span className="ml-1.5 inline-flex items-center rounded bg-harvest-50 border border-harvest-400 px-1.5 py-0.5 text-xs font-black text-forest-900">
                               ▶ {o.destinationName}
                             </span>
                           )}
@@ -235,14 +235,14 @@ export default async function AdminOrdersPage({
                     <td className="whitespace-nowrap px-3 py-3 text-xs font-bold text-ink-soft">
                       {o.fieldProgressLabel}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-xs text-ink-faint">{sourceLabel(o.source)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs text-ink-faint">{intakeLabel(o.source, o.intakeChannel)}</td>
                     <td className="num whitespace-nowrap px-3 py-3 text-right text-ink">{yen(o.amount)}</td>
                     <td className="px-3 py-3"><OrderStatusBadge status={o.status} /></td>
                     <td className="px-2 py-3">
                       <Link
                         href={`/admin/orders/${o.id}`}
                         aria-label={`${o.customerName} の受注詳細・編集`}
-                        className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-lg border border-trust-200 bg-trust-50/70 px-2 py-1 text-xs font-bold text-trust-700 hover:bg-trust-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                        className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-lg border border-trust-100 bg-trust-50/70 px-2 py-1 text-xs font-bold text-trust-700 hover:bg-trust-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
                       >
                         詳細・編集<ChevronRight className="h-3.5 w-3.5" aria-hidden />
                       </Link>

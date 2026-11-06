@@ -56,10 +56,10 @@ export function ProductSelectorTabs({
               className={cn(
                 'inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-black transition-all active:scale-95',
                 isActive
-                  ? 'bg-[#1b5e20] text-white shadow-md ring-2 ring-emerald-700/30'
+                  ? 'bg-forest-700 text-white shadow-md ring-2 ring-harvest-700/30'
                   : incomplete > 0
-                  ? 'border-2 border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 shadow-2xs'
-                  : 'border border-line bg-white text-ink-soft hover:bg-bg-soft hover:text-ink',
+                  ? 'border-2 border-warning bg-warning-bg text-ink hover:opacity-90 shadow-2xs'
+                  : 'border border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
               )}
             >
               <span>
@@ -77,12 +77,12 @@ export function ProductSelectorTabs({
                   'rounded-full px-2 py-0.5 text-xs font-black tabular-nums',
                   isActive
                     ? incomplete > 0
-                      ? 'bg-amber-300 text-amber-950'
+                      ? 'bg-warning text-white'
                       : 'bg-white/20 text-white'
                     : isAllDone
-                    ? 'bg-emerald-100 text-emerald-800'
+                    ? 'bg-harvest-100 text-forest-800'
                     : incomplete > 0
-                    ? 'bg-amber-500 text-white'
+                    ? 'bg-warning text-white'
                     : 'bg-bg-soft text-ink-muted',
                 )}
               >
@@ -99,7 +99,7 @@ export function ProductSelectorTabs({
 
       {/* 他品目に未完了がある場合の横断作り忘れ防止バナー */}
       {otherIncompleteTabs.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-950 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3 py-1.5 text-xs font-black text-ink shadow-2xs">
           <div className="flex items-center gap-1.5">
             <span>🚨</span>
             <span>
@@ -110,7 +110,7 @@ export function ProductSelectorTabs({
           <button
             type="button"
             onClick={() => handleSelect(otherIncompleteTabs[0]!.id)}
-            className="rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition shrink-0"
+            className="rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition shrink-0"
           >
             {otherIncompleteTabs[0]!.name}を開く →
           </button>

@@ -118,7 +118,7 @@ export function PackPhotoUploader({ packConfigId }: { packConfigId: string }) {
               <img src={`/api/pack-photos/${p.id}`} alt={p.kind === 'caution' ? '注意点' : '完成見本'} className="h-full w-full object-cover" loading="lazy" />
               <span
                 className={cn(
-                  'absolute inset-x-0 bottom-0 text-center text-[9px] font-medium leading-tight text-white',
+                  'absolute inset-x-0 bottom-0 text-center text-xs font-medium leading-tight text-white',
                   p.kind === 'caution' ? 'bg-alert/80' : 'bg-harvest-600/80',
                 )}
               >

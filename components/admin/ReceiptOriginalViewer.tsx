@@ -76,7 +76,7 @@ export function ReceiptOriginalTrigger({ receipt }: { receipt: ReceiptOriginalIn
         onClick={() => setOpen(true)}
         className={cn(
           'hidden items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-medium hover:bg-bg-soft md:inline-flex',
-          emphasize ? 'border-trust-300 bg-trust-50 text-trust-700' : 'border-line-strong bg-bg-card text-ink',
+          emphasize ? 'border-trust-400 bg-trust-50 text-trust-700' : 'border-line-strong bg-bg-card text-ink',
         )}
       >
         {receipt.hasOriginal ? <FileImage className="h-3.5 w-3.5" aria-hidden /> : <MailOpen className="h-3.5 w-3.5" aria-hidden />}

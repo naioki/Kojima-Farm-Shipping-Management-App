@@ -139,12 +139,12 @@ export function QuickDepartureTimeEditor({
             handleOpen()
           }}
           className={cn(
-            'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition active:scale-95 print:border-slate-400 print:bg-white',
+            'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition active:scale-95 print:border-ink-faint print:bg-bg-card',
             currentDepartureTime?.startsWith('翌')
-              ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-900'
+              ? 'bg-trust-50 hover:bg-trust-100 border-trust-400 text-trust-700'
               : currentDepartureTime || currentShippingRouteName
               ? 'bg-earth-100 hover:bg-earth-200 border-earth-300 text-earth-900'
-              : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700',
+              : 'bg-bg-soft hover:bg-line border-line-strong text-ink-soft',
           )}
           title="出荷時間・便名を変更（一度設定すれば次回以降も自動引き継ぎ）"
         >
@@ -152,12 +152,12 @@ export function QuickDepartureTimeEditor({
           {thaiTime ? (
             <>
               <span className="text-xs sm:text-sm font-black">{thaiTime}</span>
-              <span className="text-[11px] font-bold opacity-85">({chipLabel})</span>
+              <span className="text-xs font-bold opacity-85">({chipLabel})</span>
             </>
           ) : (
             <span>{chipLabel}</span>
           )}
-          <span className="text-[10px] text-earth-700 underline ml-0.5 print:hidden">変更</span>
+          <span className="text-xs text-earth-700 underline ml-0.5 print:hidden">変更</span>
         </button>
       ) : (
         <button
@@ -226,14 +226,14 @@ export function QuickDepartureTimeEditor({
                   className={cn(
                     'rounded-lg py-1.5 px-2 text-xs font-black transition',
                     scope === 'date_only'
-                      ? 'bg-amber-600 text-white shadow-2xs'
+                      ? 'bg-warning text-white shadow-2xs'
                       : 'text-ink-soft hover:text-ink',
                   )}
                 >
                   📅 この日({deliveryDate.slice(5)})だけ
                 </button>
               </div>
-              <p className="text-[11px] text-ink-muted">
+              <p className="text-xs text-ink-muted">
                 {scope === 'master'
                   ? '💡 一度設定すれば、明日以降も自動で同じ時刻・便名が引き継がれます。'
                   : '💡 今日・この日だけの臨時変更として保存します（翌日以降は元に戻ります）。'}
@@ -259,12 +259,12 @@ export function QuickDepartureTimeEditor({
                       className={cn(
                         'flex items-center justify-between rounded-xl border px-3 py-2 text-xs font-black transition active:scale-98 text-left',
                         isSelected
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-600'
-                          : 'border-line bg-white hover:bg-bg-soft text-ink',
+                          ? 'border-harvest-600 bg-harvest-50 text-forest-900 ring-1 ring-harvest-600'
+                          : 'border-line bg-bg-card hover:bg-bg-soft text-ink',
                       )}
                     >
                       <span>{p.label}</span>
-                      {isSelected && <Check className="h-4 w-4 text-emerald-700 shrink-0" />}
+                      {isSelected && <Check className="h-4 w-4 text-harvest-700 shrink-0" />}
                     </button>
                   )
                 })}

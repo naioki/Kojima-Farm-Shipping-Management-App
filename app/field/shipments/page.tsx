@@ -377,10 +377,11 @@ export default async function ShipmentsPage({
 
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
   if (orderIds.length > 0) {
-    const { data: directReceipts } = await admin
+    const { data: directReceipts, error: directReceiptsErr } = await admin
       .from('order_receipts')
       .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
       .in('order_id', orderIds)
+    if (directReceiptsErr) console.error('[field/shipments] 原本(order_receipts)の取得に失敗:', directReceiptsErr.message)
 
     for (const rr of directReceipts ?? []) {
       if (rr.order_id) {
@@ -399,12 +400,13 @@ export default async function ShipmentsPage({
 
     const missingOrderIds = orderIds.filter((oid) => !receiptByOrder.has(oid))
     if (missingOrderIds.length > 0 && customerIds.length > 0) {
-      const { data: candidateReceipts } = await admin
+      const { data: candidateReceipts, error: candidateReceiptsErr } = await admin
         .from('order_receipts')
         .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
         .in('customer_id', customerIds)
         .order('created_at', { ascending: false })
         .limit(40)
+      if (candidateReceiptsErr) console.error('[field/shipments] 原本候補(order_receipts)の取得に失敗:', candidateReceiptsErr.message)
 
       for (const cr of candidateReceipts ?? []) {
         const p = (cr.raw_payload ?? {}) as Record<string, unknown>
@@ -621,11 +623,12 @@ export default async function ShipmentsPage({
   const nextShipmentItems: ShipmentItemData[] = []
 
   if (selectedProductId) {
-    const { data: nextOrders } = await admin
+    const { data: nextOrders, error: nextOrdersErr } = await admin
       .from('orders')
       .select('id, customer_id, destination_id')
       .eq('delivery_date', nextDateStr)
       .in('status', ['approved', 'shipped', 'invoiced'])
+    if (nextOrdersErr) console.error('[field/shipments] 翌日注文の取得に失敗:', nextOrdersErr.message)
 
     const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
     const nextOrderCustMap = new Map((nextOrders ?? []).map((o) => [o.id, o.customer_id]))
@@ -783,11 +786,11 @@ export default async function ShipmentsPage({
 
       {/* 未承認データがある場合の控えめな通知バー */}
       {pendingReviewCount > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink">
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後に作業リストへ反映されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
+            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition"
           >
             確認・承認する →
           </Link>
@@ -818,7 +821,7 @@ export default async function ShipmentsPage({
           isTodayTarget={date === defaultDate || date === jstTodayStr()}
         />
       ) : (
-        <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center text-ink-muted space-y-3">
+        <div className="rounded-2xl border border-dashed border-line bg-bg-card p-8 text-center text-ink-muted space-y-3">
           <p className="font-bold text-sm text-ink">この日の【{selectedProduct?.name || '選択品目'}】の出荷データはありません。</p>
           <p className="text-xs text-ink-faint">他の品目タブを選ぶか、翌日の出荷予定を確認できます。</p>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
@@ -831,7 +834,7 @@ export default async function ShipmentsPage({
             {isAdmin && (
               <a
                 href="/admin/approvals"
-                className="inline-flex items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink hover:bg-slate-200"
+                className="inline-flex items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink hover:bg-line"
               >
                 承認待ちを確認
               </a>

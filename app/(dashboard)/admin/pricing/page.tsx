@@ -21,7 +21,7 @@ export default async function PricingPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center gap-2">
         <Coins className="h-5 w-5 text-earth-700" aria-hidden />
-        <h1 className="font-display text-2xl font-bold text-ink">価格の確定（月次）</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">請求前の単価確認</h1>
       </div>
       <p className="text-sm text-ink-soft">
         出荷済みで単価が未確定の明細です。価格表から一括確定、または個別に単価・請求数量（赤点は数量減）を入れて確定します。

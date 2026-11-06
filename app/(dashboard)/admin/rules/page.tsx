@@ -60,10 +60,10 @@ export default async function AdminAiRulesPage() {
         <div>
           <div className="flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-earth-700" aria-hidden />
-            <h1 className="font-display text-2xl font-bold text-ink">AI学習ルール・モデル管理（全品目スマートOCR対応）</h1>
+            <h1 className="font-display text-2xl font-bold text-ink">AI学習ルール</h1>
           </div>
           <p className="mt-1 text-sm text-ink-soft">
-            メインモデル（<code className="font-mono">gemini-3.5-flash-lite</code>）と重要箇所モデル（<code className="font-mono">gemini-3.8-flash</code>）の自由入力切替、承認パイプラインの自動化ON/OFF、取引先別読取ルールを管理します。変更は再デプロイ不要で即座に反映されます。
+            AIモデル（通常: <code className="font-mono">{currentMainModel ?? DEFAULT_MAIN_GEMINI_MODEL}</code> ／ 重要箇所: <code className="font-mono">{currentHighModel ?? DEFAULT_HIGH_GEMINI_MODEL}</code>）、自動承認の切替、取引先別の読取ルールを管理します。変更はすぐに反映されます。
           </p>
         </div>
       </div>

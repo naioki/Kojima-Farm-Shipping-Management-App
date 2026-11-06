@@ -307,7 +307,7 @@ export function MatrixGrid({
       {/* 上部コントロールバー */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center rounded-xl border border-forest-300 bg-forest-50/70 p-1 shadow-2xs">
+          <div className="inline-flex items-center rounded-xl border border-forest-200 bg-forest-50/70 p-1 shadow-2xs">
             <button
               type="button"
               onClick={() => setUnitMode('boxes')}
@@ -315,7 +315,7 @@ export function MatrixGrid({
                 'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all',
                 unitMode === 'boxes'
                   ? 'bg-forest-700 text-white shadow-xs'
-                  : 'text-forest-900 hover:bg-white/70',
+                  : 'text-forest-900 hover:bg-bg-card/70',
               )}
             >
               <Box className="h-3.5 w-3.5" />
@@ -328,7 +328,7 @@ export function MatrixGrid({
                 'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all',
                 unitMode === 'packs'
                   ? 'bg-forest-700 text-white shadow-xs'
-                  : 'text-forest-900 hover:bg-white/70',
+                  : 'text-forest-900 hover:bg-bg-card/70',
               )}
             >
               <Layers className="h-3.5 w-3.5" />
@@ -342,7 +342,7 @@ export function MatrixGrid({
             className={cn(
               'inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors',
               onlyWithOrders
-                ? 'border-trust-600 bg-trust-50 text-trust-800'
+                ? 'border-trust-600 bg-trust-50 text-trust-700'
                 : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft',
             )}
           >
@@ -406,10 +406,10 @@ export function MatrixGrid({
                     className={cn(
                       'num min-w-[78px] border border-line p-0 text-center font-bold transition-colors',
                       isTomorrowCol
-                        ? 'bg-emerald-100/90 text-forest-900 hover:bg-emerald-200/80'
+                        ? 'bg-harvest-100/90 text-forest-900 hover:bg-harvest-100'
                         : isTodayCol
-                        ? 'bg-sky-100/90 text-sky-900 hover:bg-sky-200/80'
-                        : 'bg-bg-soft text-ink-soft hover:bg-slate-200/70',
+                        ? 'bg-trust-100/90 text-trust-700 hover:bg-trust-100'
+                        : 'bg-bg-soft text-ink-soft hover:bg-line/70',
                     )}
                   >
                     <Link
@@ -422,12 +422,12 @@ export function MatrixGrid({
                         <ExternalLink className="h-3 w-3 opacity-50 group-hover:opacity-100" />
                       </span>
                       {isTomorrowCol && (
-                        <span className="block text-[10px] font-black text-emerald-800">
+                        <span className="block text-xs font-black text-forest-800">
                           明日納品(今日作業)
                         </span>
                       )}
                       {isTodayCol && (
-                        <span className="block text-[10px] font-black text-sky-800">
+                        <span className="block text-xs font-black text-trust-700">
                           今日納品
                         </span>
                       )}
@@ -435,7 +435,7 @@ export function MatrixGrid({
                   </th>
                 )
               })}
-              <th className="num min-w-[78px] border border-line bg-bg-soft px-2 py-2 text-center font-black text-trust-800">
+              <th className="num min-w-[78px] border border-line bg-bg-soft px-2 py-2 text-center font-black text-trust-700">
                 週合計
               </th>
             </tr>
@@ -474,10 +474,10 @@ export function MatrixGrid({
                               type="button"
                               onClick={() => toggleExpandCustomer(c.id)}
                               className={cn(
-                                'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[10px] font-black shrink-0 transition active:scale-95',
+                                'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs font-black shrink-0 transition active:scale-95',
                                 isExpanded
                                   ? 'border-forest-600 bg-forest-600 text-white'
-                                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100',
+                                  : 'border-harvest-400 bg-harvest-50 text-forest-900 hover:bg-harvest-100',
                               )}
                               title="納入先別の内訳を開閉"
                             >
@@ -495,7 +495,7 @@ export function MatrixGrid({
                             </button>
                           )}
                         </div>
-                        <span className="block text-[10px] font-bold text-ink-muted">
+                        <span className="block text-xs font-bold text-ink-muted">
                           1箱＝{ppc}P
                         </span>
                       </th>
@@ -516,7 +516,7 @@ export function MatrixGrid({
                               onClick={() => {
                                 if (!isExpanded) toggleExpandCustomer(c.id)
                               }}
-                              className="border border-line p-1 text-center cursor-pointer hover:bg-emerald-50/50 transition"
+                              className="border border-line p-1 text-center cursor-pointer hover:bg-harvest-50/50 transition"
                               title="タップして納入先別の内訳を展開・編集"
                             >
                               {numPacks > 0 ? (
@@ -524,9 +524,9 @@ export function MatrixGrid({
                                   <div>
                                     <span className="num block text-sm sm:text-base font-black text-forest-900">
                                       {numBoxes}
-                                      <small className="text-[10px] font-bold ml-0.5">箱</small>
+                                      <small className="text-xs font-bold ml-0.5">箱</small>
                                     </span>
-                                    <span className="num block text-[10px] font-bold text-ink-soft">
+                                    <span className="num block text-xs font-bold text-ink-soft">
                                       ({numPacks.toLocaleString()}P)
                                     </span>
                                   </div>
@@ -535,7 +535,7 @@ export function MatrixGrid({
                                     <span className="num block text-sm sm:text-base font-black text-ink">
                                       {numPacks.toLocaleString()}
                                     </span>
-                                    <span className="num block text-[10px] font-bold text-ink-soft">
+                                    <span className="num block text-xs font-bold text-ink-soft">
                                       ({numBoxes}箱)
                                     </span>
                                   </div>
@@ -574,9 +574,9 @@ export function MatrixGrid({
                               >
                                 <span className="num text-sm sm:text-base font-black text-forest-900 leading-tight">
                                   {numBoxes}
-                                  <small className="text-[10px] font-bold ml-0.5">箱</small>
+                                  <small className="text-xs font-bold ml-0.5">箱</small>
                                 </span>
-                                <span className="num text-[10px] font-bold text-ink-soft leading-tight">
+                                <span className="num text-xs font-bold text-ink-soft leading-tight">
                                   ({numPacks.toLocaleString()}P)
                                 </span>
                               </button>
@@ -604,8 +604,8 @@ export function MatrixGrid({
                                 placeholder={unitMode === 'boxes' ? '箱数' : 'P数'}
                                 aria-label={`${c.name} ${mmdd(d)}`}
                                 className={cn(
-                                  'num h-12 w-full min-w-[68px] bg-transparent px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-[10px] placeholder:font-normal placeholder:text-ink-faint',
-                                  'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-forest-500 focus:bg-white',
+                                  'num h-12 w-full min-w-[68px] bg-transparent px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-xs placeholder:font-normal placeholder:text-ink-faint',
+                                  'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-forest-500 focus:bg-bg-card',
                                   st === 'saving' && 'bg-trust-50',
                                   st === 'saved' && 'bg-harvest-50',
                                   st === 'error' && 'bg-alert/10 ring-1 ring-inset ring-alert',
@@ -621,14 +621,14 @@ export function MatrixGrid({
                           unitMode === 'boxes' ? (
                             <div>
                               <span className="block text-sm font-black text-forest-900">{totalBoxes}箱</span>
-                              <span className="block text-[10px] font-bold text-ink-soft">
+                              <span className="block text-xs font-bold text-ink-soft">
                                 ({totalPacks.toLocaleString()}P)
                               </span>
                             </div>
                           ) : (
                             <div>
                               <span className="block text-sm font-black">{totalPacks.toLocaleString()}P</span>
-                              <span className="block text-[10px] font-bold text-ink-soft">({totalBoxes}箱)</span>
+                              <span className="block text-xs font-bold text-ink-soft">({totalBoxes}箱)</span>
                             </div>
                           )
                         ) : (
@@ -650,11 +650,11 @@ export function MatrixGrid({
                         return (
                           <tr
                             key={`${c.id}:${dest.id}`}
-                            className="bg-emerald-50/30 hover:bg-emerald-50/60 text-xs"
+                            className="bg-harvest-50/30 hover:bg-harvest-50/60 text-xs"
                           >
-                            <th className="sticky left-0 z-10 border border-line bg-emerald-50/90 pl-5 pr-2.5 py-1.5 text-left font-bold text-emerald-950">
+                            <th className="sticky left-0 z-10 border border-line bg-harvest-50/90 pl-5 pr-2.5 py-1.5 text-left font-bold text-forest-900">
                               <div className="flex items-center gap-1">
-                                <span className="text-emerald-600">↳</span>
+                                <span className="text-harvest-600">↳</span>
                                 <span className="truncate">{dest.label}</span>
                               </div>
                             </th>
@@ -688,15 +688,15 @@ export function MatrixGrid({
                                         }, 10)
                                       }}
                                       className={cn(
-                                        'w-full h-10 px-1 flex flex-col items-center justify-center hover:bg-white/80 transition',
+                                        'w-full h-10 px-1 flex flex-col items-center justify-center hover:bg-bg-card/80 transition',
                                         st === 'saving' && 'bg-trust-50',
                                         st === 'saved' && 'bg-harvest-50',
                                       )}
                                     >
-                                      <span className="num text-xs sm:text-sm font-black text-emerald-900 leading-tight">
+                                      <span className="num text-xs sm:text-sm font-black text-forest-900 leading-tight">
                                         {dBoxes}箱
                                       </span>
-                                      <span className="num text-[10px] font-bold text-ink-soft leading-tight">
+                                      <span className="num text-xs font-bold text-ink-soft leading-tight">
                                         ({dPacks}P)
                                       </span>
                                     </button>
@@ -731,8 +731,8 @@ export function MatrixGrid({
                                       placeholder={unitMode === 'boxes' ? '箱数' : 'P数'}
                                       aria-label={`${c.name} ${dest.label} ${mmdd(d)}`}
                                       className={cn(
-                                        'num h-10 w-full min-w-[68px] bg-white/60 px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-[10px] placeholder:font-normal placeholder:text-ink-faint',
-                                        'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-600 focus:bg-white',
+                                        'num h-10 w-full min-w-[68px] bg-bg-card/60 px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-xs placeholder:font-normal placeholder:text-ink-faint',
+                                        'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-harvest-600 focus:bg-bg-card',
                                         st === 'saving' && 'bg-trust-50',
                                         st === 'saved' && 'bg-harvest-50',
                                         st === 'error' && 'bg-alert/10 ring-1 ring-inset ring-alert',
@@ -742,7 +742,7 @@ export function MatrixGrid({
                                 </td>
                               )
                             })}
-                            <td className="num border border-line bg-emerald-100/40 px-2 py-1 text-center font-bold tabular-nums text-emerald-950">
+                            <td className="num border border-line bg-harvest-100/40 px-2 py-1 text-center font-bold tabular-nums text-forest-900">
                               {destRowTotalPacks > 0 ? (
                                 unitMode === 'boxes' ? (
                                   <span>
@@ -774,14 +774,14 @@ export function MatrixGrid({
                 const dayPacks = dateTotals.packs[d] ?? 0
                 const dayBoxes = dateTotals.boxes[d] ?? 0
                 return (
-                  <td key={d} className="num border border-line px-2 py-2 text-center font-bold tabular-nums text-trust-800">
+                  <td key={d} className="num border border-line px-2 py-2 text-center font-bold tabular-nums text-trust-700">
                     {dayPacks > 0 ? (
                       unitMode === 'boxes' ? (
                         <div>
                           <span className="block text-sm sm:text-base font-black text-forest-900">
                             {dayBoxes}箱
                           </span>
-                          <span className="block text-[10px] font-bold text-ink-soft">
+                          <span className="block text-xs font-bold text-ink-soft">
                             ({dayPacks.toLocaleString()}P)
                           </span>
                         </div>
@@ -790,7 +790,7 @@ export function MatrixGrid({
                           <span className="block text-sm sm:text-base font-black">
                             {dayPacks.toLocaleString()}P
                           </span>
-                          <span className="block text-[10px] font-bold text-ink-soft">
+                          <span className="block text-xs font-bold text-ink-soft">
                             ({dayBoxes}箱)
                           </span>
                         </div>
@@ -801,19 +801,19 @@ export function MatrixGrid({
                   </td>
                 )
               })}
-              <td className="num border border-line bg-trust-100/60 px-2 py-2 text-center font-black tabular-nums text-trust-900">
+              <td className="num border border-line bg-trust-100/60 px-2 py-2 text-center font-black tabular-nums text-trust-700">
                 {grandTotalPacks > 0 ? (
                   unitMode === 'boxes' ? (
                     <div>
-                      <span className="block text-base font-black text-forest-950">{grandTotalBoxes}箱</span>
-                      <span className="block text-[10px] font-bold text-ink-soft">
+                      <span className="block text-base font-black text-forest-900">{grandTotalBoxes}箱</span>
+                      <span className="block text-xs font-bold text-ink-soft">
                         ({grandTotalPacks.toLocaleString()}P)
                       </span>
                     </div>
                   ) : (
                     <div>
                       <span className="block text-base font-black">{grandTotalPacks.toLocaleString()}P</span>
-                      <span className="block text-[10px] font-bold text-ink-soft">
+                      <span className="block text-xs font-bold text-ink-soft">
                         ({grandTotalBoxes}箱)
                       </span>
                     </div>
@@ -874,12 +874,12 @@ function QuantityPreviewBar({
   const rem = totalNum % ppc
 
   return (
-    <p className="num flex flex-wrap items-center gap-2 rounded-xl border border-forest-300 bg-forest-50 px-3.5 py-2 text-xs font-bold text-forest-900">
+    <p className="num flex flex-wrap items-center gap-2 rounded-xl border border-forest-200 bg-forest-50 px-3.5 py-2 text-xs font-bold text-forest-900">
       <span>📦 入力プレビュー:</span>
       <span className="text-sm font-black">
         {boxes}箱{rem > 0 ? `＋端数${rem}${unit}` : ''}（計 {totalNum.toLocaleString()} {unit} ／ 1箱{ppc}入）
       </span>
-      <span className="text-ink-muted ml-auto text-[11px]">
+      <span className="text-ink-muted ml-auto text-xs">
         {unitMode === 'boxes'
           ? '※ 箱数モード中：数字（例: 30）で30箱として保存されます（パック指定は 150p）'
           : '※ パック数モード中：数字（例: 600）で600P、または 30c で30箱として保存'}

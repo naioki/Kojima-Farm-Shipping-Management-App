@@ -41,21 +41,21 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
         <section className="rounded-2xl bg-forest-700 p-4 text-white shadow-md space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/30 text-emerald-200">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-harvest-500/30 text-harvest-100">
                 <PackageCheck className="h-5 w-5" />
               </span>
               <div>
                 <h2 className="text-sm sm:text-base font-black text-white">
                   🥬 本日パック作業（明日 {tp.deliveryDateLabel} 納品分）の進捗
                 </h2>
-                <p className="text-xs text-emerald-200 font-medium">
+                <p className="text-xs text-harvest-100 font-medium">
                   全 {tp.totalItems} 明細中 {tp.completedItems} 明細が完了
                 </p>
               </div>
             </div>
             <Link
               href={`/field/shipments?date=${tp.deliveryDate}`}
-              className="inline-flex items-center gap-1 rounded-xl bg-white px-3.5 py-2 text-xs font-black text-forest-900 shadow-xs hover:bg-emerald-50 transition"
+              className="inline-flex items-center gap-1 rounded-xl bg-white px-3.5 py-2 text-xs font-black text-forest-900 shadow-xs hover:bg-harvest-50 transition"
             >
               <span>収穫・パックボードを開く</span>
               <ArrowRight className="h-3.5 w-3.5" />
@@ -64,16 +64,16 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 rounded-xl bg-black/25 border border-white/15 p-3 text-center">
             <div>
-              <span className="block text-[11px] font-bold text-emerald-200">完成箱数 / 目標箱数</span>
+              <span className="block text-xs font-bold text-harvest-100">完成箱数 / 目標箱数</span>
               <span className="num text-2xl sm:text-3xl font-black text-white tabular-nums">
                 {tp.completedBoxes.toLocaleString()}
                 <small className="text-base font-bold text-white/50 mx-1">/</small>
-                <span className="text-emerald-200">{tp.totalBoxes.toLocaleString()}</span>
+                <span className="text-harvest-100">{tp.totalBoxes.toLocaleString()}</span>
                 <small className="text-xs font-bold ml-1">箱</small>
               </span>
             </div>
             <div>
-              <span className="block text-[11px] font-bold text-white/80">完成パック数 / 総パック数</span>
+              <span className="block text-xs font-bold text-white/80">完成パック数 / 総パック数</span>
               <span className="num text-xl sm:text-2xl font-black text-white tabular-nums">
                 {tp.completedPacks.toLocaleString()}
                 <small className="text-sm font-bold text-white/50 mx-1">/</small>
@@ -83,7 +83,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
             </div>
             <div className="col-span-2 sm:col-span-1 flex flex-col justify-center">
               <div className="flex items-center justify-between text-xs font-black mb-1 px-1">
-                <span className="text-emerald-200">
+                <span className="text-harvest-100">
                   残り: あと {Math.max(0, tp.totalBoxes - tp.completedBoxes)} 箱
                 </span>
                 <span>{tp.progressPct}%</span>
@@ -91,7 +91,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
               <div className="h-2.5 w-full rounded-full bg-black/30 overflow-hidden p-0.5">
                 <div
                   style={{ width: `${tp.progressPct}%` }}
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-all"
+                  className="h-full rounded-full bg-gradient-to-r from-harvest-400 to-harvest-400 transition-all"
                 />
               </div>
             </div>

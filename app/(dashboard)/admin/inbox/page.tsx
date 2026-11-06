@@ -56,7 +56,7 @@ export default async function InboxPage({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">受信ボックス（FAX・メール）</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">読み取り失敗</h1>
         <p className="mt-1 text-sm text-ink-soft">
           届いたFAX・メールの読み取り状況です。読み取りに失敗したもの・取引先が分からないものをここで直します。承認は「承認待ち」で行います。
         </p>
@@ -66,12 +66,12 @@ export default async function InboxPage({
       {counts.pending > 0 && (
         <Link
           href="/admin/approvals"
-          className="flex items-center gap-3 rounded-xl border border-trust-200 bg-trust-50/80 p-3.5 shadow-sm hover:bg-trust-50 focus:outline-none focus:ring-2 focus:ring-trust-500"
+          className="flex items-center gap-3 rounded-xl border border-trust-100 bg-trust-50/80 p-3.5 shadow-sm hover:bg-trust-50 focus:outline-none focus:ring-2 focus:ring-trust-500"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-trust-600 text-white">
             <CheckSquare className="h-5 w-5" aria-hidden />
           </span>
-          <span className="text-sm font-bold text-trust-900">
+          <span className="text-sm font-bold text-trust-700">
             承認待ちの注文が <span className="num">{counts.pending}</span> 件あります。原本と見比べて承認する
           </span>
           <ChevronRight className="ml-auto h-4 w-4 text-trust-700" aria-hidden />

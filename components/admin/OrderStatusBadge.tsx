@@ -21,6 +21,14 @@ export function sourceLabel(source: string): string {
   return SOURCE[source] ?? source
 }
 
+const INTAKE: Record<string, string> = { phone: '電話', line: 'LINE', paper: '紙', other: 'その他' }
+
+/** 受注元の表示。手入力経路(intake_channel)が電話/LINE/紙/その他ならそれを、なければ source のラベル。 */
+export function intakeLabel(source: string, intakeChannel?: string | null): string {
+  if (intakeChannel && INTAKE[intakeChannel]) return INTAKE[intakeChannel]
+  return sourceLabel(source)
+}
+
 /** ステータスの日本語ラベル（CSV など非UI用途で共有）。 */
 export function statusLabel(status: string): string {
   return STATUS[status]?.label ?? status

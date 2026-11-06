@@ -141,34 +141,34 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
   })
 
   return (
-    <div className="rounded-2xl border-2 border-emerald-300 bg-white p-6 shadow-sm space-y-6">
+    <div className="rounded-2xl border-2 border-harvest-400 bg-bg-card p-6 shadow-sm space-y-6">
       {/* 見出し */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-harvest-100 text-forest-800">
               <MessageSquarePlus className="h-5 w-5" />
             </span>
             <h2 className="font-display text-xl font-black text-ink">現場からの改善要望・バグ報告（5W1H）</h2>
           </div>
           <p className="mt-1 text-sm font-medium text-ink-soft">
-            現場での気づき、バグ、こうしてほしい要望を気軽にお寄せください。<span className="font-bold text-emerald-700">「全部埋めなくてもOK」</span>です。
+            現場での気づき、バグ、こうしてほしい要望を気軽にお寄せください。<span className="font-bold text-harvest-700">「全部埋めなくてもOK」</span>です。
           </p>
         </div>
       </div>
 
       {/* 5W1H 投稿フォーム */}
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-harvest-100 bg-harvest-50/40 p-4">
         <div>
           <label className="block text-sm font-black text-ink">
-            【なにが起きたか・改善したいこと】（What） <span className="text-red-500 font-bold">*必須</span>
+            【なにが起きたか・改善したいこと】（What） <span className="text-alert font-bold">*必須</span>
           </label>
           <textarea
             value={what}
             onChange={(e) => setWhat(e.target.value)}
             rows={3}
             placeholder="例: 出荷一覧の右下ボタンが押しづらい、この画面で〇〇のボタンを追加してほしい、など"
-            className="mt-1.5 w-full rounded-xl border border-ink/20 bg-white p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            className="mt-1.5 w-full rounded-xl border border-ink/20 bg-bg-card p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none focus:ring-2 focus:ring-harvest-400"
             required
           />
         </div>
@@ -178,7 +178,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
           <button
             type="button"
             onClick={() => setShowOptionalFields(!showOptionalFields)}
-            className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:underline"
+            className="flex items-center gap-1.5 text-xs font-bold text-harvest-700 hover:text-forest-800 hover:underline"
           >
             {showOptionalFields ? '▲ 詳しい項目（いつ/どこで/誰が等）を閉じる' : '▼ 詳しい項目（いつ/どこで/誰が/なぜ/どう改善）も入力する（任意・埋めなくてもOK）'}
           </button>
@@ -193,7 +193,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={when}
                 onChange={(e) => setWhen(e.target.value)}
                 placeholder="例: 今日の15時頃、朝の出荷作業中"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-emerald-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -204,7 +204,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={where}
                 onChange={(e) => setWhere(e.target.value)}
                 placeholder="例: 出荷一覧、新規出荷追加、FAX原本画面"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-emerald-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -215,7 +215,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={who}
                 onChange={(e) => setWho(e.target.value)}
                 placeholder="例: パートさん、現場リーダー"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-emerald-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -226,7 +226,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={why}
                 onChange={(e) => setWhy(e.target.value)}
                 placeholder="例: 電波が悪かった、急いでいて押し間違えた"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-emerald-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
@@ -237,7 +237,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                 value={how}
                 onChange={(e) => setHow(e.target.value)}
                 placeholder="例: ボタンを大きくして色を変えてほしい、確認画面を出してほしい"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-white p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-emerald-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
           </div>
@@ -247,7 +247,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
           <Button
             type="submit"
             disabled={submitting || !what.trim()}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+            className="flex items-center gap-2 bg-harvest-600 hover:bg-harvest-700 text-white font-bold"
           >
             <Send className="h-4 w-4" />
             {submitting ? '送信中...' : '改善・報告を送信する'}
@@ -269,7 +269,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded-lg border border-ink/20 bg-white px-2 py-1 text-xs text-ink"
+              className="rounded-lg border border-ink/20 bg-bg-card px-2 py-1 text-xs text-ink"
             >
               <option value="all">すべて表示</option>
               <option value="pending">未着手のみ</option>
@@ -291,12 +291,12 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
             {filteredReports.map((r) => {
               const statusColor =
                 r.status === 'resolved'
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  ? 'bg-harvest-100 text-forest-800 border-harvest-400'
                   : r.status === 'in_progress'
-                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                  ? 'bg-trust-100 text-trust-700 border-trust-100'
                   : r.status === 'archived'
-                  ? 'bg-zinc-100 text-zinc-600 border-zinc-200'
-                  : 'bg-amber-100 text-amber-900 border-amber-300'
+                  ? 'bg-bg-soft text-ink-soft border-line'
+                  : 'bg-warning-bg text-ink border-warning'
 
               const statusLabel =
                 r.status === 'resolved'
@@ -310,7 +310,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
               return (
                 <div
                   key={r.id}
-                  className="rounded-xl border border-ink/10 bg-white p-4 space-y-2.5 shadow-2xs hover:border-emerald-300 transition-colors"
+                  className="rounded-xl border border-ink/10 bg-bg-card p-4 space-y-2.5 shadow-2xs hover:border-harvest-400 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -327,7 +327,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                       <select
                         value={r.status}
                         onChange={(e) => handleStatusChange(r.id, e.target.value as FeedbackReport['status'])}
-                        className="rounded-lg border border-ink/20 bg-white px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
+                        className="rounded-lg border border-ink/20 bg-bg-card px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
                       >
                         <option value="pending">未着手にする</option>
                         <option value="in_progress">対応中にする</option>
@@ -383,7 +383,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                         <div className="flex items-center justify-between text-ink-soft">
                           <span>
                             {r.admin_note ? (
-                              <span className="text-emerald-800 font-bold">💬 管理メモ: {r.admin_note}</span>
+                              <span className="text-forest-800 font-bold">💬 管理メモ: {r.admin_note}</span>
                             ) : (
                               <span className="text-ink-soft/70">管理メモなし</span>
                             )}
@@ -394,7 +394,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                               setEditingId(r.id)
                               setEditAdminNote(r.admin_note || '')
                             }}
-                            className="text-emerald-700 hover:underline font-bold text-xs"
+                            className="text-harvest-700 hover:underline font-bold text-xs"
                           >
                             {r.admin_note ? 'メモ編集' : '＋メモ追加'}
                           </button>
@@ -403,7 +403,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                     </div>
                   ) : (
                     r.admin_note && (
-                      <div className="pt-1 text-xs font-bold text-emerald-800">
+                      <div className="pt-1 text-xs font-bold text-forest-800">
                         🛠 農園管理者からの回答: {r.admin_note}
                       </div>
                     )

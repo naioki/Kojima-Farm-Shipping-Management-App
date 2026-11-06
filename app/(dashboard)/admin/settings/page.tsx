@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ErrorState } from '@/components/ui/States'
 import { SettingsForm, type SettingItem } from '@/components/admin/SettingsForm'
 import { SETTINGS_SPEC } from '@/lib/settings-spec'
+import { ThemeToggle } from '@/components/layouts/ThemeToggle'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
@@ -58,6 +59,14 @@ export default async function SettingsPage() {
           上から順に、ふだんよく触る項目です。取引先・品目はメニューの「マスタ・設定」、改善要望は「振り返り・記録」にあります。
         </p>
       </div>
+
+      <section className="rounded-xl border border-line bg-bg-card p-4">
+        <h2 className="mb-1 text-base font-bold text-ink">この端末の表示</h2>
+        <p className="mb-3 text-sm text-ink-soft">この端末だけに適用されます（他の人の画面は変わりません）。</p>
+        <div className="max-w-xs">
+          <ThemeToggle variant="light-bg" />
+        </div>
+      </section>
 
       <SettingsForm items={items} />
     </div>

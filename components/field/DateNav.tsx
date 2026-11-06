@@ -68,9 +68,9 @@ export function DateNav({
           className={cn(
             'relative flex flex-1 min-w-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border px-2 sm:px-3 h-10 shadow-2xs cursor-pointer transition select-none overflow-hidden',
             isTodayPackWork
-              ? 'border-emerald-600 bg-emerald-50/90 hover:bg-emerald-100/80'
+              ? 'border-harvest-600 bg-harvest-50/90 hover:bg-harvest-100/80'
               : isTodayDelivery
-              ? 'border-sky-500 bg-sky-50/90 hover:bg-sky-100/80'
+              ? 'border-trust-500 bg-trust-50/90 hover:bg-trust-100/80'
               : 'border-line-strong bg-bg-card hover:bg-bg-soft',
           )}
           title="タップしてカレンダーから日付を選択"
@@ -78,7 +78,7 @@ export function DateNav({
           <Calendar
             className={cn(
               'h-4 w-4 shrink-0',
-              isTodayPackWork ? 'text-emerald-700' : isTodayDelivery ? 'text-sky-700' : 'text-ink-soft',
+              isTodayPackWork ? 'text-harvest-700' : isTodayDelivery ? 'text-trust-700' : 'text-ink-soft',
             )}
             aria-hidden
           />
@@ -88,12 +88,12 @@ export function DateNav({
             </span>
             <span
               className={cn(
-                'rounded-md px-1.5 sm:px-2 py-1 text-[11px] font-black whitespace-nowrap shrink-0',
+                'rounded-md px-1.5 sm:px-2 py-1 text-xs font-black whitespace-nowrap shrink-0',
                 isTodayPackWork
-                  ? 'bg-emerald-700 text-white'
+                  ? 'bg-harvest-700 text-white'
                   : isTodayDelivery
-                  ? 'bg-sky-600 text-white'
-                  : 'bg-slate-200 text-slate-700',
+                  ? 'bg-trust-600 text-white'
+                  : 'bg-line text-ink-soft',
               )}
             >
               {isTodayPackWork

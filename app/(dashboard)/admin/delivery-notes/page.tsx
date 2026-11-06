@@ -75,13 +75,13 @@ export default async function DeliveryNotesPage({
       <h1 className="font-display text-2xl font-bold text-ink">納品書</h1>
 
       {(pendingCount ?? 0) > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-950">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3.5 py-2.5 text-xs font-bold text-ink">
           <span>
             ⚠️ 未承認（確認待ち）の注文が <strong className="font-black underline">{pendingCount}件</strong> あります（承認すると納品書に反映されます）
           </span>
           <Link
             href="/admin/orders?status=pending_review"
-            className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-black text-white hover:bg-amber-700"
+            className="rounded-lg bg-warning px-2.5 py-1 text-xs font-black text-white hover:opacity-90"
           >
             確認待ちを開く →
           </Link>
@@ -89,17 +89,17 @@ export default async function DeliveryNotesPage({
       )}
 
       {/* 🚚 運転手渡し納品書（勘兵衛・オレンジファーム等）クイック印刷 */}
-      <div className="rounded-2xl border-2 border-emerald-600/30 bg-emerald-50/70 p-4 space-y-3 shadow-2xs">
+      <div className="rounded-2xl border-2 border-harvest-600/30 bg-harvest-50/70 p-4 space-y-3 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-2xs">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-harvest-700 text-white shadow-2xs">
               <Truck className="h-4 w-4" aria-hidden />
             </span>
             <div>
-              <h2 className="font-display text-base font-black text-emerald-950">
+              <h2 className="font-display text-base font-black text-forest-900">
                 運転手渡し納品書（勘兵衛・オレンジファーム）
               </h2>
-              <p className="text-xs text-emerald-900/80">
+              <p className="text-xs text-forest-900/80">
                 A4上下2連（切るとA5×2枚：納品書＋控）・金額なし・箱数明記・FAX着日自動印字
               </p>
             </div>
@@ -109,7 +109,7 @@ export default async function DeliveryNotesPage({
               href={`/api/delivery-notes/pdf?customers=${driverNoteCustomers.map((c) => c.id).join(',')}&date=${targetDate}&amount=none&layout=2up`}
               target="_blank"
               rel="noopener"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 text-xs font-black text-white shadow-sm hover:bg-emerald-800 transition"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-harvest-700 px-3.5 text-xs font-black text-white shadow-sm hover:bg-forest-800 transition"
             >
               <FileDown className="h-4 w-4" />
               <span>{formatJpDateShort(targetDate)}分（{driverNoteCustomers.length}社）をまとめてPDF印刷</span>
@@ -130,16 +130,16 @@ export default async function DeliveryNotesPage({
             return (
               <div
                 key={c.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-white px-3.5 py-2.5 shadow-2xs"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-bg-card px-3.5 py-2.5 shadow-2xs"
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-black text-sm text-ink">{c.name}</span>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                  <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-harvest-100 border border-harvest-400 px-2 py-0.5 text-xs font-bold text-forest-900">
                     <Building2 className="h-3 w-3" />
                     既定：{issuerLabel}
                   </span>
                   {hasOrderOnTarget ? (
-                    <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-bold text-white">
+                    <span className="whitespace-nowrap rounded-full bg-harvest-700 px-2 py-0.5 text-xs font-bold text-white">
                       {formatJpDateShort(targetDate)} 出荷あり
                     </span>
                   ) : (
@@ -149,7 +149,7 @@ export default async function DeliveryNotesPage({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Link
                     href={`/admin/delivery-notes/view?customer=${c.id}&date=${targetDate}&amount=none&issuer=${preset}&layout=2up`}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800"
+                    className="inline-flex h-8 items-center gap-1 rounded-lg bg-harvest-700 px-3 text-xs font-bold text-white hover:bg-forest-800"
                   >
                     プレビュー（{preset === 'iplus' ? 'アイプラス' : '小島農園'}）
                   </Link>
@@ -195,7 +195,7 @@ export default async function DeliveryNotesPage({
                     <p className="num font-bold text-ink">{n.note_number}</p>
                     <p className="truncate text-sm text-ink-soft">
                       {n.customer_name}・納品 {formatJpDateShort(n.delivery_date)}
-                      <span className="ml-2 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
+                      <span className="whitespace-nowrap ml-2 rounded-full bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
                         {amountModeLabel(parseAmountMode(n.amount_mode))}
                       </span>
                     </p>

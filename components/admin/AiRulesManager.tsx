@@ -479,9 +479,9 @@ export function AiRulesManager({
             variant="secondary"
             size="md"
             onClick={() => void runConsolidateDiagnose()}
-            className="border-emerald-600/40 bg-emerald-50 text-emerald-950 hover:bg-emerald-100"
+            className="border-harvest-600/40 bg-harvest-50 text-forest-900 hover:bg-harvest-100"
           >
-            <Sparkles className="h-4 w-4 text-emerald-700" aria-hidden />
+            <Sparkles className="h-4 w-4 text-harvest-700" aria-hidden />
             ✨ AIカルテ一括整理・矛盾診断
           </Button>
           <Button variant="secondary" size="md" onClick={() => setTestModalOpen(true)}>
@@ -520,7 +520,7 @@ export function AiRulesManager({
             <label htmlFor="ai-model-free-input" className="block text-xs font-bold text-ink">
               ① メインモデル（通常FAX・高速読取）
             </label>
-            <p className="text-[11px] text-ink-soft">
+            <p className="text-xs text-ink-soft">
               毎回のFAX・テキスト読取で使う高速・低コストモデル（例: <code className="font-mono">gemini-3.5-flash-lite</code>）
             </p>
             <input
@@ -540,7 +540,7 @@ export function AiRulesManager({
               ))}
             </datalist>
             <div className="flex flex-wrap items-center gap-1 pt-0.5">
-              <span className="text-[10px] text-ink-faint">候補:</span>
+              <span className="text-xs text-ink-faint">候補:</span>
               {GEMINI_MODEL_OPTIONS.map((o) => {
                 const active = normalizeModelId(modelInput) === o.value
                 return (
@@ -549,7 +549,7 @@ export function AiRulesManager({
                     type="button"
                     onClick={() => setModelInput(o.value)}
                     className={cn(
-                      'rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors',
+                      'rounded-full border px-2 py-0.5 font-mono text-xs transition-colors',
                       active
                         ? 'border-earth-600 bg-earth-600 font-bold text-white'
                         : 'border-line bg-bg-soft text-ink-soft hover:border-earth-400 hover:bg-earth-50 hover:text-ink',
@@ -567,7 +567,7 @@ export function AiRulesManager({
             <label htmlFor="ai-high-model-free-input" className="block text-xs font-bold text-ink">
               ② 重要箇所モデル（要確認の再検証・手書き修正・ルール学習）
             </label>
-            <p className="text-[11px] text-ink-soft">
+            <p className="text-xs text-ink-soft">
               低確信・検算不一致の自動再検証や対話修正など大切な場面だけ使うモデル（例: <code className="font-mono">gemini-3.8-flash</code>）
             </p>
             <input
@@ -587,7 +587,7 @@ export function AiRulesManager({
               ))}
             </datalist>
             <div className="flex flex-wrap items-center gap-1 pt-0.5">
-              <span className="text-[10px] text-ink-faint">候補:</span>
+              <span className="text-xs text-ink-faint">候補:</span>
               {GEMINI_HIGH_MODEL_OPTIONS.map((o) => {
                 const active = normalizeModelId(highModelInput) === o.value
                 return (
@@ -596,7 +596,7 @@ export function AiRulesManager({
                     type="button"
                     onClick={() => setHighModelInput(o.value)}
                     className={cn(
-                      'rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors',
+                      'rounded-full border px-2 py-0.5 font-mono text-xs transition-colors',
                       active
                         ? 'border-earth-600 bg-earth-600 font-bold text-white'
                         : 'border-line bg-bg-soft text-ink-soft hover:border-earth-400 hover:bg-earth-50 hover:text-ink',
@@ -632,8 +632,8 @@ export function AiRulesManager({
             className={cn(
               'rounded-full border px-3 py-1.5 text-xs font-bold transition-all shadow-2xs',
               selectedClient === 'AUTO_LOOP'
-                ? 'border-amber-600 bg-amber-600 text-white'
-                : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100',
+                ? 'border-warning bg-warning text-white'
+                : 'border-warning bg-warning-bg text-ink hover:opacity-90',
             )}
           >
             ⚡ 自動学習ループ ({autoLoopCount})
@@ -709,15 +709,15 @@ export function AiRulesManager({
                       >
                         {rule.client_name}
                       </span>
-                      <span className="num rounded border border-line px-2 py-0.5 font-mono text-xs tabular-nums text-ink-soft">
+                      <span className="whitespace-nowrap num rounded border border-line px-2 py-0.5 font-mono text-xs tabular-nums text-ink-soft">
                         優先度: {rule.priority}
                       </span>
                       {(rule.source === 'auto_loop' || rule.category === 'mistake_correction') && (
-                        <span className="rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 text-xs font-black shadow-2xs">
+                        <span className="whitespace-nowrap rounded-full bg-warning-bg text-ink border border-warning px-2.5 py-0.5 text-xs font-black shadow-2xs">
                           ⚡ 誤読・修正から自動蓄積
                         </span>
                       )}
-                      <span className="rounded bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
+                      <span className="whitespace-nowrap rounded bg-bg-soft px-2 py-0.5 text-xs text-ink-faint">
                         {SOURCE_LABEL[rule.source] ?? rule.source}
                       </span>
                       <span
@@ -767,7 +767,7 @@ export function AiRulesManager({
                     >
                       <span
                         className={cn(
-                          'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow transition duration-200',
+                          'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-bg-card shadow transition duration-200',
                           rule.is_active ? 'translate-x-5' : 'translate-x-0',
                         )}
                       />
@@ -976,7 +976,7 @@ export function AiRulesManager({
                             <span className="font-medium text-ink">{it.product_name}</span>
                             {it.spec && <span className="ml-1 text-ink-soft">({it.spec})</span>}
                             {it.needs_review_reason && (
-                              <span className="ml-1.5 rounded bg-alert-bg px-1.5 py-0.5 text-[10px] font-bold text-alert">
+                              <span className="ml-1.5 rounded bg-alert-bg px-1.5 py-0.5 text-xs font-bold text-alert">
                                 {it.needs_review_reason}
                               </span>
                             )}
@@ -1035,7 +1035,7 @@ export function AiRulesManager({
         <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-1">
           {diagnosing ? (
             <div className="flex flex-col items-center justify-center py-12 space-y-3 text-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-600 border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-harvest-600 border-t-transparent" />
               <p className="text-sm font-bold text-ink">
                 Gemini 3.8 Flash が全ルールの矛盾を診断し、1社1枠の決定版カルテを作成しています...
               </p>
@@ -1046,11 +1046,11 @@ export function AiRulesManager({
           ) : (
             <>
               {consolidateMeta && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50/80 p-3 text-xs">
-                  <div className="font-bold text-emerald-950">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-harvest-400 bg-harvest-50/80 p-3 text-xs">
+                  <div className="font-bold text-forest-900">
                     📊 整理結果：全 <strong>{consolidateMeta.beforeRuleCount}枠</strong> ➔ 1社1枠の決定版 <strong>{consolidateMeta.afterRuleCount}枠</strong> へ集約
                   </div>
-                  <div className="font-mono text-emerald-900">
+                  <div className="font-mono text-forest-900">
                     文字数: {consolidateMeta.beforeChars}文字 → {consolidateMeta.afterChars}文字（モデル: {consolidateMeta.usedModel}）
                   </div>
                 </div>
@@ -1066,22 +1066,22 @@ export function AiRulesManager({
                       <div className="flex items-center gap-2">
                         <span className="font-display text-sm font-black text-ink">{p.client_name}</span>
                         {p.original_count > 1 && (
-                          <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                          <span className="whitespace-nowrap rounded-full bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-ink">
                             {p.original_count}件のルールを1枠に統合
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-ink-faint">優先度: {p.priority}</span>
+                      <span className="text-xs text-ink-faint">優先度: {p.priority}</span>
                     </div>
 
                     {p.conflicts && p.conflicts.length > 0 && (
-                      <div className="rounded-lg border border-amber-400 bg-amber-50 p-2.5 space-y-2">
-                        <p className="text-xs font-black text-amber-950">
+                      <div className="rounded-lg border border-warning bg-warning-bg p-2.5 space-y-2">
+                        <p className="text-xs font-black text-ink">
                           ⚠️ 矛盾・食い違いが検出されました（クリックすると下のカルテ文面に反映されます）：
                         </p>
                         {p.conflicts.map((c, cIdx) => (
                           <div key={cIdx} className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="font-bold text-amber-900">・{c.topic}:</span>
+                            <span className="font-bold text-earth-900">・{c.topic}:</span>
                             {c.options.map((opt) => (
                               <button
                                 key={opt}
@@ -1101,7 +1101,7 @@ export function AiRulesManager({
                                   )
                                   toast.success(`「${opt}」をカルテに反映しました`)
                                 }}
-                                className="rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-xs font-black text-ink hover:bg-amber-600 hover:text-white transition"
+                                className="rounded-lg border border-warning bg-bg-card px-2.5 py-1 text-xs font-black text-ink hover:bg-warning hover:text-white transition"
                               >
                                 「{opt}」を採用する
                               </button>
@@ -1120,7 +1120,7 @@ export function AiRulesManager({
                           prev.map((item, i) => (i === idx ? { ...item, proposed_rule_text: val } : item)),
                         )
                       }}
-                      className="w-full rounded-lg border border-line-strong bg-white p-2.5 text-xs leading-relaxed text-ink focus:border-trust-500 focus:outline-none"
+                      className="w-full rounded-lg border border-line-strong bg-bg-card p-2.5 text-xs leading-relaxed text-ink focus:border-trust-500 focus:outline-none"
                     />
                   </div>
                 ))}

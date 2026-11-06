@@ -6,6 +6,7 @@ import { LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useNavState } from '@/components/layouts/use-nav'
 import { buildPreservedFieldHref } from '@/components/layouts/nav-items'
+import { ThemeToggle } from '@/components/layouts/ThemeToggle'
 import { NavBadge } from '@/components/layouts/NavBadge'
 
 export interface SidebarUser {
@@ -125,6 +126,8 @@ export function Sidebar({
           </div>
         </div>
       )}
+
+      <div className="mt-2"><ThemeToggle /></div>
 
       <form action="/auth/signout" method="post" className="mt-1">
         <button

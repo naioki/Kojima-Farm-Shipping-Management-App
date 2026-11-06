@@ -13,6 +13,7 @@ export interface OrderListRow {
   deliveryDate: string | null
   status: string
   source: string
+  intakeChannel: string | null
   customerName: string
   customerColor: string | null
   destinationName: string | null
@@ -45,6 +46,7 @@ export interface OrderDetail {
   deliveryDate: string | null
   status: string
   source: string
+  intakeChannel: string | null
   note: string | null
   customerName: string
   customerColor: string | null
@@ -80,7 +82,7 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
   let query = supabase
     .from('orders')
     .select(
-      'id, order_date, delivery_date, status, source, customers(name, display_color), delivery_destinations(code, full_name), order_items(quantity, spec, field_status, line_total)',
+      'id, order_date, delivery_date, status, source, intake_channel, customers(name, display_color), delivery_destinations(code, full_name), order_items(quantity, spec, field_status, line_total)',
     )
     .order('delivery_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
@@ -100,6 +102,7 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
     delivery_date: string | null
     status: string
     source: string
+    intake_channel: string | null
     customers: { name: string; display_color: string | null } | null
     delivery_destinations: { code: string | null; full_name: string } | null
     order_items: {
@@ -136,6 +139,7 @@ export async function getOrdersList(filter: OrderFilter = {}, limit = 200): Prom
       deliveryDate: o.delivery_date,
       status: o.status,
       source: o.source,
+      intakeChannel: o.intake_channel ?? null,
       customerName: cName,
       customerColor: o.customers?.display_color ?? null,
       destinationName: o.delivery_destinations ? o.delivery_destinations.code || o.delivery_destinations.full_name : null,
@@ -153,7 +157,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, customer_id, destination_id, order_date, delivery_date, status, source, note, customers(name, display_color), delivery_destinations(code, full_name), order_items(id, product_name, quantity, unit, unit_price, line_total, field_status, confidence, spec, container_type, version)',
+      'id, customer_id, destination_id, order_date, delivery_date, status, source, intake_channel, note, customers(name, display_color), delivery_destinations(code, full_name), order_items(id, product_name, quantity, unit, unit_price, line_total, field_status, confidence, spec, container_type, version)',
     )
     .eq('id', id)
     .maybeSingle()
@@ -168,6 +172,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     delivery_date: string | null
     status: string
     source: string
+    intake_channel: string | null
     note: string | null
     customers: { name: string; display_color: string | null } | null
     delivery_destinations: { code: string | null; full_name: string } | null
@@ -207,6 +212,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     deliveryDate: o.delivery_date,
     status: o.status,
     source: o.source,
+    intakeChannel: o.intake_channel ?? null,
     note: o.note,
     customerName: o.customers?.name ?? '取引先 未紐付け',
     customerColor: o.customers?.display_color ?? null,

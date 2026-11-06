@@ -48,7 +48,8 @@ export default async function DeliveriesPage({
   const date = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? '') ? searchParams.date! : defaultDate
   const selectedProduct = searchParams.product ?? null
   const admin = createAdminClient()
-  const { data: profile } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
+  const { data: profile, error: profileErr } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
+  if (profileErr) console.error('[field/deliveries] ロール取得に失敗:', profileErr.message)
   const isAdmin = profile?.role === 'admin'
   const allowAiRead = isAdmin || (await getStaffFeatures()).ocr
 
@@ -461,7 +462,7 @@ export default async function DeliveriesPage({
       <div className="space-y-2 print:hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <h1 className="hidden sm:block font-display text-lg font-black text-ink shrink-0">便別積込・配送リスト</h1>
+            <h1 className="hidden sm:block font-display text-lg font-black text-ink shrink-0">積込・配送リスト</h1>
             <div className="flex-1 sm:flex-initial min-w-0">
               <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
             </div>
@@ -474,11 +475,11 @@ export default async function DeliveriesPage({
 
       {/* 未承認データがある場合の控えめな通知バー */}
       {pendingReviewCount > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3.5 py-2 text-xs font-bold text-amber-950 print:hidden">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink print:hidden">
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後にここへ表示されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-white hover:bg-amber-700 transition"
+            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition"
           >
             確認する →
           </Link>

@@ -43,7 +43,7 @@ export function FieldViewSwitch({
           base,
           active === 'day' && pathname === '/field/shipments'
             ? 'bg-forest-700 text-white shadow-xs'
-            : 'text-ink-soft hover:bg-white/80 hover:text-ink',
+            : 'text-ink-soft hover:bg-bg-card/80 hover:text-ink',
         )}
       >
         <PackageCheck className="h-4 w-4 shrink-0" aria-hidden />
@@ -57,7 +57,7 @@ export function FieldViewSwitch({
           base,
           active === 'delivery'
             ? 'bg-forest-700 text-white shadow-xs'
-            : 'text-ink-soft hover:bg-white/80 hover:text-ink',
+            : 'text-ink-soft hover:bg-bg-card/80 hover:text-ink',
         )}
       >
         <Truck className="h-4 w-4 shrink-0" aria-hidden />
@@ -71,7 +71,7 @@ export function FieldViewSwitch({
           base,
           active === 'week'
             ? 'bg-earth-600 text-white shadow-xs'
-            : 'text-ink-soft hover:bg-white/80 hover:text-ink',
+            : 'text-ink-soft hover:bg-bg-card/80 hover:text-ink',
         )}
       >
         <CalendarRange className="h-4 w-4 shrink-0" aria-hidden />

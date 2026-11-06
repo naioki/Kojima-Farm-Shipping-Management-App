@@ -9,7 +9,7 @@ const STATUS: Record<OrderStatusKey, { label: string; cls: string }> = {
   approved: { label: '承認済み', cls: 'bg-harvest-100 text-harvest-700' },
   shipped: { label: '出荷済み', cls: 'bg-trust-100 text-trust-700' },
   invoiced: { label: '請求済み', cls: 'bg-bg-soft text-ink-soft' },
-  cancelled: { label: 'キャンセル済', cls: 'bg-slate-100 text-slate-500 line-through' },
+  cancelled: { label: 'キャンセル済', cls: 'bg-bg-soft text-ink-faint line-through' },
 }
 
 export function RecentOrdersTable({

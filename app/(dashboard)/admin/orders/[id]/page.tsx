@@ -4,7 +4,7 @@ import { ChevronLeft, ExternalLink } from 'lucide-react'
 import { ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
-import { OrderStatusBadge, sourceLabel } from '@/components/admin/OrderStatusBadge'
+import { OrderStatusBadge, intakeLabel } from '@/components/admin/OrderStatusBadge'
 import { DeleteOrderButton } from '@/components/admin/DeleteOrderButton'
 import { ShippingSlipIssuer } from '@/components/admin/ShippingSlipIssuer'
 import { OrderDetailEditor } from '@/components/admin/OrderDetailEditor'
@@ -75,7 +75,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
           {order.deliveryDate && (
             <Link
               href={`/field/shipments?date=${order.deliveryDate}`}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-forest-300 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
+              className="inline-flex h-9 items-center gap-1 rounded-lg border border-forest-200 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
             >
               <span>🥬 この日のパックボードを見る</span>
               <ExternalLink className="h-3.5 w-3.5" />
@@ -102,10 +102,10 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
               <h1 className="font-display text-xl font-bold text-ink">
                 {order.customerName}
                 {order.destinationName && (
-                  <span className="ml-1.5 text-base font-bold text-emerald-800">＞{order.destinationName}</span>
+                  <span className="ml-1.5 text-base font-bold text-forest-800">＞{order.destinationName}</span>
                 )}
               </h1>
-              <p className="text-xs text-ink-faint">受注元: {sourceLabel(order.source)}</p>
+              <p className="text-xs text-ink-faint">受注元: {intakeLabel(order.source, order.intakeChannel)}</p>
             </div>
           </div>
           <OrderStatusBadge status={order.status} />

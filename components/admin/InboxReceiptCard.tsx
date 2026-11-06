@@ -34,17 +34,17 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
             <ChannelBadge channel={r.channel} />
             <ReceiptStatusBadge status={r.status} />
             {r.isRevision && (
-              <span className="rounded bg-warning-bg px-2 py-0.5 text-xs font-bold text-warning">
+              <span className="whitespace-nowrap rounded bg-warning-bg px-2 py-0.5 text-xs font-bold text-warning">
                 再送（差分）
               </span>
             )}
             {senderPhone && (
-              <span className="rounded bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+              <span className="whitespace-nowrap rounded bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
                 送信元: {senderPhone}
               </span>
             )}
             {r.slipNo && (
-              <span className="rounded bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+              <span className="whitespace-nowrap rounded bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
                 伝票No: {r.slipNo}
               </span>
             )}
@@ -61,13 +61,13 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
             )}
 
             {r.deliveryDate && (
-              <span className="rounded-lg bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+              <span className="whitespace-nowrap rounded-lg bg-harvest-50 px-2.5 py-0.5 text-xs font-bold text-forest-800 border border-harvest-400">
                 納品: {formatJpDateShort(r.deliveryDate)}
               </span>
             )}
 
             {r.destinationName && (
-              <span className="rounded-lg bg-sky-50 px-2.5 py-0.5 text-xs font-bold text-sky-800 border border-sky-200">
+              <span title={`届先: ${r.destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-trust-50 px-2.5 py-0.5 text-xs font-bold text-trust-700 border border-trust-100">
                 届先: {r.destinationName}
               </span>
             )}
@@ -107,7 +107,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
               {r.alerts.map((a, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-bold text-amber-800"
+                  className="inline-flex items-center gap-1 rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-bold text-ink"
                 >
                   <AlertCircle className="h-3 w-3" aria-hidden />
                   {a.message}
@@ -141,7 +141,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
           </div>
 
           {r.items.length > 0 ? (
-            <div className="overflow-x-auto rounded-lg border border-line bg-white shadow-xs">
+            <div className="overflow-x-auto rounded-lg border border-line bg-bg-card shadow-xs">
               <table className="w-full text-left text-xs">
                 <thead className="border-b border-line bg-earth-50 text-ink-soft">
                   <tr>
@@ -160,7 +160,7 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
                       <td className="px-3 py-2 font-bold text-ink">
                         {it.name}
                         {it.isNewAddition && (
-                          <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-800">
+                          <span className="whitespace-nowrap ml-1 rounded bg-harvest-100 px-1 text-xs font-bold text-forest-800">
                             新規
                           </span>
                         )}
@@ -190,8 +190,8 @@ export function InboxReceiptCard({ receipt: r }: { receipt: InboxReceipt }) {
 
           {/* 原本FAXのインラインプレビュー */}
           {r.hasR2Key && (
-            <div className="rounded-lg border border-line bg-white p-2">
-              <p className="text-[11px] font-bold text-ink-soft mb-1">原本プレビュー（縮小表示）:</p>
+            <div className="rounded-lg border border-line bg-bg-card p-2">
+              <p className="text-xs font-bold text-ink-soft mb-1">原本プレビュー（縮小表示）:</p>
               <div className="flex justify-center bg-earth-100/50 rounded overflow-hidden max-h-64">
                 <img
                   src={`/api/receipts/${r.id}/original`}

@@ -165,7 +165,7 @@ export function DeliveryCheckCard({
             <h2 className="font-display text-lg font-black text-ink">
               {destinationName ? `【${destinationName}】` : customerName}
             </h2>
-            <span className="rounded-md bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft">
+            <span className="whitespace-nowrap rounded-md bg-bg-soft px-2 py-0.5 text-xs font-bold text-ink-soft">
               {items.length}件
             </span>
           </div>
@@ -188,8 +188,8 @@ export function DeliveryCheckCard({
           <span
             className={cn(
               'rounded-full px-3 py-1 text-xs font-extrabold shadow-xs',
-              status === 'delivered' && 'bg-emerald-100 text-emerald-800 border border-emerald-300',
-              status === 'loaded' && 'bg-sky-100 text-sky-800 border border-sky-300',
+              status === 'delivered' && 'bg-harvest-100 text-forest-800 border border-harvest-400',
+              status === 'loaded' && 'bg-trust-100 text-trust-700 border border-trust-400',
               status === 'planned' && 'bg-bg-soft text-ink-soft border border-line',
             )}
           >
@@ -215,7 +215,7 @@ export function DeliveryCheckCard({
                 'rounded-xl border p-3 transition-all',
                 status === 'planned' && 'cursor-pointer active:scale-[0.99]',
                 isChecked
-                  ? 'border-emerald-300 bg-emerald-50/50 shadow-xs'
+                  ? 'border-harvest-400 bg-harvest-50/50 shadow-xs'
                   : 'border-line bg-bg-card hover:border-line-strong',
               )}
             >
@@ -229,9 +229,9 @@ export function DeliveryCheckCard({
                   {/* 箱数（コンテナ数）と入数のみを主表示 */}
                   <div className="flex flex-wrap items-baseline gap-2 pt-0.5">
                     {/* コンテナ数（箱数） */}
-                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 shadow-2xs">
-                      <span className="text-xs font-bold text-emerald-800">箱数:</span>
-                      <span className="text-base sm:text-lg font-black text-emerald-950 tabular-nums">
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-harvest-100/90 border border-harvest-400 px-2.5 py-1 shadow-2xs">
+                      <span className="text-xs font-bold text-forest-800">箱数:</span>
+                      <span className="text-base sm:text-lg font-black text-forest-900 tabular-nums">
                         {it.quantityText.includes('/') ? it.quantityText.split('/')[1]?.trim() : it.quantityText}
                       </span>
                     </div>
@@ -239,7 +239,7 @@ export function DeliveryCheckCard({
                     {/* 入数（総数量） */}
                     <div className="inline-flex items-center gap-1 rounded-lg bg-bg-soft border border-line px-2.5 py-1 text-ink">
                       <span className="text-xs font-medium text-ink-muted">入数:</span>
-                      <span className="text-base font-bold tabular-nums text-trust-900">
+                      <span className="text-base font-bold tabular-nums text-trust-700">
                         {it.quantity} <span className="text-xs font-bold text-ink-soft">{it.unit}</span>
                       </span>
                     </div>
@@ -250,7 +250,7 @@ export function DeliveryCheckCard({
                     <details className="group pt-0.5 text-xs text-ink-soft">
                       <summary className="cursor-pointer select-none font-semibold text-ink-muted hover:text-ink list-none inline-flex items-center gap-1">
                         <span>詳細・メモを確認</span>
-                        <span className="text-[10px] group-open:rotate-180 transition-transform">▼</span>
+                        <span className="text-xs group-open:rotate-180 transition-transform">▼</span>
                       </summary>
                       <div className="mt-1 rounded-md bg-bg-soft/90 border border-line px-2.5 py-1.5 text-xs text-ink space-y-0.5">
                         <p className="font-medium">規格・指示: {it.noteText}</p>
@@ -269,8 +269,8 @@ export function DeliveryCheckCard({
                   className={cn(
                     'shrink-0 h-12 w-12 rounded-full border-2 flex items-center justify-center transition active:scale-95 shadow-xs',
                     isChecked
-                      ? 'border-emerald-600 bg-emerald-600 text-white'
-                      : 'border-line-strong bg-white text-transparent hover:border-emerald-400',
+                      ? 'border-harvest-600 bg-harvest-600 text-white'
+                      : 'border-line-strong bg-bg-card text-transparent hover:border-harvest-400',
                     status !== 'planned' && 'cursor-default',
                   )}
                 >
