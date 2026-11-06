@@ -4,6 +4,8 @@ import { analyzeOrders, type ParsedOrder, type ParsedItem } from '@/lib/gemini/a
 import { preprocessFaxImage, preprocessFaxImageRotated180 } from '@/lib/ocr/preprocess'
 import { matchProductName, type ProductCandidate } from '@/lib/matching/name-match'
 import { buildCustomerHintText, type ParseHint } from '@/lib/ingestion/learning'
+import { loadQuantityHistory } from '@/lib/orders/quantity-history'
+import { detectQuantityAnomaly } from '@/lib/orders/quantity-anomaly'
 import { decideReceiptApproval, isAutoApproveOn, parseThreshold } from '@/lib/ingestion/auto-approve'
 import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
@@ -876,6 +878,28 @@ export async function processReceipt(
             }
           }
         }
+      }
+    }
+
+    // いつもと違う数量（過去90日の中央値の3倍以上/3分の1以下）。自動承認の方針（A案: 直結＋警告バッジ）は変えず、
+    // 明細に要確認フラグとメモを付け、通知にも載せる（承認画面・スタッフ承認と同じ判定: lib/orders/quantity-anomaly）。
+    if (orderCustomerId) {
+      const pids = [...new Set(enriched.map((e) => e.matchedProduct?.id).filter(Boolean))] as string[]
+      const history = await loadQuantityHistory(admin, [orderCustomerId], pids)
+      for (const e of enriched) {
+        if (!e.matchedProduct || e.resolvedQty == null) continue
+        const { anomaly, usual } = detectQuantityAnomaly(e.resolvedQty, history.get(`${orderCustomerId}:${e.matchedProduct.id}`) ?? [])
+        if (!anomaly || usual == null) continue
+        const memo = `⚠いつもは${Math.round(usual)}${e.resolvedUnit ?? 'P'}前後（${anomaly === 'high' ? '多すぎ' : '少なすぎ'}）`
+        e.isFlagged = true
+        e.lineNote = [e.lineNote, memo].filter(Boolean).join(' / ')
+        changeAlerts.push({
+          alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
+          created_at: formatJstShortTimestamp(),
+          alert_type: '数量確認',
+          message: `${po.customer_name ?? '取引先'} (${po.delivery_date ?? ''}) ${e.matchedProduct.name}: ${e.resolvedQty} — ${memo}`,
+          resolved: false,
+        })
       }
     }
 

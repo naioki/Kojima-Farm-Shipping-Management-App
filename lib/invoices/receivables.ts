@@ -57,11 +57,14 @@ export function summarizeReceivables(invoices: ReceivableInvoice[], todayJst: st
   return s
 }
 
-/** 請求書ステータスの許される遷移（無効は戻せない。入金済は取消で送付済へ戻せる）。 */
+/**
+ * 請求書ステータスの許される遷移。確定後は下書きに戻さない（発行済みの帳票の内容を変えない: tax.md）。
+ * 無効は戻せない。入金済だけは押し間違いの取消として送付済へ戻せる。
+ */
 const ALLOWED: Record<string, string[]> = {
   draft: ['finalized', 'void'],
-  finalized: ['sent', 'paid', 'void', 'draft'],
-  sent: ['paid', 'void', 'finalized'],
+  finalized: ['sent', 'paid', 'void'],
+  sent: ['paid', 'void'],
   paid: ['sent'],
   void: [],
 }

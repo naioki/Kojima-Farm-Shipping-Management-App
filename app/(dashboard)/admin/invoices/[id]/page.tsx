@@ -5,7 +5,8 @@ import { ErrorState } from '@/components/ui/States'
 import { InvoiceActions } from '@/components/admin/InvoiceActions'
 import { getSetting } from '@/lib/settings'
 import { formatYen } from '@/lib/calculations/tax'
-import { formatJpDate, formatJpMonth } from '@/lib/dates'
+import { formatJpDate, formatJpMonth, jstTodayStr } from '@/lib/dates'
+import { dueDateOf, receivableState } from '@/lib/invoices/receivables'
 import type { InvoiceStatus } from '@/types/database'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -83,6 +84,18 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
             <p className="mt-1 text-sm text-ink-soft">
               ステータス: {STATUS_JP[invoice.status as InvoiceStatus]}
             </p>
+            {(() => {
+              const rs = receivableState(invoice, jstTodayStr())
+              const due = dueDateOf(invoice)
+              if (!rs || !due) return null
+              return (
+                <p className={`mt-1 text-sm font-bold print:hidden ${rs === 'overdue' ? 'text-alert' : 'text-ink-soft'}`}>
+                  支払期日: {formatJpDate(due)}
+                  {rs === 'overdue' ? '（期日超過・未入金）' : ''}
+                  {!invoice.due_date && <span className="ml-1 font-normal text-ink-faint">※翌月末として判定</span>}
+                </p>
+              )
+            })()}
           </div>
           <div className="text-right text-sm">
             <p className="num font-bold text-ink">{invoice.invoice_number}</p>

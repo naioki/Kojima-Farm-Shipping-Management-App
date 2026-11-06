@@ -429,6 +429,12 @@ export default async function DeliveriesPage({
   })
 
   const globalTotalCustomers = customerCards.length
+  // パック作業が1件でも進んでいるか（始まる前は全件「未パック」になるので赤く出さない）
+  const packingStarted = items.some((it) => {
+    const st = (it as { field_status?: string | null }).field_status
+    const sq = (it as { shipped_qty?: number | null }).shipped_qty
+    return st === 'packed' || st === 'shipped' || (sq != null && sq > 0)
+  })
   // 出荷前の最終チェック（未パック・数量不足の明細だけ）
   const preflight = findPreflightIssues(
     items.map((it) => {
@@ -479,7 +485,12 @@ export default async function DeliveriesPage({
         </div>
       )}
 
-      {preflight.length > 0 && (
+      {preflight.length > 0 && !packingStarted && (
+        <p className="rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink-soft print:hidden">
+          積込前チェック: まだパック作業が始まっていません（{preflight.length}明細）
+        </p>
+      )}
+      {preflight.length > 0 && packingStarted && (
         <details className="rounded-xl border border-alert bg-alert-bg px-3.5 py-2 text-sm print:hidden" open={preflight.length <= 5}>
           <summary className="cursor-pointer font-bold text-alert">
             🚨 積込前チェック: 数量がそろっていない明細が {preflight.length} 件あります

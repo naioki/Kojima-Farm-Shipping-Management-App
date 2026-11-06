@@ -19,7 +19,7 @@ import type {
 import { pendingReasons } from './pending-types'
 import { skipsDestinationGate } from '@/lib/customers/settings'
 import { detectQuantityAnomaly } from './quantity-anomaly'
-import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { loadQuantityHistory } from './quantity-history'
 
 export type {
   PackConfigOption,
@@ -107,23 +107,7 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   if (packErr) throw new Error(`荷姿マスタの取得に失敗しました: ${packErr.message}`)
 
   // いつもの数量（同じ取引先×品目の過去90日の承認済み実績）。取れなくても承認画面は出す
-  const historyByPair = new Map<string, number[]>()
-  if (productIds.length && customerIds.length) {
-    const { data: hist, error: histErr } = await supabase
-      .from('order_items')
-      .select('product_id, quantity, orders!inner(customer_id, status, delivery_date)')
-      .in('product_id', productIds)
-      .in('orders.customer_id', customerIds)
-      .in('orders.status', ['approved', 'shipped', 'invoiced'])
-      .gte('orders.delivery_date', shiftDateStr(jstTodayStr(), -90))
-      .limit(5000)
-    if (histErr) console.error('[pending] 過去の数量の取得に失敗:', histErr.message)
-    for (const h of (hist ?? []) as unknown as { product_id: string; quantity: number; orders: { customer_id: string } | null }[]) {
-      if (!h.orders) continue
-      const k = `${h.orders.customer_id}:${h.product_id}`
-      historyByPair.set(k, [...(historyByPair.get(k) ?? []), Number(h.quantity)])
-    }
-  }
+  const historyByPair = await loadQuantityHistory(supabase, customerIds, productIds)
 
   const { data: receiptRows, error: receiptErr } = await supabase
     .from('order_receipts')
