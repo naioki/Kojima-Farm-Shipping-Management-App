@@ -10,8 +10,14 @@ import {
   CartesianGrid,
 } from 'recharts'
 import { Card } from '@/components/ui/Card'
-import { yen, man } from '@/lib/format'
+import { yen } from '@/lib/format'
 import type { TrendPoint } from './types'
+
+/** 縦軸の目盛り（万円）。10万円未満は小数1桁まで出す（整数に丸めると「1,1,0,0」のように目盛りが重複していた）。 */
+function manTick(v: number): string {
+  const m = v / 10000
+  return Math.abs(m) < 10 ? String(Math.round(m * 10) / 10) : String(Math.round(m))
+}
 
 /**
  * 今月の出荷推移（日次・折れ線）。recharts はバンドルが重いので
@@ -47,7 +53,8 @@ export function SalesTrendChart({ data }: { data: TrendPoint[] }) {
                 tickLine={false}
                 axisLine={false}
                 width={36}
-                tickFormatter={(v: number) => man(v)}
+                allowDecimals
+                tickFormatter={(v: number) => manTick(v)}
               />
               <Tooltip
                 cursor={{ stroke: 'var(--line-strong)' }}

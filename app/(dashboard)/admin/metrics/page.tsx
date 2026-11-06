@@ -79,8 +79,8 @@ function WeekTable({ weeks, cols }: { weeks: WeekMetrics[]; cols: { label: strin
         <thead>
           <tr className="border-b border-line text-left text-xs text-ink-soft">
             <th className="py-2 pr-3 font-medium">週（月曜〜）</th>
-            {cols.map((c) => (
-              <th key={c.label} className="py-2 pr-3 text-right font-medium">
+            {cols.map((c, i) => (
+              <th key={i} className="py-2 pr-3 text-right font-medium">
                 {c.label}
               </th>
             ))}
@@ -90,8 +90,8 @@ function WeekTable({ weeks, cols }: { weeks: WeekMetrics[]; cols: { label: strin
           {rows.map((w) => (
             <tr key={w.week} className="border-b border-line/60 last:border-0">
               <td className="py-1.5 pr-3 text-ink">{formatJpDateShort(w.week)}</td>
-              {cols.map((c) => (
-                <td key={c.label} className="num py-1.5 pr-3 text-right tabular-nums text-ink">
+              {cols.map((c, i) => (
+                <td key={i} className="num py-1.5 pr-3 text-right tabular-nums text-ink">
                   {c.get(w)}
                 </td>
               ))}
@@ -157,9 +157,9 @@ export default async function MetricsPage() {
           weeks={weeks}
           cols={[
             { label: '受信→承認', get: (w) => fmtMin(w.intakeToApproveMin) },
-            { label: '件数', get: (w) => String(w.intakeToApproveN) },
+            { label: '件数(承認)', get: (w) => String(w.intakeToApproveN) },
             { label: '承認→出荷', get: (w) => fmtMin(w.approveToShipMin) },
-            { label: '件数', get: (w) => String(w.approveToShipN) },
+            { label: '件数(出荷)', get: (w) => String(w.approveToShipN) },
           ]}
         />
       </Card>

@@ -111,10 +111,10 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
 
       {/* お金（今月の受注・出荷・請求・未請求）と最近の受注を、売上グラフより先に置く */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-1 lg:order-2">
+        <div className="min-w-0 lg:col-span-1 lg:order-2">
           <MonthlySummary rows={data.summary} />
         </div>
-        <div className="lg:col-span-2 lg:order-1">
+        <div className="min-w-0 lg:col-span-2 lg:order-1">
           <RecentOrdersTable orders={data.recentOrders} />
         </div>
       </div>
