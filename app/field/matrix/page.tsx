@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ProductJumpSelect } from '@/components/field/ProductJumpSelect'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -253,26 +254,11 @@ export default async function MatrixPage({
           <span className="text-xs font-medium text-ink-muted">
             この週（{dates[0]} 〜 {dates[6]}）に出荷実績・予定のある品目はありません。
           </span>
-          <form method="get" action={PATH} className="flex items-center gap-1">
-            <input type="hidden" name="week" value={week} />
-            <select
-              name="product"
-              onChange={(e) => {
-                if (e.target.value) e.target.form?.submit()
-              }}
-              defaultValue=""
-              className="h-10 rounded-lg border border-line bg-bg-card px-2.5 text-xs font-semibold text-ink hover:bg-bg-soft focus:outline-none"
-            >
-              <option value="" disabled>
-                品目を選択して予定を入力...
-              </option>
-              {nonMaterialProducts.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </form>
+          <ProductJumpSelect
+            action={PATH}
+            week={week}
+            products={nonMaterialProducts.map((p) => ({ id: p.id, name: p.name }))}
+          />
         </div>
       )}
 
