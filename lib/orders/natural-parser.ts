@@ -525,8 +525,12 @@ export function parseNaturalOrderTextDeterministic(
       destination: resolvedDest,
       rawText: line,
     })
-    const bagType = /FG|印字/i.test(line) || (resolvedCustomer ?? '').includes('勘兵衛')
+    // FG袋＝OPP防曇袋（印字なし）。「印字」の記載は FG袋ではない（取引先ごとの例外は AI学習ルールに書く）。
+    // FAX解析（lib/gemini/analyze.ts）と同じ判定にそろえる。
+    const bagType = /FG/i.test(line) || (resolvedCustomer ?? '').includes('勘兵衛')
       ? '印字袋(FG)'
+      : /印字/.test(line)
+      ? '印字袋'
       : /無地/.test(line)
       ? '無地袋'
       : null
