@@ -50,7 +50,7 @@ export function DateNav({
     'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100 active:scale-95 transition shadow-2xs'
 
   return (
-    <div className="w-full space-y-1.5">
+    <div data-guide="date-nav" className="w-full space-y-1.5">
       <div className="flex items-center gap-1.5 w-full">
         <Link href={hrefFor(shiftDateStr(date, -1))} aria-label="前の日" className={btn}>
           <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />

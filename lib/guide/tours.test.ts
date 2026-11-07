@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { guideStorageKey, SHIPMENTS_TOUR } from './tours'
+import { guideStorageKey, localizeStep, SHIPMENTS_TOUR } from './tours'
 
 describe('guideStorageKey', () => {
   it('key と version から一意なlocalStorageキーを生成する', () => {
@@ -24,5 +24,16 @@ describe('SHIPMENTS_TOUR', () => {
     expect(SHIPMENTS_TOUR.steps.length).toBeGreaterThan(0)
     const targets = SHIPMENTS_TOUR.steps.map((s) => s.target)
     expect(new Set(targets).size).toBe(targets.length)
+  })
+})
+
+describe('localizeStep', () => {
+  const step = SHIPMENTS_TOUR.steps[0]!
+  it('ja は日本語、th はタイ語を返す', () => {
+    expect(localizeStep(step, 'ja')).toEqual({ title: step.title, body: step.body })
+    expect(localizeStep(step, 'th')).toEqual({ title: step.title_th, body: step.body_th })
+  })
+  it('タイ語が空なら日本語にフォールバックする', () => {
+    expect(localizeStep({ ...step, title_th: '', body_th: '' }, 'th')).toEqual({ title: step.title, body: step.body })
   })
 })

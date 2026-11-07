@@ -904,6 +904,7 @@ export function ShipmentRow({
             </div>
             <button
               type="button"
+              data-guide="pack-revert"
               disabled={busy}
               onClick={(e) => {
                 e.stopPropagation()
@@ -1159,8 +1160,8 @@ export function ShipmentRow({
             </div>
           </div>
 
-          {/* ③ 下部スマート2ボタンバー */}
-          <div className="flex items-center gap-2">
+          {/* ③ 下部スマート2ボタンバー（未完了カードだけ操作ガイドの対象） */}
+          <div data-guide={isDone ? undefined : 'pack-actions'} className="flex items-center gap-2">
             <button
               type="button"
               disabled={busy}

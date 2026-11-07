@@ -447,6 +447,7 @@ export function CustomerDeliveryCard({
                   )}
                   {driverNotePdfHref && (
                     <a
+                      data-guide="delivery-note-pdf"
                       href={driverNotePdfHref}
                       target="_blank"
                       rel="noopener"
@@ -622,6 +623,7 @@ export function CustomerDeliveryCard({
 
               <button
                 type="button"
+                data-guide="load-ok"
                 disabled={busy}
                 onClick={() => {
                   if (!isCompleted && unpackedItemCount > 0) {

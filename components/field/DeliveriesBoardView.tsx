@@ -268,6 +268,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
 
       {/* 1行スリム・スティッキー積込コックピットバー */}
       <div
+        data-guide="load-progress"
         className={cn(
           'sticky top-13 z-20 px-3 py-2 text-white shadow-md rounded-xl border transition-colors duration-200 print:hidden',
           isToday
@@ -410,6 +411,7 @@ export function DeliveriesBoardView({ date, initialCards }: DeliveriesBoardViewP
             return (
               <div key={grp.key} className="space-y-2">
                 <div
+                  data-guide="delivery-route-group"
                   className={cn(
                     'flex items-start justify-between gap-2 rounded-xl px-3.5 py-2 border shadow-2xs',
                     grpAllDone
