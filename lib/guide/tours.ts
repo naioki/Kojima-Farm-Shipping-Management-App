@@ -150,7 +150,7 @@ export const DELIVERIES_TOUR: GuideTour = {
       target: 'load-ok',
       title: '積んだら「積込 OK」',
       body: '車に積んだら押します。もう一度押すと元にもどります。',
-      title_th: 'ขึ้นรถแล้วกด "積込 OK"',
+      title_th: 'ขึ้นรถแล้วกด "ขึ้นรถ OK"',
       body_th: 'ขึ้นรถแล้วให้กด กดอีกครั้งเพื่อยกเลิก',
     },
     {
