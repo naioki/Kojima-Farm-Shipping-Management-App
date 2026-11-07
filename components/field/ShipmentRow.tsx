@@ -1246,7 +1246,6 @@ export function ShipmentRow({
 
       {undoGrace && (
         <div
-          data-guide="undo-bar"
           className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-harvest-100 bg-harvest-50/80 px-3 py-2"
         >
           <span className="flex items-center gap-1.5 text-xs font-bold text-harvest-700">

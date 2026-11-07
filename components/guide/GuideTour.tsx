@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useFieldLang } from '@/lib/field/lang-context'
@@ -17,6 +17,8 @@ export interface GuideTourProps {
   forceOpen?: boolean
   /** forceOpen を消費したら親へ知らせる（連続再生を防ぐ）。 */
   onForceOpenHandled?: () => void
+  /** 閉じたときにフォーカスを戻す要素（「使い方」ボタン）。無ければ開く前にフォーカスしていた要素へ戻す */
+  returnFocusRef?: RefObject<HTMLElement>
 }
 
 interface Rect {
@@ -105,14 +107,16 @@ export function placeBalloon(
 /**
  * 現場向け操作ガイド（スポットライト＋吹き出し）。汎用実装（Issue#9）。
  * - その端末で初めて開いたとき（localStorage 未設定）に自動開始
- * - 最後まで見る（おわり）か「この端末では次から自動で出さない」で、その端末では既読になる
- *   （「とじる」・背景タップは閉じるだけ＝次に開いたときまた出る。共用タブレットの新しい人にも届くように）
+ * - 全ステップを最後まで見た（おわり）か「この端末では次から自動で出さない」を押したときだけ、その端末で既読になる
+ *   （「とじる」・背景タップ・Esc は閉じるだけ＝次に開いたときまた出る。共用タブレットの新しい人にも届くように。
+ *    注文0件の日などで一部のステップしか出せなかった回は、最後まで見ても既読にしない）
  * - 対象要素は data-guide="{step.target}" で特定。見つからないステップは自動スキップ
  *   （データ0件の日でツアー対象が画面に無くても壊れない）
  * - 現場の言語切替がタイ語なら、本文・ボタンをタイ語で表示
- * - Esc で終了、role="dialog" aria-modal、フォーカスは吹き出し内
+ * - Esc で終了、role="dialog" aria-modal。開いている間は Tab で吹き出しの中だけを巡回し、
+ *   閉じたら「使い方」ボタン（または開く前の要素）にフォーカスを戻す
  */
-export function GuideTour({ tour, forceOpen, onForceOpenHandled }: GuideTourProps) {
+export function GuideTour({ tour, forceOpen, onForceOpenHandled, returnFocusRef }: GuideTourProps) {
   const storageKey = guideStorageKey(tour)
   const { langMode } = useFieldLang()
   const labels = GUIDE_UI_LABELS[langMode]
@@ -123,10 +127,15 @@ export function GuideTour({ tour, forceOpen, onForceOpenHandled }: GuideTourProp
   const [rect, setRect] = useState<Rect | null>(null)
   const [balloonSize, setBalloonSize] = useState({ width: 0, height: 0 })
   const dialogRef = useRef<HTMLDivElement>(null)
+  /** 開く直前にフォーカスしていた要素（閉じたら戻す） */
+  const prevFocusRef = useRef<HTMLElement | null>(null)
+  const wasOpenRef = useRef(false)
 
   const start = useCallback(() => {
     const idx = tour.steps.map((s, i) => (findTarget(s.target) ? i : -1)).filter((i) => i >= 0)
     if (idx.length === 0) return // 全ステップ対象なし（データ0件の日など）→ 何も出さない
+    const activeEl = document.activeElement
+    prevFocusRef.current = activeEl instanceof HTMLElement && activeEl !== document.body ? activeEl : null
     setActive(idx)
     setPos(0)
     setRect(null)
@@ -196,11 +205,50 @@ export function GuideTour({ tour, forceOpen, onForceOpenHandled }: GuideTourProp
     if (!open) return
     dialogRef.current?.focus({ preventScroll: true })
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        setOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+      // フォーカストラップ: Tab / Shift+Tab は吹き出しの中のボタンだけを巡回する
+      const root = dialogRef.current
+      if (!root) return
+      const items = Array.from(
+        root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), [tabindex="0"]'),
+      ).filter((el) => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden')
+      if (items.length === 0) {
+        e.preventDefault()
+        return
+      }
+      const first = items[0]!
+      const last = items[items.length - 1]!
+      const current = document.activeElement
+      const inside = current instanceof Node && root.contains(current)
+      if (e.shiftKey) {
+        if (!inside || current === first || current === root) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (!inside || current === last || current === root) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [open, pos])
+
+  // 閉じたらフォーカスを「使い方」ボタン（無ければ開く前の要素）へ戻す
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true
+      return
+    }
+    if (!wasOpenRef.current) return
+    wasOpenRef.current = false
+    const target = returnFocusRef?.current ?? prevFocusRef.current
+    target?.focus({ preventScroll: true })
+  }, [open, returnFocusRef])
 
   function markSeen() {
     try {
@@ -218,8 +266,8 @@ export function GuideTour({ tour, forceOpen, onForceOpenHandled }: GuideTourProp
 
   function next() {
     if (pos >= active.length - 1) {
-      // 最後まで見た → この端末では既読
-      markSeen()
+      // 全ステップを見せられた回だけ既読にする（一部しか出せなかった日は、次に開いたときまた出す）
+      if (active.length === tour.steps.length) markSeen()
       setOpen(false)
       return
     }
@@ -247,13 +295,14 @@ export function GuideTour({ tour, forceOpen, onForceOpenHandled }: GuideTourProp
     <div className="fixed inset-0 z-[60]">
       {/* スポットライト: 全画面オーバーレイ＋対象矩形だけ box-shadow で切り抜き */}
       <div
-        className="pointer-events-none fixed rounded-lg ring-4 ring-trust-400 transition-[top,left,width,height] duration-300 motion-reduce:transition-none"
+        // 暗幕は night トークン（ダークモードでも同じ変数）。枠は outline（box-shadow と競合しない）で、
+        // ダークモードでも明るい trust-400 の太枠が見える
+        className="pointer-events-none fixed rounded-lg outline outline-4 outline-offset-2 outline-trust-400 [box-shadow:0_0_0_9999px_color-mix(in_srgb,var(--night)_72%,transparent)] transition-[top,left,width,height] duration-300 motion-reduce:transition-none"
         style={{
           top: rect.top - 6,
           left: rect.left - 6,
           width: rect.width + 12,
           height: rect.height + 12,
-          boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.6)',
         }}
       />
       {/* 背景タップは閉じるだけ（既読にしない＝次に開いたときまた出る） */}

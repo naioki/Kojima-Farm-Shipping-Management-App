@@ -1,44 +1,85 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ALL_TOURS, GUIDE_UI_LABELS, guideStorageKey } from '@/lib/guide/tours'
+import * as tours from '@/lib/guide/tours'
+import { ALL_TOURS, GUIDE_UI_LABELS, guideStorageKey, type GuideTour } from '@/lib/guide/tours'
 
 /**
  * 操作ガイド（ツアー）の案内先が、画面の作り直しで黙って消えていないかを静的に検査する。
  * 対象が見つからないステップは実行時に自動スキップされるため、壊れても画面上は気づけない。
- * そこで app/ と components/ のソースに data-guide="<target>"（または
- * data-guide={cond ? '<target>' : undefined} の形）が存在することをテストで保証する。
+ *
+ * 各ツアーの画面（app{tour.path}/page.tsx）から import を再帰的にたどり（app/ と components/ の中だけ）、
+ * その画面で実際に描かれる部品のどこかに data-guide="<target>"（または
+ * data-guide={cond ? '<target>' : undefined} の形）があることを保証する。
+ * 使われていない部品や、別の画面にだけある data-guide では合格しない。
  */
 
 const ROOT = path.resolve(__dirname, '..')
+const FOLLOW_DIRS = [path.join(ROOT, 'app') + path.sep, path.join(ROOT, 'components') + path.sep]
+const EXTS = ['.tsx', '.ts', '/index.tsx', '/index.ts']
 
-function collectSources(dir: string, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) collectSources(full, out)
-    else if (/\.(tsx|ts)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(full)
+function resolveImport(spec: string, fromFile: string): string | null {
+  let base: string
+  if (spec.startsWith('@/')) base = path.join(ROOT, spec.slice(2))
+  else if (spec.startsWith('./') || spec.startsWith('../')) base = path.resolve(path.dirname(fromFile), spec)
+  else return null // パッケージ（react 等）はたどらない
+  const candidates = [base, ...EXTS.map((e) => base + e)]
+  for (const c of candidates) {
+    if (fs.existsSync(c) && fs.statSync(c).isFile()) return c
   }
-  return out
+  return null
 }
 
-const sources = [...collectSources(path.join(ROOT, 'app')), ...collectSources(path.join(ROOT, 'components'))]
-  .map((file) => ({ file, text: fs.readFileSync(file, 'utf8') }))
+/** 画面ファイルから到達できる app/・components/ 内のソースを再帰的に集める */
+function reachableSources(entry: string): Map<string, string> {
+  const seen = new Map<string, string>()
+  const stack = [entry]
+  while (stack.length) {
+    const file = stack.pop()!
+    if (seen.has(file)) continue
+    const text = fs.readFileSync(file, 'utf8')
+    seen.set(file, text)
+    const specs = [
+      ...Array.from(text.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g), (m) => m[1]!),
+      ...Array.from(text.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g), (m) => m[1]!),
+    ]
+    for (const spec of specs) {
+      const resolved = resolveImport(spec, file)
+      if (resolved && FOLLOW_DIRS.some((d) => resolved.startsWith(d))) stack.push(resolved)
+    }
+  }
+  return seen
+}
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** data-guide="x" / data-guide='x' / data-guide={... 'x' ...} のいずれかで target を宣言しているファイル */
-function filesDeclaring(target: string): string[] {
+function declares(text: string, target: string): boolean {
   const t = escapeRe(target)
-  const re = new RegExp(`data-guide=(?:"${t}"|'${t}'|\\{[^}]*['"\`]${t}['"\`][^}]*\\})`)
-  return sources.filter((s) => re.test(s.text)).map((s) => path.relative(ROOT, s.file))
+  return new RegExp(`data-guide=(?:"${t}"|'${t}'|\\{[^}]*['"\`]${t}['"\`][^}]*\\})`).test(text)
+}
+
+function pageFile(tour: GuideTour): string {
+  return path.join(ROOT, 'app', ...tour.path.split('/').filter(Boolean), 'page.tsx')
+}
+
+/** ツアー定数の export 名（例: SHIPMENTS_TOUR） */
+function exportNameOf(tour: GuideTour): string | undefined {
+  return Object.entries(tours).find(([, v]) => v === tour)?.[0]
 }
 
 describe('操作ガイドの案内先（data-guide）', () => {
   for (const tour of ALL_TOURS) {
-    describe(`ツアー「${tour.key}」`, () => {
+    describe(`ツアー「${tour.key}」(${tour.path})`, () => {
+      const entry = pageFile(tour)
+
+      it('画面ファイルが存在する', () => {
+        expect(fs.existsSync(entry), `${path.relative(ROOT, entry)} が無い`).toBe(true)
+      })
+
+      const sources = fs.existsSync(entry) ? reachableSources(entry) : new Map<string, string>()
+
       it('4〜6ステップで、target が重複しない', () => {
         expect(tour.steps.length).toBeGreaterThanOrEqual(4)
         expect(tour.steps.length).toBeLessThanOrEqual(6)
@@ -46,16 +87,24 @@ describe('操作ガイドの案内先（data-guide）', () => {
         expect(new Set(targets).size).toBe(targets.length)
       })
 
+      it('画面に「使い方」ボタン（GuideTourLauncher）としてこのツアーが置かれている', () => {
+        const name = exportNameOf(tour)
+        expect(name, 'ツアー定数が export されていない').toBeTruthy()
+        const pageText = sources.get(entry) ?? ''
+        expect(pageText.includes(`<GuideTourLauncher tour={${name}}`), `${name} を使う <GuideTourLauncher> が画面に無い`).toBe(true)
+      })
+
       for (const step of tour.steps) {
-        it(`target "${step.target}" が画面のどこかに data-guide として存在する`, () => {
-          expect(filesDeclaring(step.target), `data-guide="${step.target}" が app/ にも components/ にも見つからない`).not.toEqual([])
+        it(`target "${step.target}" がこの画面で描かれる部品に data-guide として存在する`, () => {
+          const found = Array.from(sources.entries())
+            .filter(([, text]) => declares(text, step.target))
+            .map(([file]) => path.relative(ROOT, file))
+          expect(found, `data-guide="${step.target}" が ${tour.path} から import される部品に見つからない`).not.toEqual([])
         })
 
         it(`"${step.target}" に日本語とタイ語の見出し・本文がある`, () => {
           expect(step.title.trim()).not.toBe('')
           expect(step.body.trim()).not.toBe('')
-          expect(step.title_th.trim()).not.toBe('')
-          expect(step.body_th.trim()).not.toBe('')
           // タイ語欄にタイ文字が入っている（日本語のコピペ漏れ防止）
           expect(step.title_th).toMatch(/[฀-๿]/)
           expect(step.body_th).toMatch(/[฀-๿]/)
@@ -69,24 +118,16 @@ describe('操作ガイドの案内先（data-guide）', () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
-  it('各ツアーが画面に「使い方」ボタンとして置かれている', () => {
-    const exportNames: Record<string, string> = {
-      shipments: 'SHIPMENTS_TOUR',
-      deliveries: 'DELIVERIES_TOUR',
-      matrix: 'MATRIX_TOUR',
-    }
-    for (const tour of ALL_TOURS) {
-      const name = exportNames[tour.key]
-      expect(name, `ツアー ${tour.key} の定数名が未登録`).toBeTruthy()
-      const used = sources.some((s) => s.text.includes(`<GuideTourLauncher tour={${name}}`))
-      expect(used, `${name} を使う <GuideTourLauncher> が見つからない`).toBe(true)
-    }
+  it('ボタン文言が日本語・タイ語の両方そろっている', () => {
+    for (const v of Object.values(GUIDE_UI_LABELS.ja)) expect(v.trim()).not.toBe('')
+    for (const v of Object.values(GUIDE_UI_LABELS.th)) expect(v).toMatch(/[฀-๿]/)
   })
 
-  it('ボタン文言が日本語・タイ語の両方そろっている', () => {
-    for (const lang of ['ja', 'th'] as const) {
-      for (const v of Object.values(GUIDE_UI_LABELS[lang])) expect(v.trim()).not.toBe('')
-    }
-    for (const v of Object.values(GUIDE_UI_LABELS.th)) expect(v).toMatch(/[฀-๿]/)
+  it('import をたどる仕組み自体が働いている（別画面だけの data-guide では合格しない）', () => {
+    const matrix = ALL_TOURS.find((t) => t.key === 'matrix')!
+    const reach = reachableSources(pageFile(matrix))
+    // 週の管理の画面からは積込カードの部品は描かれない
+    const hasLoadOk = Array.from(reach.values()).some((text) => declares(text, 'load-ok'))
+    expect(hasLoadOk).toBe(false)
   })
 })

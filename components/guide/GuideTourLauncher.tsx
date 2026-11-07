@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { HelpCircle } from 'lucide-react'
 import { GuideTour } from '@/components/guide/GuideTour'
 import { useFieldLang } from '@/lib/field/lang-context'
@@ -17,10 +17,12 @@ export function GuideTourLauncher({ tour }: { tour: GuideTourDef }) {
   const { langMode } = useFieldLang()
   const label = GUIDE_UI_LABELS[langMode].open
   const handled = useCallback(() => setReplay(false), [])
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setReplay(true)}
         title={label}
@@ -29,7 +31,7 @@ export function GuideTourLauncher({ tour }: { tour: GuideTourDef }) {
         <HelpCircle className="h-5 w-5 shrink-0" aria-hidden />
         <span>{label}</span>
       </button>
-      <GuideTour tour={tour} forceOpen={replay} onForceOpenHandled={handled} />
+      <GuideTour tour={tour} forceOpen={replay} onForceOpenHandled={handled} returnFocusRef={buttonRef} />
     </>
   )
 }

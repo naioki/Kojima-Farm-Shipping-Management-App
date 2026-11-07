@@ -22,6 +22,8 @@ export interface GuideTour {
   key: string
   /** 内容を変えたら上げる。上げると既読済みでも再度自動表示される */
   version: number
+  /** このツアーを置く画面のパス（app{path}/page.tsx。テストで案内先の存在を画面単位で検査する） */
+  path: string
   steps: GuideStep[]
 }
 
@@ -58,7 +60,7 @@ export const GUIDE_UI_LABELS: Record<
     back: 'ย้อนกลับ',
     done: 'เสร็จ',
     close: 'ปิด',
-    dontShow: 'เครื่องนี้ไม่ต้องแสดงเองอีก',
+    dontShow: 'ไม่ต้องแสดงอัตโนมัติอีกในเครื่องนี้',
     open: 'วิธีใช้',
   },
 }
@@ -66,6 +68,7 @@ export const GUIDE_UI_LABELS: Record<
 /** 収穫・パックボード（/field/shipments）の初回ツアー。 */
 export const SHIPMENTS_TOUR: GuideTour = {
   key: 'shipments',
+  path: '/field/shipments',
   version: 2,
   steps: [
     {
@@ -93,14 +96,14 @@ export const SHIPMENTS_TOUR: GuideTour = {
       target: 'pack-actions',
       title: 'できたら「パック済にする」',
       body: '全部できたら「パック済にする」を押します。途中なら「詳細・途中数」で数を入れます。',
-      title_th: 'เสร็จแล้วกด "パック済にする"',
-      body_th: 'แพ็คครบแล้วกด "パック済にする" ถ้ายังไม่ครบ กด "詳細・途中数" แล้วใส่จำนวน',
+      title_th: 'เสร็จแล้วกด "บันทึกว่าแพ็คเสร็จแล้ว"',
+      body_th: 'แพ็คครบแล้วกด "บันทึกว่าแพ็คเสร็จแล้ว" ถ้ายังไม่ครบ กด "詳細・途中数" แล้วใส่จำนวน',
     },
     {
       target: 'pack-revert',
       title: 'まちがえたら「戻す」',
       body: '終わったカードの「戻す」で、元にもどせます。',
-      title_th: 'กดผิด กด "戻す"',
+      title_th: 'ถ้ากดผิด ให้กด "戻す"',
       body_th: 'กด "戻す" ที่การ์ดที่เสร็จแล้ว เพื่อย้อนกลับ',
     },
     {
@@ -116,6 +119,7 @@ export const SHIPMENTS_TOUR: GuideTour = {
 /** 積込・配送リスト（/field/deliveries）の初回ツアー。 */
 export const DELIVERIES_TOUR: GuideTour = {
   key: 'deliveries',
+  path: '/field/deliveries',
   version: 1,
   steps: [
     {
@@ -134,17 +138,17 @@ export const DELIVERIES_TOUR: GuideTour = {
     },
     {
       target: 'load-progress',
-      title: '積んだ箱の数',
+      title: '残りの箱数',
       body: '「残○箱」が、まだ積んでいない箱の数です。',
-      title_th: 'ลังที่ขึ้นรถแล้ว',
+      title_th: 'ลังที่ยังไม่ขึ้นรถ',
       body_th: '"残○箱" คือจำนวนลังที่ยังไม่ขึ้นรถ',
     },
     {
       target: 'delivery-route-group',
       title: '便ごとのカード',
-      body: '出発の早い便から順に並んでいます。',
+      body: '便ごとにまとまっています。',
       title_th: 'การ์ดตามรอบรถ',
-      body_th: 'เรียงจากรอบรถที่ออกก่อน',
+      body_th: 'การ์ดแบ่งกลุ่มตามรอบรถ',
     },
     {
       target: 'load-ok',
@@ -166,6 +170,7 @@ export const DELIVERIES_TOUR: GuideTour = {
 /** 週の管理（/field/matrix）の初回ツアー。 */
 export const MATRIX_TOUR: GuideTour = {
   key: 'matrix',
+  path: '/field/matrix',
   version: 1,
   steps: [
     {
@@ -199,16 +204,16 @@ export const MATRIX_TOUR: GuideTour = {
     {
       target: 'matrix-cell',
       title: 'マスに数を入れる',
-      body: 'マスを押して数字を入れます。自動で保存されます。',
+      body: '納入先が1つの行は、マスに数を入れます。複数ある行は、マスを押すと内訳が開きます。',
       title_th: 'ใส่ตัวเลขในช่อง',
-      body_th: 'กดที่ช่องแล้วใส่ตัวเลข ระบบจะบันทึกเอง',
+      body_th: 'แถวที่มีปลายทางเดียว ใส่ตัวเลขในช่องได้เลย แถวที่มีหลายปลายทาง กดช่องแล้วจะเปิดรายละเอียด',
     },
     {
       target: 'matrix-breakdown',
       title: '内訳を開く',
       body: '「内訳」を押すと、納入先ごとに数を入れられます。',
       title_th: 'เปิดรายละเอียด',
-      body_th: 'กด "内訳" เพื่อใส่จำนวนแยกตามที่ส่ง',
+      body_th: 'กด "内訳" เพื่อใส่จำนวนแยกตามปลายทาง',
     },
   ],
 }
