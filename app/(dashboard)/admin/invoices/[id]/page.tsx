@@ -8,6 +8,7 @@ import { formatYen } from '@/lib/calculations/tax'
 import { formatJpDate, formatJpMonth, jstTodayStr } from '@/lib/dates'
 import { dueDateOf, receivableState } from '@/lib/invoices/receivables'
 import type { InvoiceStatus } from '@/types/database'
+import { paymentScheduleOf } from '@/lib/customers/settings'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
 export const dynamic = 'force-dynamic'
@@ -45,7 +46,7 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
         .from('invoice_items')
         .select('product_name, quantity, unit, unit_price, tax_rate, subtotal, tax_amount, line_total')
         .eq('invoice_id', params.id),
-      supabase.from('customers').select('name, payment_terms').eq('id', invoice.customer_id).maybeSingle(),
+      supabase.from('customers').select('name, payment_terms, channel_identifiers').eq('id', invoice.customer_id).maybeSingle(),
       getSetting('FARM_NAME'),
       getSetting('FARM_INVOICE_REG_NUM'),
       getSetting('FARM_ADDRESS'),
@@ -67,8 +68,10 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
   const customer = customerRes.data
 
   const status = invoice.status as InvoiceStatus
-  const due = dueDateOf(invoice)
-  const rs = receivableState(invoice, jstTodayStr())
+  // 期日は請求書の支払期日、無ければ取引先の支払条件から（取引先が読めなければ月末締め・翌月末払い）
+  const terms = customer ? paymentScheduleOf(customer.channel_identifiers) : null
+  const due = dueDateOf(invoice, terms)
+  const rs = receivableState(invoice, jstTodayStr(), terms)
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -139,7 +142,7 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
               </p>
             )}
             {due && !invoice.due_date && (
-              <p className="text-xs text-ink-faint print:hidden">※支払期日が未登録のため、請求月の翌月末を表示しています</p>
+              <p className="text-xs text-ink-faint print:hidden">※支払期日が未登録のため、取引先の支払条件から求めた日を表示しています</p>
             )}
           </div>
         </header>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateInvoiceForCustomer } from './generate'
-import { createFakeSupabase, type FakeCall, type FakeResult } from '@/tests/support/fake-supabase'
+import { createFakeSupabase, filterValue, type FakeCall, type FakeResult } from '@/tests/support/fake-supabase'
 
 /**
  * 請求書作成の業務フロー（DB不要の通しテスト）:
@@ -104,5 +104,46 @@ describe('generateInvoiceForCustomer（請求書作成の通しフロー）', ()
     )
     const r = await generateInvoiceForCustomer(fake.client as unknown as SupabaseClient, params)
     expect(r).toMatchObject({ ok: true, invoice_id: 'inv-legacy', invoice_number: '202611-0007' })
+  })
+
+  it('作成後に取引先の支払条件で支払期日を入れる（未設定は月末締め・翌月末払い）', async () => {
+    const rpc = (fn: string) =>
+      fn === 'create_invoice_atomic' ? { data: [{ invoice_id: 'inv1', invoice_number: '202611-0001' }] } : undefined
+    // 未設定: 11/30 締め → 12/31
+    const fake = createFakeSupabase(baseResolver(), rpc)
+    const r = await generateInvoiceForCustomer(fake.client as unknown as SupabaseClient, params)
+    expect(r.ok).toBe(true)
+    const upd = fake.calls.find((c) => c.table === 'invoices' && c.op === 'update')!
+    expect(upd.payload).toEqual({ due_date: '2026-12-31' })
+    expect(filterValue(upd, 'eq', 'id')).toBe('inv1')
+
+    // 20日締め・翌月10日払い: 10/21〜11/20 の請求 → 12/10
+    const fake2 = createFakeSupabase(
+      baseResolver({
+        customers: () => ({
+          data: {
+            invoice_reg_num: 'T1234567890123',
+            channel_identifiers: { payment_schedule: { closing: 20, pay_month_offset: 1, pay_day: 10 } },
+          },
+        }),
+      }),
+      rpc,
+    )
+    await generateInvoiceForCustomer(fake2.client as unknown as SupabaseClient, {
+      ...params,
+      periodStart: '2026-10-21',
+      periodEnd: '2026-11-20',
+    })
+    const upd2 = fake2.calls.find((c) => c.table === 'invoices' && c.op === 'update')!
+    expect(upd2.payload).toEqual({ due_date: '2026-12-10' })
+  })
+
+  it('支払期日の保存に失敗しても請求書の作成は成功扱い', async () => {
+    const fake = createFakeSupabase(
+      baseResolver({ invoices: (c) => (c.op === 'update' ? { error: { message: 'permission denied' } } : undefined) }),
+      (fn) => (fn === 'create_invoice_atomic' ? { data: [{ invoice_id: 'inv1', invoice_number: '202611-0001' }] } : undefined),
+    )
+    const r = await generateInvoiceForCustomer(fake.client as unknown as SupabaseClient, params)
+    expect(r).toMatchObject({ ok: true, invoice_id: 'inv1', invoice_number: '202611-0001' })
   })
 })

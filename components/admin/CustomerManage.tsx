@@ -2,17 +2,29 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Trash2, Building2, FileText, MapPinOff } from 'lucide-react'
+import { Check, Trash2, Building2, FileText, MapPinOff, CalendarClock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { ConfirmModal } from '@/components/ui/Modal'
 import {
   resolveDefaultIssuerPreset,
   isDriverDeliveryNoteCustomer,
   type IssuerPreset,
 } from '@/lib/delivery-notes/driver-note'
-import { skipsDestinationGate } from '@/lib/customers/settings'
+import { skipsDestinationGate, paymentScheduleOf, hasPaymentSchedule } from '@/lib/customers/settings'
+import {
+  CLOSING_CHOICES,
+  PAY_DAY_CHOICES,
+  PAY_MONTH_CHOICES,
+  PAY_MONTH_LABEL,
+  dayLabel,
+  parsePaymentSchedule,
+  paymentScheduleLabel,
+  type DayOfMonth,
+  type PaymentSchedule,
+} from '@/lib/customers/payment-terms'
 
 export interface CustomerManageProps {
   customer: {
@@ -33,7 +45,10 @@ export function CustomerManage({ customer }: CustomerManageProps) {
   const router = useRouter()
   const [name, setName] = useState(customer.name)
   const [kana, setKana] = useState(customer.name_kana ?? '')
-  const [terms, setTerms] = useState(customer.payment_terms ?? '')
+  const [schedule, setSchedule] = useState<PaymentSchedule>(() => paymentScheduleOf(customer.channel_identifiers))
+  // 触ったときだけ送る（未設定の取引先で他の項目を保存しても、請求書の表記を勝手に書き換えない）
+  const [scheduleDirty, setScheduleDirty] = useState(false)
+  const scheduleSaved = hasPaymentSchedule(customer.channel_identifiers)
   const [active, setActive] = useState(customer.is_active)
   const [issuerPreset, setIssuerPreset] = useState<IssuerPreset>(() =>
     resolveDefaultIssuerPreset(customer.name, customer.channel_identifiers),
@@ -48,6 +63,11 @@ export function CustomerManage({ customer }: CustomerManageProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  function updateSchedule(patch: Record<string, string>) {
+    setSchedule((cur) => parsePaymentSchedule({ ...cur, ...patch }))
+    setScheduleDirty(true)
+  }
+
   async function save() {
     if (name.trim() === '') {
       toast.error('取引先名は必須です')
@@ -61,7 +81,7 @@ export function CustomerManage({ customer }: CustomerManageProps) {
         body: JSON.stringify({
           name,
           name_kana: kana || null,
-          payment_terms: terms || null,
+          ...(scheduleDirty ? { payment_schedule: schedule } : {}),
           is_active: active,
           issuer_preset: issuerPreset,
           requires_delivery_note: requiresDeliveryNote,
@@ -73,6 +93,7 @@ export function CustomerManage({ customer }: CustomerManageProps) {
         throw new Error(j.error ?? `保存に失敗 (${res.status})`)
       }
       toast.success('取引先設定を保存しました')
+      setScheduleDirty(false)
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
@@ -106,7 +127,6 @@ export function CustomerManage({ customer }: CustomerManageProps) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Input label="取引先名" value={name} onChange={(e) => setName(e.target.value)} required />
         <Input label="ふりがな" value={kana} onChange={(e) => setKana(e.target.value)} />
-        <Input label="支払条件" value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="月末締め翌月末払い 等" />
         <label className="flex items-end gap-2 pb-2">
           <input
             type="checkbox"
@@ -116,6 +136,48 @@ export function CustomerManage({ customer }: CustomerManageProps) {
           />
           <span className="text-sm text-ink">有効（オフで一覧・選択肢から非表示）</span>
         </label>
+      </div>
+
+      {/* お支払条件（締め日・支払日）。請求書の支払期日と期日超過の判定に使う */}
+      <div className="space-y-3 rounded-xl border border-line bg-bg-soft p-3.5">
+        <div className="space-y-0.5">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-ink">
+            <CalendarClock className="h-4 w-4 text-earth-700" aria-hidden />
+            お支払条件
+          </p>
+          <p className="text-xs text-ink-soft">
+            請求書を作るとき、この条件で支払期日を決めます。期日を過ぎた未入金の判定にも使います。
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Select
+            label="締め日"
+            value={dayValue(schedule.closing)}
+            onChange={(e) => updateSchedule({ closing: e.target.value })}
+            options={dayOptions(CLOSING_CHOICES, schedule.closing, '月末')}
+          />
+          <Select
+            label="支払月"
+            value={String(schedule.pay_month_offset)}
+            onChange={(e) => updateSchedule({ pay_month_offset: e.target.value })}
+            options={PAY_MONTH_CHOICES.map((m) => ({ value: String(m), label: PAY_MONTH_LABEL[m] }))}
+          />
+          <Select
+            label="支払日"
+            value={dayValue(schedule.pay_day)}
+            onChange={(e) => updateSchedule({ pay_day: e.target.value })}
+            options={dayOptions(PAY_DAY_CHOICES, schedule.pay_day, '末日')}
+          />
+        </div>
+        <div className="space-y-0.5 text-sm">
+          <p className="text-ink">
+            請求書の表記: <strong className="font-bold">{scheduleDirty ? paymentScheduleLabel(schedule) : customer.payment_terms || paymentScheduleLabel(schedule)}</strong>
+          </p>
+          {scheduleDirty && <p className="text-xs font-bold text-warning">保存すると、この表記と支払期日の判定が変わります。</p>}
+          {!scheduleSaved && !scheduleDirty && (
+            <p className="text-xs text-ink-soft">まだ選ばれていません。月末締め・翌月末払いとして期日を判定しています。</p>
+          )}
+        </div>
       </div>
 
       {/* 📄 納品書の発行元名義 ＆ 運転手渡し対象設定 */}
@@ -210,4 +272,14 @@ export function CustomerManage({ customer }: CustomerManageProps) {
       />
     </div>
   )
+}
+
+function dayValue(d: DayOfMonth): string {
+  return d === 'eom' ? 'eom' : String(d)
+}
+
+/** 選択肢。保存値が選択肢に無い日（例: 18日）でも、そのまま表示・保持できるよう足す */
+function dayOptions(choices: DayOfMonth[], current: DayOfMonth, eomWord: '月末' | '末日') {
+  const list = choices.includes(current) ? choices : [...choices, current]
+  return list.map((d) => ({ value: dayValue(d), label: dayLabel(d, eomWord) }))
 }

@@ -3,6 +3,7 @@ import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { dueDateOf, receivableState, summarizeReceivables } from '@/lib/invoices/receivables'
+import { paymentScheduleOf } from '@/lib/customers/settings'
 import { fetchBilledOrderItemIds } from '@/lib/invoices/generate'
 import { yen } from '@/lib/format'
 import { formatJpDateShort, jstDateStr, shiftDateStr } from '@/lib/dates'
@@ -192,22 +193,25 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   // 入金待ちの請求書（確定・送付済）。期日超過があれば要対応に出す
   const arRes = await supabase
     .from('invoices')
-    .select('id, status, billing_month, due_date, total_amount, customers(name)')
+    .select('id, status, billing_month, period_end, due_date, total_amount, customers(name, channel_identifiers)')
     .in('status', ['finalized', 'sent'])
   if (arRes.error) console.error('[dashboard] 入金待ち請求書の取得に失敗:', arRes.error.message)
   type ArRow = {
     id: string
     status: string
     billing_month: string
+    period_end: string | null
     due_date: string | null
     total_amount: number | string | null
-    customers: { name: string } | null
+    customers: { name: string; channel_identifiers: unknown } | null
   }
   const arRows = (arRes.data ?? []) as unknown as ArRow[]
-  const ar = summarizeReceivables(arRows, today)
+  // 期日は請求書の支払期日、無ければ取引先の支払条件から（請求一覧・かんたん画面と同じ判定）
+  const termsOf = (r: ArRow) => paymentScheduleOf(r.customers?.channel_identifiers)
+  const ar = summarizeReceivables(arRows, today, termsOf)
   const overdueInvoices: OverdueInvoiceRow[] = arRows
-    .filter((r) => receivableState(r, today) === 'overdue')
-    .map((r) => ({ id: r.id, customer: r.customers?.name ?? '（取引先不明）', amount: Number(r.total_amount) || 0, dueDate: dueDateOf(r) ?? '' }))
+    .filter((r) => receivableState(r, today, termsOf(r)) === 'overdue')
+    .map((r) => ({ id: r.id, customer: r.customers?.name ?? '（取引先不明）', amount: Number(r.total_amount) || 0, dueDate: dueDateOf(r, termsOf(r)) ?? '' }))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .map((r) => ({ ...r, dueLabel: formatJpDateShort(r.dueDate) }))
 

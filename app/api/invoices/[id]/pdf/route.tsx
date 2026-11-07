@@ -6,6 +6,7 @@ import { InvoicePdf } from '@/lib/pdf/InvoicePdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
 import { dueDateOf } from '@/lib/invoices/receivables'
+import { paymentScheduleOf } from '@/lib/customers/settings'
 
 export const runtime = 'nodejs'
 
@@ -25,7 +26,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       .from('invoice_items')
       .select('product_name, quantity, unit, unit_price, tax_rate, subtotal')
       .eq('invoice_id', params.id),
-    supabase.from('customers').select('name').eq('id', invoice.customer_id).maybeSingle(),
+    supabase.from('customers').select('name, channel_identifiers').eq('id', invoice.customer_id).maybeSingle(),
     getSetting('FARM_NAME'),
     getSetting('FARM_INVOICE_REG_NUM'),
     getSetting('FARM_ADDRESS'),
@@ -44,7 +45,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     <InvoicePdf
       invoice={invoice}
       customerName={customer?.name ?? '—'}
-      dueDate={dueDateOf(invoice)}
+      dueDate={dueDateOf(invoice, paymentScheduleOf(customer?.channel_identifiers))}
       status={invoice.status}
       issuer={{ name: name ?? '小島農園', reg, address, tel, payment }}
       items={itemsRes.data ?? []}

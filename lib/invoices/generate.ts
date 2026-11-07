@@ -4,6 +4,8 @@ import { sumInvoiceTotals, formatInvoiceNumber, type TaxRate } from '@/lib/calcu
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr } from '@/lib/dates'
 import { resolveBillingUnitPrice, type PriceRuleLite } from '@/lib/invoices/pricing'
+import { dueDateFor } from '@/lib/customers/payment-terms'
+import { paymentScheduleOf } from '@/lib/customers/settings'
 
 /**
  * 既に有効な請求書（void 以外）に載っている order_item_id の集合。
@@ -122,7 +124,7 @@ export async function generateInvoiceForCustomer(
   // 登録番号はインボイス必須項目。取得失敗のまま発行しない（番号を消費する前に確認する）
   const { data: customer, error: customerErr } = await supabase
     .from('customers')
-    .select('invoice_reg_num')
+    .select('invoice_reg_num, channel_identifiers')
     .eq('id', customerId)
     .maybeSingle()
   if (customerErr) return { ok: false, reason: 'error', message: `取引先の取得に失敗しました: ${customerErr.message}` }
@@ -169,15 +171,44 @@ export async function generateInvoiceForCustomer(
     invoiceNumber = legacy.invoiceNumber
   }
 
+  // 支払期日を取引先の支払条件で決める（作成の RPC は変えず、作成後に記録する）。
+  // 失敗しても請求書は作成済み。期日は一覧・帳票で同じ支払条件から求め直せるのでログに留める
+  const dueDate = await setInvoiceDueDate(supabase, invoice.id, periodEnd, customer?.channel_identifiers)
+
   await writeAudit(supabase, {
     entityType: 'invoices',
     entityId: invoice.id,
     action: 'INSERT',
-    newValues: { invoice_number: invoiceNumber, total_amount: totals.total.toNumber() },
+    newValues: { invoice_number: invoiceNumber, total_amount: totals.total.toNumber(), due_date: dueDate },
     userId,
   })
 
   return { ok: true, invoice_id: invoice.id, invoice_number: invoiceNumber, total: totals.total.toNumber() }
+}
+
+/** 作成直後の請求書に支払期日を入れる。入れた期日（失敗時は null）を返す。例外は投げない */
+async function setInvoiceDueDate(
+  supabase: SupabaseClient,
+  invoiceId: string,
+  periodEnd: string,
+  channelIdentifiers: unknown,
+): Promise<string | null> {
+  try {
+    const due = dueDateFor(periodEnd, paymentScheduleOf(channelIdentifiers))
+    if (!due) {
+      console.error(`[invoices/generate] 支払期日を決められません（期間の末日: ${periodEnd}）`)
+      return null
+    }
+    const { error } = await supabase.from('invoices').update({ due_date: due }).eq('id', invoiceId)
+    if (error) {
+      console.error('[invoices/generate] 支払期日の保存に失敗:', error.message)
+      return null
+    }
+    return due
+  } catch (e) {
+    console.error('[invoices/generate] 支払期日の保存に失敗:', e instanceof Error ? e.message : e)
+    return null
+  }
 }
 
 interface InvoiceHeaderInput {

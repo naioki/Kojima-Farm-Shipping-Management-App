@@ -9,6 +9,8 @@ import { formatYen } from '@/lib/calculations/tax'
 import { formatJpMonth, formatJpDateShort, jstTodayStr } from '@/lib/dates'
 import { dueDateOf, receivableState, summarizeReceivables } from '@/lib/invoices/receivables'
 import { fetchBilledOrderItemIds } from '@/lib/invoices/generate'
+import { paymentScheduleOf } from '@/lib/customers/settings'
+import type { PaymentSchedule } from '@/lib/customers/payment-terms'
 import type { InvoiceStatus } from '@/types/database'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -35,7 +37,7 @@ export default async function InvoicesPage() {
   const [{ data: invoices, error }, { count: pendingCount }, shippedRes] = await Promise.all([
     supabase
       .from('invoices')
-      .select('id, invoice_number, customer_id, billing_month, total_amount, status, issue_date, due_date')
+      .select('id, invoice_number, customer_id, billing_month, period_end, total_amount, status, issue_date, due_date')
       .order('created_at', { ascending: false }),
     supabase
       .from('orders')
@@ -64,12 +66,17 @@ export default async function InvoicesPage() {
 
   const customerIds = [...new Set((invoices ?? []).map((i) => i.customer_id))]
   const { data: custRows, error: custErr } = customerIds.length
-    ? await supabase.from('customers').select('id, name').in('id', customerIds)
-    : { data: [] as { id: string; name: string }[], error: null }
+    ? await supabase.from('customers').select('id, name, channel_identifiers').in('id', customerIds)
+    : { data: [] as { id: string; name: string; channel_identifiers: unknown }[], error: null }
+  // 取引先の解決は補助（名前・支払条件）。失敗しても一覧は出し、期日は既定（月末締め・翌月末払い）で判定する
   if (custErr) console.error('[invoices] 取引先名の解決に失敗:', custErr.message)
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
+  const termsByCustomer = new Map<string, PaymentSchedule>(
+    (custRows ?? []).map((c) => [c.id, paymentScheduleOf(c.channel_identifiers)]),
+  )
+  const termsOf = (inv: { customer_id: string }) => termsByCustomer.get(inv.customer_id)
   const today = jstTodayStr()
-  const ar = summarizeReceivables(invoices ?? [], today)
+  const ar = summarizeReceivables(invoices ?? [], today, termsOf)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -100,7 +107,7 @@ export default async function InvoicesPage() {
         </div>
       )}
 
-      {/* 売掛金（入金待ち・期日超過）。期日は請求書の支払期日、無ければ請求月の翌月末 */}
+      {/* 売掛金（入金待ち・期日超過）。期日は請求書の支払期日、無ければ取引先の支払条件から */}
       <div className="grid grid-cols-2 gap-3">
         <Card>
           <p className="text-xs text-ink-soft">入金待ち</p>
@@ -112,7 +119,7 @@ export default async function InvoicesPage() {
           <p className={`num text-xl font-bold tabular-nums ${ar.overdueCount > 0 ? 'text-alert' : 'text-ink'}`}>
             {formatYen(ar.overdueAmount)}
           </p>
-          <p className="text-xs text-ink-faint">{ar.overdueCount}件（翌月末払いとして判定）</p>
+          <p className="text-xs text-ink-faint">{ar.overdueCount}件（取引先の支払条件で判定）</p>
         </Card>
       </div>
 
@@ -139,8 +146,8 @@ export default async function InvoicesPage() {
         <div className="space-y-2">
           {invoices.map((inv) => {
             const s = STATUS_LABEL[inv.status as InvoiceStatus]
-            const rs = receivableState(inv, today)
-            const due = dueDateOf(inv)
+            const rs = receivableState(inv, today, termsOf(inv))
+            const due = dueDateOf(inv, termsOf(inv))
             return (
               <Link key={inv.id} href={`/admin/invoices/${inv.id}`}>
                 <Card

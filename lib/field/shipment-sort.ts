@@ -1,4 +1,5 @@
 import { foldKana } from '@/lib/normalize/kana'
+import { DEFAULT_PACKS_PER_CASE, positiveNumber } from '@/lib/masters/packs-per-case'
 
 export type RowStatusKey = 'not_started' | 'interrupted' | 'packed' | 'shipped'
 
@@ -355,8 +356,11 @@ export function comparePackItems(
 }
 
 /**
- * 1箱あたりの入数（パック数）を決める。カード表示・途中数・グループ見出し・進捗サマリーで同じ値を使うための共通関数。
- * 優先順: 規格文字列の「入数N」「N入」→ 取引先×品目ルールの入数 → 取引先ごとの既定 → 標準20。
+ * 1箱あたりの入数（パック数）。カード表示・途中数・グループ見出し・進捗サマリーで同じ値を使うための共通関数。
+ * 入数はサーバー側で lib/masters/packs-per-case.ts の resolvePacksPerCase
+ * （取引先別の設定 → 荷姿 → 品目の標準 → 既定20）で決めて masterPacksPerCase に渡す。
+ * ここでは規格の文字列（「入数24」「25入」）や取引先名から推測し直さない（画面ごとに箱数が割れる原因だった）。
+ * customerName / spec / masterLabelSpec は呼び出し側の互換のために受け取るだけで使わない。
  */
 export function resolvePacksPerCase(params: {
   customerName?: string | null
@@ -364,18 +368,8 @@ export function resolvePacksPerCase(params: {
   masterLabelSpec?: string | null
   masterPacksPerCase?: number | null
 }): number {
-  const { customerName, spec, masterLabelSpec, masterPacksPerCase } = params
-  const combinedSpec = `${customerName ?? ''} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
-  const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
-  if (match) {
-    const parsedNum = Number(match[1] || match[2])
-    if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) return parsedNum
-  }
-  if (masterPacksPerCase && masterPacksPerCase >= 10) return masterPacksPerCase
-  if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
-  if (combinedSpec.includes('オレンジファーム')) return 25
-  if (combinedSpec.includes('やなぎさわ') || combinedSpec.includes('ランドローム')) return 10
-  return 20
+  const n = positiveNumber(params.masterPacksPerCase)
+  return n ?? DEFAULT_PACKS_PER_CASE
 }
 
 /**
