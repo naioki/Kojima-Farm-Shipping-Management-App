@@ -362,7 +362,7 @@ export function CustomerRulesEditor({
                   className={cn(fieldInput, 'text-xs font-bold')}
                 >
                   <option value="">指定なし</option>
-                  <option value="印字袋(FG)">印字袋(FG)</option>
+                  <option value="印字袋(FG)">FG袋（OPP防曇袋）</option>
                   <option value="無地袋">無地袋</option>
                 </select>
               </label>

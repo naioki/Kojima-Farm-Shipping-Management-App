@@ -20,7 +20,7 @@ export const THAI_BAGS: Record<string, string> = {
   印刷袋: 'ถุงพิมพ์ลาย',
   無地袋: 'ถุงใสไม่มีลาย',
   防曇袋: 'ถุงกันฝ้า',
-  FG袋: 'ถุงFG',
+  FG袋: 'ถุง FG',
 }
 
 export const THAI_TAPES: Record<string, string> = {

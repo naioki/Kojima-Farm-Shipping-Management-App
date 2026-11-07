@@ -7,6 +7,8 @@ import { getRouteOverrides } from '@/lib/field/destination-routes-store'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
+import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
+import { DELIVERIES_TOUR } from '@/lib/guide/tours'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import {
   type CustomerDeliveryCardProps,
@@ -475,6 +477,9 @@ export default async function DeliveriesPage({
               <FieldViewSwitch active="delivery" date={date} product={selectedProduct} />
             </div>
           </div>
+          <div className="shrink-0">
+            <GuideTourLauncher tour={DELIVERIES_TOUR} />
+          </div>
         </div>
         <DateNav date={date} basePath={PATH} defaultDate={defaultDate} defaultLabel="明日納品（本日作業）" product={selectedProduct} />
       </div>
@@ -495,12 +500,12 @@ export default async function DeliveriesPage({
       )}
 
       {preflight.length > 0 && !packingStarted && (
-        <p className="rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink-soft print:hidden">
+        <p data-guide="preflight" className="rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink-soft print:hidden">
           積込前チェック: まだパック作業が始まっていません（{preflight.length}明細）
         </p>
       )}
       {preflight.length > 0 && packingStarted && (
-        <details className="rounded-xl border border-alert bg-alert-bg px-3.5 py-2 text-sm print:hidden" open={preflight.length <= 5}>
+        <details data-guide="preflight" className="rounded-xl border border-alert bg-alert-bg px-3.5 py-2 text-sm print:hidden" open={preflight.length <= 5}>
           <summary className="cursor-pointer font-bold text-alert">
             🚨 積込前チェック: 数量がそろっていない明細が {preflight.length} 件あります
           </summary>

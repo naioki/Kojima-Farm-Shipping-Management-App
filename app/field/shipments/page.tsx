@@ -849,26 +849,28 @@ export default async function ShipmentsPage({
         </div>
       )}
 
-      {/* ④ スマート追加フォーム */}
-      <ShipmentAddForm
-        deliveryDate={date}
-        defaultProductId={selectedProductId}
-        customers={activeCustomers.map((c) => ({
-          id: c.id,
-          name: c.name,
-          aliases: Array.isArray(c.channel_identifiers?.aliases) ? c.channel_identifiers.aliases : null,
-        }))}
-        products={allProducts.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
-        destinations={allDestinations.map((d) => ({
-          id: d.id,
-          customerId: d.customer_id ?? '',
-          label: d.code?.trim() || d.full_name,
-          defaultContainerType: d.default_container_type ?? null,
-        }))}
-        packsByPair={packsByPair}
-        rulesByPair={rulesByPair}
-        allowAiRead={canStaffUse('ocr', role, staffFeatures)}
-      />
+      {/* ④ スマート追加フォーム（操作ガイドの対象） */}
+      <div data-guide="add-order" data-guide-measure="first-child">
+        <ShipmentAddForm
+          deliveryDate={date}
+          defaultProductId={selectedProductId}
+          customers={activeCustomers.map((c) => ({
+            id: c.id,
+            name: c.name,
+            aliases: Array.isArray(c.channel_identifiers?.aliases) ? c.channel_identifiers.aliases : null,
+          }))}
+          products={allProducts.map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
+          destinations={allDestinations.map((d) => ({
+            id: d.id,
+            customerId: d.customer_id ?? '',
+            label: d.code?.trim() || d.full_name,
+            defaultContainerType: d.default_container_type ?? null,
+          }))}
+          packsByPair={packsByPair}
+          rulesByPair={rulesByPair}
+          allowAiRead={canStaffUse('ocr', role, staffFeatures)}
+        />
+      </div>
     </div>
   )
 }

@@ -42,10 +42,10 @@ import {
 
 const UNDO_GRACE_MS = 5000
 
-/** 袋の種類の表示名（保存値は変えない。FG は取引先指定の袋の銘柄） */
+/** 袋の種類の表示名（保存値は変えない）。FG袋＝OPP防曇袋・印字なし。FAXの表記どおり「FG袋」と出す */
 const BAG_DISPLAY_LABELS: Record<string, string> = {
-  '印字袋(FG)': '印字ありFG袋',
-  無地袋: '印字なし（無地）',
+  '印字袋(FG)': 'FG袋',
+  無地袋: '無地袋',
 }
 function bagDisplayLabel(bag: string): string {
   return BAG_DISPLAY_LABELS[bag] ?? bag
@@ -904,6 +904,7 @@ export function ShipmentRow({
             </div>
             <button
               type="button"
+              data-guide="pack-revert"
               disabled={busy}
               onClick={(e) => {
                 e.stopPropagation()
@@ -1159,8 +1160,8 @@ export function ShipmentRow({
             </div>
           </div>
 
-          {/* ③ 下部スマート2ボタンバー */}
-          <div className="flex items-center gap-2">
+          {/* ③ 下部スマート2ボタンバー（未完了カードだけ操作ガイドの対象） */}
+          <div data-guide={isDone ? undefined : 'pack-actions'} className="flex items-center gap-2">
             <button
               type="button"
               disabled={busy}
@@ -1245,7 +1246,6 @@ export function ShipmentRow({
 
       {undoGrace && (
         <div
-          data-guide="undo-bar"
           className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-harvest-100 bg-harvest-50/80 px-3 py-2"
         >
           <span className="flex items-center gap-1.5 text-xs font-bold text-harvest-700">

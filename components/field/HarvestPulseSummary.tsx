@@ -112,6 +112,7 @@ export function HarvestPulseSummary({
     <div className="space-y-2">
       {/* 2カラム中央揃え・高視認性進捗コックピット（左：完成箱数/目標箱数 ｜ 右：完成パック数/総数） */}
       <div
+        data-guide="pack-progress"
         className={cn(
           'rounded-2xl p-3 text-white shadow-sm space-y-2.5 transition-colors',
           isTodayWork ? 'bg-forest-700' : 'bg-night border border-night-soft',

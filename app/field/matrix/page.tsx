@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid, type MatrixDestinationItem } from '@/components/field/MatrixGrid'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
+import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
+import { MATRIX_TOUR } from '@/lib/guide/tours'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 
@@ -195,8 +197,11 @@ export default async function MatrixPage({
               <FieldViewSwitch active="week" date={week} product={selected.id} />
             </div>
           </div>
+          <div className="shrink-0">
+            <GuideTourLauncher tour={MATRIX_TOUR} />
+          </div>
         </div>
-        <div className="grid grid-cols-3 sm:inline-flex items-center gap-1.5 w-full sm:w-auto">
+        <div data-guide="week-nav" className="grid grid-cols-3 sm:inline-flex items-center gap-1.5 w-full sm:w-auto">
           <Link
             href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
             className="flex h-10 items-center justify-center rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold text-ink-soft hover:bg-bg-soft text-center"
@@ -223,7 +228,7 @@ export default async function MatrixPage({
 
       {/* 品目タブ */}
       {filteredProducts.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div data-guide="matrix-products" className="flex flex-wrap items-center gap-2">
           {filteredProducts.map((p) => {
             const active = p.id === selected.id
             return (

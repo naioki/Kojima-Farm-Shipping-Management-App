@@ -305,7 +305,7 @@ export function MatrixGrid({
       {/* 上部コントロールバー */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center rounded-xl border border-forest-200 bg-forest-50/70 p-1 shadow-2xs">
+          <div data-guide="matrix-unit" className="inline-flex items-center rounded-xl border border-forest-200 bg-forest-50/70 p-1 shadow-2xs">
             <button
               type="button"
               onClick={() => setUnitMode('boxes')}
@@ -399,12 +399,13 @@ export function MatrixGrid({
               <th className="sticky left-0 z-10 border border-line bg-bg-soft px-2 py-2 text-left font-bold text-ink min-w-[104px] sm:min-w-[165px] sm:px-3">
                 取引先
               </th>
-              {dates.map((d) => {
+              {dates.map((d, di) => {
                 const isTodayCol = d === jstTodayStr()
                 const isTomorrowCol = d === shiftDateStr(jstTodayStr(), 1)
                 return (
                   <th
                     key={d}
+                    data-guide={di === 0 ? 'matrix-date-head' : undefined}
                     className={cn(
                       'num min-w-[78px] border border-line p-0 text-center font-bold transition-colors',
                       isTomorrowCol
@@ -477,6 +478,7 @@ export function MatrixGrid({
                           {hasMultipleDests && (
                             <button
                               type="button"
+                              data-guide="matrix-breakdown"
                               onClick={() => toggleExpandCustomer(c.id)}
                               className={cn(
                                 'inline-flex min-h-10 items-center gap-0.5 rounded-md border px-2 py-0.5 text-xs font-black shrink-0 whitespace-nowrap transition active:scale-95',
@@ -505,7 +507,7 @@ export function MatrixGrid({
                         </span>
                       </th>
 
-                      {dates.map((d) => {
+                      {dates.map((d, di) => {
                         const k = key(c.id, d)
                         const st = states[k] ?? 'idle'
                         const rawVal = values[k] ?? ''
@@ -518,6 +520,7 @@ export function MatrixGrid({
                           return (
                             <td
                               key={d}
+                              data-guide={di === 0 ? 'matrix-cell' : undefined}
                               onClick={() => {
                                 if (!isExpanded) toggleExpandCustomer(c.id)
                               }}
@@ -553,7 +556,11 @@ export function MatrixGrid({
                         }
 
                         return (
-                          <td key={d} className="border border-line p-0 relative">
+                          <td
+                            key={d}
+                            data-guide={di === 0 ? 'matrix-cell' : undefined}
+                            className="border border-line p-0 relative"
+                          >
                             {!isCellFocused && numPacks > 0 && unitMode === 'boxes' ? (
                               <button
                                 type="button"
