@@ -21,11 +21,15 @@ export interface InvoicePdfProps {
     total_amount: number
   }
   customerName: string
+  /** 支払期限 YYYY-MM-DD（lib/invoices/receivables の dueDateOf で解決済み） */
+  dueDate: string | null
+  /** 請求書の状態。下書き・無効は透かしを入れて正式な請求書と見分けられるようにする */
+  status: string
   issuer: { name: string; reg: string | null; address: string | null; tel: string | null; payment: string | null }
   items: { product_name: string; quantity: number; unit: string; unit_price: number; subtotal: number; tax_rate: number }[]
 }
 
-const C = { ink: '#1a1410', soft: '#7a6854', faint: '#a8997f', line: '#e4d5c5', earth: '#8a6d3b', bg: '#faf9f7' }
+const C = { ink: '#1a1410', soft: '#7a6854', faint: '#a8997f', line: '#e4d5c5', earth: '#8a6d3b', bg: '#faf9f7', alert: '#d92d20' }
 
 const s = StyleSheet.create({
   page: { fontFamily: 'JP', fontSize: 9, color: C.ink, paddingTop: 36, paddingBottom: 40, paddingHorizontal: 40 },
@@ -53,9 +57,26 @@ const s = StyleSheet.create({
   sumTotal: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: C.ink },
   pay: { marginTop: 18, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8, color: C.soft },
   foot: { marginTop: 10, color: C.faint, fontSize: 8 },
+  due: { color: C.ink, fontWeight: 'bold', fontSize: 10, marginTop: 2 },
+  // 透かし（下書き・無効）。全ページに固定で重ねる
+  watermark: {
+    position: 'absolute',
+    top: 330,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 96,
+    fontWeight: 'bold',
+    color: C.alert,
+    opacity: 0.18,
+    transform: 'rotate(-30deg)',
+  },
+  banner: { marginBottom: 10, borderWidth: 2, borderColor: C.alert, color: C.alert, paddingVertical: 6, paddingHorizontal: 10, fontSize: 11, fontWeight: 'bold' },
 })
 
-export function InvoicePdf({ invoice, customerName, issuer, items }: InvoicePdfProps) {
+export function InvoicePdf({ invoice, customerName, dueDate, status, issuer, items }: InvoicePdfProps) {
+  const isVoid = status === 'void'
+  const isDraft = status === 'draft'
   const period =
     invoice.period_start && invoice.period_end
       ? `対象期間: ${formatJpDate(invoice.period_start)} 〜 ${formatJpDate(invoice.period_end)}`
@@ -63,12 +84,18 @@ export function InvoicePdf({ invoice, customerName, issuer, items }: InvoicePdfP
   return (
     <Document>
       <Page size="A4" style={s.page}>
+        {isVoid ? (
+          <Text style={s.banner}>この請求書は無効です（お支払いの対象ではありません）</Text>
+        ) : isDraft ? (
+          <Text style={s.banner}>下書き（未確定）— 正式な請求書ではありません</Text>
+        ) : null}
         <View style={s.headerRow}>
           <Text style={s.title}>請求書</Text>
           <View style={s.metaR}>
             <Text style={s.num}>{invoice.invoice_number}</Text>
             {invoice.issue_date ? <Text>発行日: {formatJpDate(invoice.issue_date)}</Text> : null}
             <Text>{period}</Text>
+            {dueDate ? <Text style={s.due}>お支払期限: {formatJpDate(dueDate)}</Text> : null}
           </View>
         </View>
 
@@ -84,7 +111,9 @@ export function InvoicePdf({ invoice, customerName, issuer, items }: InvoicePdfP
 
         <View style={s.totalBox}>
           <Text style={s.totalLabel}>ご請求金額（税込）</Text>
-          <Text style={s.totalAmount}>{formatYen(invoice.total_amount)}</Text>
+          <Text style={isVoid ? [s.totalAmount, { textDecoration: 'line-through', color: C.faint }] : s.totalAmount}>
+            {formatYen(invoice.total_amount)}
+          </Text>
         </View>
 
         <View style={s.table}>
@@ -139,6 +168,11 @@ export function InvoicePdf({ invoice, customerName, issuer, items }: InvoicePdfP
           <Text>{issuer.payment || '（設定 → 発行者情報 で振込先を登録してください）'}</Text>
         </View>
         <Text style={s.foot}>※ は軽減税率（8%）対象品目です。</Text>
+        {isVoid || isDraft ? (
+          <Text style={s.watermark} fixed>
+            {isVoid ? '無効' : '下書き'}
+          </Text>
+        ) : null}
       </Page>
     </Document>
   )

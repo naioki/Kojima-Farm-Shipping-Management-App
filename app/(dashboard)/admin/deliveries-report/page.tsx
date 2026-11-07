@@ -146,7 +146,7 @@ export default async function DeliveriesReportPage({
           配送実績
         </h1>
         {/* 期間指定（GETフォーム。既定は今月1日〜今日） */}
-        <form action={PATH} className="flex items-center gap-2 text-sm">
+        <form action={PATH} className="flex flex-wrap items-center gap-2 text-sm">
           <input
             type="date"
             name="from"

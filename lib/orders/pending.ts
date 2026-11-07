@@ -16,7 +16,7 @@ import type {
   ReceiptOriginalInfo,
   PendingOrder,
 } from './pending-types'
-import { pendingReasons } from './pending-types'
+import { pendingReasons, resolvePendingDestination, extractDestinationHint } from './pending-types'
 import { skipsDestinationGate } from '@/lib/customers/settings'
 import { detectQuantityAnomaly } from './quantity-anomaly'
 import { loadQuantityHistory } from './quantity-history'
@@ -75,13 +75,19 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
     customerIds.length
       ? supabase
           .from('delivery_destinations')
-          .select('id, customer_id, code, full_name')
+          .select('id, customer_id, code, full_name, aliases')
           .eq('is_active', true)
           .in('customer_id', customerIds)
           .order('sort_order')
           .order('full_name')
       : Promise.resolve({
-          data: [] as { id: string; customer_id: string; code: string | null; full_name: string }[],
+          data: [] as {
+            id: string
+            customer_id: string
+            code: string | null
+            full_name: string
+            aliases: string[] | null
+          }[],
           error: null,
         }),
   ])
@@ -142,10 +148,14 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
   const custColor = new Map((custs ?? []).map((c) => [c.id, c.display_color]))
   const destLabelById = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
   const destByCustomer = new Map<string, DestinationOption[]>()
+  const destRowsByCustomer = new Map<string, NonNullable<typeof destRows>>()
   for (const d of destRows ?? []) {
     const arr = destByCustomer.get(d.customer_id) ?? []
     arr.push({ id: d.id, label: d.code || d.full_name })
     destByCustomer.set(d.customer_id, arr)
+    const rows = destRowsByCustomer.get(d.customer_id) ?? []
+    rows.push(d)
+    destRowsByCustomer.set(d.customer_id, rows)
   }
 
   type ItemRow = NonNullable<typeof items>[number]
@@ -198,25 +208,23 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
         : null
       const needsDeliveryDate = !o.delivery_date
 
-      // AI抽出やノートから納入先名を取得
-      function extractDestFromNote(noteText?: string | null): string | null {
-        if (!noteText) return null
-        const m1 = noteText.match(/(?:納入先|お届け先|配送先)(?:\(OCR\))?[:：\s]+([^\n,、・\]】]+)/)
-        if (m1?.[1]) return m1[1].trim()
-        const m2 = noteText.match(/【(?:納入先|お届け先|配送先)[:：\s]*([^】]+)】/)
-        if (m2?.[1]) return m2[1].trim()
-        return null
-      }
-
-      const noteDest = extractDestFromNote((o as { note?: string | null }).note)
+      // 納入先は承認API（lib/orders/approve.ts）と同じ規則で判定する。メモの文字はマスタと
+      // 照合できたときだけ確定扱いにし、照合できなければ「納入先 未定」として選択肢を出す
+      // （画面で確定に見えたのに承認で止まる、を防ぐ）。メモの文字は参考表示（FAXの記載）に回す。
+      const noteText = (o as { note?: string | null }).note ?? null
       const destinationOptions = o.customer_id ? destByCustomer.get(o.customer_id) ?? [] : []
-      const resolvedDestName =
-        (o.destination_id ? destLabelById.get(o.destination_id) : null) ?? noteDest ?? null
       const custSkipsGate = o.customer_id ? skipGateCustomerIds.has(o.customer_id) : false
-      const isDestinationKnown = Boolean(
-        o.destination_id || noteDest || destinationOptions.length === 0 || custSkipsGate,
-      )
-      const needsDestination = !isDestinationKnown
+      const destResolution = resolvePendingDestination({
+        destinationId: o.destination_id,
+        destinations: o.customer_id ? destRowsByCustomer.get(o.customer_id) ?? [] : [],
+        noteText,
+        productNames: rawItems.map((it) => it.product_name),
+        skipsGate: custSkipsGate,
+      })
+      const resolvedDestName = destResolution.destinationId
+        ? (destLabelById.get(destResolution.destinationId) ?? null)
+        : null
+      const needsDestination = destResolution.needsDestination
 
       const needsPackConfig = orderItems.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)
       const allConfident = orderItems.length > 0 && minConfidence != null && minConfidence >= threshold
@@ -260,9 +268,10 @@ export async function getPendingOrders(): Promise<PendingOrder[]> {
         source: o.source,
         deliveryDate: o.delivery_date,
         customerId: o.customer_id,
-        customerName: o.customer_id ? (custName.get(o.customer_id) ?? '（不明な取引先）') : '取引先 未紐付け',
+        customerName: o.customer_id ? (custName.get(o.customer_id) ?? '（不明な取引先）') : '取引先 未登録',
         customerColor: o.customer_id ? (custColor.get(o.customer_id) ?? null) : null,
         destinationName: resolvedDestName,
+        destinationHint: extractDestinationHint(noteText),
         notes: (o as { note?: string | null }).note ?? null,
         items: orderItems,
         minConfidence,

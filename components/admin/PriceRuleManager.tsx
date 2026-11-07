@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { jstTodayStr } from '@/lib/dates'
 
-interface Option { id: string; name: string }
+interface Option { id: string; name: string; base_unit?: string }
 export interface PriceRuleListRow {
   id: string
   product_id: string
@@ -24,7 +24,7 @@ export interface PriceRuleListRow {
 const todayStr = jstTodayStr
 
 /**
- * 価格表管理（管理者）。期間×取引先×チャネルの単価。最新の effective_from が優先される。
+ * 単価表の管理（管理者）。期間×取引先×チャネルの単価。最新の effective_from が優先される。
  * 過去の請求は order_items に凍結済みなので、ここを変えても遡及しない。
  */
 export function PriceRuleManager({
@@ -52,11 +52,13 @@ export function PriceRuleManager({
 
   const productName = new Map(products.map((p) => [p.id, p.name]))
   const customerName = new Map(customers.map((c) => [c.id, c.name]))
+  const baseUnitOf = new Map(products.map((p) => [p.id, p.base_unit || '基準単位']))
+  const CHANNEL_LABEL: Record<string, string> = { fax: 'FAX', email: 'メール', portal: 'ポータル', manual: '手入力' }
 
   async function add() {
     const price = parseFloat(form.unit_price)
     if (!form.product_id || !(price >= 0) || !form.effective_from) {
-      toast.error('商品・単価・適用開始日は必須です')
+      toast.error('品目・単価・適用開始日は必須です')
       return
     }
     setSaving(true)
@@ -79,7 +81,7 @@ export function PriceRuleManager({
         const j = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(j.error ?? `登録失敗 (${res.status})`)
       }
-      toast.success('価格を登録しました')
+      toast.success('単価を登録しました')
       setForm((f) => ({ ...f, unit_price: '', effective_to: '' }))
       setOpen(false)
       router.refresh()
@@ -91,7 +93,7 @@ export function PriceRuleManager({
   }
 
   async function remove(id: string) {
-    if (!confirm('この価格ルールを削除しますか？（過去の請求には影響しません）')) return
+    if (!confirm('この単価を削除しますか？（過去の請求には影響しません）')) return
     const res = await fetch(`/api/price-rules/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success('削除しました')
@@ -107,27 +109,27 @@ export function PriceRuleManager({
   return (
     <div className="space-y-3">
       {rows.length === 0 ? (
-        <p className="text-sm text-ink-soft">価格ルールはまだありません。</p>
+        <p className="text-sm text-ink-soft">単価はまだ登録されていません。</p>
       ) : (
         <ul className="divide-y divide-line rounded border border-line">
           {rows.map((r) => (
             <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2">
               <div className="min-w-0">
-                <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
-                  <Tag className="h-3.5 w-3.5 text-earth-500" aria-hidden />
+                <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-medium text-ink">
+                  <Tag className="h-3.5 w-3.5 shrink-0 text-earth-500" aria-hidden />
                   {productName.get(r.product_id) ?? '?'}
                   <span className="num font-bold text-earth-700">¥{r.unit_price.toLocaleString()}</span>
-                  <span className="text-xs text-ink-faint">/{r.price_unit === 'base' ? '基準単位' : '販売単位'}・{r.tax_rate}%</span>
+                  <span className="text-xs text-ink-faint">/{r.price_unit === 'base' ? (baseUnitOf.get(r.product_id) ?? '基準単位') : '荷姿1つ'}・税{r.tax_rate}%</span>
                 </p>
                 <p className="num text-xs text-ink-faint">
                   {r.customer_id ? (customerName.get(r.customer_id) ?? '取引先') : '定価（共通）'}
-                  {r.channel && ` ・${r.channel}`}
+                  {r.channel && ` ・${CHANNEL_LABEL[r.channel] ?? r.channel}`}
                   {' ・'}
                   {r.effective_from}〜{r.effective_to ?? ''}
                 </p>
               </div>
-              <button type="button" onClick={() => remove(r.id)} aria-label="削除" className="p-1 text-ink-faint hover:text-alert">
-                <Trash2 className="h-4 w-4" aria-hidden />
+              <button type="button" onClick={() => remove(r.id)} aria-label="この単価を削除" title="この単価を削除" className="flex h-10 w-10 shrink-0 items-center justify-center rounded text-ink-soft hover:text-alert">
+                <Trash2 className="h-5 w-5" aria-hidden />
               </button>
             </li>
           ))}
@@ -136,49 +138,67 @@ export function PriceRuleManager({
 
       {open ? (
         <div className="space-y-2 rounded-lg border border-line bg-bg-soft p-3">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <select value={form.product_id} onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))} className={inputCls} aria-label="商品">
-              <option value="">商品を選択 *</option>
-              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <select value={form.customer_id} onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))} className={inputCls} aria-label="取引先">
-              <option value="">定価（取引先共通）</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <input type="number" inputMode="decimal" min={0} className={cn(inputCls, 'num')} placeholder="単価 *" value={form.unit_price} onChange={(e) => setForm((f) => ({ ...f, unit_price: e.target.value }))} />
-            <select value={form.price_unit} onChange={(e) => setForm((f) => ({ ...f, price_unit: e.target.value as 'base' | 'pack' }))} className={inputCls} aria-label="価格単位">
-              <option value="base">基準単位あたり</option>
-              <option value="pack">販売単位あたり</option>
-            </select>
-            <select value={form.tax_rate} onChange={(e) => setForm((f) => ({ ...f, tax_rate: e.target.value as '8' | '10' }))} className={inputCls} aria-label="税率">
-              <option value="8">税率 8%（農産物）</option>
-              <option value="10">税率 10%（資材等）</option>
-            </select>
-            <select value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} className={inputCls} aria-label="チャネル">
-              <option value="">全チャネル</option>
-              <option value="fax">FAX</option>
-              <option value="email">メール</option>
-              <option value="portal">ポータル</option>
-              <option value="manual">手動</option>
-            </select>
-            <label className="space-y-1 text-xs text-ink-soft">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              品目 *
+              <select value={form.product_id} onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))} className={inputCls}>
+                <option value="">品目を選択</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              取引先
+              <select value={form.customer_id} onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))} className={inputCls}>
+                <option value="">定価（取引先共通）</option>
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              単価（円） *
+              <input type="number" inputMode="decimal" min={0} className={cn(inputCls, 'num')} placeholder="例: 120" value={form.unit_price} onChange={(e) => setForm((f) => ({ ...f, unit_price: e.target.value }))} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              単価の単位
+              <select value={form.price_unit} onChange={(e) => setForm((f) => ({ ...f, price_unit: e.target.value as 'base' | 'pack' }))} className={inputCls}>
+                <option value="base">{(form.product_id && baseUnitOf.get(form.product_id)) ? `1${baseUnitOf.get(form.product_id)}あたり` : '基準単位（1個・1袋など）あたり'}</option>
+                <option value="pack">荷姿1つ（1ケースなど）あたり</option>
+              </select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              税率
+              <select value={form.tax_rate} onChange={(e) => setForm((f) => ({ ...f, tax_rate: e.target.value as '8' | '10' }))} className={inputCls}>
+                <option value="8">8%（農産物）</option>
+                <option value="10">10%（資材等）</option>
+              </select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              受注の経路
+              <select value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} className={inputCls}>
+                <option value="">すべての経路</option>
+                <option value="fax">FAX</option>
+                <option value="email">メール</option>
+                <option value="portal">ポータル</option>
+                <option value="manual">手入力</option>
+              </select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
               適用開始日 *
               <input type="date" className={inputCls} value={form.effective_from} onChange={(e) => setForm((f) => ({ ...f, effective_from: e.target.value }))} />
             </label>
-            <label className="space-y-1 text-xs text-ink-soft">
-              終了日（任意・廃止用）
+            <label className="block space-y-1 text-xs font-medium text-ink-soft">
+              終了日（任意・使わなくなる場合のみ）
               <input type="date" className={inputCls} value={form.effective_to} onChange={(e) => setForm((f) => ({ ...f, effective_to: e.target.value }))} />
             </label>
           </div>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setOpen(false)} className="px-2 text-sm text-ink-faint hover:text-ink-soft">キャンセル</button>
+            <button type="button" onClick={() => setOpen(false)} className="min-h-10 px-2 text-sm text-ink-soft hover:text-ink">キャンセル</button>
             <Button size="sm" onClick={add} isLoading={saving}>登録</Button>
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-2 text-sm text-ink-soft hover:border-earth-400 hover:text-ink">
+        <button type="button" onClick={() => setOpen(true)} className="flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-2 text-sm text-ink-soft hover:border-earth-400 hover:text-ink">
           <Plus className="h-4 w-4" aria-hidden />
-          価格を追加
+          単価を追加
         </button>
       )}
     </div>

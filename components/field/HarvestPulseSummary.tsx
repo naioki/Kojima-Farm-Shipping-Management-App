@@ -249,7 +249,7 @@ export function HarvestPulseSummary({
         <summary className="flex cursor-pointer items-center justify-between px-3.5 py-2.5 text-xs font-black text-ink-soft select-none hover:bg-bg-soft/50">
           <span className="flex items-center gap-1.5 flex-wrap">
             <Box className="h-4 w-4 text-harvest-600 shrink-0" />
-            <span>コンテナ別・規格別の詳細内訳 ／ 翌朝持ち越し登録</span>
+            <span>コンテナ別・規格別の内訳 ／ 明日に回す箱</span>
             {carryover > 0 && (
               <span className="whitespace-nowrap rounded bg-warning-bg text-ink px-1.5 py-0.5 text-xs font-black">
                 引継 {carryover}箱
@@ -311,20 +311,20 @@ export function HarvestPulseSummary({
 
           <div className="pt-2 border-t border-line/60">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-ink">夕方の翌朝持ち越し登録:</span>
+              <span className="text-xs font-bold text-ink">今日余って明日に回す箱:</span>
               <button
                 type="button"
                 onClick={() => {
                   setTempCarryoverStr(String(carryover))
                   setIsEditingCarryover(!isEditingCarryover)
                 }}
-                className="text-xs font-bold text-harvest-700 underline"
+                className="min-h-10 px-2 text-xs font-bold text-harvest-700 underline"
               >
                 {isEditingCarryover
                   ? '閉じる'
                   : carryover > 0
                   ? `${carryover}箱を引継設定中 (変更)`
-                  : '＋ 今日の余り箱数を登録'}
+                  : '＋ 余った箱数を登録'}
               </button>
             </div>
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { customerUpdateSchema } from '@/types/database'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { parsePaymentSchedule, paymentScheduleLabel } from '@/lib/customers/payment-terms'
 
 export const runtime = 'nodejs'
 
@@ -30,12 +31,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const hasIssuerPreset = rawBody && typeof rawBody.issuer_preset === 'string'
   const hasRequiresNote = rawBody && typeof rawBody.requires_delivery_note === 'boolean'
   const hasSkipDestGate = rawBody && typeof rawBody.skip_destination_gate === 'boolean'
-  if (hasIssuerPreset || hasRequiresNote || hasSkipDestGate) {
-    const { data: existing } = await admin
+  const hasPaymentSchedule =
+    rawBody && !!rawBody.payment_schedule && typeof rawBody.payment_schedule === 'object' && !Array.isArray(rawBody.payment_schedule)
+  if (hasIssuerPreset || hasRequiresNote || hasSkipDestGate || hasPaymentSchedule) {
+    const { data: existing, error: existingErr } = await admin
       .from('customers')
       .select('channel_identifiers')
       .eq('id', params.id)
       .maybeSingle()
+    // 読めないまま保存すると既存の設定（メール・FAX等の識別子）を消してしまうので止める
+    if (existingErr) return NextResponse.json({ error: existingErr.message }, { status: 500 })
     const currentChan =
       existing?.channel_identifiers && typeof existing.channel_identifiers === 'object'
         ? { ...(existing.channel_identifiers as Record<string, unknown>) }
@@ -49,6 +54,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (hasSkipDestGate) {
       // 承認時の納入先ゲートを飛ばす取引先（納入先なしで承認してよい）
       currentChan.skip_destination_gate = Boolean(rawBody.skip_destination_gate)
+    }
+    if (hasPaymentSchedule) {
+      // 支払条件（締め日・支払日）。不正値は項目ごとに既定へ。請求書に印字する文も同じ内容に揃える
+      const schedule = parsePaymentSchedule(rawBody.payment_schedule)
+      currentChan.payment_schedule = schedule
+      updates.payment_terms = paymentScheduleLabel(schedule)
     }
     updates.channel_identifiers = currentChan
   }

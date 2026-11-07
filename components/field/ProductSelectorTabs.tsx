@@ -101,16 +101,15 @@ export function ProductSelectorTabs({
       {otherIncompleteTabs.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3 py-1.5 text-xs font-black text-ink shadow-2xs">
           <div className="flex items-center gap-1.5">
-            <span>🚨</span>
             <span>
-              他品目にも未完了のパック作業があります：
-              {otherIncompleteTabs.map((t) => `${t.name}（残り${t.incompleteCount}件）`).join('・')}
+              ほかの品目も未完了：
+              {otherIncompleteTabs.map((t) => `${t.name} ${t.incompleteCount}件`).join('・')}
             </span>
           </div>
           <button
             type="button"
             onClick={() => handleSelect(otherIncompleteTabs[0]!.id)}
-            className="rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition shrink-0"
+            className="min-h-10 rounded-lg bg-warning px-3 text-white hover:opacity-90 transition shrink-0"
           >
             {otherIncompleteTabs[0]!.name}を開く →
           </button>

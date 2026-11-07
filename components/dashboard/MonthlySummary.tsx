@@ -3,11 +3,21 @@ import { Card } from '@/components/ui/Card'
 import { signedPct } from '@/lib/format'
 import type { SummaryRow } from './types'
 
-/** 今月のサマリー（受注件数/出荷金額/請求金額/未請求額＋前月比＋スパークライン）。 */
-export function MonthlySummary({ rows }: { rows: SummaryRow[] }) {
+/**
+ * 今月のサマリー（受注件数/出荷金額/請求金額/未請求額）。
+ * 増減は「前月同期比」（今月1日〜今日 と 前月の同じ日数）。月の途中で前月まる1か月と比べない。
+ */
+export function MonthlySummary({ rows, period }: { rows: SummaryRow[]; period?: { current: string; previous: string } }) {
   return (
     <Card variant="elevated" className="flex h-full flex-col">
-      <h2 className="mb-3 text-sm font-semibold text-ink">今月のサマリー</h2>
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-ink">
+          今月のサマリー{period && <span className="num ml-1 font-normal text-ink-soft">（{period.current}）</span>}
+        </h2>
+        <p className="mt-0.5 text-xs text-ink-soft">
+          増減は前月同期比{period && <>（{period.previous} と比較）</>}
+        </p>
+      </div>
       <ul className="flex-1 divide-y divide-line/60">
         {rows.map((r) => {
           const positive = (r.deltaPct ?? 0) >= 0
@@ -18,9 +28,10 @@ export function MonthlySummary({ rows }: { rows: SummaryRow[] }) {
               <div className="min-w-0">
                 <p className="text-xs text-ink-soft">{r.label}</p>
                 <p className="num mt-0.5 text-lg font-bold text-ink">{r.value}</p>
+                {r.note && <p className="mt-0.5 text-xs text-ink-faint">{r.note}</p>}
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                <Sparkline data={r.spark} good={good} />
+                {r.spark.length >= 2 && <Sparkline data={r.spark} good={good} />}
                 {r.deltaPct != null && (
                   <span
                     className={`flex items-center gap-0.5 text-xs font-medium ${
@@ -33,6 +44,7 @@ export function MonthlySummary({ rows }: { rows: SummaryRow[] }) {
                       <TrendingDown className="h-3.5 w-3.5" aria-hidden />
                     )}
                     <span className="num">{signedPct(r.deltaPct)}</span>
+                    <span className="sr-only">（前月同期比）</span>
                   </span>
                 )}
               </div>

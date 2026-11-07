@@ -24,7 +24,7 @@ export function FieldViewSwitch({
   const pathname = usePathname()
   const prodParam = product ? `&product=${encodeURIComponent(product)}` : ''
   const base =
-    'inline-flex flex-1 sm:flex-initial min-h-[42px] items-center justify-center gap-1.5 rounded-lg px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-black transition-all active:scale-95'
+    'inline-flex flex-1 sm:flex-initial min-h-11 items-center justify-center gap-1.5 rounded-lg px-2.5 sm:px-3.5 py-1.5 text-xs sm:text-sm font-black transition-all active:scale-95'
 
   const handleSameTabClick = (targetPath: string, label: string) => {
     if (pathname === targetPath) {
@@ -37,7 +37,7 @@ export function FieldViewSwitch({
     <div className="grid grid-cols-3 sm:inline-flex w-full sm:w-auto rounded-xl border border-line-strong bg-bg-soft p-1 shadow-2xs gap-1">
       <Link
         href={`/field/shipments?date=${date}${prodParam}`}
-        onClick={() => handleSameTabClick('/field/shipments', 'パック画面')}
+        onClick={() => handleSameTabClick('/field/shipments', '収穫・パックボード')}
         aria-current={active === 'day' && pathname === '/field/shipments' ? 'page' : undefined}
         className={cn(
           base,
@@ -47,7 +47,7 @@ export function FieldViewSwitch({
         )}
       >
         <PackageCheck className="h-4 w-4 shrink-0" aria-hidden />
-        <span>パック</span>
+        <span className="whitespace-nowrap"><span className="hidden sm:inline">収穫・</span>パック</span>
       </Link>
       <Link
         href={`/field/deliveries?date=${date}${prodParam}`}
@@ -61,11 +61,11 @@ export function FieldViewSwitch({
         )}
       >
         <Truck className="h-4 w-4 shrink-0" aria-hidden />
-        <span>積込・配送</span>
+        <span className="whitespace-nowrap">積込・配送</span>
       </Link>
       <Link
         href={`/field/matrix?week=${date}&date=${date}${prodParam}`}
-        onClick={() => handleSameTabClick('/field/matrix', '週間表')}
+        onClick={() => handleSameTabClick('/field/matrix', '週の管理')}
         aria-current={active === 'week' ? 'page' : undefined}
         className={cn(
           base,
@@ -75,7 +75,7 @@ export function FieldViewSwitch({
         )}
       >
         <CalendarRange className="h-4 w-4 shrink-0" aria-hidden />
-        <span>週間表</span>
+        <span className="whitespace-nowrap">週の管理</span>
       </Link>
     </div>
   )

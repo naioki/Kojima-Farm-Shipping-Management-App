@@ -1,11 +1,11 @@
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { redirect } from 'next/navigation'
-import { Camera } from 'lucide-react'
+import { Camera, Lock } from 'lucide-react'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
-import { ErrorState } from '@/components/ui/States'
+import { EmptyState, ErrorState } from '@/components/ui/States'
 import { SpecReportForm } from '@/components/field/SpecReportForm'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
 
@@ -31,18 +31,31 @@ export default async function ReportSpecPage({
 
   const features = await getStaffFeatures()
   if (!canStaffUse('reportSpec', role, features)) {
+    // 故障ではないので赤いエラーではなく中立の案内にする（タイ語も併記）
     return (
-      <ErrorState
-        title="まだ使えません"
-        message="規格の報告は管理者が「設定 → 現場機能の解放」でONにすると使えます。"
-      />
+      <div className="mx-auto max-w-2xl">
+        <EmptyState
+          icon={<Lock className="h-8 w-8 text-ink-faint" aria-hidden />}
+          title="規格の ほうこくは まだ つかえません / ยังใช้ไม่ได้"
+          description="かんりしゃが「設定 → 現場機能の解放」で オンに すると つかえます。 / ผู้ดูแลต้องเปิดใช้งานในหน้าตั้งค่าก่อน"
+        />
+      </div>
     )
   }
 
-  const [{ data: customers }, { data: products }] = await Promise.all([
+  const [{ data: customers, error: custErr }, { data: products, error: prodErr }] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
     supabase.from('products').select('id, name').eq('is_active', true).order('name'),
   ])
+
+  if (custErr || prodErr) {
+    return (
+      <ErrorState
+        message="取引先・品目を よみこめませんでした。すこし まってから もう一度 ためしてください。"
+        detail={(custErr ?? prodErr)?.message}
+      />
+    )
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">

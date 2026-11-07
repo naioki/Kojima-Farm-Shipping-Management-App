@@ -73,6 +73,11 @@ export interface CustomerDeliveryCardProps {
   onCompletionChange?: (customerId: string, isCompleted: boolean) => void
 }
 
+/** 容器名の表記ゆれを短い名前に統一（農業総研専用折りたたみコンテナ・NSK専用オリコン → NSKオリコン） */
+function shortContainerLabel(label: string): string {
+  return /農業総研|NSK|折りたたみ|オリコン/.test(label) ? 'NSKオリコン' : label
+}
+
 const EMPTY_ROUTE_SUMMARIES: Array<{ title: string; departureTime: string | null }> = []
 
 /**
@@ -340,7 +345,7 @@ export function CustomerDeliveryCard({
                 target="_blank"
                 rel="noopener"
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-harvest-400 bg-bg-card px-2 text-xs font-black text-forest-900 hover:bg-harvest-50 transition"
+                className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-harvest-400 bg-bg-card px-2.5 text-xs font-black text-forest-900 hover:bg-harvest-50 transition"
                 title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
               >
                 <FileDown className="h-3.5 w-3.5 text-harvest-700" />
@@ -354,7 +359,7 @@ export function CustomerDeliveryCard({
                 e.stopPropagation()
                 void toggleLoaded()
               }}
-              className="h-8 rounded-lg border border-line-strong bg-bg-card px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
+              className="min-h-10 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
               title="未積込に戻す"
             >
               <span>戻す</span>
@@ -365,7 +370,7 @@ export function CustomerDeliveryCard({
                 e.stopPropagation()
                 setExpandedWhenDone(true)
               }}
-              className="h-8 w-8 rounded-lg border border-line bg-bg-card/80 flex items-center justify-center text-ink-soft hover:text-ink"
+              className="h-10 w-10 rounded-lg border border-line bg-bg-card/80 flex items-center justify-center text-ink-soft hover:text-ink"
               title="カードを展開"
               aria-label="カードを展開"
             >
@@ -399,7 +404,7 @@ export function CustomerDeliveryCard({
                     <button
                       type="button"
                       onClick={() => setExpandedWhenDone(false)}
-                      className="rounded-lg border border-line bg-bg-card px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                      className="inline-flex min-h-10 items-center rounded-lg border border-line bg-bg-card px-2.5 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
                     >
                       1行に畳む ▲
                     </button>
@@ -445,7 +450,7 @@ export function CustomerDeliveryCard({
                       href={driverNotePdfHref}
                       target="_blank"
                       rel="noopener"
-                      className="inline-flex items-center gap-1 rounded-md border border-harvest-400 bg-harvest-50 px-2 py-0.5 text-xs font-black text-forest-900 hover:bg-harvest-100 shadow-2xs transition"
+                      className="inline-flex min-h-10 items-center gap-1 rounded-md border border-harvest-400 bg-harvest-50 px-2.5 py-1 text-xs font-black text-forest-900 hover:bg-harvest-100 shadow-2xs transition"
                       title="運転手渡し用の納品書（A4上下2連・金額なし）をPDFで開きます"
                     >
                       <FileDown className="h-3 w-3 text-harvest-700" />
@@ -459,13 +464,13 @@ export function CustomerDeliveryCard({
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     {containerSummary.map((cs) => {
                       const style = getContainerColorStyle(cs.type)
-                      const thaiContainer = isThaiMode ? getThaiContainer(style.label) : null
-                      const emoji = getContainerColorEmoji(style.label)
+                      const thaiContainer = isThaiMode ? getThaiContainer(shortContainerLabel(style.label)) : null
+                      const emoji = getContainerColorEmoji(shortContainerLabel(style.label))
                       return (
                         <span
                           key={cs.type}
                           className={cn(
-                            'inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs sm:text-sm font-black shadow-2xs',
+                            'inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-lg px-2.5 py-1 text-xs sm:text-sm font-black shadow-2xs break-words',
                             style.badgeClass,
                           )}
                         >
@@ -476,7 +481,7 @@ export function CustomerDeliveryCard({
                             </>
                           ) : (
                             <>
-                              <span>{emoji} {style.label}</span>
+                              <span>{emoji} {shortContainerLabel(style.label)}</span>
                               <span className="num underline decoration-2">{cs.boxes}箱</span>
                             </>
                           )}
@@ -513,7 +518,9 @@ export function CustomerDeliveryCard({
                 </div>
                 {totalFractionBoxes > 0 && (
                   <div className="inline-block rounded-md bg-warning-bg border border-warning px-2 py-0.5 text-xs font-black text-ink my-0.5">
-                    ＋端数 {totalFractionBoxes}箱 ({totalFractionPacks}P)
+                    {isThaiMode
+                      ? `${THAI_LABELS.fractionBoxOf} ${totalFractionBoxes} ${THAI_LABELS.casesUnit} (${totalFractionPacks}P)`
+                      : `うち端数 ${totalFractionBoxes}箱＝${totalFractionPacks}P`}
                   </div>
                 )}
                 <div className="text-xs font-bold text-ink-soft tabular-nums">
@@ -564,7 +571,7 @@ export function CustomerDeliveryCard({
                   <button
                     type="button"
                     onClick={() => setEditingNote(false)}
-                    className="rounded-lg border border-line bg-bg-card px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                    className="min-h-10 rounded-lg border border-line bg-bg-card px-3 py-1 text-xs font-bold text-ink-soft hover:bg-bg-soft"
                   >
                     キャンセル
                   </button>
@@ -577,18 +584,26 @@ export function CustomerDeliveryCard({
 
             {/* ③ 下段: 内訳開閉ボタン ＆ 【積込 OK】大ボタン */}
             <div className="flex items-center justify-between gap-3 pt-1 border-t border-line/60">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setOpen(!open)}
                   className={cn(
-                    'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors active:scale-98',
+                    'inline-flex min-h-10 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors active:scale-98 text-left',
                     open
                       ? 'border-harvest-400 bg-harvest-50 text-forest-900'
                       : 'border-line bg-bg-soft/70 text-ink-soft hover:text-ink hover:bg-bg-soft',
                   )}
                 >
-                  <span>{open ? `内訳を閉じる (${destinations.length}件)` : `納品先・品目内訳 (${destinations.length}件)`}</span>
+                  <span>
+                    {open
+                      ? isThaiMode
+                        ? `${THAI_LABELS.closeBreakdown} (${destinations.length})`
+                        : `内訳を閉じる (${destinations.length})`
+                      : isThaiMode
+                      ? `${THAI_LABELS.destItemsBreakdown} (${destinations.length})`
+                      : `納入先・品目内訳 (${destinations.length})`}
+                  </span>
                   <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
                 </button>
 
@@ -596,11 +611,11 @@ export function CustomerDeliveryCard({
                   <button
                     type="button"
                     onClick={() => setEditingNote(true)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-line px-2 py-1 text-xs font-bold text-ink-muted hover:text-ink hover:border-line-strong transition-colors"
+                    className="inline-flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-dashed border-line px-2.5 py-1 text-xs font-bold text-ink-muted hover:text-ink hover:border-line-strong transition-colors"
                     title="特記事項を追加"
                   >
                     <Plus className="h-3 w-3" />
-                    <span>メモ</span>
+                    <span>{isThaiMode ? THAI_LABELS.memo : 'メモ'}</span>
                   </button>
                 )}
               </div>
@@ -629,12 +644,14 @@ export function CustomerDeliveryCard({
                 ) : isCompleted ? (
                   <div className="flex items-center gap-1.5">
                     <Check className="h-5 w-5 text-harvest-600 stroke-[3]" />
-                    <span>✓ 積込済 (戻す)</span>
+                    <span>{isThaiMode ? `✓ ${THAI_LABELS.loadedDone} (${THAI_LABELS.revertLoad})` : '✓ 積込済 (戻す)'}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <Truck className="h-5 w-5" />
-                    <span>{unpackedItemCount > 0 ? '⚠️ 積込 OK' : '🚚 積込 OK'}</span>
+                    <span>
+                      {isThaiMode ? THAI_LABELS.loadOk : '積込 OK'}
+                    </span>
                   </div>
                 )}
               </button>
@@ -687,13 +704,13 @@ export function CustomerDeliveryCard({
                             colorStyle.badgeClass,
                           )}
                         >
-                          {isThaiMode && getThaiContainer(colorStyle.label) ? (
+                          {isThaiMode && getThaiContainer(shortContainerLabel(colorStyle.label)) ? (
                             <span>
-                              {getContainerColorEmoji(colorStyle.label)} {getThaiContainer(colorStyle.label)}
+                              {getContainerColorEmoji(shortContainerLabel(colorStyle.label))} {getThaiContainer(shortContainerLabel(colorStyle.label))}
                             </span>
                           ) : (
                             <span>
-                              {getContainerColorEmoji(colorStyle.label)} {colorStyle.label}
+                              {getContainerColorEmoji(shortContainerLabel(colorStyle.label))} {shortContainerLabel(colorStyle.label)}
                             </span>
                           )}
                         </span>
@@ -702,7 +719,7 @@ export function CustomerDeliveryCard({
                           {dest.totalBoxes} 箱
                           {dest.fractionBoxes > 0 && (
                             <span className="whitespace-nowrap ml-1.5 rounded bg-warning-bg border border-warning px-1.5 py-0.5 text-xs font-black text-ink">
-                              うち端数 {dest.fractionBoxes}箱 ({dest.loose}P)
+                              {isThaiMode ? `${THAI_LABELS.fractionBoxOf} ${dest.fractionBoxes} ${THAI_LABELS.casesUnit}` : `うち端数 ${dest.fractionBoxes}箱`} ({dest.loose}P)
                             </span>
                           )}
                           <span className="ml-1.5 text-xs font-bold text-ink-soft">
@@ -733,7 +750,7 @@ export function CustomerDeliveryCard({
                           toggleDestination(dest.destinationId, dest.status)
                         }}
                         className={cn(
-                          'h-9 px-3.5 rounded-xl text-xs sm:text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1 print:hidden',
+                          'min-h-10 px-3.5 rounded-xl text-xs sm:text-sm font-black transition-all active:scale-95 shadow-2xs shrink-0 flex items-center gap-1 print:hidden',
                           isDestLoaded
                             ? 'bg-harvest-100 text-forest-800 border border-harvest-400 hover:opacity-90'
                             : 'border-2 border-harvest-600 bg-bg-card text-ink hover:bg-harvest-50',
@@ -742,10 +759,10 @@ export function CustomerDeliveryCard({
                         {isDestLoaded ? (
                           <>
                             <Check className="h-3.5 w-3.5 text-harvest-600 stroke-[3]" />
-                            <span>積込済 (戻す)</span>
+                            <span>{isThaiMode ? `${THAI_LABELS.loadedDone} (${THAI_LABELS.revertLoad})` : '積込済 (戻す)'}</span>
                           </>
                         ) : (
-                          <span>個別積込 OK</span>
+                          <span>{isThaiMode ? `${THAI_LABELS.loadIndividual}` : '個別積込 OK'}</span>
                         )}
                       </button>
                     </div>
@@ -759,12 +776,12 @@ export function CustomerDeliveryCard({
                             return (
                               <div
                                 key={it.id}
-                                className="flex items-center justify-between text-ink-soft py-0.5"
+                                className="flex flex-wrap items-start justify-between gap-x-2 gap-y-0.5 text-ink-soft py-0.5"
                               >
-                                <span className="font-bold text-ink truncate pr-2">
+                                <span className="min-w-0 break-words font-bold text-ink">
                                   {it.productName}
                                 </span>
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex flex-wrap items-center justify-end gap-2">
                                   {cleanedItemNote && (
                                     <span className="whitespace-nowrap rounded bg-bg-soft px-1.5 py-0.5 text-xs font-bold text-ink-muted">
                                       {cleanedItemNote}

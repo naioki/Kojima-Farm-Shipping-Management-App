@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 
-/** 取引先の新規追加（Laravel版 画面5）。名前＋カナを入れて1件追加。 */
+/** 取引先の新規追加（Laravel版 画面5）。名前＋読み仮名を入れて1件追加。 */
 export function AddCustomerForm() {
   const router = useRouter()
   const [name, setName] = useState('')
@@ -44,7 +44,7 @@ export function AddCustomerForm() {
   return (
     <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
       <Input label="取引先名" placeholder="マルショク青果" value={name} onChange={(e) => setName(e.target.value)} required />
-      <Input label="カナ" placeholder="マルショクセイカ" value={kana} onChange={(e) => setKana(e.target.value)} />
+      <Input label="読み仮名" placeholder="マルショクセイカ" value={kana} onChange={(e) => setKana(e.target.value)} />
       <Button onClick={submit} isLoading={submitting} size="lg">
         <Plus className="h-4 w-4" aria-hidden />
         追加

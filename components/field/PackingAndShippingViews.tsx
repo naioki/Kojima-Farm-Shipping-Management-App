@@ -16,7 +16,9 @@ import toast from 'react-hot-toast'
 import type { FieldStatus } from '@/types/database'
 import {
   comparePackItems,
+  completedCaseCount,
   getPackGroupInfo,
+  resolvePacksPerCase,
   type PackSortMode,
 } from '@/lib/field/shipment-sort'
 import { cn } from '@/lib/cn'
@@ -58,10 +60,20 @@ function isUserTypingInInput(): boolean {
 
 const EMPTY_NEXT_DAY_ITEMS: ShipmentItemData[] = []
 
+/** カード（ShipmentRow）と同じ入数を使う */
+function packsPerCaseOf(it: ShipmentItemData): number {
+  return resolvePacksPerCase({
+    customerName: it.customerName,
+    spec: it.initialSpec,
+    masterLabelSpec: it.masterLabelSpec,
+    masterPacksPerCase: it.masterPacksPerCase,
+  })
+}
+
 /**
  * 収穫・袋詰め（パック）専用の明細カード一覧ビュー（v5.1.10 重複完全排除版）。
  * - 【#01 解消】二重になっていた濃緑スティッキー進捗バーと HarvestPulseSummary を単一コックピットへ統合。
- * - 【#10 解消】「出荷先順」ソート時に1件しかない出荷先の上へカード見出しと全く同じセクション見出しが出る重複を排除。
+ * - 【#10 解消】「納入先順」ソート時に1件しかない出荷先の上へカード見出しと全く同じセクション見出しが出る重複を排除。
  * - 【#11 解消】途中数入力時の完了箱数・残り箱数の集計をカード側の計算と完全一致。
  */
 export function PackingAndShippingViews({
@@ -182,14 +194,7 @@ export function PackingAndShippingViews({
   const liveSpecMap = new Map<string, { packs: number; boxes: number }>()
 
   for (const it of items) {
-    const specMatch = (it.initialSpec || '').normalize('NFKC').match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
-    const specPpc = specMatch ? Number(specMatch[1] || specMatch[2]) : null
-    const perCase =
-      specPpc && specPpc >= 10 && specPpc <= 200
-        ? specPpc
-        : it.masterPacksPerCase && it.masterPacksPerCase >= 10
-        ? it.masterPacksPerCase
-        : 20
+    const perCase = packsPerCaseOf(it)
     const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
     const isSmallSample = isSample && it.orderedQty < perCase
     const boxCount = isSmallSample ? 0 : Math.ceil(it.orderedQty / perCase)
@@ -218,10 +223,11 @@ export function PackingAndShippingViews({
     liveSpecMap.set(sKey, curSpec)
   }
 
+  // 完成箱数は「満杯になった箱」だけ数える（切り捨て）。カードの途中経過「1箱+5P完了」と同じ規則。
+  // 残り箱数 = 目標 − 完成 =「まだ満杯になっていない箱」の数（青梗菜のニコイチ20入で一律）
   const totalBoxes = totalPacks > 0 ? Math.ceil(totalPacks / 20) : 0
-  const remainingPacksTotal = Math.max(0, totalPacks - completedPacks)
-  const remainingBoxesTotal = remainingPacksTotal > 0 ? Math.ceil(remainingPacksTotal / 20) : 0
-  const completedBoxes = Math.max(0, totalBoxes - remainingBoxesTotal)
+  const completedBoxes = completedCaseCount(completedPacks, totalPacks, 20)
+  const remainingBoxesTotal = Math.max(0, totalBoxes - completedBoxes)
 
   const nextDayTotalPacks = nextItems.reduce((acc, it) => acc + it.orderedQty, 0)
   const nextDayTotalBoxes = nextDayTotalPacks > 0 ? Math.ceil(nextDayTotalPacks / 20) : 0
@@ -424,39 +430,39 @@ export function PackingAndShippingViews({
             type="button"
             onClick={() => handleSortModeChange('time')}
             className={cn(
-              'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
+              'min-h-10 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'time'
                 ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-harvest-600/20'
                 : 'text-ink-soft hover:text-ink',
             )}
           >
-            <span>⏰</span>
+            <span aria-hidden>⏰</span>
             <span>早い便順</span>
           </button>
           <button
             type="button"
             onClick={() => handleSortModeChange('destination')}
             className={cn(
-              'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
+              'min-h-10 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'destination'
                 ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-harvest-600/20'
                 : 'text-ink-soft hover:text-ink',
             )}
           >
-            <span>🏢</span>
-            <span>出荷先順</span>
+            <span aria-hidden>🏢</span>
+            <span>納入先順</span>
           </button>
           <button
             type="button"
             onClick={() => handleSortModeChange('container')}
             className={cn(
-              'py-2 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
+              'min-h-10 px-2 rounded-lg text-xs font-black transition flex items-center justify-center gap-1',
               sortMode === 'container'
                 ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-harvest-600/20'
                 : 'text-ink-soft hover:text-ink',
             )}
           >
-            <span>📦</span>
+            <span aria-hidden>📦</span>
             <span>コンテナ順</span>
           </button>
         </div>
@@ -468,7 +474,7 @@ export function PackingAndShippingViews({
               type="button"
               onClick={() => setFilterMode('all')}
               className={cn(
-                'px-3 py-1 rounded-lg transition tabular-nums',
+                'min-h-10 px-3 rounded-lg transition tabular-nums',
                 filterMode === 'all'
                   ? 'bg-bg-card text-ink shadow-2xs font-black'
                   : 'text-ink-muted hover:text-ink',
@@ -480,7 +486,7 @@ export function PackingAndShippingViews({
               type="button"
               onClick={() => setFilterMode('incomplete')}
               className={cn(
-                'px-3 py-1 rounded-lg transition tabular-nums',
+                'min-h-10 px-3 rounded-lg transition tabular-nums',
                 filterMode === 'incomplete'
                   ? 'bg-harvest-700 text-white shadow-2xs font-black'
                   : 'text-ink-muted hover:text-ink',
@@ -497,7 +503,7 @@ export function PackingAndShippingViews({
                 target="_blank"
                 rel="noopener"
                 title={`運転手渡し納品書（${driverNoteCustomers.map((c) => c.name).join('・')}）をA4上下2連PDFで開きます`}
-                className="inline-flex items-center justify-center gap-1 h-8 px-2.5 text-xs font-black text-forest-900 bg-harvest-50 border border-harvest-400 hover:bg-harvest-100 rounded-xl shadow-2xs transition active:scale-95"
+                className="inline-flex items-center justify-center gap-1 h-10 px-2.5 text-xs font-black text-forest-900 bg-harvest-50 border border-harvest-400 hover:bg-harvest-100 rounded-xl shadow-2xs transition active:scale-95"
               >
                 <FileDown className="h-3.5 w-3.5 text-harvest-700 shrink-0" />
                 <span>納品書({driverNoteCustomers.length})</span>
@@ -507,10 +513,11 @@ export function PackingAndShippingViews({
               <button
                 type="button"
                 onClick={() => setIsReorderModalOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-black text-forest-900 bg-harvest-50 border border-harvest-400 hover:bg-harvest-100 rounded-xl shadow-2xs transition active:scale-95"
+                title="カードの順番を指で並べ替える（上のタブは自動の並び順）"
+                className="inline-flex items-center justify-center gap-1.5 h-10 px-3 text-xs font-black text-forest-900 bg-harvest-50 border border-harvest-400 hover:bg-harvest-100 rounded-xl shadow-2xs transition active:scale-95"
               >
-                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
-                <span>並び替え</span>
+                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>手で並べる</span>
               </button>
             )}
             <button
@@ -519,7 +526,7 @@ export function PackingAndShippingViews({
               disabled={isRefreshing}
               title="最新データを再取得"
               aria-label="最新データを再取得"
-              className="inline-flex items-center justify-center gap-1 h-8 px-2.5 rounded-xl border border-line bg-bg-card hover:bg-bg-soft text-xs font-bold text-ink-soft transition active:scale-95 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1 h-10 min-w-10 px-2.5 rounded-xl border border-line bg-bg-card hover:bg-bg-soft text-xs font-bold text-ink-soft transition active:scale-95 disabled:opacity-50"
             >
               <RotateCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
               <span className="hidden sm:inline">更新</span>
@@ -539,7 +546,7 @@ export function PackingAndShippingViews({
               href={driverBatchPdfHref}
               target="_blank"
               rel="noopener"
-              className="inline-flex h-7 items-center gap-1 rounded-lg bg-harvest-700 px-2.5 text-xs font-black text-white hover:bg-forest-800 shadow-2xs"
+              className="inline-flex h-10 items-center gap-1 rounded-lg bg-harvest-700 px-3 text-xs font-black text-white hover:bg-forest-800 shadow-2xs"
             >
               <FileDown className="h-3.5 w-3.5" />
               <span>まとめてA4印刷</span>
@@ -552,7 +559,7 @@ export function PackingAndShippingViews({
                   href={`/api/delivery-notes/pdf?customer=${c.id}&date=${date}&amount=none&issuer=${preset}&layout=2up`}
                   target="_blank"
                   rel="noopener"
-                  className="inline-flex h-7 items-center rounded-lg border border-harvest-400 bg-bg-card px-2 text-xs font-bold text-forest-900 hover:bg-harvest-100"
+                  className="inline-flex h-10 items-center rounded-lg border border-harvest-400 bg-bg-card px-3 text-xs font-bold text-forest-900 hover:bg-harvest-100"
                 >
                   {c.name}のみ
                 </a>
@@ -571,7 +578,7 @@ export function PackingAndShippingViews({
           <button
             type="button"
             onClick={() => setFilterMode('all')}
-            className="inline-flex items-center rounded-lg bg-bg-card border border-harvest-400 px-3 py-1.5 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
+            className="inline-flex min-h-10 items-center rounded-lg bg-bg-card border border-harvest-400 px-3 text-xs font-bold text-forest-800 hover:bg-harvest-100 transition"
           >
             完了済みのカードを表示する
           </button>
@@ -579,7 +586,6 @@ export function PackingAndShippingViews({
       ) : (
         <div className="space-y-2.5">
           {visiblePackItems.map((item, idx) => {
-            const fullIdx = sortedPackItems.findIndex((s) => s.itemId === item.itemId)
             const groupInfo = getPackGroupInfo(item, sortMode)
             const prevGroupInfo = idx > 0 ? getPackGroupInfo(visiblePackItems[idx - 1]!, sortMode) : null
             const isNewSection = idx === 0 || groupInfo.groupKey !== prevGroupInfo?.groupKey
@@ -592,25 +598,31 @@ export function PackingAndShippingViews({
             const sectionItems = isNewSection
               ? visiblePackItems.filter((it) => getPackGroupInfo(it, sortMode).groupKey === groupInfo.groupKey)
               : []
-            // 【#10 解消】「出荷先順」で1カードしかないグループでは、カード自身の見出しと100%重複するセクションヘッダーを表示しない
+            // 【#10 解消】「納入先順」で1カードしかないグループでは、カード自身の見出しと100%重複するセクションヘッダーを表示しない
             const shouldShowSectionHeader =
               isNewSection && !(sortMode === 'destination' && sectionItems.length <= 1)
 
+            // 見出しの「残」は箱もPも“残り”で揃える（箱=まだ満杯になっていない箱、P=未完了のパック数）
             const sectionTotalPacks = sectionItems.reduce((acc, it) => acc + it.orderedQty, 0)
-            const sectionRemBoxes = sectionItems.reduce((acc, it) => {
-              if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') return acc
-              const perCase = it.masterPacksPerCase || 20
-              const remPacks = Math.max(0, it.orderedQty - (it.initialShippedQty ?? 0))
-              return acc + Math.ceil(remPacks / perCase)
-            }, 0)
+            let sectionRemBoxes = 0
+            let sectionRemPacks = 0
+            for (const it of sectionItems) {
+              if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') continue
+              const perCase = packsPerCaseOf(it)
+              const done = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
+              sectionRemPacks += it.orderedQty - done
+              sectionRemBoxes += Math.ceil(it.orderedQty / perCase) - completedCaseCount(done, it.orderedQty, perCase)
+            }
 
             return (
               <div key={item.itemId} className="space-y-1.5">
                 {shouldShowSectionHeader && (
-                  <div className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-xl bg-earth-100/90 border border-earth-300 border-l-4 border-l-emerald-700 shadow-2xs">
-                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                      <span className="text-xs sm:text-sm">{groupInfo.icon}</span>
-                      <span className="text-xs sm:text-sm font-black text-ink">{groupInfo.title}</span>
+                  <div className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-xl bg-earth-100/90 border border-earth-300 border-l-4 border-l-forest-700 shadow-2xs">
+                    <div className="flex items-center gap-x-1.5 gap-y-0.5 min-w-0 flex-wrap">
+                      <span className="min-w-0 text-xs sm:text-sm font-black text-ink">
+                        <span aria-hidden className="mr-1">{groupInfo.icon}</span>
+                        {groupInfo.title}
+                      </span>
                       {isThaiMode && sortMode === 'time' && getThaiDepartureTime(item.departureTime) && (
                         <span className="whitespace-nowrap rounded bg-warning-bg text-ink border border-warning px-1.5 py-0.5 text-xs font-black print:hidden">
                           🇹🇭 {getThaiDepartureTime(item.departureTime)}
@@ -628,13 +640,16 @@ export function PackingAndShippingViews({
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 text-xs font-black">
-                      {sectionRemBoxes > 0 ? (
-                        <span className="rounded-md bg-bg-card border border-line px-2 py-0.5 text-ink tabular-nums">
-                          残 {sectionRemBoxes}箱 ({sectionTotalPacks.toLocaleString()}P)
+                      {sectionRemPacks > 0 ? (
+                        <span
+                          className="whitespace-nowrap rounded-md bg-bg-card border border-line px-2 py-0.5 text-ink tabular-nums"
+                          title={`この便の合計 ${sectionTotalPacks.toLocaleString()}P`}
+                        >
+                          残り {sectionRemBoxes}箱（{sectionRemPacks.toLocaleString()}P）
                         </span>
                       ) : (
-                        <span className="rounded-md bg-harvest-600 text-white px-2 py-0.5 tabular-nums">
-                          ✓ 完了 ({sectionTotalPacks.toLocaleString()}P)
+                        <span className="whitespace-nowrap rounded-md bg-harvest-600 text-white px-2 py-0.5 tabular-nums">
+                          ✓ 完了（{sectionTotalPacks.toLocaleString()}P）
                         </span>
                       )}
                     </div>
@@ -750,7 +765,7 @@ export function PackingAndShippingViews({
               <div>
                 <h3 className="text-base font-black text-ink flex items-center gap-1.5">
                   <SlidersHorizontal className="h-4 w-4 text-harvest-600" />
-                  <span>パック作業順の並び替え</span>
+                  <span>パック作業順を手で並べる</span>
                 </h3>
                 <p className="text-xs text-ink-muted mt-0.5">
                   左の「⠿」を指でドラッグして移動するか、【🔝 最上段】で一発優先指定できます。
@@ -792,7 +807,7 @@ export function PackingAndShippingViews({
                         setBusyReorder(false)
                       }
                     }}
-                    className="rounded-lg border border-harvest-400 bg-harvest-50 hover:bg-harvest-100 px-2.5 py-1 text-xs font-black text-forest-900 transition"
+                    className="min-h-10 rounded-lg border border-harvest-400 bg-harvest-50 hover:bg-harvest-100 px-3 text-xs font-black text-forest-900 transition"
                   >
                     未完了を上に集める
                   </button>
@@ -802,7 +817,7 @@ export function PackingAndShippingViews({
                     type="button"
                     disabled={busyReorder}
                     onClick={handleResetOrder}
-                    className="rounded-lg border border-line bg-bg-soft hover:bg-line px-2.5 py-1 text-xs font-bold text-ink-soft transition"
+                    className="min-h-10 rounded-lg border border-line bg-bg-soft hover:bg-line px-3 text-xs font-bold text-ink-soft transition"
                   >
                     自動順に戻す
                   </button>
@@ -810,7 +825,8 @@ export function PackingAndShippingViews({
                 <button
                   type="button"
                   onClick={() => setIsReorderModalOpen(false)}
-                  className="p-1.5 rounded-full text-ink-muted hover:bg-bg-soft"
+                  className="h-10 w-10 flex items-center justify-center rounded-full text-ink-muted hover:bg-bg-soft"
+                  aria-label="閉じる"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -819,7 +835,7 @@ export function PackingAndShippingViews({
 
             <div ref={reorderListRef} className="p-3 overflow-y-auto space-y-2 flex-1">
               {sortedPackItems.map((it, idx) => {
-                const perCase = it.masterPacksPerCase || 20
+                const perCase = packsPerCaseOf(it)
                 const boxCount = Math.ceil(it.orderedQty / perCase)
                 const isDragging = draggingIdx === idx
                 const isDragOver = dragOverIdx === idx && draggingIdx !== null && draggingIdx !== idx
@@ -917,12 +933,12 @@ export function PackingAndShippingViews({
                             : it.customerName}
                         </span>
                         {it.departureTime && (
-                          <span className="whitespace-nowrap rounded bg-harvest-100 text-forest-800 px-1.5 py-0.2 text-xs font-bold">
+                          <span className="whitespace-nowrap rounded bg-harvest-100 text-forest-800 px-1.5 py-0.5 text-xs font-bold">
                             {it.departureTime.startsWith('翌') ? `${it.departureTime}迄` : `当日${it.departureTime}迄`}
                           </span>
                         )}
                         {isDoneItem && (
-                          <span className="whitespace-nowrap rounded bg-harvest-600 text-white px-1.5 py-0.2 text-xs font-bold">
+                          <span className="whitespace-nowrap rounded bg-harvest-600 text-white px-1.5 py-0.5 text-xs font-bold">
                             済
                           </span>
                         )}
@@ -941,7 +957,7 @@ export function PackingAndShippingViews({
                         type="button"
                         disabled={busyReorder || idx === 0}
                         onClick={() => handleMoveToTop(idx)}
-                        className="h-8 px-2 rounded-lg bg-harvest-600 hover:bg-harvest-700 disabled:opacity-30 text-white text-xs font-black flex items-center gap-1 shadow-2xs active:scale-95"
+                        className="h-10 min-w-10 px-2 rounded-lg bg-harvest-600 hover:bg-harvest-700 disabled:opacity-30 text-white text-xs font-black flex items-center justify-center gap-1 shadow-2xs active:scale-95"
                         title="一番上（最優先）へ移動"
                       >
                         <ArrowUpToLine className="h-3.5 w-3.5" />
@@ -951,7 +967,7 @@ export function PackingAndShippingViews({
                         type="button"
                         disabled={busyReorder || idx === 0}
                         onClick={() => handleMove(idx, 'up')}
-                        className="h-8 w-8 rounded-lg border border-line bg-bg-card hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
+                        className="h-10 w-10 rounded-lg border border-line bg-bg-card hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
                         title="1つ上へ"
                       >
                         <ChevronUp className="h-4 w-4" />
@@ -960,7 +976,7 @@ export function PackingAndShippingViews({
                         type="button"
                         disabled={busyReorder || idx === sortedPackItems.length - 1}
                         onClick={() => handleMove(idx, 'down')}
-                        className="h-8 w-8 rounded-lg border border-line bg-bg-card hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
+                        className="h-10 w-10 rounded-lg border border-line bg-bg-card hover:bg-bg-soft disabled:opacity-30 text-ink flex items-center justify-center font-bold active:scale-95"
                         title="1つ下へ"
                       >
                         <ChevronDown className="h-4 w-4" />

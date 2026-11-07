@@ -12,6 +12,7 @@ export const THAI_CONTAINERS: Record<string, string> = {
   段ボール: 'กล่องกระดาษ',
   農業総研専用折りたたみコンテナ: 'ลังพับNSK',
   NSK専用オリコン: 'ลังพับNSK',
+  NSKオリコン: 'ลังพับNSK',
   通常コンテナ: 'ลังธรรมดา',
 }
 
@@ -91,6 +92,24 @@ export const THAI_LABELS = {
   inheritedCarryover: 'มีลังยกมาจากเมื่อวาน',
   sampleOrder: 'ของตัวอย่าง (แยกส่ง)',
   samplePacks: 'ถุงตัวอย่าง',
+
+  // 積込・配送リスト
+  loadOk: 'ขึ้นรถ OK',
+  loadOkWarn: 'ขึ้นรถ OK (ยังแพ็คไม่ครบ)',
+  preLoadCheck: 'ตรวจก่อนขึ้นรถ',
+  fractionBoxOf: 'เศษ',
+  destItemsBreakdown: 'รายการปลายทาง・สินค้า',
+  closeBreakdown: 'ปิดรายการ',
+  memo: 'บันทึก',
+  shipTime: 'เวลาส่ง',
+  setShipTime: 'ตั้งเวลา',
+  change: 'เปลี่ยน',
+  sortByRoute: 'เรียงตามเที่ยว・เวลา',
+  sortByCustomer: 'เรียงตามลูกค้า',
+  filterAll: 'ทั้งหมด',
+  filterNotLoaded: 'ยังไม่ขึ้นรถ',
+  revertLoad: 'ยกเลิก',
+  loadedDone: 'ขึ้นรถแล้ว',
 }
 
 /** 品目名（野菜名）のタイ語訳を返す */

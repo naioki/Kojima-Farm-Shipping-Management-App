@@ -2,12 +2,28 @@ import 'server-only'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
-import { summarizeReceivables } from '@/lib/invoices/receivables'
+import { dueDateOf, receivableState, summarizeReceivables } from '@/lib/invoices/receivables'
+import { paymentScheduleOf } from '@/lib/customers/settings'
+import { fetchBilledOrderItemIds } from '@/lib/invoices/generate'
 import { yen } from '@/lib/format'
-import { formatJpDateShort, shiftDateStr } from '@/lib/dates'
+import { formatJpDateShort, jstDateStr, shiftDateStr } from '@/lib/dates'
+import {
+  computePackProgress,
+  computeTodayShipment,
+  computeUnbilled,
+  dailyTrend,
+  monthToDateRanges,
+  pctChange,
+  sumAmounts,
+  sumInRange,
+  sumIssuedInvoices,
+  ISSUED_INVOICE_STATUSES,
+  type InvoiceLite,
+  type PackItem,
+} from '@/lib/dashboard/compute'
 import type { AdminDashboardData } from '@/components/dashboard/AdminDashboard'
 import type { AlertItem } from '@/components/dashboard/AlertsPanel'
-import type { OrderStatusKey, RecentOrderRow, TomorrowPackStats, TrendPoint } from '@/components/dashboard/types'
+import type { OrderStatusKey, OverdueInvoiceRow, RecentOrderRow, SummaryRow, TomorrowPackStats } from '@/components/dashboard/types'
 import { ClipboardList, CheckCircle2, PackageCheck, Gauge, FileText, Settings, PlusCircle } from 'lucide-react'
 
 const QUICK_ACTIONS: AdminDashboardData['actions'] = [
@@ -33,18 +49,8 @@ function greetingFor(hour: number): string {
   return 'こんばんは'
 }
 
-function monthRange(d: Date): { start: string; end: string; ym: string } {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const start = new Date(Date.UTC(y, m, 1))
-  const end = new Date(Date.UTC(y, m + 1, 0))
-  return { start: ymd(start), end: ymd(end), ym: `${y}-${String(m + 1).padStart(2, '0')}` }
-}
-
-function pct(curr: number, prev: number): number | null {
-  if (prev <= 0) return null
-  return ((curr - prev) / prev) * 100
-}
+/** M/D 表記（年・曜日なし）。期間ラベル用。 */
+const md = (s: string) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`
 
 // #46 cancelled は needs_check ではなく cancelled として正確にマッピング
 const ORDER_STATUS_MAP: Record<string, OrderStatusKey> = {
@@ -55,20 +61,21 @@ const ORDER_STATUS_MAP: Record<string, OrderStatusKey> = {
   cancelled: 'cancelled',
 }
 
-function sumLineTotals(items: { line_total: number | null }[] | null): number {
-  return (items ?? []).reduce((acc, it) => acc + (it.line_total ?? 0), 0)
-}
+type QueryRes = PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>
 
-function resolveDashboardPpc(spec?: string | null): number {
-  const s = (spec ?? '').normalize('NFKC')
-  const m = s.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
-  if (m) {
-    const n = Number(m[1] || m[2])
-    if (Number.isFinite(n) && n >= 10 && n <= 200) return n
+/** 1000件の上限で数字が欠けないよう、range で全件読む（集計値が黙って小さくならないように）。 */
+async function fetchAllRows<T>(label: string, build: (from: number, to: number) => QueryRes): Promise<T[]> {
+  const PAGE = 1000
+  const out: T[] = []
+  for (let page = 0; page < 50; page++) {
+    const from = page * PAGE
+    const { data, error } = await build(from, from + PAGE - 1)
+    if (error) throw new Error(`${label}の取得に失敗しました: ${error.message}`)
+    const rows = (data ?? []) as T[]
+    out.push(...rows)
+    if (rows.length < PAGE) break
   }
-  if (s.includes('小コン')) return 30
-  if (s.includes('24')) return 24
-  return 20
+  return out
 }
 
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
@@ -76,8 +83,12 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const jst = nowJst()
   const today = ymd(jst)
   const tomorrow = shiftDateStr(today, 1)
-  const cur = monthRange(jst)
-  const prev = monthRange(new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth() - 1, 1)))
+  // 今月1日〜今日 と 前月の同じ日数（前月同期）を比べる。月の途中で「先月まる1か月」と比べると毎月大幅減に見えるため。
+  const { cur, prev } = monthToDateRanges(today)
+
+  type ShipRow = { line_total: number | string | null; orders: { delivery_date: string | null } | null }
+  type UnbilledRow = { id: string; line_total: number | string | null }
+  type InvoiceRow = { status: string; issue_date: string | null; created_at: string | null; total_amount: number | string | null }
 
   const [
     user,
@@ -85,18 +96,17 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     tomorrowItemsRes,
     pendingOrdersRes,
     failedReceiptsRes,
-    curShipRes,
-    prevShipRes,
+    shipRows,
     curOrdersRes,
     prevOrdersRes,
-    curInvoiceRes,
-    prevInvoiceRes,
+    invoiceRes,
+    unbilledRows,
     recentOrdersRes,
   ] = await Promise.all([
     getAuthedUser(),
     supabase
       .from('order_items')
-      .select('field_status, quantity, shipped_qty, line_total, orders!inner(delivery_date,status)')
+      .select('field_status, quantity, shipped_qty, spec, line_total, orders!inner(delivery_date,status)')
       .eq('orders.delivery_date', today)
       .in('orders.status', ['approved', 'shipped', 'invoiced'])
       .gt('quantity', 0),
@@ -109,28 +119,51 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       .gt('quantity', 0),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('order_receipts').select('id', { count: 'exact', head: true }).in('status', ['ai_failed', 'unmatched']),
-    supabase
-      .from('order_items')
-      .select('line_total, orders!inner(delivery_date,status)')
-      .gte('orders.delivery_date', cur.start)
-      .lte('orders.delivery_date', cur.end)
-      .in('orders.status', ['shipped', 'invoiced']),
-    supabase
-      .from('order_items')
-      .select('line_total, orders!inner(delivery_date,status)')
-      .gte('orders.delivery_date', prev.start)
-      .lte('orders.delivery_date', prev.end)
-      .in('orders.status', ['shipped', 'invoiced']),
+    // 出荷金額（税込）: 前月1日〜今日の出荷済み明細を一度に読み、今月分・前月同期分に分ける
+    fetchAllRows<ShipRow>('出荷金額', (from, to) =>
+      supabase
+        .from('order_items')
+        .select('line_total, orders!inner(delivery_date,status)')
+        .gte('orders.delivery_date', prev.start)
+        .lte('orders.delivery_date', cur.end)
+        .in('orders.status', ['shipped', 'invoiced'])
+        .order('id')
+        .range(from, to),
+    ),
     supabase.from('orders').select('id', { count: 'exact', head: true }).gte('order_date', cur.start).lte('order_date', cur.end).neq('status', 'cancelled'),
     supabase.from('orders').select('id', { count: 'exact', head: true }).gte('order_date', prev.start).lte('order_date', prev.end).neq('status', 'cancelled'),
-    supabase.from('invoices').select('total_amount').eq('billing_month', cur.ym),
-    supabase.from('invoices').select('total_amount').eq('billing_month', prev.ym),
+    // 請求金額: 確定・送付済・入金済のみ（下書き・無効は数えない）。発行日（無ければ作成日）で期間に入れる
+    supabase
+      .from('invoices')
+      .select('status, issue_date, created_at, total_amount')
+      .in('status', [...ISSUED_INVOICE_STATUSES])
+      .or(`issue_date.gte.${prev.start},created_at.gte.${shiftDateStr(prev.start, -1)}`),
+    // 未請求額: 請求書の作成対象（承認済み・出荷済みで納品日が今日まで）の明細。請求済みは後で除く
+    fetchAllRows<UnbilledRow>('未請求の明細', (from, to) =>
+      supabase
+        .from('order_items')
+        .select('id, line_total, orders!inner(delivery_date,status)')
+        .in('orders.status', ['approved', 'shipped'])
+        .lte('orders.delivery_date', today)
+        .gt('line_total', 0)
+        .order('id')
+        .range(from, to),
+    ),
     supabase
       .from('orders')
-      .select('id, order_date, delivery_date, status, customers(name), order_items(line_total)')
+      .select('id, order_date, delivery_date, status, customers(name), delivery_destinations(code, full_name), order_items(line_total)')
       .order('created_at', { ascending: false })
       .limit(5),
   ])
+
+  for (const [label, res] of [
+    ['本日納品分の明細', todayItemsRes],
+    ['明日納品分の明細', tomorrowItemsRes],
+    ['請求書', invoiceRes],
+    ['最新の受注', recentOrdersRes],
+  ] as const) {
+    if (res.error) throw new Error(`${label}の取得に失敗しました: ${res.error.message}`)
+  }
 
   const profileRes = user
     ? await supabase.from('users').select('full_name').eq('id', user.id).maybeSingle()
@@ -139,75 +172,49 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const name = '小島農園'
   const dateLabel = `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日 (${WEEKDAYS[jst.getUTCDay()]})`
 
-  // --- 本日の納品・出荷状況 ---
-  type TodayItem = { field_status: string | null; quantity: number; shipped_qty: number | null; line_total: number | null }
-  const todayItems = (todayItemsRes.data ?? []) as unknown as TodayItem[]
-  const counts = { not_started: 0, packed: 0, shipped: 0 }
-  const amt = { notStarted: 0, packed: 0, shipped: 0 }
-  for (const it of todayItems) {
-    const lt = it.line_total ?? 0
-    if (it.field_status === 'shipped') {
-      counts.shipped++
-      amt.shipped += lt
-    } else if (it.field_status === 'packed') {
-      counts.packed++
-      amt.packed += lt
-    } else {
-      counts.not_started++
-      amt.notStarted += lt
-    }
-  }
-  const totalItems = todayItems.length
-  const progressPct = totalItems > 0 ? Math.round(((counts.packed + counts.shipped) / totalItems) * 100) : 0
+  // --- 本日の納品・出荷状況（箱数基準） ---
+  const today_ = computeTodayShipment((todayItemsRes.data ?? []) as unknown as PackItem[])
 
-  // --- #44 本日パック作業（明日納品分）の進捗集計 ---
-  type TomorrowItem = { field_status: string | null; quantity: number; shipped_qty: number | null; spec: string | null }
-  const tomorrowItems = (tomorrowItemsRes.data ?? []) as unknown as TomorrowItem[]
-  let tTotalBoxes = 0
-  let tCompletedBoxes = 0
-  let tTotalPacks = 0
-  let tCompletedPacks = 0
-  let tCompletedItems = 0
-  for (const it of tomorrowItems) {
-    const q = Number(it.quantity) || 0
-    const ppc = resolveDashboardPpc(it.spec)
-    const boxes = Math.ceil(q / ppc)
-    tTotalPacks += q
-    tTotalBoxes += boxes
-    if (it.field_status === 'packed' || it.field_status === 'shipped') {
-      tCompletedItems++
-      tCompletedPacks += q
-      tCompletedBoxes += boxes
-    } else if (it.shipped_qty && it.shipped_qty > 0) {
-      const partial = Math.min(q, Number(it.shipped_qty))
-      tCompletedPacks += partial
-      tCompletedBoxes += Math.floor(partial / ppc)
-    }
-  }
+  // --- #44 本日パック作業（明日納品分）の進捗集計（箱数基準） ---
   const tomorrowPackStats: TomorrowPackStats = {
     deliveryDate: tomorrow,
     deliveryDateLabel: formatJpDateShort(tomorrow),
-    totalItems: tomorrowItems.length,
-    completedItems: tCompletedItems,
-    totalBoxes: tTotalBoxes,
-    completedBoxes: tCompletedBoxes,
-    totalPacks: tTotalPacks,
-    completedPacks: tCompletedPacks,
-    progressPct: tTotalPacks > 0 ? Math.min(100, Math.round((tCompletedPacks / tTotalPacks) * 100)) : 0,
+    ...computePackProgress((tomorrowItemsRes.data ?? []) as unknown as PackItem[]),
   }
 
   // --- 要対応アラート ---
   const pendingOrders = pendingOrdersRes.count ?? 0
   const failedReceipts = failedReceiptsRes.count ?? 0
-  const missingSpecs = await getMissingSpecs(createAdminClient()).catch(() => [])
+  const missingSpecs = await getMissingSpecs(createAdminClient()).catch((e: unknown) => {
+    console.error('[dashboard] 規格未登録の品目の取得に失敗:', e instanceof Error ? e.message : e)
+    return []
+  })
   const missingSpecsCount = missingSpecs.length
   // 入金待ちの請求書（確定・送付済）。期日超過があれば要対応に出す
   const arRes = await supabase
     .from('invoices')
-    .select('status, billing_month, due_date, total_amount')
+    .select('id, status, billing_month, period_end, due_date, total_amount, customers(name, channel_identifiers)')
     .in('status', ['finalized', 'sent'])
   if (arRes.error) console.error('[dashboard] 入金待ち請求書の取得に失敗:', arRes.error.message)
-  const ar = summarizeReceivables(arRes.data ?? [], today)
+  type ArRow = {
+    id: string
+    status: string
+    billing_month: string
+    period_end: string | null
+    due_date: string | null
+    total_amount: number | string | null
+    customers: { name: string; channel_identifiers: unknown } | null
+  }
+  const arRows = (arRes.data ?? []) as unknown as ArRow[]
+  // 期日は請求書の支払期日、無ければ取引先の支払条件から（請求一覧・かんたん画面と同じ判定）
+  const termsOf = (r: ArRow) => paymentScheduleOf(r.customers?.channel_identifiers)
+  const ar = summarizeReceivables(arRows, today, termsOf)
+  const overdueInvoices: OverdueInvoiceRow[] = arRows
+    .filter((r) => receivableState(r, today, termsOf(r)) === 'overdue')
+    .map((r) => ({ id: r.id, customer: r.customers?.name ?? '（取引先不明）', amount: Number(r.total_amount) || 0, dueDate: dueDateOf(r, termsOf(r)) ?? '' }))
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .map((r) => ({ ...r, dueLabel: formatJpDateShort(r.dueDate) }))
+
   const alerts: AlertItem[] = []
   if (pendingOrders > 0)
     alerts.push({ id: 'po', tone: 'alert', label: `承認待ち受注が ${pendingOrders}件 あります`, count: pendingOrders, href: '/admin/approvals' })
@@ -217,40 +224,44 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   if (ar.overdueCount > 0)
     alerts.push({ id: 'ar', tone: 'alert', label: `支払期日を過ぎた未入金の請求書が ${ar.overdueCount}件（${yen(ar.overdueAmount)}）あります`, count: ar.overdueCount, href: '/admin/invoices' })
   if (missingSpecsCount > 0)
-    alerts.push({ id: 'ms', tone: 'info', label: `規格（入り数・荷姿）が未登録の商品が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
+    alerts.push({ id: 'ms', tone: 'info', label: `規格（入り数・荷姿）が未登録の品目が ${missingSpecsCount}件 あります`, count: missingSpecsCount, href: '/admin/rules-missing' })
   const notificationCount = pendingOrders + failedReceipts
 
-  // --- 今月の出荷推移（日次） ---
-  type ShipItem = { line_total: number | null; orders: { delivery_date: string | null } }
-  const curShip = (curShipRes.data ?? []) as unknown as ShipItem[]
-  const byDay = new Map<string, number>()
-  for (const it of curShip) {
-    const d = it.orders?.delivery_date
-    if (!d) continue
-    byDay.set(d, (byDay.get(d) ?? 0) + (it.line_total ?? 0))
-  }
-  const trend: TrendPoint[] = [...byDay.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([d, v]) => {
-      const dt = new Date(`${d}T00:00:00Z`)
-      return { label: `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`, value: v }
-    })
+  // --- 今月の出荷推移（日次・1日〜今日の全日を0埋め） ---
+  const shipDated = shipRows.map((r) => ({ date: r.orders?.delivery_date ?? null, amount: r.line_total }))
+  const trend = dailyTrend(shipDated, cur).map(({ label, value }) => ({ label, value }))
 
-  // --- 今月のサマリー ---
-  const shippedCur = sumLineTotals(curShipRes.data as { line_total: number | null }[] | null)
-  const shippedPrev = sumLineTotals(prevShipRes.data as { line_total: number | null }[] | null)
+  // --- 今月のサマリー（前月同期比） ---
+  const shippedCur = sumInRange(shipDated, cur)
+  const shippedPrev = sumInRange(shipDated, prev)
   const ordersCur = curOrdersRes.count ?? 0
   const ordersPrev = prevOrdersRes.count ?? 0
-  const invoicedCur = (curInvoiceRes.data ?? []).reduce((a, r) => a + (r.total_amount ?? 0), 0)
-  const invoicedPrev = (prevInvoiceRes.data ?? []).reduce((a, r) => a + (r.total_amount ?? 0), 0)
-  const unbilledCur = Math.max(0, shippedCur - invoicedCur)
-  const unbilledPrev = Math.max(0, shippedPrev - invoicedPrev)
+  const invoices: InvoiceLite[] = ((invoiceRes.data ?? []) as InvoiceRow[]).map((r) => ({
+    status: r.status,
+    issue_date: r.issue_date,
+    created_date: r.created_at ? jstDateStr(new Date(r.created_at)) : null,
+    total_amount: r.total_amount,
+  }))
+  const invoicedCur = sumIssuedInvoices(invoices, cur)
+  const invoicedPrev = sumIssuedInvoices(invoices, prev)
 
-  const summary = [
-    { key: 'orders', label: '受注件数', value: `${ordersCur} 件`, deltaPct: pct(ordersCur, ordersPrev), spark: [ordersPrev, ordersCur] },
-    { key: 'shipped', label: '出荷金額', value: yen(shippedCur), deltaPct: pct(shippedCur, shippedPrev), spark: [shippedPrev, shippedCur] },
-    { key: 'invoiced', label: '請求金額', value: yen(invoicedCur), deltaPct: pct(invoicedCur, invoicedPrev), spark: [invoicedPrev, invoicedCur] },
-    { key: 'unbilled', label: '未請求額', value: yen(unbilledCur), deltaPct: pct(unbilledCur, unbilledPrev), spark: [unbilledPrev, unbilledCur], invertDelta: true },
+  const billed = await fetchBilledOrderItemIds(supabase, unbilledRows.map((r) => r.id))
+  if (!billed.ok) throw new Error(billed.message)
+  const unbilled = computeUnbilled(unbilledRows, billed.ids)
+
+  const summary: SummaryRow[] = [
+    { key: 'orders', label: '受注件数', value: `${ordersCur} 件`, deltaPct: pctChange(ordersCur, ordersPrev), spark: [ordersPrev, ordersCur], note: `前月同期 ${ordersPrev}件` },
+    { key: 'shipped', label: '出荷金額（税込）', value: yen(shippedCur), deltaPct: pctChange(shippedCur, shippedPrev), spark: [shippedPrev, shippedCur], note: `前月同期 ${yen(shippedPrev)}` },
+    { key: 'invoiced', label: '請求金額（税込・発行済み）', value: yen(invoicedCur), deltaPct: pctChange(invoicedCur, invoicedPrev), spark: [invoicedPrev, invoicedCur], note: `前月同期 ${yen(invoicedPrev)}` },
+    {
+      key: 'unbilled',
+      label: '未請求額（税込）',
+      value: yen(unbilled.amount),
+      deltaPct: null,
+      spark: [],
+      invertDelta: true,
+      note: unbilled.count > 0 ? `請求書に載っていない明細 ${unbilled.count}件（先月以前の分も含む）` : '請求書に載っていない明細はありません',
+    },
   ]
 
   type RecentRow = {
@@ -259,20 +270,20 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
     delivery_date: string | null
     status: string
     customers: { name: string } | null
-    order_items: { line_total: number | null }[] | null
+    delivery_destinations: { code: string | null; full_name: string } | null
+    order_items: { line_total: number | string | null }[] | null
   }
   const recentRows = (recentOrdersRes.data ?? []) as unknown as RecentRow[]
-  const recentOrders: RecentOrderRow[] = recentRows.map((o) => {
-    return {
-      id: o.id,
-      date: formatJpDateShort(o.delivery_date ?? o.order_date),
-      customer: o.customers?.name ?? '（未紐付け）',
-      itemCount: o.order_items?.length ?? 0,
-      amount: sumLineTotals(o.order_items),
-      status: ORDER_STATUS_MAP[o.status] ?? 'needs_check',
-      href: `/admin/orders/${o.id}`,
-    }
-  })
+  const recentOrders: RecentOrderRow[] = recentRows.map((o) => ({
+    id: o.id,
+    date: o.delivery_date ? formatJpDateShort(o.delivery_date) : '未定',
+    customer: o.customers?.name ?? '（未紐付け）',
+    destination: o.delivery_destinations ? o.delivery_destinations.code || o.delivery_destinations.full_name : null,
+    itemCount: o.order_items?.length ?? 0,
+    amount: sumAmounts(o.order_items),
+    status: ORDER_STATUS_MAP[o.status] ?? 'needs_check',
+    href: `/admin/orders/${o.id}`,
+  }))
 
   return {
     header: {
@@ -282,18 +293,26 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
       notificationCount,
     },
     stats: {
-      notStarted: counts.not_started,
-      packed: counts.packed,
-      shipped: counts.shipped,
-      progressPct,
-      totalItems,
-      amounts: { notStarted: amt.notStarted, packed: amt.packed, shipped: amt.shipped },
+      notStarted: today_.notStarted,
+      packed: today_.packed,
+      shipped: today_.shipped,
+      progressPct: today_.progressPct,
+      totalItems: today_.totalItems,
+      totalBoxes: today_.totalBoxes,
+      doneBoxes: today_.doneBoxes,
+      itemCounts: today_.itemCounts,
+      amounts: today_.amounts,
     },
     tomorrowPackStats,
     trend,
     alerts,
+    overdueInvoices,
     actions: QUICK_ACTIONS,
     recentOrders,
     summary,
+    summaryPeriod: {
+      current: `${md(cur.start)}〜${md(cur.end)}`,
+      previous: `${md(prev.start)}〜${md(prev.end)}`,
+    },
   }
 }

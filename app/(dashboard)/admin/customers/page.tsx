@@ -24,6 +24,13 @@ export default async function CustomersPage() {
     .order('name')
   if (error) return <ErrorState message="取引先を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
 
+  // 納入先の件数（取引先ごと）。取得できなくても一覧は出す
+  const destCount = new Map<string, number>()
+  const { data: dests } = await admin.from('delivery_destinations').select('customer_id').eq('is_active', true)
+  for (const d of dests ?? []) {
+    if (d.customer_id) destCount.set(d.customer_id, (destCount.get(d.customer_id) ?? 0) + 1)
+  }
+
   const activeCustomers = (customers ?? []).filter((c) => c.is_active)
   const inactiveCustomers = (customers ?? []).filter((c) => !c.is_active)
 
@@ -52,6 +59,9 @@ export default async function CustomersPage() {
                     <div>
                       <p className="font-medium text-ink">{c.name}</p>
                       {c.name_kana && <p className="text-xs text-ink-faint">{c.name_kana}</p>}
+                      <p className="text-xs text-ink-soft">
+                        {destCount.get(c.id) ? `納入先 ${destCount.get(c.id)}件` : '納入先 未登録'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-ink-soft">

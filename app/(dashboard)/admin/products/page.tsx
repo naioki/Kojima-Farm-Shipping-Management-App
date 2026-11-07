@@ -11,11 +11,11 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 export const dynamic = 'force-dynamic'
 
 /**
- * 商品（品目）設定。週間マトリックスの品目タブ・スマート追加の選択肢になる品目を追加・編集する。
+ * 品目の設定。週間マトリックスの品目タブ・スマート追加の選択肢になる品目を追加・編集する。
  * 在庫数（stock_qty）もここで調整できる（Laravel版 画面4の在庫管理に対応）。バーコードは対象外。
  */
 export default async function ProductsPage() {
-  const guard = await requireAdmin('商品設定は管理者のみです。')
+  const guard = await requireAdmin('品目の設定は管理者のみです。')
   if (guard) return guard
 
   const supabase = createAdminClient()
@@ -54,10 +54,10 @@ export default async function ProductsPage() {
         </div>
         <Link
           href="/admin/rules-missing"
-          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-trust-600 hover:underline"
+          className="inline-flex min-h-10 shrink-0 items-center gap-1 text-sm font-medium text-trust-700 hover:underline"
         >
           <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-          規格の未登録一覧
+          規格の未登録
           <ChevronRight className="h-3.5 w-3.5" aria-hidden />
         </Link>
       </div>
@@ -73,8 +73,11 @@ export default async function ProductsPage() {
         <Card className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-display text-base font-bold text-ink">品目一覧</h2>
-            <span className="text-xs text-ink-soft">※内容を変更したら各行の「保存」を押してください（有効切替・削除は即時反映）</span>
+            <span className="text-xs text-ink-soft">※内容を変更したら、その行の「保存」を押してください（税率も同じです）。「削除」「一覧に戻す」は押すとすぐ反映されます</span>
           </div>
+          <p className="rounded border border-line bg-bg-soft px-3 py-2 text-xs text-ink-soft">
+            1箱の入数は「取引先別の設定」→「荷姿」→「標準1箱入数」→ 20 の順で使われます。標準1箱入数は、取引先別・荷姿の設定が無いときに使われます。
+          </p>
           <ProductsTable products={rows} categories={categories} />
         </Card>
       )}

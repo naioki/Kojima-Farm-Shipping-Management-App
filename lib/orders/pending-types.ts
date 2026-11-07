@@ -2,6 +2,8 @@
  * 承認待ち注文の型定義および判定ヘルパー（クライアント・サーバー共用）。
  * 'server-only' を含めないことで、'use client' コンポーネントからも安全にインポート可能。
  */
+import { foldKana } from '@/lib/normalize/kana'
+import { ANOMALY_FACTOR } from './quantity-anomaly'
 
 export interface PackConfigOption {
   id: string
@@ -67,8 +69,14 @@ export interface PendingOrder {
   customerId: string | null
   customerName: string
   customerColor: string | null
-  /** 確定済み納入先の表示名（未確定・納入先なしの取引先は null）。取引先＞納入先の表記に使う。 */
+  /**
+   * 納入先の表示名（取引先＞納入先の表記に使う）。承認時にサーバーが確定させるのと同じ判定
+   * （登録済みの納入先・納入先が1件だけ・メモにマスタの名前/別名がある）で決まったときだけ入る。
+   * 未確定・納入先なしの取引先は null。
+   */
   destinationName: string | null
+  /** FAX・メモに書かれていた納入先の文字（マスタと照合できなくても参考表示する。「FAXの記載: ○○」） */
+  destinationHint: string | null
   /** 伝票No・特記事項・数量変更メモ・要確認理由など（orders.note） */
   notes?: string | null
   items: PendingOrderItem[]
@@ -94,7 +102,75 @@ export function pendingReasons(o: PendingOrder, opts: { kana?: boolean } = {}): 
   if (o.needsDeliveryDate) r.push(kana ? 'のうひん日 みてい' : '納品日 未定')
   if (o.needsDestination) r.push(kana ? 'のうにゅうさき みてい' : '納入先 未定')
   if (o.items.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)) r.push(kana ? '荷姿 みてい' : '荷姿 未定')
-  if (o.minConfidence == null || o.minConfidence < 0.7) r.push(kana ? 'AI じしんなし' : 'AIの確信度が低い')
-  if (o.items.some((it) => it.quantityAnomaly)) r.push('数量がいつもと違う')
+  if (o.minConfidence == null || o.minConfidence < 0.7) r.push(kana ? 'AI じしんなし' : 'AIの読み取りに自信なし')
+  if (o.items.some((it) => it.quantityAnomaly)) r.push(kana ? 'かず が いつもと ちがう' : '数量がいつもと違う')
   return r
+}
+
+/** 照合に使う納入先マスタ（code / full_name / aliases）。 */
+export interface DestinationCandidate {
+  id: string
+  code: string | null
+  full_name: string
+  aliases?: string[] | null
+}
+
+/**
+ * 承認待ち注文の納入先を、承認API（lib/orders/approve.ts）と同じ規則で判定する（純関数）。
+ *  - 注文に納入先が登録済み → それ
+ *  - 取引先に納入先が無い → 納入先なし（判定不要）
+ *  - 納入先が1件だけ → その1件（承認時に自動で付く）
+ *  - 複数 → メモと品目名に、マスタの code / full_name / 別名（3文字以上）が含まれていればそれ
+ *  - 決まらなければ「納入先 未定」（取引先設定で納入先を指定しない取引先は除く）
+ * メモの文字列だけ（マスタと照合できない）では確定扱いにしない。承認画面とサーバーの判定を揃えるため。
+ */
+export function resolvePendingDestination(input: {
+  destinationId: string | null
+  destinations: DestinationCandidate[]
+  noteText: string | null
+  productNames: string[]
+  skipsGate?: boolean
+}): { destinationId: string | null; needsDestination: boolean } {
+  const { destinationId, destinations } = input
+  if (destinationId) return { destinationId, needsDestination: false }
+  if (destinations.length === 0) return { destinationId: null, needsDestination: false }
+  if (destinations.length === 1) return { destinationId: destinations[0]!.id, needsDestination: false }
+  const norm = (s: string) => foldKana(s.normalize('NFKC').toLowerCase())
+  const text = norm(`${input.noteText ?? ''} ${input.productNames.join(' ')}`)
+  const matched = destinations.find((d) =>
+    [d.code, d.full_name, ...(d.aliases ?? [])]
+      .filter((c): c is string => Boolean(c))
+      .map(norm)
+      .some((c) => c.length >= 3 && text.includes(c)),
+  )
+  if (matched) return { destinationId: matched.id, needsDestination: false }
+  return { destinationId: null, needsDestination: !input.skipsGate }
+}
+
+/** メモ（orders.note）に書かれた納入先の文字を取り出す（参考表示用。確定には使わない）。 */
+export function extractDestinationHint(noteText?: string | null): string | null {
+  if (!noteText) return null
+  const m1 = noteText.match(/(?:納入先|お届け先|配送先)(?:\(OCR\))?[:：\s]+([^\n,、・\]】]+)/)
+  if (m1?.[1]) return m1[1].trim()
+  const m2 = noteText.match(/【(?:納入先|お届け先|配送先)[:：\s]*([^】]+)】/)
+  if (m2?.[1]) return m2[1].trim()
+  return null
+}
+
+/**
+ * 画面で数量を直したあとの「いつもと違う」判定（純関数）。いつもの数量（中央値）があれば、
+ * サーバー（lib/orders/quantity-anomaly）と同じ倍率で判定し直す。いつもの数量が無ければ判定しない。
+ */
+export function quantityAnomalyFor(quantity: number, usual: number | null | undefined): 'high' | 'low' | null {
+  if (usual == null || !(usual > 0) || !(quantity > 0)) return null
+  if (quantity >= usual * ANOMALY_FACTOR) return 'high'
+  if (quantity <= usual / ANOMALY_FACTOR) return 'low'
+  return null
+}
+
+/** 承認前に荷姿を選ぶ必要がある品目名（荷姿の登録がある品目で未選択のもの）。 */
+export function itemsMissingPack(
+  items: Pick<PendingOrderItem, 'productName' | 'packConfigId' | 'packConfigOptions'>[],
+): string[] {
+  return items.filter((it) => it.packConfigOptions.length > 0 && !it.packConfigId).map((it) => it.productName)
 }

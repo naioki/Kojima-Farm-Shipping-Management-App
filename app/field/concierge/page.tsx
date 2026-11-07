@@ -74,11 +74,13 @@ export default async function ConciergePage({
         <div className="flex items-center gap-2">
           <span className="text-2xl">🤖</span>
           <h1 className="font-display text-lg sm:text-2xl font-black tracking-tight">
-            AI総合相談窓口（おまかせコンシェルジュ）
+            AI相談窓口
           </h1>
         </div>
         <p className="text-xs sm:text-sm font-bold text-harvest-100 leading-relaxed">
-          細かい画面操作が苦手な方でも大丈夫！やりたいことを選ぶか話しかけるだけで、明日の注文追加・新しい品目や取引先の登録・面倒な設定のオン/オフをAIが代わりに準備します。
+          {isAdmin
+            ? '細かい画面操作が苦手な方でも大丈夫！やりたいことを選ぶか話しかけるだけで、注文の追加・新しい品目や取引先の登録・設定のオン/オフをAIが代わりに準備します。'
+            : 'やりたいことを えらぶか はなしかける だけで、注文の確認や追加、画面の案内を AI が てつだいます。'}
         </p>
       </div>
 

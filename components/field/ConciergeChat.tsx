@@ -136,44 +136,47 @@ const SETTING_JA_LABELS: Record<string, string> = {
   NOTIFY_LINEWORKS_ENABLED: 'LINE WORKS への通知',
 }
 
-const QUICK_PRESETS = [
-  {
-    category: '📦 注文の確認・追加',
-    icon: PlusCircle,
-    items: [
-      '明日の注文状況を教えて',
-      '明日 和郷園に青梗菜 20箱追加して',
-      '明日 勘兵衛に青梗菜 5ケース追加して',
-    ],
-  },
-  {
-    category: '🥬 品目・取引先の追加',
-    icon: Carrot,
-    items: [
-      '新しい品目で「春菊」を追加して',
-      '新しい品目で「ほうれん草」を追加して',
-      'オレンジファームを25入り・青コンで登録して',
-    ],
-  },
-  {
-    category: '⚙️ 面倒な設定・ルール変更',
-    icon: Settings,
-    items: [
-      'スタッフの設定を全部オンにして',
-      'AIの自動確定をオンにして',
-      'オレンジファームの入数を20入りに変えて',
-    ],
-  },
-  {
+/**
+ * よくあるお願いボタン。品目・取引先の登録や設定の変更は管理者だけが実行できるので、スタッフには出さない。
+ * 例に使う取引先名は実在の取引先から取る（存在しない名前を例にしない）。
+ */
+function buildQuickPresets(isAdmin: boolean, sampleCustomer: string) {
+  const groups = [
+    {
+      category: '📦 注文の確認・追加',
+      icon: PlusCircle,
+      items: [
+        '明日の注文状況を教えて',
+        `明日 ${sampleCustomer}に青梗菜 20箱追加して`,
+        `明日 ${sampleCustomer}の注文を見せて`,
+      ],
+    },
+  ]
+  if (isAdmin) {
+    groups.push(
+      {
+        category: '🥬 品目・取引先の追加',
+        icon: Carrot,
+        items: [
+          '新しい品目で「春菊」を追加して',
+          '新しい品目で「ほうれん草」を追加して',
+          '新しい取引先を25入り・青コンで登録したい',
+        ],
+      },
+      {
+        category: '⚙️ 面倒な設定・ルール変更',
+        icon: Settings,
+        items: ['スタッフの設定を全部オンにして', 'AIの自動確定をオンにして', `${sampleCustomer}の入数を20入りに変えて`],
+      },
+    )
+  }
+  groups.push({
     category: '🏢 画面の案内・使い方',
     icon: Users,
-    items: [
-      '積込・配送リストを開きたい',
-      '週間表（マトリックス）を開きたい',
-      'このアプリの使い方をわかりやすく教えて',
-    ],
-  },
-]
+    items: ['積込・配送リストを開きたい', '週の管理を開きたい', 'このアプリの使い方をわかりやすく教えて'],
+  })
+  return groups
+}
 
 function describeProposalTargetLocation(action: ConciergeAction, defaultDate: string): {
   breadcrumb: string
@@ -255,6 +258,7 @@ function describeProposalTargetLocation(action: ConciergeAction, defaultDate: st
 
 export function ConciergeChat({
   defaultDate,
+  isAdmin,
   customers,
   destinations,
   products,
@@ -264,8 +268,9 @@ export function ConciergeChat({
     {
       id: 'welcome',
       role: 'assistant',
-      content:
-        'こんにちは！小島農園のAI相談窓口です🌱 注文の追加・品目の登録・数字の確認などを、ふつうの言葉で頼んでください。実行の前に必ず確認ボタンが出て、あとから元に戻すこともできます。',
+      content: isAdmin
+        ? 'こんにちは！小島農園のAI相談窓口です🌱 注文の追加・品目の登録・数字の確認などを、ふつうの言葉で頼んでください。実行の前に必ず確認ボタンが出て、あとから元に戻すこともできます。'
+        : 'こんにちは！小島農園のAI相談窓口です🌱 注文の確認や追加、画面の場所などを、ふつうの言葉で聞いてください。実行の前に必ず確認ボタンが出ます。',
       proposals: [],
     },
   ])
@@ -277,11 +282,13 @@ export function ConciergeChat({
   const [receiptsByKey, setReceiptsByKey] = useState<Record<string, ExecutionReceipt>>({})
   const [historyReceipts, setHistoryReceipts] = useState<ExecutionReceipt[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [suggestions, setSuggestions] = useState<string[]>([
-    '明日の注文状況を教えて',
-    'スタッフの設定を全部オンにして',
-    '新しい品目で「春菊」を追加して',
-  ])
+  const sampleCustomer = customers[0]?.name ?? '取引先'
+  const quickPresets = buildQuickPresets(isAdmin, sampleCustomer)
+  const [suggestions, setSuggestions] = useState<string[]>(
+    isAdmin
+      ? ['明日の注文状況を教えて', 'スタッフの設定を全部オンにして', '新しい品目で「春菊」を追加して']
+      : ['明日の注文状況を教えて', '積込・配送リストを開きたい', 'このアプリの使い方をわかりやすく教えて'],
+  )
 
   const bottomRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1072,7 +1079,7 @@ export function ConciergeChat({
 
       {/* ① 文字入力が苦手な方のための「ワンタップ定型お願いボタン集」 */}
       <details className="group rounded-2xl border-2 border-harvest-400 bg-bg-card shadow-xs" open>
-        <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-black text-forest-900 select-none">
+        <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-2 px-4 py-3 text-sm font-black text-forest-900 select-none">
           <span className="flex items-center gap-2">
             <HelpCircle className="h-4 w-4 text-harvest-600 shrink-0" />
             <span>👆 文字を打たずに頼める「よくあるお願いボタン」（タップするだけ）</span>
@@ -1080,7 +1087,7 @@ export function ConciergeChat({
           <span className="text-xs font-bold text-harvest-700 group-open:rotate-180 transition-transform">▼</span>
         </summary>
         <div className="border-t border-harvest-100 p-3.5 grid gap-3 sm:grid-cols-2 bg-harvest-50/40">
-          {QUICK_PRESETS.map((group) => (
+          {quickPresets.map((group) => (
             <div key={group.category} className="rounded-xl bg-bg-card p-3 border border-harvest-400/80 space-y-2">
               <div className="text-xs font-black text-forest-900">{group.category}</div>
               <div className="flex flex-wrap gap-1.5">
@@ -1090,7 +1097,7 @@ export function ConciergeChat({
                     type="button"
                     disabled={sending}
                     onClick={() => void sendMessage(item)}
-                    className="rounded-xl border border-harvest-400 bg-harvest-50/80 hover:bg-harvest-100 px-3 py-1.5 text-xs font-black text-forest-900 text-left transition active:scale-95 shadow-2xs"
+                    className="min-h-10 rounded-xl border border-harvest-400 bg-harvest-50/80 hover:bg-harvest-100 px-3 py-1.5 text-xs font-black text-forest-900 text-left transition active:scale-95 shadow-2xs"
                   >
                     👉 {item}
                   </button>
@@ -1268,7 +1275,7 @@ export function ConciergeChat({
               type="button"
               disabled={sending}
               onClick={() => void sendMessage(s)}
-              className="shrink-0 rounded-full border border-forest-200 bg-bg-card hover:bg-forest-50 px-3 py-1 text-xs font-black text-ink transition active:scale-95"
+              className="min-h-10 shrink-0 rounded-full border border-forest-200 bg-bg-card hover:bg-forest-50 px-3 py-1 text-xs font-black text-ink transition active:scale-95"
             >
               {s}
             </button>
@@ -1278,7 +1285,8 @@ export function ConciergeChat({
 
       {/* ④ 音声マイク付き・大型入力バー */}
       <div className="rounded-2xl border-2 border-forest-500 bg-bg-card p-2.5 shadow-md space-y-2">
-        <div className="flex items-end gap-2">
+        {/* スマホは入力欄を1行まるごと使い、ボタンはその下に並べる（入力欄が細く潰れないように） */}
+        <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
           <button
             type="button"
             onClick={toggleVoiceInput}
@@ -1304,15 +1312,16 @@ export function ConciergeChat({
               }
             }}
             rows={2}
-            placeholder="ここにやりたいことを書くか、左の「🎤 声で入力」を押してお話しください（例：明日 和郷園に20箱追加して）"
-            className="flex-1 rounded-xl border border-line bg-bg-soft/40 p-2.5 text-sm sm:text-base font-bold text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:bg-bg-card focus:outline-none"
+            aria-label="AIへの相談内容"
+            placeholder={`やりたいことを書くか「声で入力」でお話しください（例：明日 ${sampleCustomer}に20箱追加して）`}
+            className="order-first min-w-0 basis-full rounded-xl sm:order-none sm:basis-auto sm:flex-1 border border-line bg-bg-soft/40 p-2.5 text-sm sm:text-base font-bold text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:bg-bg-card focus:outline-none"
           />
 
           <button
             type="button"
             disabled={!input.trim() || sending}
             onClick={() => void sendMessage()}
-            className="flex h-12 px-4 sm:px-5 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-forest-700 hover:bg-forest-800 disabled:opacity-40 text-white font-black text-sm sm:text-base shadow-sm transition active:scale-95"
+            className="flex h-12 flex-1 px-4 sm:flex-none sm:px-5 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-forest-700 hover:bg-forest-800 disabled:opacity-40 text-white font-black text-sm sm:text-base shadow-sm transition active:scale-95"
           >
             <Send className="h-4 w-4" />
             <span>相談する</span>

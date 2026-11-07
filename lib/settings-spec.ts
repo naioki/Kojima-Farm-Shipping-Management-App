@@ -35,6 +35,8 @@ export interface SettingSpec {
   defaultPrompt?: string
   dependsOn?: { key: string; equals: string }
   danger?: boolean
+  /** 別の画面で編集する項目。設定画面では現在の状態の表示とリンクのみ（保存対象外）。 */
+  managedAt?: { href: string; label: string }
 }
 
 export const SECTION_ORDER: SettingSection[] = ['issuer', 'staff', 'ai', 'notify', 'integration', 'advanced']
@@ -135,38 +137,40 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   // ──────────────────────────────────────────
   {
     key: 'GEMINI_MODEL',
-    label: '① メインAIモデル（通常FAX読取・高速軽量）',
+    label: 'ふだん使うAI（通常のFAX読み取り）',
     section: 'ai',
+    managedAt: { href: '/admin/rules', label: 'AI学習ルール' },
     secret: false,
     kind: 'text',
     options: GEMINI_MODEL_OPTIONS,
-    placeholder: 'gemini-3.5-flash-lite',
-    hint: '日常のFAXや手書き文字の通常読み取りに使用するメインモデルです。自由に入力できます（空欄時は gemini-3.5-flash-lite）。',
+    hint: '日常のFAXや手書き文字の読み取りに使うAIです。空欄なら自動で選ばれます。',
   },
   {
     key: 'GEMINI_MODEL_HIGH',
-    label: '② 重要箇所AIモデル（要確認の再検証・手書き修正・ルール学習）',
+    label: '大事な場面で使うAI（要確認の再チェック・手書き修正）',
     section: 'ai',
+    managedAt: { href: '/admin/rules', label: 'AI学習ルール' },
     secret: false,
     kind: 'text',
     options: GEMINI_HIGH_MODEL_OPTIONS,
-    placeholder: 'gemini-3.8-flash',
-    hint: '確信度が低い場合や手書き修正、ルール学習など重要な場面のみ自動で呼び出される高精度モデルです。自由に入力できます。',
+    hint: '読み取りに自信がない場合や手書き修正など、大事な場面だけ使う高精度のAIです。',
   },
   {
     key: 'AUTO_APPROVE_ENABLED',
-    label: '承認の自動確定（問題のない注文は自動確定して現場へ連動）',
+    label: '承認の自動確定（問題のない注文は人の確認なしで現場へ）',
     section: 'ai',
+    managedAt: { href: '/admin/rules', label: 'AI学習ルール' },
     secret: false,
     kind: 'toggle',
-    toggleDefault: 'off',
+    toggleDefault: 'on',
     danger: true,
     hint: 'ONにすると、取引先・納品日が特定できAI確信度の高い注文は人間の承認を待たずに自動で確定し、出荷ボードへ反映されます。',
   },
   {
     key: 'AUTO_APPROVE_THRESHOLD',
-    label: '自動確定するAI確信度のしきい値（0〜1、既定: 0.80）',
+    label: '自動確定する読み取りの確かさ（0〜1、目安 0.80）',
     section: 'ai',
+    managedAt: { href: '/admin/rules', label: 'AI学習ルール' },
     secret: false,
     kind: 'text',
     placeholder: '0.80',
@@ -180,7 +184,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   // ──────────────────────────────────────────
   {
     key: 'LINE_WORKS_WEBHOOK_URL',
-    label: 'LINE WORKS Incoming Webhook URL（※通知の送信先）',
+    label: 'LINE WORKS の通知先URL',
     section: 'notify',
     secret: true,
     kind: 'text',
@@ -194,11 +198,11 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     secret: false,
     kind: 'toggle',
     toggleDefault: 'on',
-    hint: 'ONにすると、注文の要確認やFAX読み取りエラー発生時に上記Webhookへ即座に通知メッセージが送信されます。',
+    hint: 'ONにすると、注文の要確認やFAX読み取りエラー発生時に上の通知先へ即座に通知メッセージが送信されます。',
   },
   {
     key: 'FAX_INGEST_TOKEN',
-    label: 'Kojima-FAX 連携トークン（X-Pipeline-Token）',
+    label: 'FAXサーバー連携の合言葉',
     section: 'integration',
     secret: true,
     kind: 'text',
@@ -207,7 +211,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   },
   {
     key: 'GEMINI_API_KEY',
-    label: 'Gemini APIキー',
+    label: 'AI（Gemini）の利用キー',
     section: 'integration',
     secret: true,
     kind: 'text',
@@ -223,7 +227,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     section: 'staff',
     secret: false,
     kind: 'toggle',
-    toggleDefault: 'on',
+    toggleDefault: 'off',
     hint: 'ONにすると、現場スタッフも注文書やメモをカメラ・写真で読み取って注文追加できます。',
   },
   {
@@ -232,7 +236,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     section: 'staff',
     secret: false,
     kind: 'toggle',
-    toggleDefault: 'on',
+    toggleDefault: 'off',
     hint: 'ONにすると、現場スタッフも収穫・パックボードから注文追加や数量変更を行えます。',
   },
   {
@@ -241,7 +245,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     section: 'staff',
     secret: false,
     kind: 'toggle',
-    toggleDefault: 'on',
+    toggleDefault: 'off',
     hint: 'ONにすると、現場スタッフもAI読取後の未確認注文を確認・承認できます。',
   },
   {
@@ -250,7 +254,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     section: 'staff',
     secret: false,
     kind: 'toggle',
-    toggleDefault: 'on',
+    toggleDefault: 'off',
     hint: 'ONにすると、現場スタッフも出荷指示書やラベルの印刷画面を利用できます。',
   },
   {
@@ -259,7 +263,7 @@ export const SETTINGS_SPEC: SettingSpec[] = [
     section: 'staff',
     secret: false,
     kind: 'toggle',
-    toggleDefault: 'on',
+    toggleDefault: 'off',
     hint: 'ONにすると、現場スタッフも現場での規格変更や報告を送信できます。',
   },
   {
@@ -281,23 +285,23 @@ export const SETTINGS_SPEC: SettingSpec[] = [
   },
   {
     key: 'GEMINI_PROMPT_NORMAL',
-    label: 'AI解析プロンプト（通常モード — FAX・画像）',
+    label: 'AIへの指示文（通常のFAX・画像）',
     section: 'advanced',
     secret: false,
     kind: 'prompt',
     danger: true,
     defaultPrompt: DEFAULT_GEMINI_PROMPT_NORMAL,
-    hint: 'FAX・画像から注文を抽出する基本AI指示文です（取引先ごとのルールはマスタ管理から変更できます）。',
+    hint: 'FAX・画像から注文を抽出する基本のAIへの指示文です（取引先ごとのルールはマスタ管理から変更できます）。',
   },
   {
     key: 'GEMINI_PROMPT_DIFF',
-    label: 'AI解析プロンプト（差分モード — 再送検知）',
+    label: 'AIへの指示文（再送・手書き修正のFAX）',
     section: 'advanced',
     secret: false,
     kind: 'prompt',
     danger: true,
     defaultPrompt: DEFAULT_GEMINI_PROMPT_DIFF,
-    hint: '手書き修正や追記FAXを検知した際の差分抽出用プロンプトです。',
+    hint: '手書き修正や追記FAXを検知した際の差分を読み取るためのAIへの指示文です。',
   },
 ]
 
@@ -306,3 +310,15 @@ export const SETTINGS_BY_KEY: Record<string, SettingSpec> = Object.fromEntries(
 )
 
 export const SECRET_KEYS = new Set(SETTINGS_SPEC.filter((s) => s.secret).map((s) => s.key))
+
+/**
+ * トグル設定の「実際の値」を解決する（純関数）。
+ * DB・環境変数のどちらにも値が無いとき（''／null）は toggleDefault を使う。
+ * 設定画面の表示と、実際の判定（lib/field/features.ts 等）をそろえるための単一の入口。
+ */
+export function resolveToggle(raw: string | null | undefined, toggleDefault: 'on' | 'off' = 'off'): 'on' | 'off' {
+  const v = raw?.trim().toLowerCase()
+  if (v === 'on') return 'on'
+  if (v === 'off') return 'off'
+  return toggleDefault
+}

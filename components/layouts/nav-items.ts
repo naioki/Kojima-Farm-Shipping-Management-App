@@ -24,6 +24,7 @@ import {
   Camera,
   BrainCircuit,
   Home,
+  ClipboardCheck,
 } from 'lucide-react'
 
 /** サイドバー（PC）とモバイルメニューで共有するナビ定義（structure.md）。 */
@@ -100,6 +101,7 @@ export const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/customers', label: '取引先・納入先', icon: Users },
       { href: '/admin/products', label: '品目', icon: Carrot },
+      { href: '/admin/rules-missing', label: '規格の未登録', icon: ClipboardCheck, hint: '注文があるのに入数・規格が未登録の品目' },
       { href: '/admin/pricing-master', label: '単価・荷姿の設定', icon: Tag, hint: '取引先ごとの単価表と荷姿' },
       { href: '/admin/rules', label: 'AI学習ルール', icon: BrainCircuit, hint: '取引先ごとの読み取りルール' },
       { href: '/admin/master-import', label: '写真でマスタ登録', icon: Camera },

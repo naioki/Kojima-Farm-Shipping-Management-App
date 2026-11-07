@@ -7,11 +7,13 @@ import {
   decomposeQty,
   type ShippingDocEntry,
 } from '@/lib/calculations/shipping-docs'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 
 /**
  * 出荷帳票（出荷表カード・出荷ラベル）の共通データローダー。
  * - #30: status IN ('approved', 'shipped', 'invoiced') かつ quantity > 0 の確定明細のみを抽出し、キャンセル済や未承認注文の誤印字を完全防止。
- * - #31: 取引先別ルール（customer_product_rules.packs_per_case：生協連24入・小コン30入等）および明細の spec 入数指定を反映し、PDF上の箱数を100%正確に算出。
+ * - #31: 1箱の入数は lib/masters/packs-per-case.ts（取引先別の設定 → 荷姿（明細 → 取引先専用 → 取引先共通）→
+ *   品目の標準 → 既定20）で決める。現場の出荷一覧・積込リストと同じ値になる（規格文字列からは推測しない）。
  */
 
 export interface ShippingDocsQuery {
@@ -26,28 +28,6 @@ export interface ShippingDocsResult {
   dateDisplay: string
   dateDisplayWide: string
   error?: string
-}
-
-function resolveDocUnitsPerBox(
-  packBase: number | null | undefined,
-  rulePacksPerCase: number | null | undefined,
-  customerName: string,
-  spec: string | null | undefined,
-  defaultCap: number | null | undefined,
-): number {
-  const combinedSpec = `${customerName} ${spec || ''}`.normalize('NFKC')
-  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
-  if (specMatch) {
-    const parsedNum = Number(specMatch[1] || specMatch[2])
-    if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) {
-      return parsedNum
-    }
-  }
-  if (packBase && packBase > 0) return Math.trunc(packBase)
-  if (rulePacksPerCase && rulePacksPerCase > 0) return Math.trunc(rulePacksPerCase)
-  if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
-  if (defaultCap && defaultCap > 0) return Math.trunc(defaultCap)
-  return 20
 }
 
 export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<ShippingDocsResult> {
@@ -86,7 +66,7 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
   const productIds = [...new Set(items.map((i) => i.product_id))]
   const packIds = [...new Set(items.map((i) => i.pack_config_id).filter(Boolean))] as string[]
 
-  const [{ data: custRows }, { data: destRows }, { data: prodRows }, { data: packRows }, { data: ruleRows }] =
+  const [{ data: custRows }, { data: destRows }, { data: prodRows }, { data: packRows }, { data: ruleRows }, productPacksRes] =
     await Promise.all([
       supabase.from('customers').select('id, name').in('id', customerIds),
       destinationIds.length
@@ -106,7 +86,15 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
         : Promise.resolve({
             data: [] as { customer_id: string; product_id: string; packs_per_case: number | null; label_spec?: string | null }[],
           }),
+      // 入数の解決用: 明細に荷姿が無いときの「取引先専用 → 取引先共通」の荷姿
+      supabase
+        .from('pack_configs')
+        .select('id, product_id, customer_id, base_per_selling, is_active')
+        .in('product_id', productIds),
     ])
+  // 入数を決める荷姿が読めないと箱数が変わるので、黙って続けずに帳票をエラーにする
+  if (productPacksRes.error) return empty(productPacksRes.error.message)
+  const productPacks = productPacksRes.data ?? []
 
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const destById = new Map((destRows ?? []).map((dr) => [dr.id, dr]))
@@ -132,14 +120,17 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
 
     const pack = it.pack_config_id ? packById.get(it.pack_config_id) : null
     const rule = ruleByPair.get(`${order.customer_id}:${it.product_id}`)
-    // #31 取引先別ルール・spec内入数・NSK24入などを正確に解決
-    const unitsPerBox = resolveDocUnitsPerBox(
-      pack?.base_per_selling ? Number(pack.base_per_selling) : null,
-      rule?.packs_per_case ?? null,
-      cust,
-      it.spec || rule?.label_spec,
-      capacityById.get(it.product_id),
-    )
+    // #31 取引先別の設定 → 荷姿 → 品目の標準 → 既定20
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(productPacks, order.customer_id, it.product_id)
+    const unitsPerBox = Math.trunc(
+      resolvePacksPerCase({
+        rule: rule ?? null,
+        packConfig: pack ?? null,
+        customerPacks,
+        sharedPacks,
+        product: { container_capacity: capacityById.get(it.product_id) },
+      }).value,
+    ) || 20
     const { boxes, remainder } = decomposeQty(it.quantity, unitsPerBox)
     raw.push({
       destination,

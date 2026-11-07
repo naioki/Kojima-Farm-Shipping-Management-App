@@ -25,6 +25,11 @@ export function findActiveHref(pathname: string, hrefs: string[]): string | null
   return best
 }
 
+/** グループ配下の未処理件数の合計（閉じたグループの見出しに出す）。 */
+export function groupBadgeTotal(group: NavGroup, badges: Record<string, number>): number {
+  return group.items.reduce((sum, it) => sum + (badges[it.href] ?? 0), 0)
+}
+
 export interface NavState {
   groups: NavGroup[]
   /** 最長一致で決まる現在地。aria-current とハイライトはこれと比較する。 */

@@ -40,7 +40,7 @@ export function ReceiptStatusBadge({ status }: { status: string }) {
     return (
       <span className="inline-flex items-center gap-1 rounded bg-alert-bg px-2 py-0.5 text-xs font-medium text-alert">
         <AlertTriangle className="h-3 w-3" aria-hidden />
-        解析失敗
+        読み取り失敗
       </span>
     )
   }
@@ -48,7 +48,7 @@ export function ReceiptStatusBadge({ status }: { status: string }) {
     return (
       <span className="inline-flex items-center gap-1 rounded bg-alert-bg px-2 py-0.5 text-xs font-medium text-alert">
         <Link2Off className="h-3 w-3" aria-hidden />
-        未紐付け
+        取引先不明
       </span>
     )
   }

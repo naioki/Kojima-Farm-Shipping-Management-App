@@ -9,12 +9,12 @@ import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import {
   determineHasCard,
-  determineUnitCount,
   formatQuantityCaseText,
   generateOrderKey,
   resolveContainerType,
 } from '@/lib/pipeline/schemas'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
+import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   // 取引先・納入先・取引先×商品ルールを取得（荷姿・コンテナ・入数の自動補完用）
   const productIds = [...new Set(items.map((i) => i.product_id))]
-  const [custRes, destRes, rulesRes, packsRes] = await Promise.all([
+  const [custRes, destRes, rulesRes, packsRes, productsRes] = await Promise.all([
     admin.from('customers').select('id, name').eq('id', customer_id).maybeSingle(),
     destination_id
       ? admin
@@ -153,17 +153,22 @@ export async function POST(req: NextRequest) {
           .eq('is_active', true)
           .in('product_id', productIds)
       : Promise.resolve({ data: [], error: null }),
+    // 入数の「品目の標準」用
+    productIds.length > 0
+      ? admin.from('products').select('id, container_capacity').in('id', productIds)
+      : Promise.resolve({ data: [], error: null }),
   ])
+  if (productsRes.error) console.error('[api/orders] 品目の標準入数の取得に失敗:', productsRes.error.message)
 
   const customerName = custRes.data?.name ?? ''
   const destinationName = destRes.data?.full_name || destRes.data?.code || ''
   const ruleByProduct = new Map<string, Record<string, unknown>>(
     ((rulesRes.data ?? []) as Record<string, unknown>[]).map((r) => [String(r.product_id), r]),
   )
-  const packById = new Map(
-    ((packsRes.data ?? []) as { id: string; product_id: string; customer_id: string | null; label: string; base_per_selling: number }[]).map(
-      (p) => [p.id, p],
-    ),
+  const packRows = (packsRes.data ?? []) as { id: string; product_id: string; customer_id: string | null; label: string; base_per_selling: number }[]
+  const packById = new Map(packRows.map((p) => [p.id, p]))
+  const capacityByProduct = new Map(
+    ((productsRes.data ?? []) as { id: string; container_capacity: number | null }[]).map((p) => [p.id, p.container_capacity]),
   )
 
   // 重複警告（取引先×納入先×納品日）。
@@ -247,12 +252,18 @@ export async function POST(req: NextRequest) {
   function buildItemPayload(orderId: string, it: z.infer<typeof itemSchema>) {
     const rule = ruleByProduct.get(it.product_id)
     const pack = it.pack_config_id ? packById.get(it.pack_config_id) : undefined
-    const rulePacks = typeof rule?.packs_per_case === 'number' ? Number(rule.packs_per_case) : undefined
+    // 入数：画面で入力された入数 → 取引先別の設定 → 荷姿（明細 → 取引先専用 → 取引先共通）→ 品目の標準 → 20
+    // （lib/masters/packs-per-case.ts。取引先名・規格の文字列からの推測はしない）
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(packRows, customer_id, it.product_id)
     const effectivePacks =
-      (it.packs_per_case && it.packs_per_case > 0 ? it.packs_per_case : undefined) ??
-      (pack ? Number(pack.base_per_selling) : undefined) ??
-      rulePacks ??
-      determineUnitCount(customerName, it.spec ?? (rule?.spec as string | undefined), undefined, it.product_name)
+      positiveNumber(it.packs_per_case) ??
+      resolvePacksPerCase({
+        rule: rule ? { packs_per_case: rule.packs_per_case as number | null } : null,
+        packConfig: pack ?? null,
+        customerPacks,
+        sharedPacks,
+        product: { container_capacity: capacityByProduct.get(it.product_id) ?? null },
+      }).value
 
     const totalQty = Math.max(0, Math.round(it.quantity))
     const cases = effectivePacks > 0 ? Math.floor(totalQty / effectivePacks) : 0

@@ -14,17 +14,26 @@ export interface MissingSpec {
 }
 
 /**
- * 「注文実績はあるのに customer_product_rules が無い／入り数(P/C)・規格(spec)が空」の
- * 取引先×商品を洗い出す（マスタ健全性・pull型）。
+ * 「注文実績はあるのに、取引先別ルールも荷姿（pack_configs）も無い／入り数・規格が空」の
+ * 取引先×品目を洗い出す（マスタ健全性・pull型）。
  * 規格未登録一覧ページとダッシュボードのアラートで共有する。
  */
 export async function getMissingSpecs(admin: AdminClient): Promise<MissingSpec[]> {
-  const [{ data: items }, { data: rules }] = await Promise.all([
+  const [{ data: items }, { data: rules }, { data: packs }] = await Promise.all([
     admin
       .from('order_items')
       .select('product_id, products(name), orders!inner(customer_id, status, customers(name))'),
     admin.from('customer_product_rules').select('customer_id, product_id, packs_per_case, spec'),
+    // 荷姿（取引先共通=customer_id NULL／取引先専用）。登録済みなら規格は登録済み扱い
+    admin.from('pack_configs').select('customer_id, product_id').eq('is_active', true),
   ])
+
+  const sharedPackProducts = new Set<string>()
+  const customerPackKeys = new Set<string>()
+  for (const pc of packs ?? []) {
+    if (pc.customer_id == null) sharedPackProducts.add(pc.product_id as string)
+    else customerPackKeys.add(`${pc.customer_id}:${pc.product_id}`)
+  }
 
   const ruleMap = new Map<string, { packs: number | null; spec: string | null }>()
   for (const r of rules ?? []) {
@@ -54,7 +63,7 @@ export async function getMissingSpecs(admin: AdminClient): Promise<MissingSpec[]
       seen.set(key, {
         customerId: ord.customer_id,
         customerName: ord.customers?.name ?? '(不明な取引先)',
-        productName: prod?.name ?? '(不明な商品)',
+        productName: prod?.name ?? '(不明な品目)',
         count: 1,
       })
     }
@@ -63,6 +72,9 @@ export async function getMissingSpecs(admin: AdminClient): Promise<MissingSpec[]
   return [...seen.entries()]
     .map(([key, agg]) => {
       const rule = ruleMap.get(key)
+      const productId = key.split(':')[1]!
+      const hasPackConfig = customerPackKeys.has(key) || sharedPackProducts.has(productId)
+      if (hasPackConfig) return { ...agg, missingPacks: false, missingSpec: false, hasRule: Boolean(rule) }
       const missingPacks = !rule || rule.packs == null
       const missingSpec = !rule || rule.spec == null || rule.spec.trim() === ''
       return { ...agg, missingPacks, missingSpec, hasRule: Boolean(rule) }

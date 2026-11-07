@@ -13,6 +13,21 @@ const c = (name: string): string =>
       ? `var(--${name})`
       : `color-mix(in srgb, var(--${name}) calc(${opacityValue} * 100%), transparent)`) as unknown as string
 
+
+// 背景・枠線・グラデーション用のブランド色。文字色（colors）とは別の変数（--X-N-bg）を参照する。
+// ダークモードでは「薄い地（50〜200）は暗い色調に、濃い地（600〜900）はそのまま」、
+// 文字色は逆に「濃い文字（600〜900）は明るく」反転させるため、同じ色名でも用途で変数を分ける。
+const BRAND: Record<string, (number | string)[]> = {
+  earth: [50, 100, 200, 300, 400, 500, 600, 700, 800, 900],
+  harvest: [50, 100, 400, 500, 600, 700],
+  trust: [50, 100, 400, 500, 600, 700],
+  forest: [50, 100, 200, 400, 500, 600, 700, 800, 900],
+  grape: [50, 100, 200, 500, 600, 700],
+}
+const surface = Object.fromEntries(
+  Object.entries(BRAND).map(([name, shades]) => [name, Object.fromEntries(shades.map((n) => [n, c(`${name}-${n}-bg`)]))]),
+)
+
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   darkMode: 'class',
@@ -53,11 +68,15 @@ const config: Config = {
         alert: { DEFAULT: c('alert'), bg: c('alert-bg') },
         warning: { DEFAULT: c('warning'), bg: c('warning-bg') },
         bg: { DEFAULT: c('bg'), soft: c('bg-soft'), card: c('bg-card') },
-        ink: { DEFAULT: c('ink'), soft: c('ink-soft'), faint: c('ink-faint') },
+        // muted は 66 か所で使われていたのに未定義で、色が付いていなかった（ink-soft と同じ扱い）
+        ink: { DEFAULT: c('ink'), soft: c('ink-soft'), faint: c('ink-faint'), muted: c('ink-soft') },
         line: { DEFAULT: c('line'), strong: c('line-strong') },
         // 暗いパネル（ビューア・積込ヘッダー等）用。ダークモードでも反転しない（ink は反転するので暗い地には使わない）
         night: { DEFAULT: c('night'), soft: c('night-soft') },
       },
+      backgroundColor: surface,
+      borderColor: surface,
+      gradientColorStops: surface,
       fontFamily: {
         // フォールバックは明朝体(serif)ではなくゴシック体(sans-serif)にする。
         // カスタムフォントの読み込みが遅延・失敗した瞬間、見出しが意図せず明朝体で

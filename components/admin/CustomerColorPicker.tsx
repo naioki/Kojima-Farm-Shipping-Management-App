@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
-import { ColorDot, colorFromName } from '@/components/ui/ColorDot'
+import { ColorDot } from '@/components/ui/ColorDot'
 
 const PALETTE = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
@@ -24,7 +24,6 @@ interface CustomerColorPickerProps {
 export function CustomerColorPicker({ customerId, customerName, initialColor }: CustomerColorPickerProps) {
   const [color, setColor] = useState<string | null>(initialColor)
   const [saving, setSaving] = useState(false)
-  const autoColor = colorFromName(customerName)
 
   async function save(newColor: string | null) {
     setSaving(true)
@@ -52,7 +51,7 @@ export function CustomerColorPicker({ customerId, customerName, initialColor }: 
       <div className="flex items-center gap-2">
         <ColorDot color={color} name={customerName} size="md" />
         <span className="text-sm text-ink">
-          {color ? color : `自動 (${autoColor})`}
+          {color ? '指定した色' : '自動で決まる色'}
         </span>
         {color && (
           <button

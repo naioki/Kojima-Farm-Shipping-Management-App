@@ -141,6 +141,7 @@ export function PrintCustomerFilter({
           customerIds={selectedIds}
           disabled={noneSelected}
           label="出荷表を事務所で自動印刷"
+          className="min-h-10"
         />
         <QueuePrintButton
           date={date}
@@ -148,6 +149,7 @@ export function PrintCustomerFilter({
           customerIds={selectedIds}
           disabled={noneSelected}
           label="ラベルを事務所で自動印刷"
+          className="min-h-10"
         />
       </div>
     </div>

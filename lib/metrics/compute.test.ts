@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { weekStartJst, recentWeeks, median, computeWeeklyMetrics, channelOf, type MetricsInput } from './compute'
+import { weekStartJst, weekProgress, recentWeeks, median, computeWeeklyMetrics, channelOf, type MetricsInput } from './compute'
 
 describe('weekStartJst', () => {
   it('日本時間の月曜はじまり', () => {
@@ -111,5 +111,19 @@ describe('computeWeeklyMetrics', () => {
     expect(w!.appDeliveryNotes).toBe(1)
     expect(w!.appInvoices).toBe(1)
     expect([w!.conciergeUp, w!.conciergeDown, w!.conciergeExecuted, w!.conciergeUndone]).toEqual([1, 1, 1, 1])
+  })
+})
+
+describe('weekProgress（今週は途中か）', () => {
+  it('月曜〜土曜は途中、日曜はまる1週', () => {
+    expect(weekProgress('2026-11-02', '2026-11-02')).toEqual({ elapsedDays: 1, inProgress: true, lastDay: '2026-11-02' })
+    expect(weekProgress('2026-11-02', '2026-11-07')).toEqual({ elapsedDays: 6, inProgress: true, lastDay: '2026-11-07' })
+    expect(weekProgress('2026-11-02', '2026-11-08')).toEqual({ elapsedDays: 7, inProgress: false, lastDay: '2026-11-08' })
+  })
+  it('過去の週はまる1週', () => {
+    expect(weekProgress('2026-10-26', '2026-11-07').inProgress).toBe(false)
+  })
+  it('月またぎ', () => {
+    expect(weekProgress('2026-11-30', '2026-12-02').elapsedDays).toBe(3)
   })
 })

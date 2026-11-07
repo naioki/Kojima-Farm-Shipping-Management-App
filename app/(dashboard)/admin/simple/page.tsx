@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getAdminDashboardData } from '@/lib/dashboard/admin-data'
+import { yen } from '@/lib/format'
 import { ErrorState } from '@/components/ui/States'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -22,6 +23,7 @@ export default async function SimpleHome() {
 
   const pending = data.alerts?.find((a) => a.id === 'po')?.count ?? 0
   const overdue = data.alerts?.find((a) => a.id === 'ar')
+  const overdueRows = data.overdueInvoices ?? []
   const tp = data.tomorrowPackStats
   const money = (key: string) => data.summary.find((s) => s.key === key)?.value ?? '—'
 
@@ -29,7 +31,10 @@ export default async function SimpleHome() {
 
   return (
     <div className="mx-auto max-w-xl space-y-5">
-      <h1 className="font-display text-3xl font-bold text-ink">きょうの仕事</h1>
+      <header>
+        <h1 className="font-display text-3xl font-bold text-ink">きょうの仕事</h1>
+        <p className="num mt-1 text-xl font-bold text-ink-soft">{data.header.dateLabel}</p>
+      </header>
 
       <Link
         href="/admin/approvals"
@@ -49,14 +54,17 @@ export default async function SimpleHome() {
       </Link>
 
       <Link href={tp ? `/field/shipments?date=${tp.deliveryDate}` : '/field/shipments'} className={`${card} border-line bg-bg-card`}>
-        <p className="text-xl font-bold text-ink">② 明日（{tp?.deliveryDateLabel ?? '—'}）の出荷</p>
+        <p className="text-xl font-bold text-ink">
+          ② 明日 <span className="num">{tp?.deliveryDateLabel ?? '—'}</span> の出荷
+        </p>
         {tp && tp.totalItems > 0 ? (
           <>
             <p className="mt-2 text-4xl font-black text-ink">
               <span className="num">{tp.totalBoxes}</span> 箱
             </p>
             <p className="mt-1 text-xl text-ink-soft">
-              パック済み <span className="num font-bold text-ink">{tp.completedBoxes}</span> 箱（{tp.progressPct}%）
+              パック済み <span className="num font-bold text-ink">{tp.completedBoxes}</span> 箱
+              <span className="num">（{tp.progressPct}%）</span>
             </p>
           </>
         ) : (
@@ -67,20 +75,34 @@ export default async function SimpleHome() {
       <Link href="/admin/invoices" className={`${card} ${overdue ? 'border-alert bg-alert-bg' : 'border-line bg-bg-card'}`}>
         <p className="text-xl font-bold text-ink">③ 今月のお金</p>
         <dl className="mt-3 space-y-2 text-xl">
-          <div className="flex justify-between gap-3">
-            <dt className="text-ink-soft">出荷した金額</dt>
-            <dd className="num font-black text-ink">{money('shipped')}</dd>
+          <div className="flex flex-wrap justify-between gap-x-3">
+            <dt className="text-ink-soft">出荷した金額（税込）</dt>
+            <dd className="num ml-auto font-black text-ink">{money('shipped')}</dd>
           </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-ink-soft">まだ請求していない</dt>
-            <dd className="num font-black text-ink">{money('unbilled')}</dd>
+          <div className="flex flex-wrap justify-between gap-x-3">
+            <dt className="text-ink-soft">まだ請求していない（税込）</dt>
+            <dd className="num ml-auto font-black text-ink">{money('unbilled')}</dd>
           </div>
         </dl>
-        {overdue && <p className="mt-3 text-lg font-bold text-alert">⚠ 期日を過ぎた未入金 {overdue.count} 件</p>}
+        {overdue && (
+          <div className="mt-4 border-t-2 border-alert pt-3">
+            <p className="text-lg font-bold text-alert">⚠ 期日を過ぎた未入金 {overdue.count} 件</p>
+            <ul className="mt-2 space-y-1.5 text-lg">
+              {overdueRows.slice(0, 3).map((r) => (
+                <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <span className="min-w-0 break-words font-bold text-ink">{r.customer}</span>
+                  <span className="num font-black text-alert">{yen(r.amount)}</span>
+                  <span className="num w-full text-base text-ink-soft">期日 {r.dueLabel}</span>
+                </li>
+              ))}
+            </ul>
+            {overdueRows.length > 3 && <p className="mt-1 text-base text-ink-soft">ほか {overdueRows.length - 3} 件</p>}
+          </div>
+        )}
       </Link>
 
       <p className="text-center text-base">
-        <Link href="/admin" className="text-trust-700 underline">
+        <Link href="/admin" className="inline-flex min-h-10 items-center text-trust-700 underline">
           くわしい画面（ダッシュボード）へ
         </Link>
       </p>

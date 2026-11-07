@@ -1,7 +1,10 @@
+import { dueDateFor, monthEndOf, type PaymentSchedule } from '@/lib/customers/payment-terms'
+
 /**
  * 売掛金（入金待ち・期日超過）の判定。純関数・DB非依存。
  *
- * 支払期日: 請求書に due_date があればそれ。無ければ「請求月の翌月末」（農産物卸の一般的な締め払い）。
+ * 支払期日: 請求書に due_date があればそれ。無ければ取引先の支払条件（締め日＝対象期間の末日、
+ * 無ければ請求月の月末）から求める。支払条件を渡さなければ「月末締め・翌月末払い」。
  * 入金待ち = 確定・送付済（下書き・入金済・無効は対象外）。期日超過 = 入金待ちのうち期日 < 今日。
  */
 export interface ReceivableInvoice {
@@ -9,7 +12,12 @@ export interface ReceivableInvoice {
   billing_month: string
   due_date: string | null
   total_amount: number | string | null
+  /** 対象期間の末日（締め日）。無ければ請求月の月末で判定 */
+  period_end?: string | null
 }
+
+/** 請求書ごとの支払条件の引き方（取引先別）。null/undefined は既定（月末締め・翌月末払い） */
+export type TermsOf<T> = (inv: T) => PaymentSchedule | null | undefined
 
 export type ReceivableState = 'unpaid' | 'overdue' | null
 
@@ -24,13 +32,26 @@ export function defaultDueDate(billingMonth: string): string | null {
   return d.toISOString().slice(0, 10)
 }
 
-export function dueDateOf(inv: Pick<ReceivableInvoice, 'due_date' | 'billing_month'>): string | null {
-  return inv.due_date ?? defaultDueDate(inv.billing_month)
+export function dueDateOf(
+  inv: Pick<ReceivableInvoice, 'due_date' | 'billing_month' | 'period_end'>,
+  terms?: PaymentSchedule | null,
+): string | null {
+  if (inv.due_date) return inv.due_date
+  if (!terms) {
+    // 既定（月末締め・翌月末払い）。期間の末日があればその月、無ければ請求月で
+    return inv.period_end ? dueDateFor(inv.period_end) : defaultDueDate(inv.billing_month)
+  }
+  const closing = inv.period_end ?? monthEndOf(inv.billing_month)
+  return closing ? dueDateFor(closing, terms) : null
 }
 
-export function receivableState(inv: ReceivableInvoice, todayJst: string): ReceivableState {
+export function receivableState(
+  inv: ReceivableInvoice,
+  todayJst: string,
+  terms?: PaymentSchedule | null,
+): ReceivableState {
   if (inv.status !== 'finalized' && inv.status !== 'sent') return null
-  const due = dueDateOf(inv)
+  const due = dueDateOf(inv, terms)
   return due && due < todayJst ? 'overdue' : 'unpaid'
 }
 
@@ -41,10 +62,14 @@ export interface ReceivableSummary {
   overdueAmount: number
 }
 
-export function summarizeReceivables(invoices: ReceivableInvoice[], todayJst: string): ReceivableSummary {
+export function summarizeReceivables<T extends ReceivableInvoice>(
+  invoices: T[],
+  todayJst: string,
+  termsOf?: TermsOf<T>,
+): ReceivableSummary {
   const s: ReceivableSummary = { unpaidCount: 0, unpaidAmount: 0, overdueCount: 0, overdueAmount: 0 }
   for (const inv of invoices) {
-    const st = receivableState(inv, todayJst)
+    const st = receivableState(inv, todayJst, termsOf?.(inv))
     if (!st) continue
     const amt = Number(inv.total_amount) || 0
     s.unpaidCount++

@@ -17,6 +17,7 @@ import { calculateChainInventory } from '@/lib/inventory/chain'
 import { determineHasCard, isSampleOrderText, resolveContainerType } from '@/lib/pipeline/schemas'
 import { PackingAndShippingViews, type ShipmentItemData } from '@/components/field/PackingAndShippingViews'
 import { resolveDefaultRouteInfo } from '@/lib/field/shipment-sort'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
 import type { SpecWarning, FieldStatus } from '@/types/database'
 import type { PackInstructionValues } from '@/components/admin/PackInstructions'
@@ -34,28 +35,6 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 const PATH = '/field/shipments'
-
-function resolveItemPerCase(
-  packBase: number | null | undefined,
-  rulePacksPerCase: number | null | undefined,
-  customerName: string,
-  spec: string | null | undefined,
-  defaultCap: number | null | undefined,
-): number {
-  const combinedSpec = `${customerName} ${spec || ''}`.normalize('NFKC')
-  const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
-  if (specMatch) {
-    const parsedNum = Number(specMatch[1] || specMatch[2])
-    if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) {
-      return parsedNum
-    }
-  }
-  if (packBase && packBase > 0) return packBase
-  if (rulePacksPerCase && rulePacksPerCase > 0) return rulePacksPerCase
-  if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
-  if (defaultCap && defaultCap > 0) return defaultCap
-  return 20
-}
 
 export default async function ShipmentsPage({
   searchParams,
@@ -257,8 +236,11 @@ export default async function ShipmentsPage({
       if (!r1.error) return r1
       return await admin.from('customers').select('id, name, is_active').order('name')
     })(),
-    productIds.length
-      ? admin.from('products').select('id, container_capacity').in('id', productIds)
+    productIds.length || selectedProductId
+      ? admin
+          .from('products')
+          .select('id, container_capacity')
+          .in('id', [...new Set([...productIds, selectedProductId].filter(Boolean))])
       : Promise.resolve({ data: [] as { id: string; container_capacity: number | null }[], error: null }),
     (async (): Promise<DestRow[]> => {
       const r1 = await admin
@@ -356,6 +338,42 @@ export default async function ShipmentsPage({
   if (packErr) console.error('[field/shipments] pack_configs 取得失敗:', packErr.message)
 
   const packById = new Map((packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]))
+
+  // 入数の解決用: 選択品目の荷姿すべて（明細に荷姿が無いときの「取引先専用 → 取引先共通」と、翌日枠の明細の荷姿）
+  type PerCasePackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
+  const { data: productPackRows, error: productPackErr } = selectedProductId
+    ? await admin
+        .from('pack_configs')
+        .select('id, product_id, customer_id, base_per_selling, is_active')
+        .eq('product_id', selectedProductId)
+    : { data: [] as PerCasePackRow[], error: null }
+  if (productPackErr) console.error('[field/shipments] 入数用の荷姿の取得に失敗:', productPackErr.message)
+  const perCasePackById = new Map(((productPackRows ?? []) as PerCasePackRow[]).map((p) => [p.id, p]))
+  /** 取引先別の設定 → 荷姿（明細 → 取引先専用 → 取引先共通）→ 品目の標準 → 既定20（lib/masters/packs-per-case.ts） */
+  const resolveItemPerCase = (
+    custId: string | null | undefined,
+    productId: string,
+    packConfigId: string | null | undefined,
+    rulePacksPerCase: number | null,
+    capacity: number | null | undefined,
+  ): number => {
+    const linePack = packConfigId
+      ? perCasePackById.get(packConfigId) ??
+        (packById.get(packConfigId) ? { base_per_selling: packById.get(packConfigId)!.base } : null)
+      : null
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(
+      (productPackRows ?? []) as PerCasePackRow[],
+      custId,
+      productId,
+    )
+    return resolvePacksPerCase({
+      rule: { packs_per_case: rulePacksPerCase },
+      packConfig: linePack,
+      customerPacks,
+      sharedPacks,
+      product: { container_capacity: capacity },
+    }).value
+  }
   const needsConfirmByPack = new Map((packRows ?? []).map((p) => [p.id, p.needs_manual_confirm]))
   const packInstructionsById = new Map((packRows ?? []).map((p) => [p.id, p as PackInstructionValues]))
 
@@ -497,13 +515,7 @@ export default async function ShipmentsPage({
     const ruleSealText = typeof rule?.seal_text === 'string' ? rule.seal_text : null
     const ruleHasSeal = typeof rule?.has_seal === 'boolean' ? rule.has_seal : null
 
-    const perCase = resolveItemPerCase(
-      pack?.base,
-      rulePacksPerCase,
-      cName,
-      it.spec || ruleLabelSpec,
-      capacityById.get(it.product_id),
-    )
+    const perCase = resolveItemPerCase(custId, it.product_id, it.pack_config_id, rulePacksPerCase, capacityById.get(it.product_id))
 
     const qty = it.quantity
 
@@ -660,7 +672,7 @@ export default async function ShipmentsPage({
         nextItems = (fbNext.data ?? []) as typeof nextItems
       }
 
-      const defCapacity = capacityById.get(selectedProductId) ?? 20
+      const defCapacity = capacityById.get(selectedProductId)
       for (const ni of nextItems ?? []) {
         const custId = nextOrderCustMap.get(ni.order_id)
         const destId = nextOrderDestMap.get(ni.order_id)
@@ -679,13 +691,7 @@ export default async function ShipmentsPage({
         const ruleSealText = typeof rule?.seal_text === 'string' ? rule.seal_text : null
         const ruleHasSeal = typeof rule?.has_seal === 'boolean' ? rule.has_seal : null
 
-        const perCase = resolveItemPerCase(
-          pack?.base,
-          rulePacksPerCase,
-          cName,
-          ni.spec || ruleLabelSpec,
-          defCapacity,
-        )
+        const perCase = resolveItemPerCase(custId, ni.product_id, ni.pack_config_id, rulePacksPerCase, defCapacity)
 
         const qty = Number(ni.quantity) || 0
         if (qty <= 0) continue
@@ -790,7 +796,7 @@ export default async function ShipmentsPage({
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後に作業リストへ反映されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition"
+            className="shrink-0 inline-flex min-h-10 items-center rounded-lg bg-warning px-3 text-white hover:opacity-90 transition"
           >
             確認・承認する →
           </Link>
@@ -827,14 +833,14 @@ export default async function ShipmentsPage({
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
             <a
               href={`/field/shipments?date=${shiftDateStr(date, 1)}&product=${selectedProductId}`}
-              className="inline-flex items-center gap-1 rounded-xl bg-forest-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-forest-700 shadow-xs"
+              className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-forest-600 px-3.5 text-xs font-bold text-white hover:bg-forest-700 shadow-xs"
             >
               翌日の予定を見る →
             </a>
             {isAdmin && (
               <a
                 href="/admin/approvals"
-                className="inline-flex items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink hover:bg-line"
+                className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 text-xs font-bold text-ink hover:bg-line"
               >
                 承認待ちを確認
               </a>

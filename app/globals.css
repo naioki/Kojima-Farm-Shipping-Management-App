@@ -62,6 +62,45 @@
   --grape-600: #6a47c7;
   --grape-700: #573aa4;
 
+  /* 背景・枠線用（tailwind の bg-/border-/from- が参照。ダークモードでの反転方向が文字色と逆） */
+  --earth-50-bg: #faf8f5;
+  --earth-100-bg: #f2ece2;
+  --earth-200-bg: #e5d7c3;
+  --earth-300-bg: #d3bc9c;
+  --earth-400-bg: #c3a378;
+  --earth-500-bg: #b8935d;
+  --earth-600-bg: #9d7742;
+  --earth-700-bg: #7e5e35;
+  --earth-800-bg: #614829;
+  --earth-900-bg: #45331d;
+  --harvest-50-bg: #f0fdf4;
+  --harvest-100-bg: #dcfce7;
+  --harvest-400-bg: #4ade80;
+  --harvest-500-bg: #22c55e;
+  --harvest-600-bg: #16a34a;
+  --harvest-700-bg: #15803d;
+  --trust-50-bg: #eff8ff;
+  --trust-100-bg: #dbeefe;
+  --trust-400-bg: #38bdf8;
+  --trust-500-bg: #0c8ce9;
+  --trust-600-bg: #0270c4;
+  --trust-700-bg: #075a9b;
+  --forest-50-bg: #eef6f1;
+  --forest-100-bg: #d4e8db;
+  --forest-200-bg: #a9d0b8;
+  --forest-400-bg: #3f8f63;
+  --forest-500-bg: #2c7a51;
+  --forest-600-bg: #1f6442;
+  --forest-700-bg: #184d34;
+  --forest-800-bg: #123a28;
+  --forest-900-bg: #0c281c;
+  --grape-50-bg: #f4f1fd;
+  --grape-100-bg: #e7e1fa;
+  --grape-200-bg: #cfc2f3;
+  --grape-500-bg: #7c5cd6;
+  --grape-600-bg: #6a47c7;
+  --grape-700-bg: #573aa4;
+
   /* Functional */
   --alert: #d92d20;
   --alert-bg: #fef3f2;
@@ -99,6 +138,17 @@
 }
 
 .dark {
+  /* ブランド色: 薄い地は暗い色調に、濃い文字は明るく（濃い地＝bg の 600〜900 は変えない） */
+  --earth-50-bg: #201a14; --earth-100-bg: #2a2219; --earth-200-bg: #3a2f22;
+  --harvest-50-bg: #0f2418; --harvest-100-bg: #133020;
+  --trust-50-bg: #0c1d2c; --trust-100-bg: #0f2a40;
+  --forest-50-bg: #11231a; --forest-100-bg: #173024; --forest-200-bg: #1e3d2d;
+  --grape-50-bg: #1c1730; --grape-100-bg: #251d40; --grape-200-bg: #2f2550;
+  --earth-600: #c3a378; --earth-700: #d3bc9c; --earth-800: #e5d7c3; --earth-900: #f2ece2;
+  --harvest-600: #4ade80; --harvest-700: #86efac;
+  --trust-600: #38bdf8; --trust-700: #7dd3fc;
+  --forest-600: #5fae82; --forest-700: #a9d0b8; --forest-800: #d4e8db; --forest-900: #eef6f1;
+  --grape-600: #a996ea; --grape-700: #cfc2f3;
   --bg: #171310;
   --bg-soft: #1f1a15;
   --bg-card: #261f18;
@@ -118,6 +168,33 @@
 /* 印刷は常に明るい配色 */
 @media print {
   .dark {
+    --earth-50-bg: #faf8f5;
+    --earth-100-bg: #f2ece2;
+    --earth-200-bg: #e5d7c3;
+    --harvest-50-bg: #f0fdf4;
+    --harvest-100-bg: #dcfce7;
+    --trust-50-bg: #eff8ff;
+    --trust-100-bg: #dbeefe;
+    --forest-50-bg: #eef6f1;
+    --forest-100-bg: #d4e8db;
+    --forest-200-bg: #a9d0b8;
+    --grape-50-bg: #f4f1fd;
+    --grape-100-bg: #e7e1fa;
+    --grape-200-bg: #cfc2f3;
+    --earth-600: #9d7742;
+    --earth-700: #7e5e35;
+    --earth-800: #614829;
+    --earth-900: #45331d;
+    --harvest-600: #16a34a;
+    --harvest-700: #15803d;
+    --trust-600: #0270c4;
+    --trust-700: #075a9b;
+    --forest-600: #1f6442;
+    --forest-700: #184d34;
+    --forest-800: #123a28;
+    --forest-900: #0c281c;
+    --grape-600: #6a47c7;
+    --grape-700: #573aa4;
     --bg: #fdfcfa;
     --bg-soft: #f7f4ef;
     --bg-card: #ffffff;

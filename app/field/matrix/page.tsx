@@ -7,7 +7,8 @@ import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid, type MatrixDestinationItem } from '@/components/field/MatrixGrid'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
-import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -135,22 +136,27 @@ export default async function MatrixPage({
     }
   }
 
-  // 選択品目の取引先別 P/C
-  const { data: rules, error: rulesErr } = await supabase
-    .from('customer_product_rules')
-    .select('customer_id, packs_per_case')
-    .eq('product_id', selected.id)
-  if (rulesErr) console.error('[field/matrix] P/Cの読み込みに失敗:', rulesErr.message)
+  // 選択品目の取引先別 入数。取引先別の設定 → 荷姿（取引先専用 → 取引先共通）→ 品目の標準 → 既定20
+  // （lib/masters/packs-per-case.ts。週の管理は明細単位でなく取引先単位なので、明細の荷姿は使わない）
+  const [{ data: rules, error: rulesErr }, { data: packRows, error: packsErr }] = await Promise.all([
+    supabase.from('customer_product_rules').select('customer_id, packs_per_case').eq('product_id', selected.id),
+    supabase
+      .from('pack_configs')
+      .select('id, product_id, customer_id, base_per_selling, is_active')
+      .eq('product_id', selected.id),
+  ])
+  if (rulesErr) console.error('[field/matrix] 入数の読み込みに失敗:', rulesErr.message)
+  if (packsErr) console.error('[field/matrix] 荷姿の読み込みに失敗:', packsErr.message)
+  const ruleByCustomer = new Map((rules ?? []).map((r) => [r.customer_id, r]))
   const packsByCustomer: Record<string, number | null> = {}
-  for (const r of rules ?? []) packsByCustomer[r.customer_id] = r.packs_per_case
   for (const c of customers ?? []) {
-    if (!packsByCustomer[c.id]) {
-      if (c.name.includes('農業総合研究所') || c.name.toUpperCase().includes('NSK')) {
-        packsByCustomer[c.id] = 24
-      } else {
-        packsByCustomer[c.id] = selected.container_capacity ?? 20
-      }
-    }
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(packRows ?? [], c.id, selected.id)
+    packsByCustomer[c.id] = resolvePacksPerCase({
+      rule: ruleByCustomer.get(c.id) ?? null,
+      customerPacks,
+      sharedPacks,
+      product: selected,
+    }).value
   }
 
   const destinationsByCustomer: Record<string, MatrixDestinationItem[]> = {}
@@ -193,23 +199,26 @@ export default async function MatrixPage({
         <div className="grid grid-cols-3 sm:inline-flex items-center gap-1.5 w-full sm:w-auto">
           <Link
             href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
+            className="flex h-10 items-center justify-center rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold text-ink-soft hover:bg-bg-soft text-center"
           >
             ← 前週
           </Link>
           <Link
             href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-forest-200 bg-forest-50 px-3 text-xs sm:text-sm font-black leading-10 text-forest-900 hover:bg-forest-100 text-center"
+            className="flex h-10 items-center justify-center rounded-xl border border-forest-200 bg-forest-50 px-3 text-xs sm:text-sm font-black text-forest-900 hover:bg-forest-100 text-center"
           >
             今日〜1週間
           </Link>
           <Link
             href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
+            className="flex h-10 items-center justify-center rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold text-ink-soft hover:bg-bg-soft text-center"
           >
             翌週 →
           </Link>
         </div>
+        <p className="num text-sm font-black text-ink-soft">
+          {formatJpDateShort(dates[0])} 〜 {formatJpDateShort(dates[6])}
+        </p>
       </div>
 
       {/* 品目タブ */}
@@ -223,7 +232,7 @@ export default async function MatrixPage({
                 href={`${PATH}?week=${week}&product=${p.id}`}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'rounded-full border px-4 py-2 text-sm font-black transition-all flex items-center gap-2',
+                  'min-h-10 rounded-full border px-4 py-2 text-sm font-black transition-all flex items-center gap-2',
                   active
                     ? 'border-forest-600 bg-forest-600 text-white shadow-sm'
                     : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
@@ -247,7 +256,7 @@ export default async function MatrixPage({
                 if (e.target.value) e.target.form?.submit()
               }}
               defaultValue=""
-              className="h-8 rounded-lg border border-line bg-bg-card px-2.5 text-xs font-semibold text-ink hover:bg-bg-soft focus:outline-none"
+              className="h-10 rounded-lg border border-line bg-bg-card px-2.5 text-xs font-semibold text-ink hover:bg-bg-soft focus:outline-none"
             >
               <option value="" disabled>
                 品目を選択して予定を入力...

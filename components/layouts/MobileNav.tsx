@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { navFor, buildPreservedFieldHref } from '@/components/layouts/nav-items'
 import { ThemeToggle } from '@/components/layouts/ThemeToggle'
 import { NavBadge } from '@/components/layouts/NavBadge'
-import { useNavState } from '@/components/layouts/use-nav'
+import { useNavState, groupBadgeTotal } from '@/components/layouts/use-nav'
 import { FieldLangSwitch } from '@/components/field/FieldLangSwitch'
 import type { SidebarUser } from '@/components/layouts/Sidebar'
 
@@ -227,17 +227,20 @@ export function MobileNav({
                       type="button"
                       onClick={() => toggleGroup(group.label!)}
                       aria-expanded={gOpen}
-                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-forest-200 hover:text-white"
+                      className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-bold tracking-wide text-forest-200 hover:text-white"
                     >
-                      {group.label}
-                      <ChevronDown className={cn('h-4 w-4 transition-transform', gOpen && 'rotate-180')} aria-hidden />
+                      <span className="min-w-0 truncate">{group.label}</span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {!gOpen && <NavBadge count={groupBadgeTotal(group, badges)} />}
+                        <ChevronDown className={cn('h-4 w-4 transition-transform', gOpen && 'rotate-180')} aria-hidden />
+                      </span>
                     </button>
                     {gOpen && <div className="mt-1">{items}</div>}
                   </div>
                 )
               })}
             </div>
-            {/* 管理者はメニューの「振り返り・記録」に同じリンクがあるため、スタッフにだけ出す（重複させない） */}
+            {/* 管理者はメニュー本体に「改善要望・バグ報告」があるため、スタッフにだけ出す（重複させない） */}
             {role !== 'admin' && (
             <div className="pt-2 border-t border-forest-700/60">
               <Link
@@ -246,11 +249,11 @@ export function MobileNav({
                 className="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-harvest-100 hover:bg-forest-700 hover:text-white transition-colors"
               >
                 <MessageSquarePlus className="h-5 w-5 shrink-0" aria-hidden />
-                改善・バグ報告 (5W1H)
+                改善要望・バグ報告
               </Link>
             </div>
             )}
-            <div className="pt-2"><ThemeToggle /></div>
+            <div className="mt-2 border-t border-forest-700/60 pt-2"><ThemeToggle /></div>
             <form action="/auth/signout" method="post" className="pt-1">
               <button
                 type="submit"

@@ -14,13 +14,21 @@ import {
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
-import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 import { getStaffFeatures } from '@/lib/field/features'
+
+/** 総数と箱数の内訳（単位は「箱」に統一。端数は端数の箱も数えた合計を添える） */
+function formatBoxBreakdown(quantity: number, cases: number, loose: number): string {
+  if (loose > 0 && cases > 0) return `${quantity} / ${cases}箱＋端数1箱(${loose}P) 計${cases + 1}箱`
+  if (loose > 0) return `${quantity} / 端数1箱(${loose}P)`
+  if (cases > 0) return `${quantity} / ${cases}箱`
+  return String(quantity)
+}
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -110,7 +118,9 @@ export default async function DeliveriesPage({
     default_container_type?: string | null
   }
 
-  const [custRes, destRes, prodRes, packRes, deliveryRes, rulesRes, routeOverrides, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
+  type ProductPackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
+
+  const [custRes, destRes, prodRes, packRes, productPackRes, deliveryRes, rulesRes, routeOverrides, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
     customerIds.length
       ? admin.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
@@ -134,6 +144,10 @@ export default async function DeliveriesPage({
     packIds.length
       ? admin.from('pack_configs').select('id, base_per_selling, selling_unit_label').in('id', packIds)
       : Promise.resolve({ data: [] as { id: string; base_per_selling: number; selling_unit_label: string }[], error: null }),
+    // 入数の解決用: 明細に荷姿が無いときの「取引先専用 → 取引先共通」の荷姿
+    productIds.length
+      ? admin.from('pack_configs').select('id, product_id, customer_id, base_per_selling, is_active').in('product_id', productIds)
+      : Promise.resolve({ data: [] as ProductPackRow[], error: null }),
     admin.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
     customerIds.length
       ? (async (): Promise<{ data: RuleRow[]; error: null }> => {
@@ -159,6 +173,7 @@ export default async function DeliveriesPage({
   if (destRes.error) return <ErrorState message="納入先を読み込めませんでした。" detail={destRes.error.message} />
   if (prodRes.error) return <ErrorState message="商品情報を読み込めませんでした。" detail={prodRes.error.message} />
   if (packRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={packRes.error.message} />
+  if (productPackRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={productPackRes.error.message} />
   if (deliveryRes.error) return <ErrorState message="配送チェック状態を読み込めませんでした。" detail={deliveryRes.error.message} />
 
   const custById = new Map((custRes.data ?? []).map((c) => [c.id, { name: c.name, display_color: c.display_color }]))
@@ -315,23 +330,20 @@ export default async function DeliveriesPage({
     }
 
     // ケース数・端数換算（規格・明細ごとに独立して端数箱を計算し、異規格の端数が1箱に混ざるバグを防止）
-    let perCase: number | null = null
-    const combinedSpec = `${customerName} ${it.spec || ''}`.normalize('NFKC')
-    const specMatch = combinedSpec.match(/(?:入数|1箱|1ケース)\s*(\d+)|(\d+)\s*(?:入|パック|P)/i)
-    if (specMatch) {
-      const parsedNum = Number(specMatch[1] || specMatch[2])
-      if (Number.isFinite(parsedNum) && parsedNum > 0 && parsedNum <= 200) {
-        perCase = parsedNum
-      }
-    }
-    if (!perCase || perCase <= 0) {
-      const packBase = it.pack_config_id ? packById.get(it.pack_config_id)?.base ?? null : null
-      if (packBase && packBase > 0) perCase = packBase
-      else if (rule?.packs_per_case && rule.packs_per_case > 0) perCase = rule.packs_per_case
-      else if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) perCase = 24
-      else perCase = capacityById.get(it.product_id) ?? 20
-    }
-    const safePerCase = perCase && perCase > 0 ? perCase : 20
+    // 入数は 取引先別の設定 → 荷姿（明細 → 取引先専用 → 取引先共通）→ 品目の標準 → 既定20（lib/masters/packs-per-case.ts）
+    const linePackBase = it.pack_config_id ? packById.get(it.pack_config_id)?.base ?? null : null
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(
+      (productPackRes.data ?? []) as ProductPackRow[],
+      order.customer_id,
+      it.product_id,
+    )
+    const safePerCase = resolvePacksPerCase({
+      rule: rule ?? null,
+      packConfig: linePackBase != null ? { base_per_selling: linePackBase } : null,
+      customerPacks,
+      sharedPacks,
+      product: { container_capacity: capacityById.get(it.product_id) },
+    }).value
 
     const itemCases = Math.floor(it.quantity / safePerCase)
     const itemLoose = it.quantity % safePerCase
@@ -346,11 +358,7 @@ export default async function DeliveriesPage({
     dEntry.items.push({
       id: it.id,
       productName: it.product_name,
-      quantityText: formatQty(
-        it.quantity,
-        safePerCase,
-        it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
-      ),
+      quantityText: formatBoxBreakdown(it.quantity, itemCases, itemLoose),
       unit: it.unit,
       quantity: it.quantity,
       fieldStatus: (it as { field_status?: string }).field_status ?? 'not_started',

@@ -107,13 +107,13 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus }),
       })
-      if (!res.ok) throw new Error('ステータス更新に失敗しました')
+      if (!res.ok) throw new Error('対応状況の更新に失敗しました')
       setReports((prev) =>
         prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)),
       )
-      toast.success('ステータスを更新しました')
+      toast.success('対応状況を更新しました')
     } catch {
-      toast.error('ステータスの更新に失敗しました')
+      toast.error('対応状況の更新に失敗しました')
     }
   }
 
@@ -149,7 +149,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-harvest-100 text-forest-800">
               <MessageSquarePlus className="h-5 w-5" />
             </span>
-            <h2 className="font-display text-xl font-black text-ink">現場からの改善要望・バグ報告（5W1H）</h2>
+            <h2 className="font-display text-xl font-black text-ink">要望・報告を送る</h2>
           </div>
           <p className="mt-1 text-sm font-medium text-ink-soft">
             現場での気づき、バグ、こうしてほしい要望を気軽にお寄せください。<span className="font-bold text-harvest-700">「全部埋めなくてもOK」</span>です。
@@ -157,13 +157,14 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
         </div>
       </div>
 
-      {/* 5W1H 投稿フォーム */}
+      {/* 投稿フォーム（いつ・どこで・だれが・なぜ・どうしてほしいかは任意） */}
       <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-harvest-100 bg-harvest-50/40 p-4">
         <div>
-          <label className="block text-sm font-black text-ink">
-            【なにが起きたか・改善したいこと】（What） <span className="text-alert font-bold">*必須</span>
+          <label htmlFor="fb-what" className="block text-sm font-black text-ink">
+            なにが起きたか・改善したいこと <span className="text-alert font-bold">（必須）</span>
           </label>
           <textarea
+            id="fb-what"
             value={what}
             onChange={(e) => setWhat(e.target.value)}
             rows={3}
@@ -178,66 +179,72 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
           <button
             type="button"
             onClick={() => setShowOptionalFields(!showOptionalFields)}
-            className="flex items-center gap-1.5 text-xs font-bold text-harvest-700 hover:text-forest-800 hover:underline"
+            aria-expanded={showOptionalFields}
+            className="flex min-h-10 items-center gap-1.5 text-left text-xs font-bold text-harvest-700 hover:text-forest-800 hover:underline"
           >
-            {showOptionalFields ? '▲ 詳しい項目（いつ/どこで/誰が等）を閉じる' : '▼ 詳しい項目（いつ/どこで/誰が/なぜ/どう改善）も入力する（任意・埋めなくてもOK）'}
+            {showOptionalFields ? '▲ くわしい項目をたたむ' : '▼ くわしく書く（いつ・どこで・だれが・なぜ・どうしてほしいか／書かなくてもOK）'}
           </button>
         </div>
 
         {showOptionalFields && (
           <div className="grid gap-3 pt-2 sm:grid-cols-2 text-xs">
             <div>
-              <label className="block font-bold text-ink">【いつ頃】（When・任意）</label>
+              <label htmlFor="fb-when" className="block font-bold text-ink">いつ頃（任意）</label>
               <input
+                id="fb-when"
                 type="text"
                 value={when}
                 onChange={(e) => setWhen(e.target.value)}
                 placeholder="例: 今日の15時頃、朝の出荷作業中"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-ink/20 bg-bg-card px-2 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-ink">【どこで・どの画面】（Where・任意）</label>
+              <label htmlFor="fb-where" className="block font-bold text-ink">どこで・どの画面（任意）</label>
               <input
+                id="fb-where"
                 type="text"
                 value={where}
                 onChange={(e) => setWhere(e.target.value)}
-                placeholder="例: 出荷一覧、新規出荷追加、FAX原本画面"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                placeholder="例: 収穫・パックボード、注文の受付、承認待ち"
+                className="mt-1 h-10 w-full rounded-lg border border-ink/20 bg-bg-card px-2 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-ink">【だれが】（Who・任意）</label>
+              <label htmlFor="fb-who" className="block font-bold text-ink">だれが（任意）</label>
               <input
+                id="fb-who"
                 type="text"
                 value={who}
                 onChange={(e) => setWho(e.target.value)}
                 placeholder="例: パートさん、現場リーダー"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-ink/20 bg-bg-card px-2 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block font-bold text-ink">【なぜ・どんな状況で】（Why・任意）</label>
+              <label htmlFor="fb-why" className="block font-bold text-ink">なぜ・どんな状況で（任意）</label>
               <input
+                id="fb-why"
                 type="text"
                 value={why}
                 onChange={(e) => setWhy(e.target.value)}
                 placeholder="例: 電波が悪かった、急いでいて押し間違えた"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-ink/20 bg-bg-card px-2 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block font-bold text-ink">【どう改善してほしいか】（How・任意）</label>
+              <label htmlFor="fb-how" className="block font-bold text-ink">どうしてほしいか（任意）</label>
               <input
+                id="fb-how"
                 type="text"
                 value={how}
                 onChange={(e) => setHow(e.target.value)}
                 placeholder="例: ボタンを大きくして色を変えてほしい、確認画面を出してほしい"
-                className="mt-1 w-full rounded-lg border border-ink/20 bg-bg-card p-2 text-xs text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-ink/20 bg-bg-card px-2 text-sm text-ink placeholder:text-ink-soft/60 focus:border-harvest-500 focus:outline-none"
               />
             </div>
           </div>
@@ -259,7 +266,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
       <div className="space-y-3 pt-2">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-base font-black text-ink flex items-center gap-2">
-            <span>📋 お寄せいただいた報告・対応ステータス</span>
+            <span>📋 届いた報告と対応状況</span>
             <span className="text-xs font-normal text-ink-soft">({reports.length}件)</span>
           </h3>
 
@@ -269,7 +276,8 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded-lg border border-ink/20 bg-bg-card px-2 py-1 text-xs text-ink"
+              aria-label="表示する対応状況"
+              className="h-10 rounded-lg border border-ink/20 bg-bg-card px-2 text-xs text-ink"
             >
               <option value="all">すべて表示</option>
               <option value="pending">未着手のみ</option>
@@ -327,7 +335,8 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                       <select
                         value={r.status}
                         onChange={(e) => handleStatusChange(r.id, e.target.value as FeedbackReport['status'])}
-                        className="rounded-lg border border-ink/20 bg-bg-card px-2 py-0.5 text-xs font-bold text-ink hover:border-ink/40"
+                        aria-label="対応状況を変える"
+                        className="h-10 rounded-lg border border-ink/20 bg-bg-card px-2 text-xs font-bold text-ink hover:border-ink/40"
                       >
                         <option value="pending">未着手にする</option>
                         <option value="in_progress">対応中にする</option>
@@ -337,10 +346,10 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                     )}
                   </div>
 
-                  {/* 本文 (What) */}
+                  {/* 本文（なにが起きたか） */}
                   <p className="text-sm font-black text-ink whitespace-pre-wrap">{r.what}</p>
 
-                  {/* 5W1H 補足情報 */}
+                  {/* 補足（いつ・どこで・だれが・なぜ・どうしたい） */}
                   {(r.when || r.where || r.who || r.why || r.how) && (
                     <div className="grid gap-1.5 sm:grid-cols-2 rounded-lg bg-sand-50 p-2.5 text-xs text-ink-soft">
                       {r.when && <div><span className="font-bold text-ink">いつ:</span> {r.when}</div>}
@@ -360,21 +369,22 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                             type="text"
                             value={editAdminNote}
                             onChange={(e) => setEditAdminNote(e.target.value)}
-                            placeholder="管理者対応メモ（例: 次回デプロイでボタン配置修正）"
-                            className="flex-1 rounded-lg border border-ink/20 p-1.5 text-xs"
+                            aria-label="管理メモ"
+                            placeholder="管理メモ（例: 次の更新でボタンの位置を直す）"
+                            className="h-10 min-w-0 flex-1 rounded-lg border border-ink/20 bg-bg-card px-2 text-xs text-ink"
                           />
                           <Button
                             type="button"
                             size="sm"
                             onClick={() => handleSaveAdminNote(r.id)}
-                            className="text-xs py-1 h-7"
+                            className="h-10 text-xs"
                           >
                             保存
                           </Button>
                           <button
                             type="button"
                             onClick={() => setEditingId(null)}
-                            className="text-xs text-ink-soft hover:underline"
+                            className="min-h-10 px-2 text-xs text-ink-soft hover:underline"
                           >
                             閉じる
                           </button>
@@ -394,7 +404,7 @@ export function FeedbackReportSection({ isAdmin = true }: { isAdmin?: boolean })
                               setEditingId(r.id)
                               setEditAdminNote(r.admin_note || '')
                             }}
-                            className="text-harvest-700 hover:underline font-bold text-xs"
+                            className="min-h-10 px-2 text-harvest-700 hover:underline font-bold text-xs"
                           >
                             {r.admin_note ? 'メモ編集' : '＋メモ追加'}
                           </button>

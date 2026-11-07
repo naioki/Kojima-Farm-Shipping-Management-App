@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus,
@@ -67,6 +67,46 @@ export interface ShipmentAddFormProps {
   fixedIntakeChannel?: 'fax' | 'email' | null
   /** 写真・ファイルの AI 読み取りを使えるか（現場スタッフは設定「写真・FAX自動読取を許可」に従う） */
   allowAiRead?: boolean
+  /**
+   * ページにそのまま入力欄を出す（/admin/orders/new「注文の受付」用）。モーダルにせず、
+   * 手入力の欄も最初から開いておく。登録が終わったら閉じずに空のフォームへ戻る。
+   */
+  inline?: boolean
+}
+
+/** フォームの外枠（現場=モーダル、注文の受付=ページ内カード）。 */
+function FormShell({
+  inline,
+  open,
+  onClose,
+  title,
+  footer,
+  children,
+}: {
+  inline: boolean
+  open: boolean
+  onClose: () => void
+  title: string
+  footer?: ReactNode
+  children: ReactNode
+}) {
+  if (!inline) {
+    return (
+      <Modal open={open} onClose={onClose} title={title} className="max-w-xl" footer={footer}>
+        {children}
+      </Modal>
+    )
+  }
+  return (
+    <section aria-label={title} className="rounded-2xl border border-line-strong bg-bg-card shadow-sm">
+      <div className="px-4 py-4 sm:px-5">{children}</div>
+      {footer && (
+        <div className="sticky bottom-0 z-10 rounded-b-2xl border-t border-line bg-bg-card px-4 py-3 sm:px-5">
+          {footer}
+        </div>
+      )}
+    </section>
+  )
 }
 
 type LocalCustomer = { id: string; name: string; aliases?: string[] | null }
@@ -188,10 +228,11 @@ export function ShipmentAddForm({
   initialAttachment = null,
   fixedIntakeChannel = null,
   allowAiRead = true,
+  inline = false,
 }: ShipmentAddFormProps) {
   const router = useRouter()
   const { enqueueShipment } = useOutbox()
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(inline)
   const [step, setStep] = useState<'input' | 'confirm'>('input')
 
   // マスタ state
@@ -324,7 +365,8 @@ export function ShipmentAddForm({
   useEffect(() => setLocalPacksByPair(packsByPair), [packsByPair])
   useEffect(() => setLocalRulesByPair(rulesByPair), [rulesByPair])
   // AI入力欄が主役。手入力は必要なときだけ開く（AIの単品結果・未登録取引先の作成時は自動で開く）
-  const [manualFormOpen, setManualFormOpen] = useState(false)
+  // 注文の受付（inline）では電話注文の手入力が主なので、最初から開いておく
+  const [manualFormOpen, setManualFormOpen] = useState(inline)
 
   /** モーダルを開くたびに前回の取引先・数量・候補残りをクリーンに初期化して別会社への混入を100%防ぐ */
   const openCleanAddModal = () => {
@@ -363,7 +405,7 @@ export function ShipmentAddForm({
     setNewAliases('')
     setShowNewDestForExisting(false)
     setNewDestForExistingName('')
-    setManualFormOpen(false)
+    setManualFormOpen(inline)
     if (defaultProductId) {
       const matchedP = products.find((p) => p.id === defaultProductId)
       if (matchedP) {
@@ -372,6 +414,12 @@ export function ShipmentAddForm({
       }
     }
     setIsOpen(true)
+  }
+
+  /** 閉じる（ページ内フォームは閉じずに空の状態へ戻す） */
+  const closeForm = () => {
+    if (inline) openCleanAddModal()
+    else setIsOpen(false)
   }
 
   useEffect(() => {
@@ -456,7 +504,11 @@ export function ShipmentAddForm({
   }, [customerId, allDestinations, destinationId, showNewDestForExisting])
 
   const selectedProduct = products.find((p) => p.id === productId)
-  const unit = selectedProduct?.unit ?? 'P'
+  // 表示単位はパック数（P）にそろえる（品目マスタの「袋」「パック」とPが画面で混ざらないように）
+  const unit = (() => {
+    const u = selectedProduct?.unit?.trim()
+    return !u || u === '袋' || u === 'パック' || u === 'p' ? 'P' : u
+  })()
   const packsPerCase = customerId && productId ? localPacksByPair[`${customerId}:${productId}`] ?? null : null
 
   // 取引先・品目・納入先変更時に連動して登録済みルール（入数・コンテナ・規格・カード・シール・袋）を自動セット
@@ -737,14 +789,14 @@ export function ShipmentAddForm({
         setInputCases(String(c))
         setInputTotalPacks(String(tot))
         setQtyRaw(`${c}c`)
-        badges.push(`数量: ${c}ケース (${tot}${data.unit || 'P'})`)
+        badges.push(`数量: ${c}ケース (${tot}P)`)
       } else if (data.quantity_number != null && data.quantity_number > 0) {
         const tot = Number(data.quantity_number)
         const c = Math.floor(tot / resolvedPacksPerCase)
         setInputTotalPacks(String(tot))
         setInputCases(String(c))
         setQtyRaw(String(tot))
-        badges.push(`数量: ${tot} ${data.unit || 'P'} (${c}箱相当)`)
+        badges.push(`数量: ${tot}P (${c}箱相当)`)
       }
 
       // 5. 操作モード
@@ -1186,7 +1238,7 @@ export function ShipmentAddForm({
     isMultiMatrix = false,
   ) {
     if (!parsedOrder) {
-      toast('注文を特定できませんでした。下の欄に手動入力してください。', { icon: 'ℹ️' })
+      toast('注文を特定できませんでした。「手で入力する」の欄に入力してください。', { icon: 'ℹ️' })
       return
     }
 
@@ -2000,7 +2052,7 @@ export function ShipmentAddForm({
       const remaining = updatedList.filter((c) => c.selected && !c.registered).length
       if (remaining === 0) {
         toast.success(`✨ 選択した ${successCount} 件の明細をすべて反映しました！`)
-        setIsOpen(false)
+        closeForm()
         setStep('input')
         setParsedCandidates([])
         setActiveCandidateIdx(0)
@@ -2068,7 +2120,7 @@ export function ShipmentAddForm({
         toast.success('電波が弱い場所のため端末に一時保存しました（繋がり次第自動で反映されます）', {
           duration: 4000,
         })
-        setIsOpen(false)
+        closeForm()
         setStep('input')
         setQtyRaw('')
         return
@@ -2085,7 +2137,7 @@ export function ShipmentAddForm({
         toast.success('電波が弱い場所のため端末に一時保存しました（繋がり次第自動で反映されます）', {
           duration: 4000,
         })
-        setIsOpen(false)
+        closeForm()
         setStep('input')
         setQtyRaw('')
         return
@@ -2133,7 +2185,7 @@ export function ShipmentAddForm({
       }
 
       // すべて完了時のリセット
-      setIsOpen(false)
+      closeForm()
       setStep('input')
       setQtyRaw('')
       setNaturalText('')
@@ -2173,42 +2225,47 @@ export function ShipmentAddForm({
 
   return (
     <>
-      {/* ボード内明示ボタン ＋ 右下の新規追加丸ボタン（＋） */}
-      <div className="print:hidden pt-1">
-        <button
-          type="button"
-          onClick={openCleanAddModal}
-          className="w-full rounded-2xl border-2 border-dashed border-forest-200 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
-        >
-          <Plus className="h-4 w-4 stroke-[2.8] text-forest-700" />
-          <span>＋ 注文を追加（写真・LINEを貼り付け / 手入力も可）</span>
-        </button>
-      </div>
+      {/* ボード内明示ボタン ＋ 右下の新規追加丸ボタン（現場のみ。注文の受付はページに直接フォームを出す） */}
+      {!inline && (
+        <>
+          <div className="print:hidden pt-1">
+            <button
+              type="button"
+              onClick={openCleanAddModal}
+              className="w-full min-h-12 rounded-2xl border-2 border-dashed border-forest-200 bg-forest-50/70 hover:bg-forest-100/80 px-4 py-3 text-forest-900 font-black text-sm flex items-center justify-center gap-2 transition active:scale-[0.99] shadow-2xs"
+            >
+              <Plus className="h-4 w-4 shrink-0 stroke-[2.8] text-forest-700" aria-hidden />
+              <span>注文を追加（写真・LINEを貼り付け / 手入力も可）</span>
+            </button>
+          </div>
+          {/* 右下の丸ボタンがカード右端の操作（展開・戻す等）を覆わないよう、ページ末尾に余白を足す */}
+          <div className="h-20 print:hidden" aria-hidden />
 
-      {/* 右下フローティング新規追加丸ボタン（＋） */}
-      <div
-        className="fixed right-5 z-40 print:hidden"
-        style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
-      >
-        <button
-          type="button"
-          onClick={openCleanAddModal}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-2xl ring-4 ring-white/90 hover:bg-forest-700 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-forest-200"
-          aria-label="新規注文の追加・数量変更"
-          title="新規注文の追加・数量変更"
-        >
-          <Plus className="h-7 w-7 stroke-[3]" aria-hidden />
-        </button>
-      </div>
+          <div
+            className="fixed right-5 z-40 print:hidden"
+            style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+          >
+            <button
+              type="button"
+              onClick={openCleanAddModal}
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-forest-600 text-white shadow-2xl ring-4 ring-white/90 hover:bg-forest-700 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-forest-200"
+              aria-label="注文を追加"
+              title="注文を追加"
+            >
+              <Plus className="h-7 w-7 stroke-[3]" aria-hidden />
+            </button>
+          </div>
+        </>
+      )}
 
-      {/* 統合モーダル */}
-      <Modal
+      {/* 入力フォーム（現場=モーダル／注文の受付=ページ内） */}
+      <FormShell
+        inline={inline}
         open={isOpen}
         onClose={() => {
-          if (!submitting) setIsOpen(false)
+          if (!submitting) closeForm()
         }}
-        title={step === 'confirm' ? '出荷登録・変更の最終確認' : '新規出荷の追加 / 変更'}
-        className="max-w-xl"
+        title={step === 'confirm' ? '内容の確認' : inline ? '注文の受付' : '注文を追加'}
         footer={
           step === 'confirm' ? (
             <div className="flex w-full items-center justify-between gap-3">
@@ -2233,25 +2290,26 @@ export function ShipmentAddForm({
               </Button>
             </div>
           ) : (
-            <div className="flex w-full items-center justify-between gap-2.5">
+            <div className="flex w-full flex-wrap items-center justify-between gap-2">
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setIsOpen(false)}
+                onClick={closeForm}
                 disabled={submitting || analyzingNatural || analyzingPhoto}
+                className="min-h-10 whitespace-nowrap"
               >
-                キャンセル
+                {inline ? '入力を消す' : 'キャンセル'}
               </Button>
               {manualFormOpen && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={proceedToConfirm}
                   disabled={analyzingNatural || analyzingPhoto || !customerId || !productId || !qtyRaw.trim()}
-                  className="font-bold px-3.5 text-xs flex items-center gap-1"
+                  className="min-h-10 whitespace-nowrap font-bold px-3.5 text-xs flex items-center gap-1"
                 >
-                  <span>差分を確認</span>
+                  <span>確認してから登録</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
                 <Button
@@ -2277,10 +2335,10 @@ export function ShipmentAddForm({
                   }}
                   isLoading={submitting}
                   disabled={analyzingNatural || analyzingPhoto || !customerId || !productId || !qtyRaw.trim() || (destinationRequired && !destinationId)}
-                  className="bg-forest-600 hover:bg-forest-700 text-white font-black px-5 flex items-center gap-1.5 shadow-md"
+                  className="min-h-10 whitespace-nowrap bg-forest-600 hover:bg-forest-700 text-white font-black px-5 flex items-center gap-1.5 shadow-md"
                 >
                   <Check className="h-4 w-4" />
-                  <span>即登録する</span>
+                  <span>登録する</span>
                 </Button>
               </div>
               )}
@@ -2554,7 +2612,7 @@ export function ShipmentAddForm({
                     }
                   }}
                   rows={3}
-                  placeholder="LINEの文面や画像をここに貼り付け（Ctrl+V）／例:「明日の和郷園に20c追加」「寺崎 50P」／画像への補足指示"
+                  placeholder="LINEの文面や画像をここに貼り付け／例:「明日の和郷園に20c追加」「寺崎 50P」"
                   className="w-full rounded-xl border border-forest-200/80 bg-bg-card p-3 text-sm text-ink placeholder:text-ink-soft/60 focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-200"
                 />
               </div>
@@ -3013,28 +3071,29 @@ export function ShipmentAddForm({
 
             {/* ② 構造化直接入力フォーム（AI候補一覧がある時は1行に折りたたんで画面をスッキリ保ち、タップでいつでも展開可能 #18） */}
             <div className="space-y-3 pt-1 border-t border-line">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() => setManualFormOpen((prev) => !prev)}
-                  className="inline-flex items-center gap-1.5 text-xs font-black text-forest-900 bg-forest-50 hover:bg-forest-100 border border-forest-200 px-2.5 py-1.5 rounded-lg transition"
+                  aria-expanded={manualFormOpen}
+                  className="inline-flex min-h-10 items-center gap-1.5 text-xs font-black text-forest-900 bg-forest-50 hover:bg-forest-100 border border-forest-200 px-3 rounded-lg transition"
                 >
-                  <span>{manualFormOpen ? '▲ 手入力の欄をたたむ' : '✍️ 手で入力する・数量を直す（タップで開く）'}</span>
+                  <span>{manualFormOpen ? '▲ 手入力の欄をたたむ' : '✍️ 手で入力する・数量を直す'}</span>
                 </button>
                 {/* 操作モード選択 */}
-                <div className="flex items-center gap-1 text-xs font-bold">
+                <label className="flex items-center gap-1 text-xs font-bold">
                   <span className="text-ink-muted">操作:</span>
                   <select
                     value={mode}
                     onChange={(e) => setMode(e.target.value as typeof mode)}
-                    className="rounded-lg border border-line bg-bg-card px-2 py-0.5 text-xs font-bold text-ink"
+                    className="h-10 rounded-lg border border-line bg-bg-card px-2 text-xs font-bold text-ink"
                   >
                     <option value="create">✨ 新規追加</option>
                     <option value="increase">⚡ 既存出荷に加算（増量）</option>
                     <option value="decrease">📉 減量</option>
                     <option value="set">🔄 数量上書き</option>
                   </select>
-                </div>
+                </label>
               </div>
 
               {manualFormOpen && (
@@ -3049,7 +3108,7 @@ export function ShipmentAddForm({
                       type="button"
                       onClick={() => setTargetDate(todayStr)}
                       className={cn(
-                        'rounded-md px-2.5 py-0.5 text-xs font-bold transition-colors',
+                        'min-h-10 rounded-md px-3 text-xs font-bold transition-colors',
                         targetDate === todayStr
                           ? 'bg-forest-600 text-white shadow-2xs'
                           : 'bg-sand-100 text-ink hover:bg-sand-200',
@@ -3061,7 +3120,7 @@ export function ShipmentAddForm({
                       type="button"
                       onClick={() => setTargetDate(tomorrowStr)}
                       className={cn(
-                        'rounded-md px-2.5 py-0.5 text-xs font-bold transition-colors',
+                        'min-h-10 rounded-md px-3 text-xs font-bold transition-colors',
                         targetDate === tomorrowStr
                           ? 'bg-forest-600 text-white shadow-2xs'
                           : 'bg-sand-100 text-ink hover:bg-sand-200',
@@ -3077,7 +3136,9 @@ export function ShipmentAddForm({
                     type="date"
                     value={targetDate}
                     onChange={(e) => setTargetDate(e.target.value)}
-                    className="col-span-5 h-9 text-xs"
+                    aria-label="納品日"
+                    wrapperClassName="col-span-5"
+                    className="h-10 px-2 text-sm"
                   />
                   <div className="col-span-7 grid grid-cols-3 rounded-lg border border-line bg-sand-50 p-0.5 text-xs font-bold">
                     {([
@@ -3090,7 +3151,7 @@ export function ShipmentAddForm({
                         type="button"
                         onClick={() => setShippingTime(opt.val)}
                         className={cn(
-                          'rounded-md py-1 text-xs font-black transition',
+                          'min-h-9 rounded-md py-1 text-xs font-black transition',
                           shippingTime === opt.val
                             ? 'bg-bg-card text-ink shadow-2xs ring-1 ring-forest-600/20'
                             : 'text-ink-muted hover:text-ink',
@@ -3148,10 +3209,10 @@ export function ShipmentAddForm({
                     <button
                       type="button"
                       onClick={() => setShowNewCustomer(true)}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-forest-700 hover:underline"
+                      className="inline-flex min-h-10 items-center gap-1 px-1 text-xs font-bold text-forest-700 hover:underline"
                     >
-                      <UserPlus className="h-3 w-3" />
-                      ＋ その場で取引先を追加
+                      <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                      その場で取引先を追加
                     </button>
                   </div>
                 )}
@@ -3810,7 +3871,7 @@ export function ShipmentAddForm({
             </div>
           </div>
         )}
-      </Modal>
+      </FormShell>
     </>
   )
 }
