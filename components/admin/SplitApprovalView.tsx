@@ -582,7 +582,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
                     else next.delete(o.id)
                     setSelectedIdsForBulk(next)
                   }}
-                  className="h-5 w-5 cursor-pointer rounded border-line text-earth-600 focus:ring-earth-500"
+                  className="h-5 w-5 cursor-pointer rounded border-line accent-earth-600 focus:ring-earth-500"
                   aria-label={`${o.customerName}${o.destinationName ? ` ＞ ${o.destinationName}` : ''} を一括承認の対象にする`}
                 />
               </label>

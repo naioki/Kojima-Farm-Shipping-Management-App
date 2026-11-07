@@ -119,7 +119,7 @@ export function ApprovalPipelineToggle({
       <div className="flex flex-wrap items-center gap-3 self-end sm:self-center">
         {autoApprove && (
           <div className="flex items-center gap-1.5">
-            <label htmlFor="auto-approve-threshold-select" className="text-sm font-medium text-ink-soft">
+            <label htmlFor="auto-approve-threshold-select" className="whitespace-nowrap text-sm font-medium text-ink-soft">
               自動確定の基準
             </label>
             <select

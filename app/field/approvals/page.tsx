@@ -1,7 +1,7 @@
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { redirect } from 'next/navigation'
-import { CheckCircle2, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Lock } from 'lucide-react'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { EmptyState, ErrorState } from '@/components/ui/States'
@@ -29,11 +29,15 @@ export default async function FieldApprovalsPage() {
 
   const features = await getStaffFeatures()
   if (!canStaffUse('approve', role, features)) {
+    // 故障ではないので赤いエラーではなく中立の案内にする（タイ語も併記）
     return (
-      <ErrorState
-        title="まだ使えません"
-        message="承認は管理者が「設定 → 現場機能の解放」でONにすると使えます。"
-      />
+      <div className="mx-auto max-w-2xl">
+        <EmptyState
+          icon={<Lock className="h-8 w-8 text-ink-faint" aria-hidden />}
+          title="しょうにんは まだ つかえません / ยังใช้ไม่ได้"
+          description="かんりしゃが「設定 → 現場機能の解放」で オンに すると つかえます。 / ผู้ดูแลต้องเปิดใช้งานในหน้าตั้งค่าก่อน"
+        />
+      </div>
     )
   }
 
@@ -58,7 +62,7 @@ export default async function FieldApprovalsPage() {
       </div>
       <div className="flex items-center gap-2">
         <CheckCircle2 className="h-5 w-5 text-earth-700" aria-hidden />
-        <h1 className="font-display text-2xl font-bold text-ink">承認（しょうにん）</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">承認待ち（しょうにん まち）</h1>
       </div>
 
       {/* すぐ承認できる */}
@@ -76,8 +80,12 @@ export default async function FieldApprovalsPage() {
                 customerName={o.customerName}
                 customerColor={o.customerColor}
                 deliveryDate={o.deliveryDate}
+                destinationName={o.destinationName}
+                destinationHint={o.destinationHint}
+                notes={o.notes}
                 needsDeliveryDate={false}
                 items={o.items}
+                receipt={o.receipt}
                 approveLabel="OK・しょうにん"
                 size="lg"
               />
@@ -104,6 +112,9 @@ export default async function FieldApprovalsPage() {
                 customerName={o.customerName}
                 customerColor={o.customerColor}
                 deliveryDate={o.deliveryDate}
+                destinationName={o.destinationName}
+                destinationHint={o.destinationHint}
+                notes={o.notes}
                 needsDeliveryDate={o.needsDeliveryDate}
                 needsDestination={o.needsDestination}
                 destinationOptions={o.destinationOptions}

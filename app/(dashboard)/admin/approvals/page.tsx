@@ -3,7 +3,7 @@ import { Columns, Inbox, Sparkles } from 'lucide-react'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getPendingOrders } from '@/lib/orders/pending'
 import { getSetting } from '@/lib/settings'
-import { isAutoApproveOn } from '@/lib/ingestion/auto-approve'
+import { resolveToggle } from '@/lib/settings-spec'
 import { ErrorState } from '@/components/ui/States'
 import { SplitApprovalView } from '@/components/admin/SplitApprovalView'
 import { ApprovalPipelineToggle } from '@/components/admin/ApprovalPipelineToggle'
@@ -78,7 +78,7 @@ export default async function AdminApprovalsPage() {
 
       {/* 管理者専用：自動確定のON/OFF。注文を先に見せたいので、設定は一番下に置く */}
       <ApprovalPipelineToggle
-        initialAutoApprove={isAutoApproveOn(autoApproveRaw)}
+        initialAutoApprove={resolveToggle(autoApproveRaw, 'on') === 'on'}
         initialThreshold={thresholdRaw?.trim() || '0.80'}
       />
     </div>

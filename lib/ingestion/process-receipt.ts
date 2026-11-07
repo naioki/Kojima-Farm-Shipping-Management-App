@@ -372,7 +372,7 @@ export async function processReceipt(
       }
     }
   } catch (e) {
-    return await failReceipt(receiptId, `Gemini解析失敗: ${e instanceof Error ? e.message : String(e)}`)
+    return await failReceipt(receiptId, `AIの読み取りに失敗しました（原因: ${e instanceof Error ? e.message : String(e)}）`)
   }
 
   // Kojima-FAX (`order_pipeline_service.py`) 互換の slipData を構築
