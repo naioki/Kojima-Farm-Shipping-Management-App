@@ -195,7 +195,8 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           isDirty ? 'border-harvest-500 bg-harvest-50/30' : 'border-line bg-bg-card',
         )}
       >
-        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+        {/* スマホでは入力欄を1行ぶん使い、ボタンは下の行へ（flex-1 だけだとボタンと同じ行に押し込まれて重なる） */}
+        <div className="flex min-w-0 basis-full flex-wrap items-end gap-2 lg:basis-0 lg:flex-1">
           <label className="flex flex-col gap-0.5">
             <span className="text-xs font-bold text-ink-soft">品目名</span>
             <input
@@ -226,9 +227,16 @@ export function ProductsTable({ products, categories = [] }: { products: Product
             />
           </label>
 
-          {/* #49 標準1箱入数（container_capacity） */}
-          <label className="flex flex-col gap-0.5">
+          {/* #49 標準1箱入数（container_capacity）。入数の優先順位は lib/masters/packs-per-case.ts */}
+          <label
+            className="flex flex-col gap-0.5"
+            title="取引先別の設定・荷姿の設定が無いときに使われます（どちらも無ければ20）"
+          >
             <span className="text-xs font-bold text-ink-soft">標準1箱入数</span>
+            {/* 注記は入力欄の上に置く（行は items-end でそろえているので、下に置くと入力欄の高さがずれる） */}
+            <span className="max-w-[8.5rem] text-[11px] leading-tight text-ink-faint">
+              取引先別・荷姿の設定が無いときに使われます
+            </span>
             <input
               className={cn(inp, 'num w-24 text-center font-bold')}
               inputMode="numeric"

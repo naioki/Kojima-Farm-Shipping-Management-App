@@ -61,10 +61,13 @@ export function PackConfigManager({
   products,
   customers,
   rows,
+  rulePacksByPair = {},
 }: {
   products: Option[]
   customers: Option[]
   rows: PackConfigRow[]
+  /** 取引先別の設定の入数（`${customer_id}:${product_id}` → 入数。正の値のみ）。荷姿より優先される */
+  rulePacksByPair?: Record<string, number>
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -84,6 +87,29 @@ export function PackConfigManager({
   const productName = new Map(products.map((p) => [p.id, p.name]))
   const customerName = new Map(customers.map((c) => [c.id, c.name]))
   const baseUnitOf = new Map(products.map((p) => [p.id, p.base_unit || '基準単位']))
+
+  // 入数の優先順位（lib/masters/packs-per-case.ts）: 取引先別の設定 → 荷姿 → 品目の標準 → 20。
+  // 荷姿の行ごとに「取引先別の設定が優先される」ことを示す。
+  const ruleCountByProduct = new Map<string, number>()
+  for (const key of Object.keys(rulePacksByPair)) {
+    const pid = key.slice(key.indexOf(':') + 1)
+    ruleCountByProduct.set(pid, (ruleCountByProduct.get(pid) ?? 0) + 1)
+  }
+  function priorityNote(r: PackConfigRow): { text: string; overridden: boolean } {
+    if (r.customer_id) {
+      const v = rulePacksByPair[`${r.customer_id}:${r.product_id}`]
+      if (v != null) {
+        return Number(v) === Number(r.base_per_selling)
+          ? { text: `取引先別の設定（入数 ${v}）が優先されます（同じ入数）`, overridden: false }
+          : { text: `取引先別の設定（入数 ${v}）が優先され、この荷姿の入数は箱数に使われません`, overridden: true }
+      }
+      return { text: '取引先別の設定があればそちらが優先', overridden: false }
+    }
+    const n = ruleCountByProduct.get(r.product_id) ?? 0
+    return n > 0
+      ? { text: `取引先別の設定があればそちらが優先（この品目は ${n} 取引先に設定あり）`, overridden: false }
+      : { text: '取引先別の設定があればそちらが優先', overridden: false }
+  }
 
   async function add() {
     const base = parseFloat(form.base_per_selling)
@@ -157,6 +183,14 @@ export function PackConfigManager({
                     {r.customer_id && ` ・ ${customerName.get(r.customer_id) ?? '取引先'}専用`}
                     {r.needs_manual_confirm && ' ・要人手確認'}
                   </p>
+                  {(() => {
+                    const note = priorityNote(r)
+                    return (
+                      <p className={cn('text-xs', note.overridden ? 'mt-0.5 rounded bg-warning-bg px-1.5 py-0.5 font-medium text-ink' : 'text-ink-faint')}>
+                        入数: {note.text}
+                      </p>
+                    )
+                  })()}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
                   <button

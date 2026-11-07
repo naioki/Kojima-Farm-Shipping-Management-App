@@ -1,10 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { createClient } from '@/lib/supabase/client'
+import {
+  packsPerCaseSourceLabel,
+  positiveNumber,
+  resolvePacksPerCase,
+  splitPacksForCustomer,
+  type PackLike,
+} from '@/lib/masters/packs-per-case'
 import type { FractionPolicy } from '@/types/database'
 
 export interface RuleRow {
@@ -23,11 +31,131 @@ export interface RuleRow {
   packing_notes: string | null
 }
 
+/** 取引先別の設定が未入力のときに使われる入数の材料（品目ごと） */
+export interface PerCaseFallback {
+  customerPacks: PackLike[]
+  sharedPacks: PackLike[]
+  capacity: number | null
+}
+
 export interface CustomerRulesEditorProps {
   customerId: string
   products: { id: string; name: string; unit: string }[]
   initialRules: Record<string, RuleRow>
   canEdit?: boolean
+  /** 品目ごとの荷姿・標準入数。渡されなければ画面側で読み込む */
+  perCaseFallbacks?: Record<string, PerCaseFallback>
+}
+
+type FallbackState =
+  | { status: 'loading' }
+  | { status: 'ready'; byProduct: Record<string, PerCaseFallback> }
+  | { status: 'error' }
+
+/** 荷姿・品目の標準入数を読み込む（「使われる入数」の表示用。読み取りのみ） */
+function usePerCaseFallbacks(
+  customerId: string,
+  productIds: string[],
+  given: Record<string, PerCaseFallback> | undefined,
+): FallbackState {
+  const [state, setState] = useState<FallbackState>(
+    given ? { status: 'ready', byProduct: given } : { status: 'loading' },
+  )
+  const idsKey = productIds.join(',')
+  useEffect(() => {
+    if (given) {
+      setState({ status: 'ready', byProduct: given })
+      return
+    }
+    const ids = idsKey ? idsKey.split(',') : []
+    if (!ids.length) {
+      setState({ status: 'ready', byProduct: {} })
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const [prodRes, packRes] = await Promise.all([
+        supabase.from('products').select('id, container_capacity').in('id', ids),
+        supabase
+          .from('pack_configs')
+          .select('id, product_id, customer_id, base_per_selling, is_active')
+          .in('product_id', ids),
+      ])
+      if (cancelled) return
+      if (prodRes.error || packRes.error) {
+        console.error('[CustomerRulesEditor] 入数の材料の読み込みに失敗:', (prodRes.error ?? packRes.error)?.message)
+        setState({ status: 'error' })
+        return
+      }
+      const capacityById = new Map((prodRes.data ?? []).map((p) => [p.id, positiveNumber(p.container_capacity)]))
+      const byProduct: Record<string, PerCaseFallback> = {}
+      for (const pid of ids) {
+        const { customerPacks, sharedPacks } = splitPacksForCustomer(packRes.data ?? [], customerId, pid)
+        byProduct[pid] = { customerPacks, sharedPacks, capacity: capacityById.get(pid) ?? null }
+      }
+      setState({ status: 'ready', byProduct })
+    })().catch((e: unknown) => {
+      if (cancelled) return
+      console.error('[CustomerRulesEditor] 入数の材料の読み込みに失敗:', e)
+      setState({ status: 'error' })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [customerId, idsKey, given])
+  return state
+}
+
+/**
+ * 「使われる入数: 24（取引先別の設定）」の表示。
+ * 優先順位は lib/masters/packs-per-case.ts（取引先別の設定 → 荷姿 → 品目の標準 → 20）。
+ * 入力中の値でその場で切り替わる。
+ */
+function EffectivePerCase({
+  packsPerCase,
+  fallback,
+}: {
+  packsPerCase: number | null
+  fallback: FallbackState | PerCaseFallback
+}) {
+  const ruleValue = positiveNumber(packsPerCase)
+  if (ruleValue == null && 'status' in fallback && fallback.status === 'loading') {
+    return <span className="mt-1 block text-xs text-ink-faint">使われる入数: 確認中…</span>
+  }
+  if (ruleValue == null && 'status' in fallback && fallback.status === 'error') {
+    return (
+      <span className="mt-1 block text-xs text-ink-faint">
+        未入力のときは 荷姿 → 品目の標準 → 20 の順で使われます（いまの値は読み込めませんでした）
+      </span>
+    )
+  }
+  const src: PerCaseFallback | null = 'status' in fallback ? null : fallback
+  const resolved = resolvePacksPerCase({
+    rule: { packs_per_case: packsPerCase },
+    customerPacks: src?.customerPacks,
+    sharedPacks: src?.sharedPacks,
+    product: { container_capacity: src?.capacity },
+  })
+  // 入数の違う荷姿が複数あるときは、注文で選んだ荷姿の入数が使われる（取引先別の設定が無い場合）
+  const packValues = [
+    ...new Set(
+      [...(src?.customerPacks ?? []), ...(src?.sharedPacks ?? [])]
+        .map((p) => positiveNumber(p.base_per_selling))
+        .filter((n): n is number => n != null),
+    ),
+  ].sort((a, b) => a - b)
+  return (
+    <span className="mt-1 block text-xs text-ink-soft">
+      使われる入数:{' '}
+      <strong className="num tabular-nums text-ink">{resolved.value}</strong>（{packsPerCaseSourceLabel(resolved.source)}）
+      {resolved.source !== 'customer_rule' && packValues.length > 1 && (
+        <span className="block text-ink-faint">
+          注文で荷姿を選んだときはその入数（<span className="num">{packValues.join('・')}</span>）
+        </span>
+      )}
+    </span>
+  )
 }
 
 const FRACTION_OPTIONS: { value: FractionPolicy; label: string }[] = [
@@ -63,7 +191,18 @@ const numOrNull = (s: string): number | null => {
 /**
  * 取引先×商品の取引ルール編集（#47 シール有無・シール表記・袋種別の設定に対応）。
  */
-export function CustomerRulesEditor({ customerId, products, initialRules, canEdit = true }: CustomerRulesEditorProps) {
+export function CustomerRulesEditor({
+  customerId,
+  products,
+  initialRules,
+  canEdit = true,
+  perCaseFallbacks,
+}: CustomerRulesEditorProps) {
+  const fallbackState = usePerCaseFallbacks(
+    customerId,
+    products.map((p) => p.id),
+    perCaseFallbacks,
+  )
   const [rows, setRows] = useState<Record<string, RuleRow>>(() => {
     const r: Record<string, RuleRow> = {}
     for (const p of products) r[p.id] = initialRules[p.id] ? { ...EMPTY, ...initialRules[p.id] } : { ...EMPTY }
@@ -152,7 +291,15 @@ export function CustomerRulesEditor({ customerId, products, initialRules, canEdi
                   value={row.packs_per_case ?? ''}
                   onChange={(e) => patch(p.id, { packs_per_case: numOrNull(e.target.value) })}
                   className={cn(fieldInput, 'num tabular-nums font-bold')}
-                  placeholder="例: 20"
+                  placeholder="空欄なら荷姿・品目の標準"
+                />
+                <EffectivePerCase
+                  packsPerCase={row.packs_per_case}
+                  fallback={
+                    fallbackState.status === 'ready'
+                      ? fallbackState.byProduct[p.id] ?? { customerPacks: [], sharedPacks: [], capacity: null }
+                      : fallbackState
+                  }
                 />
               </label>
               <label className="min-w-0">

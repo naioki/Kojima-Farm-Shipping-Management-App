@@ -75,6 +75,9 @@ export default async function ProductsPage() {
             <h2 className="font-display text-base font-bold text-ink">品目一覧</h2>
             <span className="text-xs text-ink-soft">※内容を変更したら、その行の「保存」を押してください（税率も同じです）。「削除」「一覧に戻す」は押すとすぐ反映されます</span>
           </div>
+          <p className="rounded border border-line bg-bg-soft px-3 py-2 text-xs text-ink-soft">
+            1箱の入数は「取引先別の設定」→「荷姿」→「標準1箱入数」→ 20 の順で使われます。標準1箱入数は、取引先別・荷姿の設定が無いときに使われます。
+          </p>
           <ProductsTable products={rows} categories={categories} />
         </Card>
       )}

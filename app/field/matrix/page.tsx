@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { MatrixGrid, type MatrixDestinationItem } from '@/components/field/MatrixGrid'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -135,22 +136,27 @@ export default async function MatrixPage({
     }
   }
 
-  // 選択品目の取引先別 P/C
-  const { data: rules, error: rulesErr } = await supabase
-    .from('customer_product_rules')
-    .select('customer_id, packs_per_case')
-    .eq('product_id', selected.id)
-  if (rulesErr) console.error('[field/matrix] P/Cの読み込みに失敗:', rulesErr.message)
+  // 選択品目の取引先別 入数。取引先別の設定 → 荷姿（取引先専用 → 取引先共通）→ 品目の標準 → 既定20
+  // （lib/masters/packs-per-case.ts。週の管理は明細単位でなく取引先単位なので、明細の荷姿は使わない）
+  const [{ data: rules, error: rulesErr }, { data: packRows, error: packsErr }] = await Promise.all([
+    supabase.from('customer_product_rules').select('customer_id, packs_per_case').eq('product_id', selected.id),
+    supabase
+      .from('pack_configs')
+      .select('id, product_id, customer_id, base_per_selling, is_active')
+      .eq('product_id', selected.id),
+  ])
+  if (rulesErr) console.error('[field/matrix] 入数の読み込みに失敗:', rulesErr.message)
+  if (packsErr) console.error('[field/matrix] 荷姿の読み込みに失敗:', packsErr.message)
+  const ruleByCustomer = new Map((rules ?? []).map((r) => [r.customer_id, r]))
   const packsByCustomer: Record<string, number | null> = {}
-  for (const r of rules ?? []) packsByCustomer[r.customer_id] = r.packs_per_case
   for (const c of customers ?? []) {
-    if (!packsByCustomer[c.id]) {
-      if (c.name.includes('農業総合研究所') || c.name.toUpperCase().includes('NSK')) {
-        packsByCustomer[c.id] = 24
-      } else {
-        packsByCustomer[c.id] = selected.container_capacity ?? 20
-      }
-    }
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(packRows ?? [], c.id, selected.id)
+    packsByCustomer[c.id] = resolvePacksPerCase({
+      rule: ruleByCustomer.get(c.id) ?? null,
+      customerPacks,
+      sharedPacks,
+      product: selected,
+    }).value
   }
 
   const destinationsByCustomer: Record<string, MatrixDestinationItem[]> = {}
