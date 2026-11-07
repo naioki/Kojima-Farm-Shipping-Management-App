@@ -7,7 +7,7 @@ export function FieldLangSwitch({ className }: { className?: string }) {
   const { langMode, setLangMode } = useFieldLang()
 
   const base =
-    'inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 transition-all whitespace-nowrap'
+    'inline-flex min-h-10 items-center justify-center gap-1 rounded-md px-2 text-xs sm:text-sm sm:px-3 transition-all whitespace-nowrap'
   const off = 'text-ink bg-transparent hover:bg-bg-card/70'
 
   return (

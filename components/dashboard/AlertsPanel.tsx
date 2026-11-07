@@ -42,11 +42,13 @@ export function AlertsPanel({ alerts, allHref }: { alerts: AlertItem[]; allHref?
               <li key={a.id}>
                 <Link
                   href={a.href}
-                  className="flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
+                  className="flex min-h-10 items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-bg-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
                 >
                   <Icon className={`h-5 w-5 shrink-0 ${cfg.ring}`} aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">{a.label}</p>
+                    <p className="line-clamp-2 break-words text-sm font-medium text-ink" title={a.label}>
+                      {a.label}
+                    </p>
                     {a.meta && <p className="text-xs text-ink-faint">{a.meta}</p>}
                   </div>
                   <span

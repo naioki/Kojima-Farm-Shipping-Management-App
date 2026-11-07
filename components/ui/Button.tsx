@@ -20,12 +20,14 @@ const variants: Record<Variant, string> = {
     'active:translate-y-0 active:shadow-sm',
     'focus-visible:ring-earth-500',
   ),
+  // 文字は ink（明暗どちらのテーマでも地との対比 10:1 以上）。ブランド色は枠とホバーで出す。
   secondary: cn(
-    'bg-bg-card text-earth-700 border border-line-strong',
+    'bg-bg-card text-ink border border-line-strong',
     'hover:bg-earth-50 hover:border-earth-400',
     'focus-visible:ring-earth-400',
   ),
-  tertiary: cn('text-earth-700 hover:bg-earth-50', 'focus-visible:ring-earth-400'),
+  // earth-800 は明るいテーマで濃い茶、ダークでは明るいベージュに反転する（どちらも対比 7:1 以上）
+  tertiary: cn('text-earth-800 hover:bg-earth-50', 'focus-visible:ring-earth-400'),
   danger: cn(
     'bg-alert text-white shadow-sm',
     'hover:brightness-110 hover:shadow-md',

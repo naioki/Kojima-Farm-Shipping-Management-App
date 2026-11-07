@@ -2,9 +2,9 @@ import { Gauge, Timer, AlertTriangle, Clock, FileX, TrendingDown, TrendingUp, Mi
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/States'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { formatJpDateShort } from '@/lib/dates'
+import { formatJpDateShort, jstTodayStr } from '@/lib/dates'
 import { loadWeeklyMetrics } from '@/lib/metrics/load'
-import { CHANNEL_KEYS, type ChannelKey, type WeekMetrics } from '@/lib/metrics/compute'
+import { CHANNEL_KEYS, weekProgress, type ChannelKey, type WeekMetrics } from '@/lib/metrics/compute'
 import { cn } from '@/lib/cn'
 
 export const dynamic = 'force-dynamic'
@@ -74,8 +74,14 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: React
 function WeekTable({ weeks, cols }: { weeks: WeekMetrics[]; cols: { label: string; get: (w: WeekMetrics) => string }[] }) {
   const rows = [...weeks].reverse()
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[420px] text-sm">
+    <div>
+      {/* スマホでは表が右に続くことを、右端の影と文言で知らせる */}
+      <p className="mb-1 text-right text-xs text-ink-faint sm:hidden" aria-hidden>
+        横にスクロールできます →
+      </p>
+      <div className="relative">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs text-ink-soft">
             <th className="py-2 pr-3 font-medium">週（月曜〜）</th>
@@ -98,7 +104,10 @@ function WeekTable({ weeks, cols }: { weeks: WeekMetrics[]; cols: { label: strin
             </tr>
           ))}
         </tbody>
-      </table>
+          </table>
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-bg-card to-transparent sm:hidden" aria-hidden />
+      </div>
     </div>
   )
 }
@@ -121,6 +130,10 @@ export default async function MetricsPage() {
   const prev = weeks[weeks.length - 2] ?? null
   const mistakes = (w: WeekMetrics) => w.qtyCorrections + w.noteRevisions + w.invoiceVoids + w.deliveryIssues
   const paperish = (w: WeekMetrics) => w.channels.phone + w.channels.line + w.channels.paper
+  // 今週は月曜〜今日までの途中集計。先週（まる1週）と比べるときは件数が少なめに出る
+  const wp = weekProgress(cur.week, jstTodayStr())
+  const weekInProgress = wp.inProgress
+  const curRangeLabel = `${formatJpDateShort(cur.week)}〜${formatJpDateShort(wp.lastDay)}`
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -130,9 +143,14 @@ export default async function MetricsPage() {
           評価指標
         </h1>
         <p className="text-sm text-ink-soft">
-          今週（{formatJpDateShort(cur.week)}〜）と直近8週。処理時間・ミス・事務時間は少ないほど良い。
+          今週（<span className="num">{curRangeLabel}</span>）と直近8週。処理時間・ミス・事務時間は少ないほど良い。
           受注経路・承認時刻・操作時間は 2026年11月の計測開始以降の分だけが正確です。
         </p>
+        {weekInProgress && (
+          <p className="text-sm font-medium text-warning">
+            今週は途中（{wp.elapsedDays}日分）の集計です。先週はまる1週（7日分）なので、件数や操作時間は今週のほうが少なく出ます。
+          </p>
+        )}
       </header>
 
       {/* 1. 処理時間 */}
@@ -171,7 +189,7 @@ export default async function MetricsPage() {
           出荷・請求ミスの件数
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Stat label="今週の合計" value={`${mistakes(cur)}件`} sub={<Trend cur={mistakes(cur)} prev={prev ? mistakes(prev) : null} />} />
+          <Stat label={weekInProgress ? '今週（途中）の合計' : '今週の合計'} value={`${mistakes(cur)}件`} sub={<Trend cur={mistakes(cur)} prev={prev ? mistakes(prev) : null} />} />
           <p className="text-xs text-ink-soft sm:self-center">
             数量の訂正（承認後の数量変更・追加FAXの上書き）、納品書の訂正版、請求書の無効化、配送の問題記録を数えます。
             訂正の中には「正しい変更」も含まれるため、増減の傾向で見てください。
@@ -195,8 +213,8 @@ export default async function MetricsPage() {
           事務作業の時間（アプリ操作時間からの推定）
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Stat label="今週の管理画面の操作時間" value={fmtMin(cur.officeMin)} sub={<Trend cur={cur.officeMin} prev={prev?.officeMin ?? null} fmt={fmtMin} />} />
-          <Stat label="今週の現場画面の操作時間" value={fmtMin(cur.fieldMin)} />
+          <Stat label={weekInProgress ? '今週（途中）の管理画面の操作時間' : '今週の管理画面の操作時間'} value={fmtMin(cur.officeMin)} sub={<Trend cur={cur.officeMin} prev={prev?.officeMin ?? null} fmt={fmtMin} />} />
+          <Stat label={weekInProgress ? '今週（途中）の現場画面の操作時間' : '今週の現場画面の操作時間'} value={fmtMin(cur.fieldMin)} />
         </div>
         <p className="text-xs text-ink-soft">
           画面を開いて実際に操作していた時間だけを数えます（1分以上操作がなければ数えない）。紙・電話にかかった時間は含みません。
@@ -216,16 +234,19 @@ export default async function MetricsPage() {
       <Card variant="elevated" className="space-y-4">
         <h2 className="flex items-center gap-2 text-lg font-bold text-ink">
           <FileX className="h-5 w-5 text-harvest-700" aria-hidden />
-          紙の卒業
+          紙の卒業（今週）
         </h2>
+        <p className="text-xs text-ink-soft">
+          今週（<span className="num">{curRangeLabel}</span>）の件数{weekInProgress && '・途中集計'}。下の表は週ごとの受注経路です。
+        </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="電話・LINE・紙の注文をアプリに入力" value={`${paperish(cur)}件`} />
-          <Stat label="FAX注文をアプリで承認" value={`${cur.faxApprovedInApp}件`} />
-          <Stat label="納品書をアプリで発行" value={`${cur.appDeliveryNotes}件`} />
-          <Stat label="請求書をアプリで作成" value={`${cur.appInvoices}件`} />
+          <Stat label="今週: 電話・LINE・紙の注文をアプリに入力" value={`${paperish(cur)}件`} />
+          <Stat label="今週: FAX注文をアプリで承認" value={`${cur.faxApprovedInApp}件`} />
+          <Stat label="今週: 納品書をアプリで発行" value={`${cur.appDeliveryNotes}件`} />
+          <Stat label="今週: 請求書をアプリで作成" value={`${cur.appInvoices}件`} />
         </div>
         <p className="text-xs text-ink-soft">
-          お父さんが紙でやっていた4業務（電話メモ・FAX紙での出荷指示・出荷表/納品書の手書き・請求の手帳管理）が、アプリでどれだけ完結しているかの件数です。
+          これまで紙で行っていた4つの業務（電話メモ・FAX紙での出荷指示・出荷表/納品書の手書き・請求の手帳管理）が、アプリでどれだけ完結しているかの件数です。
           「不明」は受注経路を選ばずに手入力された注文です（新規注文入力・追加画面で経路を選ぶと減ります）。
         </p>
         <WeekTable

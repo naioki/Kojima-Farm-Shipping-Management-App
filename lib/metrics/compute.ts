@@ -71,6 +71,20 @@ export function weekStartJst(isoOrDate: string): string {
   return shiftDateStr(date, -back)
 }
 
+/**
+ * 週（月曜はじまり）のうち今日までに経過した日数と、途中かどうか。
+ * 今週の数字は「月曜〜今日」の途中集計なので、先週（まる1週）と比べるときに注記するために使う。
+ */
+export function weekProgress(weekStart: string, todayJst: string): { elapsedDays: number; inProgress: boolean; lastDay: string } {
+  const weekEnd = shiftDateStr(weekStart, 6)
+  if (todayJst < weekStart) return { elapsedDays: 0, inProgress: true, lastDay: weekStart }
+  if (todayJst >= weekEnd) return { elapsedDays: 7, inProgress: false, lastDay: weekEnd }
+  const [y, m, d] = weekStart.split('-').map(Number) as [number, number, number]
+  const [ty, tm, td] = todayJst.split('-').map(Number) as [number, number, number]
+  const elapsedDays = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(y, m - 1, d)) / 86_400_000) + 1
+  return { elapsedDays, inProgress: true, lastDay: todayJst }
+}
+
 /** 今日を含む直近 n 週の月曜（古い順） */
 export function recentWeeks(todayJst: string, n: number): string[] {
   const thisWeek = weekStartJst(todayJst)

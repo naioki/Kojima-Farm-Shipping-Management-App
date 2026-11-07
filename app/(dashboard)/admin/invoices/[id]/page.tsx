@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
+import { Ban, ChevronLeft, FilePen } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ErrorState } from '@/components/ui/States'
 import { InvoiceActions } from '@/components/admin/InvoiceActions'
@@ -66,38 +66,64 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
   if (customerRes.error) console.error('[invoices/[id]] 宛名の取得に失敗:', customerRes.error.message)
   const customer = customerRes.data
 
+  const status = invoice.status as InvoiceStatus
+  const due = dueDateOf(invoice)
+  const rs = receivableState(invoice, jstTodayStr())
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3 print:hidden">
-        <Link href="/admin/invoices" className="inline-flex items-center gap-1 text-sm text-trust-600 hover:underline">
+      <div className="space-y-3 print:hidden">
+        <Link
+          href="/admin/invoices"
+          className="inline-flex min-h-10 items-center gap-1 text-sm text-trust-600 hover:underline"
+        >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          請求一覧
+          請求一覧へ戻る
         </Link>
-        <InvoiceActions invoiceId={invoice.id} status={invoice.status as InvoiceStatus} />
+        <InvoiceActions invoiceId={invoice.id} status={status} />
       </div>
 
-      {/* 印刷対象（書類本体） */}
-      <article className="space-y-6 rounded-lg border border-line bg-bg-card p-8 print:border-0 print:p-0">
-        <header className="flex items-start justify-between">
+      {/* 無効・下書きは本物の請求書に見えないよう、画面にも印刷にも帯を出す */}
+      {status === 'void' && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-lg border-2 border-alert bg-alert-bg px-4 py-3 text-alert"
+        >
+          <Ban className="h-7 w-7 shrink-0" aria-hidden />
           <div>
-            <h1 className="font-display text-2xl font-bold text-ink">請求書</h1>
-            <p className="mt-1 text-sm text-ink-soft">
-              ステータス: {STATUS_JP[invoice.status as InvoiceStatus]}
-            </p>
-            {(() => {
-              const rs = receivableState(invoice, jstTodayStr())
-              const due = dueDateOf(invoice)
-              if (!rs || !due) return null
-              return (
-                <p className={`mt-1 text-sm font-bold print:hidden ${rs === 'overdue' ? 'text-alert' : 'text-ink-soft'}`}>
-                  支払期日: {formatJpDate(due)}
-                  {rs === 'overdue' ? '（期日超過・未入金）' : ''}
-                  {!invoice.due_date && <span className="ml-1 font-normal text-ink-faint">※翌月末として判定</span>}
-                </p>
-              )
-            })()}
+            <p className="font-display text-2xl font-black tracking-widest">無効</p>
+            <p className="text-sm font-bold">この請求書は無効です。お客様へ送付しないでください（番号と履歴のみ残しています）。</p>
           </div>
-          <div className="text-right text-sm">
+        </div>
+      )}
+      {status === 'draft' && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-lg border-2 border-warning bg-warning-bg px-4 py-3 text-ink"
+        >
+          <FilePen className="h-6 w-6 shrink-0 text-warning" aria-hidden />
+          <div>
+            <p className="font-display text-lg font-black">下書き（未確定）</p>
+            <p className="text-sm">内容を確認して「確定する」を押すまで、正式な請求書ではありません。</p>
+          </div>
+        </div>
+      )}
+
+      {/* 印刷対象（書類本体） */}
+      <article
+        className={`space-y-6 rounded-lg border border-line bg-bg-card p-4 sm:p-8 print:border-0 print:p-0 ${status === 'void' ? 'opacity-70' : ''}`}
+      >
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="font-display text-2xl font-bold text-ink">
+              請求書
+              {status === 'void' && <span className="ml-2 text-alert">（無効）</span>}
+              {status === 'draft' && <span className="ml-2 text-base text-warning">（下書き）</span>}
+            </h1>
+            {/* 社内向けの状態表示。お客様用の紙には出さない */}
+            <p className="mt-1 text-sm text-ink-soft print:hidden">ステータス: {STATUS_JP[status]}</p>
+          </div>
+          <div className="text-sm sm:text-right">
             <p className="num font-bold text-ink">{invoice.invoice_number}</p>
             {invoice.issue_date && <p className="text-ink-soft">発行日: {formatJpDate(invoice.issue_date)}</p>}
             <p className="text-ink-soft">
@@ -105,17 +131,27 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
                 ? `対象期間: ${formatJpDate(invoice.period_start)} 〜 ${formatJpDate(invoice.period_end)}`
                 : `対象月: ${formatJpMonth(invoice.billing_month)}`}
             </p>
+            {/* 支払期限（インボイス帳票の記載事項・tax.md）。画面・印刷の両方に出す */}
+            {due && (
+              <p className={`font-bold ${rs === 'overdue' ? 'text-alert print:text-ink' : 'text-ink'}`}>
+                お支払期限: {formatJpDate(due)}
+                {rs === 'overdue' && <span className="print:hidden">（期日超過・未入金）</span>}
+              </p>
+            )}
+            {due && !invoice.due_date && (
+              <p className="text-xs text-ink-faint print:hidden">※支払期日が未登録のため、請求月の翌月末を表示しています</p>
+            )}
           </div>
         </header>
 
-        <div className="flex items-end justify-between gap-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
           <div>
             <p className="border-b border-ink pb-1 text-lg font-bold text-ink">{customer?.name ?? '—'} 御中</p>
             {customer?.payment_terms && (
               <p className="mt-2 text-sm text-ink-soft">お支払条件: {customer.payment_terms}</p>
             )}
           </div>
-          <div className="text-right text-sm text-ink-soft">
+          <div className="text-sm text-ink-soft sm:text-right">
             <p className="font-bold text-ink">{farmName ?? '小島農園'}</p>
             {farmReg && <p>登録番号: {farmReg}</p>}
             {farmAddr && <p>{farmAddr}</p>}
@@ -125,7 +161,11 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
 
         <div className="rounded bg-bg-soft px-4 py-3 print:bg-transparent">
           <p className="text-sm text-ink-soft">ご請求金額（税込）</p>
-          <p className="num text-3xl font-bold tabular-nums text-earth-700">{formatYen(invoice.total_amount)}</p>
+          <p
+            className={`num text-3xl font-bold tabular-nums ${status === 'void' ? 'text-ink-faint line-through' : 'text-ink'}`}
+          >
+            {formatYen(invoice.total_amount)}
+          </p>
         </div>
 
         <table className="w-full border-collapse text-sm">

@@ -723,6 +723,9 @@ function ReviewScreen({
       {/* 取引先 */}
       <section className="space-y-2">
         <SectionHeader icon={Users} title="店舗・取引先" rows={customers} onAll={setAll(setCustomers)} />
+        <p className="rounded border border-line bg-bg-soft px-3 py-2 text-sm text-ink-soft">
+          店舗は取引先として登録されます。納入先にしたい場合は、「取引先・納入先」の画面で追加してください。
+        </p>
         {customers.length === 0 ? (
           <Empty />
         ) : (

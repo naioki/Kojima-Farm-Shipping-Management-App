@@ -218,17 +218,20 @@ export function resolveDefaultRouteInfo(params: {
  */
 export function getPackGroupInfo(item: PackSortableItem, mode: PackSortMode = 'time'): PackGroupInfo {
   if (mode === 'time') {
+    // 積込・配送リスト（DeliveriesBoardView）と同じ「時刻＋便名」で区切る。
+    // 時刻だけで区切ると、同じ18:00でも別便（岩槻便と戸田便）が1つの見出しにまとまってしまう。
     const time = item.departureTime
     const route = cleanShippingRouteName(item.shippingRouteName)
     const isNextDayTime = time?.startsWith('翌')
+    const timeLabel = time ? (isNextDayTime ? `${time}迄` : `当日 ${time}迄`) : null
     return {
-      groupKey: `time:${time || 'unset'}`,
-      title: time
-        ? isNextDayTime
-          ? `${time}迄に出荷`
-          : `当日 ${time}迄に出荷`
-        : '時間指定なし（一般便）',
-      badge: route || undefined,
+      groupKey: `time:${time || 'unset'}${route ? `|${route}` : ''}`,
+      title:
+        timeLabel && route
+          ? `${timeLabel} ・ ${route}`
+          : timeLabel
+          ? `${timeLabel}に出荷`
+          : route || '時間指定なし（一般便）',
       icon: time ? (isNextDayTime ? '🌅' : '⏰') : '📦',
     }
   }
@@ -280,11 +283,11 @@ export function normalizeDestinationGroupName(
 
 /**
  * パック作業カードの比較関数（v5.1.11 グループ分裂防止版）。
- * - `mode === 'time'`（早い便順）のときは、必ず「出発時刻（16:00 ➔ 18:00 ➔ 翌午前）」を第1優先にして同じ時間帯グループが分裂するのを防ぎ、
+ * - `mode === 'time'`（早い便順）のときは、必ず「出発時刻（16:00 ➔ 18:00 ➔ 翌午前）」→「便名」を優先にして同じ便グループが分裂するのを防ぎ、
  *   同一時間帯グループの中で `dailyPackSortOrder`（手動並び替え順）を適用する。
  * - `mode === 'container'`（コンテナ順）のときは、必ず「コンテナ種別」を第1優先にして同じコンテナグループが分裂するのを防ぎ、
  *   同一コンテナグループの中で `dailyPackSortOrder` を適用する。
- * - `mode === 'destination'`（出荷先順・カスタム順）のときは、`dailyPackSortOrder` を第1優先とし、未設定同士は出荷先・時刻順で並べる。
+ * - `mode === 'destination'`（納入先順・カスタム順）のときは、`dailyPackSortOrder` を第1優先とし、未設定同士は出荷先・時刻順で並べる。
  */
 export function comparePackItems(
   a: PackSortableItem,
@@ -315,6 +318,14 @@ export function comparePackItems(
 
   if (mode === 'time') {
     if (prioA !== prioB) return prioA - prioB
+    // 同じ時刻でも便が違えば別グループ（getPackGroupInfo と同じ区切り）なので、手動順より先に便名でまとめる
+    const routeA = cleanShippingRouteName(a.shippingRouteName) ?? ''
+    const routeB = cleanShippingRouteName(b.shippingRouteName) ?? ''
+    if (routeA !== routeB) {
+      if (!routeA) return 1
+      if (!routeB) return -1
+      return routeA.localeCompare(routeB, 'ja')
+    }
     const m = compareManual()
     if (m !== 0) return m
     if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
@@ -341,4 +352,57 @@ export function comparePackItems(
   if (defaultA !== defaultB) return defaultA - defaultB
   if (keyA !== keyB) return keyA.localeCompare(keyB, 'ja')
   return specA.localeCompare(specB, 'ja')
+}
+
+/**
+ * 1箱あたりの入数（パック数）を決める。カード表示・途中数・グループ見出し・進捗サマリーで同じ値を使うための共通関数。
+ * 優先順: 規格文字列の「入数N」「N入」→ 取引先×品目ルールの入数 → 取引先ごとの既定 → 標準20。
+ */
+export function resolvePacksPerCase(params: {
+  customerName?: string | null
+  spec?: string | null
+  masterLabelSpec?: string | null
+  masterPacksPerCase?: number | null
+}): number {
+  const { customerName, spec, masterLabelSpec, masterPacksPerCase } = params
+  const combinedSpec = `${customerName ?? ''} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
+  const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
+  if (match) {
+    const parsedNum = Number(match[1] || match[2])
+    if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) return parsedNum
+  }
+  if (masterPacksPerCase && masterPacksPerCase >= 10) return masterPacksPerCase
+  if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
+  if (combinedSpec.includes('オレンジファーム')) return 25
+  if (combinedSpec.includes('やなぎさわ') || combinedSpec.includes('ランドローム')) return 10
+  return 20
+}
+
+/**
+ * パック数を「満杯の箱数＋端数パック」に分ける（箱は切り捨て）。25P・20入 → 1箱+5P。
+ * 途中経過の「完了」は満杯になった箱だけを数える（切り上げると 25P が「2箱完了」に見えて出荷ミスにつながる）。
+ */
+export function splitCasesAndPacks(packs: number, packsPerCase: number): { cases: number; loose: number } {
+  const p = Math.max(0, Math.floor(packs))
+  const ppc = packsPerCase > 0 ? packsPerCase : 20
+  return { cases: Math.floor(p / ppc), loose: p % ppc }
+}
+
+/** 「1箱+5P」「2箱」「15P」の表記。0 は「0P」。 */
+export function formatCasesAndPacks(packs: number, packsPerCase: number): string {
+  const { cases, loose } = splitCasesAndPacks(packs, packsPerCase)
+  if (cases > 0 && loose > 0) return `${cases}箱+${loose}P`
+  if (cases > 0) return `${cases}箱`
+  return `${loose}P`
+}
+
+/**
+ * 完成した（満杯の）箱数。基本は切り捨てだが、全数できていれば端数箱も含めた総箱数（切り上げ）にそろえる。
+ * 残り箱数 = 総箱数 − これ ＝「まだ満杯になっていない箱」の数になり、進捗サマリー・見出し・カードで一致する。
+ */
+export function completedCaseCount(donePacks: number, totalPacks: number, packsPerCase: number): number {
+  const ppc = packsPerCase > 0 ? packsPerCase : 20
+  const totalCases = Math.ceil(Math.max(0, totalPacks) / ppc)
+  if (donePacks >= totalPacks) return totalCases
+  return Math.min(totalCases, Math.floor(Math.max(0, donePacks) / ppc))
 }

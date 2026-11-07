@@ -6,11 +6,12 @@ import { ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Card } from '@/components/ui/Card'
+import { ConfirmModal } from '@/components/ui/Modal'
 
 export interface ApprovalPipelineToggleProps {
-  /** AUTO_APPROVE_ENABLED === "on" なら true（＝自動確定モードON / 手動承認パイプラインOFF） */
+  /** 自動確定がオンなら true */
   initialAutoApprove: boolean
-  /** AUTO_APPROVE_THRESHOLD（未設定時は "0.80"） */
+  /** 自動確定の基準（未設定時は "0.80"） */
   initialThreshold: string
 }
 
@@ -23,9 +24,8 @@ const THRESHOLD_OPTIONS = [
 ]
 
 /**
- * 管理者専用の「承認パイプライン ON/OFF（手動確認モード ⇔ 自動確定モード）」ワンクリック切替バー。
- * 運用が軌道に乗った際は「自動確定モード」にすることで、問題のない通常注文を承認待ちで止めずに
- * 即時確定（harvest_tasks 自動生成）させることができる（要確認フラグ・文字潰れ・「約」表記は安全のため承認待ちに止まる）。
+ * 管理者専用の「自動確定」切替バー（オンにするときは確認ダイアログ）。
+ * オンにすると、問題のない通常注文を承認待ちで止めずに確定する（要確認の印・文字潰れ・「約」表記は承認待ちに残る）。
  */
 export function ApprovalPipelineToggle({
   initialAutoApprove,
@@ -35,6 +35,7 @@ export function ApprovalPipelineToggle({
   const [autoApprove, setAutoApprove] = useState<boolean>(initialAutoApprove)
   const [threshold, setThreshold] = useState<string>(initialThreshold || '0.80')
   const [saving, setSaving] = useState<boolean>(false)
+  const [confirmOpen, setConfirmOpen] = useState<boolean>(false)
 
   async function savePipelineMode(nextAutoApprove: boolean, nextThreshold: string) {
     setSaving(true)
@@ -60,8 +61,8 @@ export function ApprovalPipelineToggle({
       }
       toast.success(
         nextAutoApprove
-          ? `⚡ 自動確定モード（承認パイプライン省略）をONにしました（確信度 ${Math.round(Number(nextThreshold) * 100)}% 以上の正常注文を自動確定）`
-          : '🛡️ 手動承認パイプラインをONにしました（すべての注文を承認画面で確認します）',
+          ? `自動確定をオンにしました（読み取りの確かさ ${Math.round(Number(nextThreshold) * 100)}% 以上の問題ない注文を自動で確定します）`
+          : '自動確定をオフにしました（すべての注文を承認待ちで確認します）',
       )
       router.refresh()
     } catch (e) {
@@ -93,10 +94,8 @@ export function ApprovalPipelineToggle({
         </span>
         <div className="space-y-0.5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-ink">
-              {autoApprove
-                ? '⚡ 自動確定モード稼働中（承認パイプライン：自動パス）'
-                : '🛡️ 手動承認パイプライン稼働中（1件ずつ人間が確認して承認）'}
+            <span className="text-sm font-bold text-ink">
+              {autoApprove ? '自動確定：オン（問題のない注文は人の確認なしで進みます）' : '自動確定：オフ（1件ずつ人が確認して承認します）'}
             </span>
             <span
               className={cn(
@@ -106,13 +105,13 @@ export function ApprovalPipelineToggle({
                   : 'bg-earth-100 text-earth-800',
               )}
             >
-              {autoApprove ? '自動承認 ON' : '手動確認 ON'}
+              {autoApprove ? '自動確定 オン' : '手動で確認'}
             </span>
           </div>
-          <p className="text-xs text-ink-soft">
+          <p className="text-sm text-ink-soft">
             {autoApprove
-              ? '取引先・納品日が確定し要確認フラグのない通常注文は、承認待ちをスキップして自動で確定（収穫タスク生成）されます。文字潰れや「約80」等の要確認行のみここに残ります。'
-              : '運用が安定しているときは右のスイッチで「自動確定モード」に切り替えると、問題のない注文を自動で確定できます（管理者専用）。'}
+              ? '取引先と納品日がはっきりしていて「要確認」の印がない注文は、承認待ちに溜めずに自動で確定し、収穫・パックボードに載ります。文字がつぶれた行や「約80」のような曖昧な行だけが承認待ちに残ります。'
+              : '運用が安定してきたら、右のスイッチで自動確定をオンにできます（管理者のみ）。'}
           </p>
         </div>
       </div>
@@ -120,15 +119,15 @@ export function ApprovalPipelineToggle({
       <div className="flex flex-wrap items-center gap-3 self-end sm:self-center">
         {autoApprove && (
           <div className="flex items-center gap-1.5">
-            <label htmlFor="auto-approve-threshold-select" className="text-xs font-medium text-ink-soft">
-              自動確定の基準:
+            <label htmlFor="auto-approve-threshold-select" className="text-sm font-medium text-ink-soft">
+              自動確定の基準
             </label>
             <select
               id="auto-approve-threshold-select"
               value={threshold}
               disabled={saving}
               onChange={(e) => void savePipelineMode(true, e.target.value)}
-              className="h-8 rounded border border-line-strong bg-bg-card px-2 font-mono text-xs text-ink focus:border-trust-500 focus:outline-none"
+              className="h-10 rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:border-trust-500 focus:outline-none"
             >
               {THRESHOLD_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -140,30 +139,46 @@ export function ApprovalPipelineToggle({
         )}
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-ink-soft">
-            {autoApprove ? '自動確定 ON' : '自動確定 OFF'}
-          </span>
+          <span className="text-sm font-bold text-ink">{autoApprove ? 'オン' : 'オフ'}</span>
           <button
             type="button"
             role="switch"
             aria-checked={autoApprove}
-            aria-label="承認パイプラインの自動確定モードを切り替え"
+            aria-label="注文の自動確定を切り替える"
             disabled={saving}
-            onClick={() => void savePipelineMode(!autoApprove, threshold)}
+            onClick={() => {
+              // オンにするときだけ確認（人の確認を外す操作のため）。オフは安全側なのでそのまま
+              if (autoApprove) void savePipelineMode(false, threshold)
+              else setConfirmOpen(true)
+            }}
             className={cn(
-              'relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-earth-500 focus:ring-offset-2 disabled:opacity-50',
-              autoApprove ? 'bg-harvest-600' : 'bg-line-strong',
+              // 見た目は小さいスイッチだが、押せる範囲は縦 40px 以上（外側の余白で確保）
+              'relative inline-flex h-10 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-earth-500 focus:ring-offset-2 disabled:opacity-50',
+              autoApprove ? 'bg-forest-600' : 'bg-line-strong',
             )}
           >
             <span
               className={cn(
-                'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-bg-card shadow transition duration-200',
-                autoApprove ? 'translate-x-5' : 'translate-x-0',
+                'pointer-events-none inline-block h-7 w-7 transform rounded-full shadow transition duration-200',
+                autoApprove ? 'translate-x-6 bg-bg-card' : 'translate-x-0.5 bg-ink-faint',
               )}
             />
           </button>
         </div>
       </div>
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="自動確定をオンにしますか？"
+        message="オンにすると、条件を満たすFAX注文は人の確認なしで出荷ボードに載ります。文字がつぶれた行や曖昧な行がある注文は、これまでどおり承認待ちに残ります。"
+        confirmLabel="オンにする"
+        danger={false}
+        isLoading={saving}
+        onConfirm={async () => {
+          await savePipelineMode(true, threshold)
+          setConfirmOpen(false)
+        }}
+      />
     </Card>
   )
 }

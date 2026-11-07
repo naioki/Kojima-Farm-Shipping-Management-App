@@ -790,7 +790,7 @@ export default async function ShipmentsPage({
           <span>⚠️ 未承認（要確認）の注文が {pendingReviewCount} 件あります（承認後に作業リストへ反映されます）</span>
           <Link
             href={isAdmin ? '/admin/approvals' : '/field/approvals'}
-            className="shrink-0 rounded-lg bg-warning px-2.5 py-1 text-white hover:opacity-90 transition"
+            className="shrink-0 inline-flex min-h-10 items-center rounded-lg bg-warning px-3 text-white hover:opacity-90 transition"
           >
             確認・承認する →
           </Link>
@@ -827,14 +827,14 @@ export default async function ShipmentsPage({
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
             <a
               href={`/field/shipments?date=${shiftDateStr(date, 1)}&product=${selectedProductId}`}
-              className="inline-flex items-center gap-1 rounded-xl bg-forest-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-forest-700 shadow-xs"
+              className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-forest-600 px-3.5 text-xs font-bold text-white hover:bg-forest-700 shadow-xs"
             >
               翌日の予定を見る →
             </a>
             {isAdmin && (
               <a
                 href="/admin/approvals"
-                className="inline-flex items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink hover:bg-line"
+                className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-line bg-bg-soft px-3.5 text-xs font-bold text-ink hover:bg-line"
               >
                 承認待ちを確認
               </a>

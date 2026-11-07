@@ -32,13 +32,18 @@ const STANDARD_CLIENTS = [
   '株式会社農業総合研究所（NSK）',
 ]
 
+/** 一覧表示用: 内部の書き方（is_order:false 等）を平易な言葉にする。保存・AIへ渡す本文は変えない。 */
+function displayRuleText(text: string): string {
+  return text.replace(/is_order\s*[:=]\s*false/gi, '注文外として読み飛ばす')
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   'seed_v2.3': '標準初期ルール',
   admin_gui: '管理画面手動追加',
   hitl_approval: '承認画面から学習',
   learned_from_correction: '修正指示から学習',
   quick_customer: '取引先一括登録',
-  auto_loop: '⚡ 自動学習ループ（誤読・修正から自動蓄積）',
+  auto_loop: '自動学習（読み間違いや修正から自動でたまったルール）',
 }
 
 const DRY_RUN_SAMPLES = [
@@ -138,7 +143,7 @@ export function AiRulesManager({
   const [deletingRule, setDeletingRule] = useState<AiRule | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // ✨ AIカルテ一括整理・矛盾診断モーダル状態
+  // ルールをまとめて整理・食い違いチェックモーダル状態
   const [consolidateOpen, setConsolidateOpen] = useState(false)
   const [diagnosing, setDiagnosing] = useState(false)
   const [applyingConsolidation, setApplyingConsolidation] = useState(false)
@@ -212,11 +217,11 @@ export function AiRulesManager({
         throw new Error(j.error ?? `保存失敗 (${res.status})`)
       }
       toast.success(
-        `AIモデルを保存しました（メイン: ${normMain || '自動'} / 重要箇所: ${normHigh || '自動'}）`,
+        '読み取りに使うAIの選択を保存しました',
       )
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'AIモデルの保存に失敗しました')
+      toast.error(e instanceof Error ? e.message : 'AIの選択を保存できませんでした')
     } finally {
       setSavingModel(false)
     }
@@ -242,7 +247,7 @@ export function AiRulesManager({
       if (!res.ok) throw new Error(json.error ?? `テスト解析失敗 (${res.status})`)
       setTestResult(json)
       toast.success(
-        `解析完了（使用モデル: ${json.used_model ?? '標準'} / 適用ルール: ${json.applied_rules_count ?? activeCount}件）`,
+        `読み取り完了（適用ルール: ${json.applied_rules_count ?? activeCount}件）`,
       )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'テスト解析に失敗しました')
@@ -439,7 +444,7 @@ export function AiRulesManager({
       }
       if (!res.ok) throw new Error(json.error ?? `統合失敗 (${res.status})`)
       toast.success(
-        `決定版カルテ全 ${json.updatedCount ?? proposals.length} 社に統合しました（重複 ${json.deletedCount ?? 0} 件を整理）`,
+        `取引先 ${json.updatedCount ?? proposals.length} 社分のルールを整理しました（重複 ${json.deletedCount ?? 0} 件を整理）`,
       )
       setConsolidateOpen(false)
       window.location.reload()
@@ -463,7 +468,7 @@ export function AiRulesManager({
               <ShieldCheck className="h-5 w-5" aria-hidden />
             </span>
             <div>
-              <p className="text-xs text-ink-soft">有効なAI読取ルール（動的注入中）</p>
+              <p className="text-xs text-ink-soft">いま使っているAI読み取りルール</p>
               <p className="num font-mono text-lg font-bold tabular-nums text-ink">
                 {activeCount} <span className="text-xs font-normal text-ink-faint">/ 全 {rules.length} 件</span>
               </p>
@@ -471,7 +476,7 @@ export function AiRulesManager({
           </div>
           <div className="hidden h-8 w-px bg-line sm:block" />
           <p className="text-xs text-ink-soft">
-            ONにしたルールは、再デプロイ不要で直後のFAX受信（<code className="font-mono">/api/receipts</code>）・クイック注文解析に動的注入されます。
+            オンにしたルールは、保存するとすぐ、次に届くFAXやクイック注文の読み取りから使われます。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -482,11 +487,11 @@ export function AiRulesManager({
             className="border-harvest-600/40 bg-harvest-50 text-forest-900 hover:bg-harvest-100"
           >
             <Sparkles className="h-4 w-4 text-harvest-700" aria-hidden />
-            ✨ AIカルテ一括整理・矛盾診断
+            ルールをまとめて整理・食い違いチェック
           </Button>
           <Button variant="secondary" size="md" onClick={() => setTestModalOpen(true)}>
             <FlaskConical className="h-4 w-4 text-earth-700" aria-hidden />
-            🧪 ルール・モデルの動作テスト
+            ルールの試し読み
           </Button>
           <Button variant="primary" size="md" onClick={() => openCreateModal(selectedClient)}>
             <Plus className="h-4 w-4" aria-hidden />
@@ -496,12 +501,19 @@ export function AiRulesManager({
       </Card>
 
       {/* 2段階AIモデル自由入力・ワンクリック切替バー（メインモデル＋重要箇所モデル） */}
-      <Card className="space-y-3 bg-bg-soft/60 p-4">
+      <details className="group rounded-xl border border-line bg-bg-soft/60">
+       <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-2 text-sm font-bold text-ink">
+         <span className="flex items-center gap-1.5">
+           <Cpu className="h-4 w-4 text-earth-700" aria-hidden />
+           詳細設定：読み取りに使うAIの選択
+         </span>
+         <span className="text-xs font-normal text-ink-soft group-open:hidden">ふだんは変更不要です</span>
+       </summary>
+       <div className="space-y-3 p-4 pt-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-ink">
-            <Cpu className="h-4 w-4 text-earth-700" aria-hidden />
-            2段階AIモデル指定（自由入力・ハイフン無し手入力も自動整形・404/503時は自動フォールバック）
-          </div>
+          <p className="text-sm text-ink-soft">
+            通常はそのままで使えます。入力の書き方が少し違っても自動で整えられ、AIが混み合っているときは別のAIに自動で切り替わります。
+          </p>
           <Button
             variant="primary"
             size="sm"
@@ -510,7 +522,7 @@ export function AiRulesManager({
             className="shrink-0"
           >
             <Check className="h-3.5 w-3.5" aria-hidden />
-            モデル設定を保存
+            AIの選択を保存
           </Button>
         </div>
 
@@ -518,10 +530,10 @@ export function AiRulesManager({
           {/* ① メインモデル */}
           <div className="space-y-1.5 rounded-lg border border-line bg-bg-card p-3">
             <label htmlFor="ai-model-free-input" className="block text-xs font-bold text-ink">
-              ① メインモデル（通常FAX・高速読取）
+              ふだん使うAI（通常のFAX読み取り）
             </label>
             <p className="text-xs text-ink-soft">
-              毎回のFAX・テキスト読取で使う高速・低コストモデル（例: <code className="font-mono">gemini-3.5-flash-lite</code>）
+              毎回のFAX・テキスト読み取りに使う、速くて低コストなAIです。
             </p>
             <input
               id="ai-model-free-input"
@@ -529,7 +541,7 @@ export function AiRulesManager({
               type="text"
               value={modelInput}
               onChange={(e) => setModelInput(e.target.value)}
-              placeholder="例: gemini-3.5-flash-lite"
+              placeholder="空欄なら自動で選びます"
               className={cn(inputCls, 'font-mono text-xs')}
             />
             <datalist id="gemini-model-suggestions">
@@ -565,10 +577,10 @@ export function AiRulesManager({
           {/* ② 重要箇所モデル */}
           <div className="space-y-1.5 rounded-lg border border-line bg-bg-card p-3">
             <label htmlFor="ai-high-model-free-input" className="block text-xs font-bold text-ink">
-              ② 重要箇所モデル（要確認の再検証・手書き修正・ルール学習）
+              大事な場面で使うAI（要確認の再チェック・手書き修正）
             </label>
             <p className="text-xs text-ink-soft">
-              低確信・検算不一致の自動再検証や対話修正など大切な場面だけ使うモデル（例: <code className="font-mono">gemini-3.8-flash</code>）
+              自信がない読み取りの再チェックや、手書き修正など大切な場面だけ使う高精度のAIです。
             </p>
             <input
               id="ai-high-model-free-input"
@@ -576,7 +588,7 @@ export function AiRulesManager({
               type="text"
               value={highModelInput}
               onChange={(e) => setHighModelInput(e.target.value)}
-              placeholder="例: gemini-3.8-flash"
+              placeholder="空欄なら自動で選びます"
               className={cn(inputCls, 'font-mono text-xs')}
             />
             <datalist id="gemini-high-model-suggestions">
@@ -609,7 +621,8 @@ export function AiRulesManager({
             </div>
           </div>
         </div>
-      </Card>
+       </div>
+      </details>
 
       {/* 取引先フィルタチップ */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -636,7 +649,7 @@ export function AiRulesManager({
                 : 'border-warning bg-warning-bg text-ink hover:opacity-90',
             )}
           >
-            ⚡ 自動学習ループ ({autoLoopCount})
+            自動学習 ({autoLoopCount})
           </button>
           {clientOptions.map((c) => {
             const count = rules.filter((r) => r.client_name === c).length
@@ -743,7 +756,7 @@ export function AiRulesManager({
                     </div>
 
                     <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                      {rule.rule_text}
+                      {displayRuleText(rule.rule_text)}
                     </p>
 
                     <p className="num text-xs text-ink-faint">
@@ -886,11 +899,11 @@ export function AiRulesManager({
         </div>
       </Modal>
 
-      {/* ドライラン検証モーダル（ルール・モデルのその場テスト） */}
+      {/* 試し読みモーダル（ルールのその場テスト） */}
       <Modal
         open={testModalOpen}
         onClose={() => setTestModalOpen(false)}
-        title="🧪 AIルール＆モデル 動作テスト（ドライラン検証）"
+        title="ルールの試し読み（注文は保存されません）"
         className="max-w-2xl"
         footer={
           <>
@@ -906,11 +919,11 @@ export function AiRulesManager({
       >
         <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-1">
           <p className="text-xs text-ink-soft">
-            現在ONになっている <strong>{activeCount}件のAIルール</strong> と指定中のAIモデル（<code className="font-mono">{modelInput.trim() || '自動'}</code>）を使って、注文データを保存せずに抽出・換算結果だけをテスト検証できます。
+            現在ONになっている <strong>{activeCount}件のAIルール</strong> を使って、注文データを保存せずに、読み取り結果と箱数の計算だけを試せます。
           </p>
 
           <div className="space-y-1.5">
-            <span className="block text-xs font-medium text-ink-soft">検証用プリセットを選択:</span>
+            <span className="block text-xs font-medium text-ink-soft">サンプルから選ぶ:</span>
             <div className="flex flex-wrap gap-1.5">
               {DRY_RUN_SAMPLES.map((s) => (
                 <button
@@ -946,11 +959,11 @@ export function AiRulesManager({
                   {testResult.is_order ? (
                     <span className="text-harvest-700">✅ チンゲン菜の有効な注文 ({testResult.orders.length}件)</span>
                   ) : (
-                    <span className="text-warning">⏭️ 注文外FAXとして自動スキップ（is_order: false）</span>
+                    <span className="text-warning">注文ではないFAXとして自動で読み飛ばします</span>
                   )}
                 </span>
                 <span className="num font-mono text-ink-soft">
-                  モデル: <strong>{testResult.used_model ?? '標準'}</strong> / 適用ルール: {testResult.applied_rules_count ?? activeCount}件
+                  適用ルール: {testResult.applied_rules_count ?? activeCount}件
                 </span>
               </div>
 
@@ -1010,11 +1023,11 @@ export function AiRulesManager({
         </div>
       </Modal>
 
-      {/* ✨ AIカルテ一括整理・矛盾診断モーダル */}
+      {/* ルール整理・食い違いチェックのモーダル */}
       <Modal
         open={consolidateOpen}
         onClose={() => setConsolidateOpen(false)}
-        title="✨ AIカルテ一括整理・矛盾診断（Gemini 3.8 Flash）"
+        title="ルールの整理・食い違いチェック"
         footer={
           <>
             <Button variant="secondary" onClick={() => setConsolidateOpen(false)} disabled={applyingConsolidation}>
@@ -1027,7 +1040,7 @@ export function AiRulesManager({
               disabled={diagnosing || proposals.length === 0}
             >
               <Check className="h-4 w-4" aria-hidden />
-              この内容で決定版カルテに一括統合する
+              この内容で整理した内容にまとめて置き換える
             </Button>
           </>
         }
@@ -1037,7 +1050,7 @@ export function AiRulesManager({
             <div className="flex flex-col items-center justify-center py-12 space-y-3 text-center">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-harvest-600 border-t-transparent" />
               <p className="text-sm font-bold text-ink">
-                Gemini 3.8 Flash が全ルールの矛盾を診断し、1社1枠の決定版カルテを作成しています...
+                AIが全ルールの食い違いを調べ、取引先ごとに1つにまとめています...
               </p>
               <p className="text-xs text-ink-soft">
                 重要なFAX読取ロジック（着日変換・入数・手書き優先等）を100%残しつつ、重複とトークンを圧縮します。
@@ -1051,7 +1064,7 @@ export function AiRulesManager({
                     📊 整理結果：全 <strong>{consolidateMeta.beforeRuleCount}枠</strong> ➔ 1社1枠の決定版 <strong>{consolidateMeta.afterRuleCount}枠</strong> へ集約
                   </div>
                   <div className="font-mono text-forest-900">
-                    文字数: {consolidateMeta.beforeChars}文字 → {consolidateMeta.afterChars}文字（モデル: {consolidateMeta.usedModel}）
+                    文字数: {consolidateMeta.beforeChars}文字 → {consolidateMeta.afterChars}文字
                   </div>
                 </div>
               )}
@@ -1077,7 +1090,7 @@ export function AiRulesManager({
                     {p.conflicts && p.conflicts.length > 0 && (
                       <div className="rounded-lg border border-warning bg-warning-bg p-2.5 space-y-2">
                         <p className="text-xs font-black text-ink">
-                          ⚠️ 矛盾・食い違いが検出されました（クリックすると下のカルテ文面に反映されます）：
+                          ⚠️ 矛盾・食い違いが検出されました（クリックすると下のルール文面に反映されます）：
                         </p>
                         {p.conflicts.map((c, cIdx) => (
                           <div key={cIdx} className="flex flex-wrap items-center gap-2 text-xs">
@@ -1099,7 +1112,7 @@ export function AiRulesManager({
                                       return { ...item, proposed_rule_text: nextText }
                                     }),
                                   )
-                                  toast.success(`「${opt}」をカルテに反映しました`)
+                                  toast.success(`「${opt}」をルール文面に反映しました`)
                                 }}
                                 className="rounded-lg border border-warning bg-bg-card px-2.5 py-1 text-xs font-black text-ink hover:bg-warning hover:text-white transition"
                               >

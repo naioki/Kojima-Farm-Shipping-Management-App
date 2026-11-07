@@ -25,7 +25,7 @@ interface Props {
 }
 
 const fieldCls =
-  'h-9 w-full rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
+  'h-10 w-full rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
 
 /**
  * 納入先の登録・編集（#48 出荷時間・便名に加え、納入先ごとの規定コンテナ種別 default_container_type も管理）。

@@ -8,16 +8,36 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string
   hint?: string
   icon?: ReactNode
+  /** 外側のラッパー（ラベル＋入力欄）に付けるクラス。グリッドの列幅などはこちらへ。 */
+  wrapperClassName?: string
+}
+
+/**
+ * className のうち「親のグリッド/フレックスの中での置き方」を表すクラス（col-span-5・flex-1 など）。
+ * input はラッパー div の中にあるため、これらは input ではなくラッパーに付けないと効かない
+ * （col-span-5 が input に付き、ラッパーは1列幅のまま潰れていた不具合の再発防止）。
+ */
+const PLACEMENT_CLASS =
+  /^(?:[a-z0-9]+:)*(?:col-span-|col-start-|col-end-|row-span-|row-start-|row-end-|order-|basis-|flex-1$|flex-auto$|flex-initial$|grow|shrink|self-|justify-self-)/
+
+export function splitPlacementClasses(className?: string): { placement: string; rest: string } {
+  const placement: string[] = []
+  const rest: string[] = []
+  for (const c of (className ?? '').split(/\s+/).filter(Boolean)) {
+    ;(PLACEMENT_CLASS.test(c) ? placement : rest).push(c)
+  }
+  return { placement: placement.join(' '), rest: rest.join(' ') }
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, icon, required, className, id: idProp, ...props }, ref) => {
+  ({ label, error, hint, icon, required, className, wrapperClassName, id: idProp, ...props }, ref) => {
     const autoId = useId()
+    const { placement, rest } = splitPlacementClasses(className)
     const id = idProp ?? autoId
     const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
 
     return (
-      <div className="space-y-1.5">
+      <div className={cn('min-w-0 space-y-1.5', placement, wrapperClassName)}>
         {label && (
           <label htmlFor={id} className="block text-sm font-medium text-ink">
             {label}
@@ -48,7 +68,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               'focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100',
               error && 'border-alert focus:border-alert focus:ring-alert/15',
               icon && 'pl-10',
-              className,
+              rest,
             )}
             {...props}
           />

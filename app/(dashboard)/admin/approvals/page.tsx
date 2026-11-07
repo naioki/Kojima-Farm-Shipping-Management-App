@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 /**
  * スプリットビュー人間承認画面（/admin/approvals）。
  * - 上部に管理者専用の「承認パイプライン ON/OFF（手動確認モード ⇔ 自動確定モード）」ワンクリック切替バーを配置
- * - 左側に Google Drive 原本PDF/画像プレビュー、右側に確信度色分け付きの編集テーブルを並べる
+ * - 原本（FAX・メール）とAIの読み取り結果を並べる（スマホは明細を先に）
  * - 修正時の「💡 この修正を取引先ルールとして学習させる」ワンクリック保存機能を提供
  */
 export default async function AdminApprovalsPage() {
@@ -52,7 +52,7 @@ export default async function AdminApprovalsPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-ink-soft">
-            左側のFAX原本（PDF/画像）と右側のAI抽出明細を左右比較しながら、その場で数量・荷姿を微修正して承認できます。
+            届いた原本とAIの読み取り結果を見比べて、その場で数量・荷姿を直して承認できます。
           </p>
         </div>
 
@@ -62,25 +62,25 @@ export default async function AdminApprovalsPage() {
             className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft"
           >
             <Sparkles className="h-4 w-4 text-earth-700" aria-hidden />
-            AI学習ルール・モデル管理
+            AI学習ルール
           </Link>
           <Link
             href="/admin/inbox"
             className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink hover:bg-bg-soft"
           >
             <Inbox className="h-4 w-4 text-ink-soft" aria-hidden />
-            受信ボックス（読み取り失敗の処理）
+            読み取り失敗
           </Link>
         </div>
       </div>
 
-      {/* 管理者専用：承認パイプラインのON/OFF（手動確認 ⇔ 自動確定モード）ワンクリック切替 */}
+      <SplitApprovalView orders={pendingOrders} />
+
+      {/* 管理者専用：自動確定のON/OFF。注文を先に見せたいので、設定は一番下に置く */}
       <ApprovalPipelineToggle
         initialAutoApprove={isAutoApproveOn(autoApproveRaw)}
         initialThreshold={thresholdRaw?.trim() || '0.80'}
       />
-
-      <SplitApprovalView orders={pendingOrders} />
     </div>
   )
 }

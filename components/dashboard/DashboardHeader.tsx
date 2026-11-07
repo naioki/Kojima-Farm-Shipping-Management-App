@@ -27,7 +27,7 @@ export function DashboardHeader({
   supportHref = '/admin/settings',
 }: DashboardHeaderProps) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <h1 className="font-display text-2xl font-bold text-ink">ダッシュボード</h1>
         <p className="mt-1 text-sm text-ink-soft">
@@ -35,26 +35,20 @@ export function DashboardHeader({
         </p>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <Link
-          href={notificationsHref}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-bg-card px-3 text-sm font-medium text-ink-soft shadow-sm transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
-        >
-          <Bell className="h-4 w-4" aria-hidden />
-          <span className="hidden sm:inline">受信箱</span>
-        </Link>
-
-        <Link
-          href={supportHref}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-bg-card px-3 text-sm font-medium text-ink-soft shadow-sm transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100"
-        >
-          <LifeBuoy className="h-4 w-4" aria-hidden />
-          <span className="hidden sm:inline">サポート</span>
-        </Link>
-
-        <span className="num hidden h-9 items-center rounded-lg bg-bg-soft px-3 text-sm font-medium text-ink-soft md:inline-flex">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="num inline-flex h-10 items-center rounded-lg bg-bg-soft px-3 text-sm font-medium text-ink-soft">
           {dateLabel}
         </span>
+
+        <Link href={notificationsHref} aria-label="受信箱" title="受信箱" className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-bg-card px-3 text-sm font-medium text-ink-soft shadow-sm transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100">
+          <Bell className="h-4 w-4" aria-hidden />
+          <span className="text-xs sm:text-sm">受信箱</span>
+        </Link>
+
+        <Link href={supportHref} aria-label="サポート（設定）" title="サポート（設定）" className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line bg-bg-card px-3 text-sm font-medium text-ink-soft shadow-sm transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-trust-100">
+          <LifeBuoy className="h-4 w-4" aria-hidden />
+          <span className="text-xs sm:text-sm">サポート</span>
+        </Link>
       </div>
     </header>
   )

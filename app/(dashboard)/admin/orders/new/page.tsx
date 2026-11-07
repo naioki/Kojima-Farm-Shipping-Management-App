@@ -19,7 +19,7 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
   const guard = await requireAdmin('注文入力は管理者のみアクセスできます。')
   if (guard) return guard
 
-  // 受信ボックスの「読み取る」から来た場合は、その受信の原本を添付した状態で開く
+  // 読み取り失敗の「読み取る」から来た場合は、その受信の原本を添付した状態で開く
   const receiptId = /^[0-9a-f-]{36}$/i.test(searchParams.receipt ?? '') ? searchParams.receipt! : null
   const fromReceipt = receiptId ? await loadReceiptAttachment(receiptId) : null
 
@@ -69,23 +69,23 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <Link href="/admin" className="inline-flex items-center gap-1 text-sm text-ink-soft hover:text-ink">
+        <Link href="/admin" className="inline-flex min-h-10 items-center gap-1 text-sm text-ink-soft hover:text-ink">
           <ChevronLeft className="h-4 w-4" aria-hidden />
           ダッシュボードへ
         </Link>
-        <Link href="/admin/orders" className="text-xs font-medium text-trust-600 hover:underline">
-          受注一覧を見る →
+        <Link href="/admin/orders" className="inline-flex min-h-10 items-center text-sm font-medium text-trust-700 hover:underline">
+          受注台帳を見る →
         </Link>
       </div>
       {receiptId && !fromReceipt?.attachment && (
         <p role="alert" className="rounded-lg border border-warning bg-warning-bg p-3 text-sm text-ink">
-          受信ボックスの原本を取り出せませんでした。お手数ですが、原本の画像・PDFを下の欄に貼り付けるかドロップしてください。
+          読み取り失敗の原本を取り出せませんでした。お手数ですが、原本の画像・PDFを下の入力欄から選び直してください。
         </p>
       )}
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">注文の受付</h1>
         <p className="text-sm text-ink-soft">
-          LINEの文面や画像は下の欄に貼り付け（Ctrl+V）、写真・PDF・Excelはドラッグ＆ドロップかボタンから。AIが読み取って明細にします。
+          電話の注文は下の「手で入力する」欄へ。LINEの文面・写真・PDF・Excelは貼り付けるかファイルを選ぶと、AIが読み取って明細にします。
         </p>
       </div>
       <ShipmentAddForm
@@ -105,6 +105,7 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
         rulesByPair={rulesByPair}
         initialAttachment={fromReceipt?.attachment ?? null}
         fixedIntakeChannel={fromReceipt?.channel ?? null}
+        inline
       />
     </div>
   )

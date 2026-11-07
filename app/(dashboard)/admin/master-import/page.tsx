@@ -7,12 +7,12 @@ import { requireAdmin } from '@/lib/auth/require-admin'
 export const dynamic = 'force-dynamic'
 
 /**
- * 写真からマスタ一括取込（管理者専用）。
+ * 写真でマスタ登録（管理者専用）。
  * 紙の台帳・取引先一覧・規格表を撮影し、店舗・品目・規格をまとめて抽出 → 確認 → 一括登録。
  * 既存マスタ名は重複判定（名寄せ）のためクライアントへ渡す。
  */
 export default async function MasterImportPage() {
-  const guard = await requireAdmin('マスタ一括取込は管理者のみ利用できます。')
+  const guard = await requireAdmin('写真でマスタ登録は管理者のみ利用できます。')
   if (guard) return guard
 
   const supabase = createAdminClient()

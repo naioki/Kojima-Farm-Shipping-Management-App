@@ -10,7 +10,13 @@ import { cn } from '@/lib/cn'
 import type { FieldStatus, SpecWarning } from '@/types/database'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { FIELD_STATUS_META } from '@/lib/field/tap-loop'
-import { rowStatusKey, type RowStatusKey } from '@/lib/field/shipment-sort'
+import {
+  rowStatusKey,
+  resolvePacksPerCase,
+  splitCasesAndPacks,
+  formatCasesAndPacks,
+  type RowStatusKey,
+} from '@/lib/field/shipment-sort'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { PackInstructions, type PackInstructionValues, type PackInstructionPhoto } from '@/components/admin/PackInstructions'
@@ -35,6 +41,15 @@ import {
 } from '@/lib/field/thai-dict'
 
 const UNDO_GRACE_MS = 5000
+
+/** 袋の種類の表示名（保存値は変えない。FG は取引先指定の袋の銘柄） */
+const BAG_DISPLAY_LABELS: Record<string, string> = {
+  '印字袋(FG)': '印字ありFG袋',
+  無地袋: '印字なし（無地）',
+}
+function bagDisplayLabel(bag: string): string {
+  return BAG_DISPLAY_LABELS[bag] ?? bag
+}
 
 export interface ShipmentRowProps {
   itemId: string
@@ -173,21 +188,7 @@ export function ShipmentRow({
   const [sealText, setSealText] = useState<string>(initialSealText ?? (initialHasSeal ? 'シールあり' : ''))
   const [bagType, setBagType] = useState<string>(initialBagType ?? '')
 
-  const packsPerCase: number = (() => {
-    const combinedSpec = `${customerName} ${spec || masterLabelSpec || ''}`.normalize('NFKC')
-    const match = combinedSpec.match(/(?:入数|1箱|1ケース)\s*[:：]?\s*(\d+)|(\d+)\s*入(?:り)?/i)
-    if (match) {
-      const parsedNum = Number(match[1] || match[2])
-      if (Number.isFinite(parsedNum) && parsedNum >= 10 && parsedNum <= 200) {
-        return parsedNum
-      }
-    }
-    if (masterPacksPerCase && masterPacksPerCase >= 10) return masterPacksPerCase
-    if (combinedSpec.includes('農業総合研究所') || combinedSpec.includes('NSK')) return 24
-    if (combinedSpec.includes('オレンジファーム')) return 25
-    if (combinedSpec.includes('やなぎさわ') || combinedSpec.includes('ランドローム')) return 10
-    return 20
-  })()
+  const packsPerCase: number = resolvePacksPerCase({ customerName, spec, masterLabelSpec, masterPacksPerCase })
 
   const isSampleOrder = isSampleOrderText(destinationName, currentLineNote, initialFieldNote, spec)
   const isSmallSample = isSampleOrder && orderedQty < packsPerCase
@@ -197,11 +198,17 @@ export function ShipmentRow({
   const casesText = String(fullCases)
   const looseText = String(loosePacks)
 
-  // 途中数は「箱数」メインで操作・表示
+  // 途中数は「満杯の箱数＋端数パック」で操作・表示（箱は切り捨て。25P・20入 → 1箱+5P）。
+  // 切り上げで初期化すると 25P が「2箱」と表示され、そのまま記録すると 40P＝全数完了になってしまう。
   const [shippedPacks, setShippedPacks] = useState<number | null>(initialShippedQty)
   const [partialBoxesStr, setPartialBoxesStr] = useState<string>(() =>
     initialShippedQty != null && initialShippedQty > 0
-      ? String(Math.ceil(initialShippedQty / packsPerCase))
+      ? String(splitCasesAndPacks(initialShippedQty, packsPerCase).cases)
+      : '',
+  )
+  const [partialLooseStr, setPartialLooseStr] = useState<string>(() =>
+    initialShippedQty != null && initialShippedQty > 0
+      ? String(splitCasesAndPacks(initialShippedQty, packsPerCase).loose || '')
       : '',
   )
   const [memoText, setMemoText] = useState(() => buildUnifiedMemo(initialLineNote, initialFieldNote))
@@ -233,8 +240,10 @@ export function ShipmentRow({
   const isPartial = shippedPacks != null && shippedPacks > 0 && shippedPacks < orderedQty
 
   const remainingPacks = shippedPacks != null ? Math.max(0, orderedQty - shippedPacks) : orderedQty
-  const remainingCases = packsPerCase > 0 ? Math.ceil(remainingPacks / packsPerCase) : 0
-  const partialCases = Math.max(0, totalBoxes - remainingCases)
+  // 入力欄（箱＋端数P）から計算した「いまの途中数」
+  const partialInputPacks =
+    (Math.max(0, parseInt(partialBoxesStr, 10) || 0)) * packsPerCase +
+    Math.max(0, parseInt(partialLooseStr, 10) || 0)
 
   useEffect(() => {
     if (!busy && !undoGrace) {
@@ -317,11 +326,12 @@ export function ShipmentRow({
 
   useEffect(() => {
     setShippedPacks(initialShippedQty)
-    setPartialBoxesStr(
+    const split =
       initialShippedQty != null && initialShippedQty > 0
-        ? String(Math.ceil(initialShippedQty / packsPerCase))
-        : '',
-    )
+        ? splitCasesAndPacks(initialShippedQty, packsPerCase)
+        : null
+    setPartialBoxesStr(split ? String(split.cases) : '')
+    setPartialLooseStr(split && split.loose > 0 ? String(split.loose) : '')
   }, [initialShippedQty, packsPerCase])
 
   useEffect(() => {
@@ -515,17 +525,28 @@ export function ShipmentRow({
     }
   }
 
-  /** 途中数（箱数メイン）の保存 */
-  async function savePartialBoxes(overrideBoxes?: number | null) {
-    const bNum =
-      overrideBoxes !== undefined
-        ? overrideBoxes
-        : partialBoxesStr.trim() === ''
-        ? null
-        : Math.max(0, parseInt(partialBoxesStr, 10) || 0)
+  /**
+   * 途中数（満杯の箱数＋端数パック）の保存。null でクリア。
+   * 全数以上になる値は「途中」ではないので保存しない（全数できたら「パック済にする」を押す運用）。
+   */
+  async function savePartial(override?: { boxes: number; loose: number } | null) {
     const ppc = packsPerCase && packsPerCase > 0 ? packsPerCase : 20
-    const rawPacks = bNum != null && bNum > 0 ? bNum * ppc : null
-    const val = rawPacks != null && rawPacks > 0 ? Math.min(orderedQty, rawPacks) : null
+    const boxes =
+      override === null ? 0 : override ? override.boxes : Math.max(0, parseInt(partialBoxesStr, 10) || 0)
+    const loose =
+      override === null ? 0 : override ? override.loose : Math.max(0, parseInt(partialLooseStr, 10) || 0)
+    const rawPacks = boxes * ppc + loose
+    if (rawPacks >= orderedQty) {
+      toast.error(
+        `途中数が注文数（${formatCasesAndPacks(orderedQty, ppc)}）以上です。全部できたら「パック済にする」を押してください`,
+        { id: `partial-over-${itemId}` },
+      )
+      const prev = splitCasesAndPacks(shippedPacks ?? 0, ppc)
+      setPartialBoxesStr(shippedPacks ? String(prev.cases) : '')
+      setPartialLooseStr(shippedPacks && prev.loose > 0 ? String(prev.loose) : '')
+      return
+    }
+    const val = rawPacks > 0 ? rawPacks : null
     setSavingQuick(true)
     try {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -548,9 +569,15 @@ export function ShipmentRow({
       const json = (await res.json()) as { item: { version: number } }
       setVersion(json.item.version)
       setShippedPacks(val)
+      {
+        // 「1箱+25P」のような入力も「2箱+5P」に整える
+        const norm = splitCasesAndPacks(val ?? 0, ppc)
+        setPartialBoxesStr(val ? String(norm.cases) : '')
+        setPartialLooseStr(val && norm.loose > 0 ? String(norm.loose) : '')
+      }
       onShippedQtyChange?.(itemId, val)
       toast.success(
-        val && bNum ? `途中数 ${bNum}箱（${val}P）を記録しました` : '途中数をクリアしました',
+        val ? `途中数 ${formatCasesAndPacks(val, ppc)}（${val}P）を記録しました` : '途中数をクリアしました',
       )
       router.refresh()
     } catch (e) {
@@ -803,7 +830,7 @@ export function ShipmentRow({
           <button
             type="button"
             onClick={() => setIsSpotlighted(false)}
-            className="rounded-md bg-white/20 px-2 py-0.5 text-xs font-bold hover:bg-white/30"
+            className="min-h-10 shrink-0 rounded-md bg-white/20 px-3 text-xs font-bold hover:bg-white/30"
           >
             閉じる
           </button>
@@ -821,9 +848,9 @@ export function ShipmentRow({
               setConflict(false)
               router.refresh()
             }}
-            className="flex items-center gap-1 rounded-lg bg-alert text-white px-2.5 py-1 text-xs font-bold shadow-xs hover:bg-alert/90 transition-colors"
+            className="min-h-10 shrink-0 flex items-center gap-1 rounded-lg bg-alert text-white px-3 text-xs font-bold shadow-xs hover:bg-alert/90 transition-colors"
           >
-            🔄 最新データを反映
+            最新データを反映
           </button>
         </div>
       )}
@@ -837,40 +864,44 @@ export function ShipmentRow({
       {isCollapsedDone ? (
         <div
           onClick={() => setExpandedWhenDone(true)}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+          className="space-y-1.5 cursor-pointer select-none"
           title="タップしてカードを展開"
         >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          {/* 1段目: 状態・取引先・数量（取引先名は幅を確保して切れても title で全文） */}
+          <div className="flex items-center gap-2 min-w-0">
             <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded-md bg-harvest-600 px-2 py-0.5 text-xs font-black text-white shrink-0 shadow-2xs">
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-3.5 w-3.5" aria-hidden />
               <span>{status === 'shipped' ? '出荷済' : '済'}</span>
             </span>
             <ColorDot color={customerColor} name={customerName} size="sm" />
-            <span className="font-black text-ink text-sm sm:text-base truncate">
+            <span className="min-w-0 flex-1 font-black text-ink text-sm sm:text-base truncate" title={customerName}>
               {customerName}
             </span>
-            {destinationName && customerName !== destinationName && (
-              <span className="whitespace-nowrap inline-flex items-center gap-0.5 rounded bg-harvest-100/90 border border-harvest-400 px-1.5 py-0.5 text-xs font-black text-forest-900 shrink-0">
-                <span>▶</span>
-                <span className="truncate max-w-[120px] sm:max-w-[180px]">{destinationName}</span>
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="num text-sm sm:text-base font-black text-ink tabular-nums">
+            <span className="num shrink-0 text-sm sm:text-base font-black text-ink tabular-nums">
               {isSmallSample ? (
-                <span className="text-grape-700">🧪 サンプル {orderedQty}P</span>
+                <span className="text-grape-700">サンプル {orderedQty}P</span>
               ) : (
                 <>
                   {casesText}箱
                   {loosePacks > 0 ? `+${looseText}P` : ''}
-                  <span className="text-xs font-bold text-ink-soft ml-1">
-                    ({orderedQty}P)
-                  </span>
+                  <span className="text-xs font-bold text-ink-soft ml-1">({orderedQty}P)</span>
                 </>
               )}
             </span>
+          </div>
+          {/* 2段目: 納入先（取引先 ＞ 納入先）・操作ボタン */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="min-w-0 flex-1">
+              {destinationName && customerName !== destinationName && (
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded bg-harvest-100 border border-harvest-400 px-1.5 py-0.5 text-xs font-black text-forest-900"
+                  title={destinationName}
+                >
+                  <span aria-hidden>▶</span>
+                  <span className="truncate">{destinationName}</span>
+                </span>
+              )}
+            </div>
             <button
               type="button"
               disabled={busy}
@@ -878,10 +909,10 @@ export function ShipmentRow({
                 e.stopPropagation()
                 setConfirmOpen(true)
               }}
-              className="h-8 rounded-lg border border-line-strong bg-bg-card px-2.5 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
+              className="min-h-10 h-10 shrink-0 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-bold text-ink-soft hover:bg-bg-soft active:scale-95 transition"
               title="未完了に戻す"
             >
-              <span>戻す</span>
+              戻す
             </button>
             <button
               type="button"
@@ -889,7 +920,7 @@ export function ShipmentRow({
                 e.stopPropagation()
                 setExpandedWhenDone(true)
               }}
-              className="h-8 w-8 rounded-lg border border-line bg-bg-card/80 flex items-center justify-center text-ink-soft hover:text-ink"
+              className="h-10 w-10 shrink-0 rounded-lg border border-line bg-bg-card flex items-center justify-center text-ink-soft hover:text-ink"
               title="カードを展開"
               aria-label="カードを展開"
             >
@@ -966,7 +997,7 @@ export function ShipmentRow({
                   <button
                     type="button"
                     onClick={() => setExpandedWhenDone(false)}
-                    className="rounded-lg border border-line bg-bg-card px-2 py-0.5 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+                    className="min-h-10 rounded-lg border border-line bg-bg-card px-3 text-xs font-bold text-ink-soft hover:bg-bg-soft"
                   >
                     1行に畳む ▲
                   </button>
@@ -1022,7 +1053,7 @@ export function ShipmentRow({
 
               {bagType && (
                 <span className="whitespace-nowrap inline-flex items-center gap-1 rounded-lg bg-warning-bg px-2.5 py-1 text-xs sm:text-sm font-black text-ink border border-warning">
-                  <span>{getBagEmoji(bagType)} {bagType}</span>
+                  <span>{getBagEmoji(bagType)} {bagDisplayLabel(bagType)}</span>
                 </span>
               )}
 
@@ -1037,16 +1068,19 @@ export function ShipmentRow({
               <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="w-full mt-1 rounded-xl border-2 border-warning bg-warning-bg hover:bg-warning-bg/80 px-3 py-1.5 text-left flex items-center justify-between gap-2 transition"
+                className="w-full mt-1 min-h-10 rounded-xl border-2 border-warning bg-warning-bg hover:bg-warning-bg/80 px-3 py-1.5 text-left flex flex-wrap items-center justify-between gap-x-2 gap-y-1 transition"
+                title="途中数を直す"
               >
-                <span className="text-xs sm:text-sm font-black text-earth-900 flex items-center gap-1.5">
+                <span className="text-xs sm:text-sm font-black text-ink flex flex-wrap items-center gap-x-1.5">
                   <span>⏳ 途中経過:</span>
-                  <span className="underline decoration-warning">
-                    {partialCases}箱（{shippedPacks}P）完了
+                  <span className="tabular-nums">
+                    {formatCasesAndPacks(shippedPacks ?? 0, packsPerCase)}
+                    {(shippedPacks ?? 0) >= packsPerCase ? `（${shippedPacks}P）` : ''}完了
                   </span>
                 </span>
-                <span className="whitespace-nowrap rounded-md bg-warning text-white px-2 py-0.5 text-xs font-black shrink-0">
-                  残り {remainingCases}箱（{remainingPacks}P）✎
+                <span className="whitespace-nowrap rounded-md bg-bg-card border border-warning text-ink px-2 py-0.5 text-xs font-black shrink-0 tabular-nums">
+                  残り {formatCasesAndPacks(remainingPacks, packsPerCase)}
+                  {remainingPacks >= packsPerCase ? `（${remainingPacks}P）` : ''} ✎
                 </span>
               </button>
             )}
@@ -1056,13 +1090,13 @@ export function ShipmentRow({
               <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="w-full mt-1 rounded-xl border-l-4 border-warning bg-warning-bg hover:bg-warning-bg/70 px-3 py-1.5 text-left text-xs font-bold text-ink flex items-center justify-between gap-2 transition"
+                className="w-full mt-1 min-h-10 rounded-xl border-l-4 border-warning bg-warning-bg hover:bg-warning-bg/70 px-3 py-1.5 text-left text-xs font-bold text-ink flex items-center justify-between gap-2 transition"
               >
                 <span className="flex items-center gap-1.5">
                   <span>📝</span>
                   <span>{[memoText, masterPackingNotes].filter(Boolean).join(' / ')}</span>
                 </span>
-                <span className="text-xs font-black text-earth-900 shrink-0 underline">編集</span>
+                <span className="text-xs font-black text-ink shrink-0 underline">編集</span>
               </button>
             )}
           </div>
@@ -1253,92 +1287,122 @@ export function ShipmentRow({
       {/* ===================================================================== */}
       {open && (
         <div className="mt-3 rounded-xl border border-line bg-bg-soft/80 p-3 space-y-2.5 animate-in fade-in duration-150">
-          {/* ① 1段目：⏳ 途中数の記録（箱数メイン・横1行で完結・段落ちゼロ） */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-black text-ink flex items-center gap-1">
-                <span>⏳ 途中数（いまできた箱数）</span>
-              </span>
+          {/* ① 1段目：⏳ 途中数の記録（満杯の箱数＋端数パック。全数以上は記録しない） */}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-xs">
+              <span className="font-black text-ink">⏳ 途中数（いまできた分）</span>
               <span className="font-bold text-ink-soft tabular-nums">
-                目標 {totalBoxes}箱（{orderedQty}P）
-                {partialBoxesStr !== '' && Number(partialBoxesStr) > 0 && (
-                  <span className="text-forest-800 font-black ml-1">
-                    ／ 現在 {partialBoxesStr}箱（{Math.min(orderedQty, Number(partialBoxesStr) * packsPerCase)}P）
+                注文 {formatCasesAndPacks(orderedQty, packsPerCase)}（{orderedQty}P）
+                {partialInputPacks > 0 && (
+                  <span className="text-ink font-black ml-1">
+                    ／ 現在 {formatCasesAndPacks(partialInputPacks, packsPerCase)}（{partialInputPacks}P）
                   </span>
                 )}
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 disabled={savingQuick}
                 onClick={() => {
                   const cur = parseInt(partialBoxesStr, 10) || 0
+                  const loose = parseInt(partialLooseStr, 10) || 0
                   const next = Math.max(0, cur - 1)
-                  setPartialBoxesStr(next === 0 ? '' : String(next))
-                  void savePartialBoxes(next === 0 ? null : next)
+                  if (next === 0 && loose === 0) {
+                    setPartialBoxesStr('')
+                    void savePartial(null)
+                    return
+                  }
+                  setPartialBoxesStr(String(next))
+                  void savePartial({ boxes: next, loose })
                 }}
-                className="min-h-[44px] h-11 px-3 rounded-xl border border-line-strong bg-bg-card hover:bg-bg-soft text-xs sm:text-sm font-black text-ink shrink-0 active:scale-95 transition"
+                className="min-h-11 h-11 px-3 rounded-xl border border-line-strong bg-bg-card hover:bg-bg-soft text-xs sm:text-sm font-black text-ink shrink-0 active:scale-95 transition"
               >
                 -1箱
               </button>
 
-              <div className="flex items-center gap-1 bg-bg-card border border-line-strong rounded-xl px-2.5 min-h-[44px] h-11 w-24 shrink-0">
+              <label className="flex items-center gap-1 bg-bg-card border border-line-strong rounded-xl px-2 min-h-11 h-11 w-20 shrink-0">
+                <span className="sr-only">できた箱数</span>
                 <input
                   type="number"
                   inputMode="numeric"
                   min={0}
-                  max={Math.max(1, totalBoxes)}
+                  max={Math.max(0, totalBoxes)}
                   value={partialBoxesStr}
                   onChange={(e) => setPartialBoxesStr(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                       e.preventDefault()
-                      void savePartialBoxes()
+                      void savePartial()
                     }
                   }}
                   placeholder="0"
-                  className="num w-full bg-transparent text-center font-black text-base text-ink focus:outline-none"
+                  className="num w-full min-w-0 bg-transparent text-center font-black text-base text-ink focus:outline-none"
                 />
                 <span className="text-xs font-bold text-ink-soft shrink-0">箱</span>
-              </div>
+              </label>
 
               <button
                 type="button"
                 disabled={savingQuick}
                 onClick={() => {
                   const cur = parseInt(partialBoxesStr, 10) || 0
-                  const next = Math.min(Math.max(1, totalBoxes), cur + 1)
+                  const loose = parseInt(partialLooseStr, 10) || 0
+                  const next = cur + 1
                   setPartialBoxesStr(String(next))
-                  void savePartialBoxes(next)
+                  void savePartial({ boxes: next, loose })
                 }}
-                className="min-h-[44px] h-11 px-3 rounded-xl bg-harvest-600 hover:bg-harvest-700 text-xs sm:text-sm font-black text-white shrink-0 active:scale-95 transition shadow-2xs"
+                className="min-h-11 h-11 px-3 rounded-xl bg-harvest-600 hover:bg-harvest-700 text-xs sm:text-sm font-black text-white shrink-0 active:scale-95 transition shadow-2xs"
               >
                 +1箱
               </button>
 
-              {partialBoxesStr !== '' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPartialBoxesStr('')
-                    void savePartialBoxes(null)
+              <label className="flex items-center gap-1 bg-bg-card border border-line-strong rounded-xl px-2 min-h-11 h-11 w-20 shrink-0">
+                <span className="text-xs font-bold text-ink-soft shrink-0">＋</span>
+                <span className="sr-only">端数のパック数</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={Math.max(0, packsPerCase - 1)}
+                  value={partialLooseStr}
+                  onChange={(e) => setPartialLooseStr(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void savePartial()
+                    }
                   }}
-                  className="min-h-[44px] h-11 px-2 rounded-lg text-xs font-bold text-ink-soft hover:text-ink underline shrink-0"
-                >
-                  クリア
-                </button>
-              )}
+                  placeholder="0"
+                  className="num w-full min-w-0 bg-transparent text-center font-black text-base text-ink focus:outline-none"
+                />
+                <span className="text-xs font-bold text-ink-soft shrink-0">P</span>
+              </label>
 
-              <Button
-                size="sm"
-                onClick={() => savePartialBoxes()}
-                isLoading={savingQuick}
-                className="ml-auto min-h-[44px] h-11 px-3.5 shrink-0 text-xs font-black"
-              >
-                記録
-              </Button>
+              <div className="ml-auto flex items-center gap-1.5">
+                {(partialBoxesStr !== '' || partialLooseStr !== '') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPartialBoxesStr('')
+                      setPartialLooseStr('')
+                      void savePartial(null)
+                    }}
+                    className="min-h-11 h-11 px-2 rounded-lg text-xs font-bold text-ink-soft hover:text-ink underline shrink-0"
+                  >
+                    クリア
+                  </button>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() => savePartial()}
+                  isLoading={savingQuick}
+                  className="min-h-11 h-11 px-3.5 shrink-0 text-xs font-black"
+                >
+                  記録
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -1350,7 +1414,7 @@ export function ShipmentRow({
                 <button
                   type="button"
                   onClick={() => setMemoText('')}
-                  className="text-xs text-ink-soft hover:text-ink font-bold underline"
+                  className="min-h-10 px-2 text-xs text-ink-soft hover:text-ink font-bold underline"
                 >
                   クリア
                 </button>
@@ -1374,7 +1438,7 @@ export function ShipmentRow({
                 size="sm"
                 onClick={saveUnifiedMemo}
                 isLoading={savingNote}
-                className="h-9 px-3 shrink-0 text-xs font-black"
+                className="h-10 px-3 shrink-0 text-xs font-black"
               >
                 保存
               </Button>
@@ -1387,7 +1451,7 @@ export function ShipmentRow({
               <span className="text-xs font-bold text-ink-soft">📄 受注原本（FAX・注文書画像）</span>
               <Link
                 href={viewerHref}
-                className="h-8 px-3 rounded-lg bg-trust-700 text-white text-xs font-black shadow-2xs hover:bg-trust-600 active:scale-95 transition inline-flex items-center"
+                className="h-10 px-3 shrink-0 rounded-lg bg-trust-700 text-white text-xs font-black shadow-2xs hover:bg-trust-600 active:scale-95 transition inline-flex items-center"
               >
                 原本を見る →
               </Link>
@@ -1415,14 +1479,16 @@ export function ShipmentRow({
                 type="button"
                 disabled={savingDetails}
                 onClick={() => void quickPatchAttributes({ has_card: !hasCard })}
+                aria-pressed={hasCard}
+                title={hasCard ? 'タップで「カードは入れない」に切り替え' : 'タップで「カードを入れる」に切り替え'}
                 className={cn(
-                  'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
+                  'min-h-10 px-3 rounded-xl border text-xs font-black transition active:scale-95',
                   hasCard
                     ? 'border-grape-500 bg-grape-600 text-white shadow-2xs'
                     : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                 )}
               >
-                {hasCard ? '🃏 カード有（タップで無へ）' : '🃏 カードなし（タップで有へ）'}
+                {hasCard ? '🃏 カードを入れる' : '🃏 カードは入れない'}
               </button>
 
               <button
@@ -1434,7 +1500,7 @@ export function ShipmentRow({
                   void quickPatchAttributes({ has_seal: next, seal_text: nextText })
                 }}
                 className={cn(
-                  'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
+                  'min-h-10 px-3 rounded-xl border text-xs font-black transition active:scale-95',
                   hasSeal
                     ? 'border-alert bg-alert text-white shadow-2xs'
                     : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
@@ -1452,14 +1518,16 @@ export function ShipmentRow({
                       type="button"
                       disabled={savingDetails}
                       onClick={() => void quickPatchAttributes({ bag_type: active ? null : bt })}
+                      aria-pressed={active}
+                      title={active ? `「${bagDisplayLabel(bt)}」の指定を外す` : `袋を「${bagDisplayLabel(bt)}」にする`}
                       className={cn(
-                        'min-h-[38px] px-3 rounded-xl border text-xs font-black transition active:scale-95',
+                        'min-h-10 px-3 rounded-xl border text-xs font-black transition active:scale-95',
                         active
                           ? 'border-warning bg-warning text-white shadow-2xs'
                           : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
                       )}
                     >
-                      🛍️ {bt}
+                      {bagDisplayLabel(bt)}
                     </button>
                     {isCustom && (
                       <button
@@ -1467,7 +1535,7 @@ export function ShipmentRow({
                         disabled={savingMaterialOpt}
                         onClick={() => void handleRemoveCustomMaterial('bag', bt)}
                         title={`「${bt}」を選択肢から削除`}
-                        className="h-6 w-6 rounded-full text-xs font-bold text-ink-faint hover:bg-alert-bg hover:text-alert"
+                        className="h-10 w-10 rounded-full text-sm font-bold text-ink-faint hover:bg-alert-bg hover:text-alert"
                       >
                         ×
                       </button>
@@ -1481,7 +1549,7 @@ export function ShipmentRow({
                   setAddingMaterialCat(addingMaterialCat === 'bag' ? null : 'bag')
                   setNewMaterialInput('')
                 }}
-                className="min-h-[34px] px-2.5 rounded-xl border border-dashed border-line-strong bg-bg-card text-xs font-bold text-ink-soft hover:border-ink-faint hover:text-ink"
+                className="min-h-10 px-2.5 rounded-xl border border-dashed border-line-strong bg-bg-card text-xs font-bold text-ink-soft hover:border-ink-faint hover:text-ink"
               >
                 ＋袋・資材を追加
               </button>
@@ -1500,20 +1568,20 @@ export function ShipmentRow({
                     }
                   }}
                   placeholder="新しい袋・資材名（例: ボードン11号）"
-                  className={cn(fieldInput, 'flex-1 h-9 text-xs')}
+                  className={cn(fieldInput, 'flex-1 min-w-0 text-xs')}
                 />
                 <Button
                   size="sm"
                   onClick={() => void handleAddCustomMaterial('bag')}
                   isLoading={savingMaterialOpt}
-                  className="h-9 px-3 text-xs font-black"
+                  className="h-10 px-3 shrink-0 text-xs font-black"
                 >
                   追加して適用
                 </Button>
                 <button
                   type="button"
                   onClick={() => setAddingMaterialCat(null)}
-                  className="px-2 text-xs font-bold text-ink-soft hover:text-ink"
+                  className="min-h-10 shrink-0 px-2 text-xs font-bold text-ink-soft hover:text-ink"
                 >
                   閉じる
                 </button>
@@ -1522,15 +1590,15 @@ export function ShipmentRow({
 
             {/* 🟦 コンテナ種別 1タップピルボタン */}
             <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-ink-soft block">📦 コンテナ種別（1タップで切替）</span>
+              <div className="flex flex-wrap items-center justify-between gap-x-2">
+                <span className="text-xs font-bold text-ink-soft">📦 コンテナ種別（1タップで切替）</span>
                 <button
                   type="button"
                   onClick={() => {
                     setAddingMaterialCat(addingMaterialCat === 'container' ? null : 'container')
                     setNewMaterialInput('')
                   }}
-                  className="text-xs font-bold text-trust-700 hover:underline"
+                  className="min-h-10 px-2 text-xs font-bold text-trust-700 hover:underline whitespace-nowrap"
                 >
                   ＋新しいコンテナを追加
                 </button>
@@ -1557,7 +1625,7 @@ export function ShipmentRow({
                         disabled={savingDetails}
                         onClick={() => void quickPatchAttributes({ container_type: cOpt.value })}
                         className={cn(
-                          'min-h-[36px] px-2.5 rounded-xl border text-xs font-black transition active:scale-95',
+                          'min-h-10 px-2.5 rounded-xl border text-xs font-black transition active:scale-95',
                           active
                             ? 'border-trust-700 bg-trust-700 text-white shadow-2xs'
                             : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
@@ -1571,7 +1639,7 @@ export function ShipmentRow({
                           disabled={savingMaterialOpt}
                           onClick={() => void handleRemoveCustomMaterial('container', cOpt.value)}
                           title={`「${cOpt.value}」を選択肢から削除`}
-                          className="h-6 w-6 rounded-full text-xs font-bold text-ink-faint hover:bg-alert-bg hover:text-alert"
+                          className="h-10 w-10 rounded-full text-sm font-bold text-ink-faint hover:bg-alert-bg hover:text-alert"
                         >
                           ×
                         </button>
@@ -1593,20 +1661,20 @@ export function ShipmentRow({
                       }
                     }}
                     placeholder="新しいコンテナ名（例: 黄コン、赤コン、段ボール）"
-                    className={cn(fieldInput, 'flex-1 h-9 text-xs')}
+                    className={cn(fieldInput, 'flex-1 min-w-0 text-xs')}
                   />
                   <Button
                     size="sm"
                     onClick={() => void handleAddCustomMaterial('container')}
                     isLoading={savingMaterialOpt}
-                    className="h-9 px-3 text-xs font-black"
+                    className="h-10 px-3 shrink-0 text-xs font-black"
                   >
                     追加して適用
                   </Button>
                   <button
                     type="button"
                     onClick={() => setAddingMaterialCat(null)}
-                    className="px-2 text-xs font-bold text-ink-soft hover:text-ink"
+                    className="min-h-10 shrink-0 px-2 text-xs font-bold text-ink-soft hover:text-ink"
                   >
                     閉じる
                   </button>
@@ -1636,7 +1704,7 @@ export function ShipmentRow({
                           void quickPatchAttributes({ spec: nextSpec })
                         }}
                         className={cn(
-                          'min-h-[32px] px-2.5 rounded-lg border text-xs font-black transition active:scale-95',
+                          'min-h-10 min-w-10 px-2.5 rounded-lg border text-xs font-black transition active:scale-95',
                           active
                             ? 'border-harvest-700 bg-harvest-700 text-white shadow-2xs'
                             : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
@@ -1664,7 +1732,7 @@ export function ShipmentRow({
                       disabled={savingDetails}
                       onClick={() => void quickPatchAttributes({ spec: spPreset })}
                       className={cn(
-                        'min-h-[34px] px-2.5 rounded-lg border text-xs font-bold transition active:scale-95',
+                        'min-h-10 px-2.5 rounded-lg border text-xs font-bold transition active:scale-95',
                         active
                           ? 'border-forest-700 bg-forest-700 text-white font-black'
                           : 'border-line-strong bg-bg-card text-ink-soft hover:bg-bg-soft',
@@ -1687,7 +1755,7 @@ export function ShipmentRow({
                   type="button"
                   onClick={() => setShowOrderEdit(!showOrderEdit)}
                   className={cn(
-                    'rounded-lg border px-2.5 py-1 text-xs font-black transition',
+                    'min-h-10 shrink-0 rounded-lg border px-3 text-xs font-black transition',
                     showOrderEdit
                       ? 'border-night-soft bg-night text-white'
                       : 'border-line-strong bg-bg-soft text-ink hover:opacity-90',
@@ -1780,7 +1848,7 @@ export function ShipmentRow({
             <button
               type="button"
               onClick={() => setDeleteOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-alert/30 bg-alert-bg hover:bg-alert/10 px-3 py-2 text-xs font-black text-alert transition active:scale-95 shadow-2xs"
+              className="min-h-10 inline-flex items-center gap-1.5 rounded-lg border border-alert/30 bg-alert-bg hover:bg-alert/10 px-3 text-xs font-black text-alert transition active:scale-95 shadow-2xs"
             >
               <Trash2 className="h-4 w-4 text-alert" aria-hidden />
               <span>{isThaiMode ? 'ลบรายการนี้ (この明細を削除)' : 'この明細を削除'}</span>
@@ -1788,7 +1856,7 @@ export function ShipmentRow({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded-lg border border-line bg-bg-card px-3 py-2 text-xs font-bold text-ink-soft hover:bg-bg-soft"
+              className="min-h-10 rounded-lg border border-line bg-bg-card px-3 text-xs font-bold text-ink-soft hover:bg-bg-soft"
             >
               閉じる ▲
             </button>

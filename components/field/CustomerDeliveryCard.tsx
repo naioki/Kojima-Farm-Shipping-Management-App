@@ -650,7 +650,6 @@ export function CustomerDeliveryCard({
                   <div className="flex items-center gap-1.5">
                     <Truck className="h-5 w-5" />
                     <span>
-                      {unpackedItemCount > 0 ? '⚠️ ' : '🚚 '}
                       {isThaiMode ? THAI_LABELS.loadOk : '積込 OK'}
                     </span>
                   </div>

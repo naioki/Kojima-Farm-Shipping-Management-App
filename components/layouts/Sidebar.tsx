@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { LogOut, ChevronDown, Leaf, UserRound } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { useNavState } from '@/components/layouts/use-nav'
+import { useNavState, groupBadgeTotal } from '@/components/layouts/use-nav'
 import { buildPreservedFieldHref } from '@/components/layouts/nav-items'
 import { ThemeToggle } from '@/components/layouts/ThemeToggle'
 import { NavBadge } from '@/components/layouts/NavBadge'
@@ -33,7 +33,7 @@ export function Sidebar({
   return (
     <nav
       aria-label="サイドメニュー"
-      className="hidden w-60 shrink-0 flex-col overflow-y-auto bg-forest-800 p-3 text-forest-100 lg:flex print:!hidden"
+      className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto bg-forest-800 p-3 text-forest-100 lg:flex print:!hidden"
     >
       {/* ロゴ */}
       <div className="mb-4 flex items-center gap-2.5 px-2 pt-2">
@@ -93,10 +93,13 @@ export function Sidebar({
                 type="button"
                 onClick={() => toggleGroup(group.label!)}
                 aria-expanded={open}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-forest-200 transition-colors hover:bg-forest-700/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
+                className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-forest-200 transition-colors hover:bg-forest-700/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-400/60"
               >
-                {group.label}
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+                <span className="min-w-0 truncate">{group.label}</span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {!open && <NavBadge count={groupBadgeTotal(group, badges)} />}
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+                </span>
               </button>
               <div
                 className={cn(

@@ -55,7 +55,7 @@ export async function PUT(req: Request) {
   }
   const previousEntries = rows.map((r) => ({
     key: r.key,
-    value: existingMap.get(r.key) ?? (r.key.startsWith('STAFF_CAN_') || r.key === 'AUTO_APPROVE_ENABLED' ? 'on' : 'off'),
+    value: existingMap.get(r.key) ?? (SETTINGS_BY_KEY[r.key]?.kind === 'toggle' ? (SETTINGS_BY_KEY[r.key]?.toggleDefault ?? 'off') : ''),
   }))
 
   const { error } = await admin.from('app_settings').upsert(rows, { onConflict: 'key' })

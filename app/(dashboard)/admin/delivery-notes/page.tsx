@@ -29,13 +29,16 @@ export default async function DeliveryNotesPage({
   const guard = await requireAdmin('納品書は管理者のみです。')
   if (guard) return guard
 
-  const defaultDate = shiftDateStr(jstTodayStr(), 1)
+  // 既定は今日（下の「納品書を発行」フォームの既定日と揃える）。明日分はリンクで切り替える
+  const today = jstTodayStr()
+  const tomorrow = shiftDateStr(today, 1)
+  const defaultDate = today
   const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(searchParams?.date ?? '') ? searchParams!.date! : defaultDate
 
   const supabase = createAdminClient()
   const [
     { data: customers, error },
-    { data: notes },
+    { data: notes, error: notesErr },
     { data: dayOrders },
     { count: pendingCount },
     amountModeSetting,
@@ -57,7 +60,9 @@ export default async function DeliveryNotesPage({
       .eq('status', 'pending_review'),
     getSetting('DELIVERY_NOTE_AMOUNT_MODE'),
   ])
-  if (error) return <ErrorState message={error.message} />
+  if (error) return <ErrorState message="取引先を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
+  if (notesErr)
+    return <ErrorState message="発行済みの納品書を読み込めませんでした。時間をおいて再度お試しください。" detail={notesErr.message} />
   const defaultMode = parseAmountMode(amountModeSetting)
 
   const activeDayCustIds = new Set((dayOrders ?? []).map((o) => o.customer_id))
@@ -76,19 +81,19 @@ export default async function DeliveryNotesPage({
 
       {(pendingCount ?? 0) > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3.5 py-2.5 text-xs font-bold text-ink">
-          <span>
-            ⚠️ 未承認（確認待ち）の注文が <strong className="font-black underline">{pendingCount}件</strong> あります（承認すると納品書に反映されます）
+          <span className="text-sm font-normal">
+            未承認（確認待ち）の注文が <strong className="font-bold">{pendingCount}件</strong> あります（承認すると納品書に反映されます）
           </span>
           <Link
-            href="/admin/orders?status=pending_review"
-            className="rounded-lg bg-warning px-2.5 py-1 text-xs font-black text-white hover:opacity-90"
+            href="/admin/approvals"
+            className="inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-warning bg-bg-card px-3 text-sm font-bold text-ink hover:bg-earth-50"
           >
-            確認待ちを開く →
+            承認待ちを開く →
           </Link>
         </div>
       )}
 
-      {/* 🚚 運転手渡し納品書（勘兵衛・オレンジファーム等）クイック印刷 */}
+      {/* 運転手渡し納品書のクイック印刷（対象の取引先は取引先設定で決まる。固有名は画面に直書きしない） */}
       <div className="rounded-2xl border-2 border-harvest-600/30 bg-harvest-50/70 p-4 space-y-3 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -96,9 +101,7 @@ export default async function DeliveryNotesPage({
               <Truck className="h-4 w-4" aria-hidden />
             </span>
             <div>
-              <h2 className="font-display text-base font-black text-forest-900">
-                運転手渡し納品書（勘兵衛・オレンジファーム）
-              </h2>
+              <h2 className="font-display text-base font-black text-forest-900">運転手渡し納品書</h2>
               <p className="text-xs text-forest-900/80">
                 A4上下2連（切るとA5×2枚：納品書＋控）・金額なし・箱数明記・FAX着日自動印字
               </p>
@@ -116,6 +119,40 @@ export default async function DeliveryNotesPage({
             </a>
           )}
         </div>
+
+        <form method="get" className="flex flex-wrap items-end gap-2">
+          <label className="text-xs font-bold text-forest-900">
+            <span className="mb-1 block">対象の納品日（{targetDate === today ? '今日' : targetDate === tomorrow ? '明日' : '指定日'}）</span>
+            <input
+              type="date"
+              name="date"
+              defaultValue={targetDate}
+              className="num h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100"
+            />
+          </label>
+          <button
+            type="submit"
+            className="inline-flex min-h-10 items-center rounded-lg border border-line-strong bg-bg-card px-3 text-sm font-bold text-ink hover:bg-earth-50"
+          >
+            この日に切り替え
+          </button>
+          {targetDate !== today && (
+            <Link
+              href="/admin/delivery-notes"
+              className="inline-flex min-h-10 items-center rounded-lg px-2 text-sm font-bold text-trust-700 hover:underline"
+            >
+              今日分
+            </Link>
+          )}
+          {targetDate !== tomorrow && (
+            <Link
+              href={`/admin/delivery-notes?date=${tomorrow}`}
+              className="inline-flex min-h-10 items-center rounded-lg px-2 text-sm font-bold text-trust-700 hover:underline"
+            >
+              明日分
+            </Link>
+          )}
+        </form>
 
         <div className="grid grid-cols-1 gap-2">
           {(driverNoteCustomers.length > 0 ? driverNoteCustomers : allDriverMasters).map((c) => {
@@ -143,7 +180,7 @@ export default async function DeliveryNotesPage({
                       {formatJpDateShort(targetDate)} 出荷あり
                     </span>
                   ) : (
-                    <span className="text-xs text-ink-faint">（下のフォームで日付を選択できます）</span>
+                    <span className="text-xs text-ink-soft">{formatJpDateShort(targetDate)} は出荷なし</span>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">

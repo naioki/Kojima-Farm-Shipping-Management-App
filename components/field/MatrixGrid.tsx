@@ -311,28 +311,32 @@ export function MatrixGrid({
             <button
               type="button"
               onClick={() => setUnitMode('boxes')}
+              title="数字を箱数として入力・表示します"
+              aria-label="箱数モード（数字は箱数）"
               className={cn(
-                'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all',
+                'inline-flex min-h-10 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all',
                 unitMode === 'boxes'
                   ? 'bg-forest-700 text-white shadow-xs'
                   : 'text-forest-900 hover:bg-bg-card/70',
               )}
             >
               <Box className="h-3.5 w-3.5" />
-              <span>📦 箱数モード（数字＝箱数）</span>
+              <span>📦 箱</span>
             </button>
             <button
               type="button"
               onClick={() => setUnitMode('packs')}
+              title="数字をパック数として入力・表示します"
+              aria-label="パック数モード（数字はパック数）"
               className={cn(
-                'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all',
+                'inline-flex min-h-10 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black transition-all',
                 unitMode === 'packs'
                   ? 'bg-forest-700 text-white shadow-xs'
                   : 'text-forest-900 hover:bg-bg-card/70',
               )}
             >
               <Layers className="h-3.5 w-3.5" />
-              <span>🥬 パック数モード</span>
+              <span>🥬 パック</span>
             </button>
           </div>
 
@@ -340,7 +344,7 @@ export function MatrixGrid({
             type="button"
             onClick={() => setOnlyWithOrders(!onlyWithOrders)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors',
+              'inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors',
               onlyWithOrders
                 ? 'border-trust-600 bg-trust-50 text-trust-700'
                 : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft',
@@ -364,7 +368,7 @@ export function MatrixGrid({
                   }
                 }}
                 defaultValue=""
-                className="h-8 rounded-xl border border-dashed border-earth-300 bg-earth-50/60 px-2.5 text-xs font-bold text-earth-800 hover:bg-earth-100 focus:outline-none"
+                className="h-10 rounded-xl border border-dashed border-earth-300 bg-earth-50/60 px-2.5 text-xs font-bold text-earth-800 hover:bg-earth-100 focus:outline-none"
               >
                 <option value="" disabled>
                   ＋ 取引先を追加して入力 ({availableCustomers.length}社)
@@ -383,7 +387,7 @@ export function MatrixGrid({
           <span className="hidden text-xs text-ink-soft sm:inline">
             💡 日付タップでその日のパックボードへ移動 ／ 「▶ 内訳」で納入先別に展開
           </span>
-          <Button variant="secondary" size="sm" onClick={exportCsv}>
+          <Button variant="secondary" size="sm" onClick={exportCsv} className="min-h-10">
             <Download className="h-4 w-4" aria-hidden />
             CSV
           </Button>
@@ -394,8 +398,8 @@ export function MatrixGrid({
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 border border-line bg-bg-soft px-3 py-2 text-left font-bold text-ink min-w-[165px]">
-                取引先（タップで内訳展開）
+              <th className="sticky left-0 z-10 border border-line bg-bg-soft px-2 py-2 text-left font-bold text-ink min-w-[104px] sm:min-w-[165px] sm:px-3">
+                取引先
               </th>
               {dates.map((d) => {
                 const isTodayCol = d === jstTodayStr()
@@ -422,12 +426,12 @@ export function MatrixGrid({
                         <ExternalLink className="h-3 w-3 opacity-50 group-hover:opacity-100" />
                       </span>
                       {isTomorrowCol && (
-                        <span className="block text-xs font-black text-forest-800">
-                          明日納品(今日作業)
+                        <span className="block whitespace-nowrap text-xs font-black text-forest-800">
+                          明日納品
                         </span>
                       )}
                       {isTodayCol && (
-                        <span className="block text-xs font-black text-trust-700">
+                        <span className="block whitespace-nowrap text-xs font-black text-trust-700">
                           今日納品
                         </span>
                       )}
@@ -465,8 +469,11 @@ export function MatrixGrid({
                       )}
                     >
                       <th className="sticky left-0 z-10 border border-line bg-bg-card px-2.5 py-2 text-left font-bold text-ink">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span className="truncate text-xs sm:text-sm font-black text-ink">
+                        <div className="flex flex-wrap items-center justify-between gap-1">
+                          <span
+                            className="line-clamp-2 min-w-0 break-words text-xs sm:text-sm font-black text-ink"
+                            title={c.name}
+                          >
                             {c.name.replace(/^株式会社|^（株）|^㈱|^農事組合法人\s*/, '')}
                           </span>
                           {hasMultipleDests && (
@@ -474,7 +481,7 @@ export function MatrixGrid({
                               type="button"
                               onClick={() => toggleExpandCustomer(c.id)}
                               className={cn(
-                                'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-xs font-black shrink-0 transition active:scale-95',
+                                'inline-flex min-h-10 items-center gap-0.5 rounded-md border px-2 py-0.5 text-xs font-black shrink-0 whitespace-nowrap transition active:scale-95',
                                 isExpanded
                                   ? 'border-forest-600 bg-forest-600 text-white'
                                   : 'border-harvest-400 bg-harvest-50 text-forest-900 hover:bg-harvest-100',
@@ -601,7 +608,7 @@ export function MatrixGrid({
                                     prev && prev.customerId === c.id && !prev.destId && prev.date === d ? null : prev,
                                   )
                                 }}
-                                placeholder={unitMode === 'boxes' ? '箱数' : 'P数'}
+                                placeholder="—"
                                 aria-label={`${c.name} ${mmdd(d)}`}
                                 className={cn(
                                   'num h-12 w-full min-w-[68px] bg-transparent px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-xs placeholder:font-normal placeholder:text-ink-faint',
@@ -655,7 +662,7 @@ export function MatrixGrid({
                             <th className="sticky left-0 z-10 border border-line bg-harvest-50/90 pl-5 pr-2.5 py-1.5 text-left font-bold text-forest-900">
                               <div className="flex items-center gap-1">
                                 <span className="text-harvest-600">↳</span>
-                                <span className="truncate">{dest.label}</span>
+                                <span className="line-clamp-2 min-w-0 break-words" title={dest.label}>{dest.label}</span>
                               </div>
                             </th>
                             {dates.map((d) => {
@@ -728,7 +735,7 @@ export function MatrixGrid({
                                             : prev,
                                         )
                                       }}
-                                      placeholder={unitMode === 'boxes' ? '箱数' : 'P数'}
+                                      placeholder="—"
                                       aria-label={`${c.name} ${dest.label} ${mmdd(d)}`}
                                       className={cn(
                                         'num h-10 w-full min-w-[68px] bg-bg-card/60 px-1.5 text-center font-bold tabular-nums text-ink placeholder:text-xs placeholder:font-normal placeholder:text-ink-faint',

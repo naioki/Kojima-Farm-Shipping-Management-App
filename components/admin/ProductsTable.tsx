@@ -30,7 +30,7 @@ const numOrNull = (s: string): number | null => {
 }
 
 /**
- * 商品（品目）マスタの編集テーブル（#49 標準1箱入数 container_capacity と 標準単価 default_unit_price のインライン編集に対応）。
+ * 品目の編集一覧（#49 標準1箱入数 container_capacity と 標準単価 default_unit_price のインライン編集に対応）。
  */
 export function ProductsTable({ products, categories = [] }: { products: ProductRow[]; categories?: string[] }) {
   const router = useRouter()
@@ -174,7 +174,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
     }
   }
 
-  const inp = 'h-9 rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
+  const inp = 'h-10 rounded border border-line-strong bg-bg-card px-2 text-sm text-ink focus:outline-none focus:border-trust-500 focus:ring-2 focus:ring-trust-100'
   const confirmRow = confirmId ? rows[confirmId] : null
   const mergeRow = mergeId ? rows[mergeId] : null
 
@@ -195,7 +195,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           isDirty ? 'border-harvest-500 bg-harvest-50/30' : 'border-line bg-bg-card',
         )}
       >
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
+        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
           <label className="flex flex-col gap-0.5">
             <span className="text-xs font-bold text-ink-soft">品目名</span>
             <input
@@ -208,9 +208,9 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-xs font-bold text-ink-soft">グループ</span>
             <input
-              className={cn(inp, 'w-20')}
+              className={cn(inp, 'w-28')}
               list="products-table-category-list"
-              placeholder="野菜"
+              placeholder="例: 野菜"
               value={r.category ?? ''}
               onChange={(e) => patch(id, { category: e.target.value })}
               aria-label={`${r.name} の品目グループ`}
@@ -228,11 +228,11 @@ export function ProductsTable({ products, categories = [] }: { products: Product
 
           {/* #49 標準1箱入数（container_capacity） */}
           <label className="flex flex-col gap-0.5">
-            <span className="text-xs font-bold text-forest-800">標準1箱入数</span>
+            <span className="text-xs font-bold text-ink-soft">標準1箱入数</span>
             <input
-              className={cn(inp, 'num w-18 text-center font-bold')}
+              className={cn(inp, 'num w-24 text-center font-bold')}
               inputMode="numeric"
-              placeholder="20"
+              placeholder="例: 20"
               value={r.container_capacity ?? ''}
               onChange={(e) => patch(id, { container_capacity: numOrNull(e.target.value) })}
             />
@@ -242,7 +242,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-xs font-bold text-ink-soft">標準単価(円)</span>
             <input
-              className={cn(inp, 'num w-20 text-right')}
+              className={cn(inp, 'num w-24 text-right')}
               inputMode="numeric"
               placeholder="—"
               value={r.default_unit_price ?? ''}
@@ -253,14 +253,9 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-xs font-bold text-ink-soft">税率</span>
             <select
-              className={cn(inp, 'w-16')}
+              className={cn(inp, 'w-20')}
               value={String(r.default_tax_rate)}
-              onChange={(e) => {
-                const nextRate = Number(e.target.value) as TaxRate
-                const nextRow = { ...r, default_tax_rate: nextRate }
-                patch(id, { default_tax_rate: nextRate })
-                void save(id, nextRow)
-              }}
+              onChange={(e) => patch(id, { default_tax_rate: Number(e.target.value) as TaxRate })}
             >
               <option value="8">8%</option>
               <option value="10">10%</option>
@@ -270,7 +265,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
           <label className="flex flex-col gap-0.5">
             <span className="text-xs font-bold text-ink-soft">在庫数</span>
             <input
-              className={cn(inp, 'num w-20 tabular-nums text-right')}
+              className={cn(inp, 'num w-24 tabular-nums text-right')}
               inputMode="numeric"
               value={r.stock_qty}
               onChange={(e) => patch(id, { stock_qty: numOrNull(e.target.value) ?? 0 })}
@@ -284,7 +279,7 @@ export function ProductsTable({ products, categories = [] }: { products: Product
             size="sm"
             onClick={() => save(id)}
             isLoading={savingId === id}
-            className="gap-1 font-bold"
+            className="min-h-10 gap-1 whitespace-nowrap font-bold"
           >
             {savedId === id && !isDirty ? (
               <Check className="h-4 w-4 text-harvest-600" aria-hidden />
@@ -299,10 +294,10 @@ export function ProductsTable({ products, categories = [] }: { products: Product
             onClick={() => openMerge(id)}
             aria-label={`${r.name} を他品目の荷姿に統合`}
             title="統合（重複品目を別品目の荷姿へ）"
-            className="flex h-9 items-center gap-1 rounded border border-line bg-bg-card px-2.5 text-xs font-medium text-ink-soft hover:border-trust-400 hover:bg-trust-50 hover:text-trust-600 focus-visible:outline-none"
+            className="flex h-10 items-center gap-1 whitespace-nowrap rounded border border-line bg-bg-card px-3 text-sm font-medium text-ink-soft hover:border-trust-400 hover:bg-trust-50 hover:text-trust-700 focus-visible:outline-none"
           >
-            <Combine className="h-3.5 w-3.5" aria-hidden />
-            <span className="hidden sm:inline">統合</span>
+            <Combine className="h-4 w-4" aria-hidden />
+            <span>統合</span>
           </button>
 
           <button
@@ -310,9 +305,9 @@ export function ProductsTable({ products, categories = [] }: { products: Product
             onClick={() => setConfirmId(id)}
             aria-label={`${r.name} を削除`}
             title="この品目を削除"
-            className="flex h-9 items-center gap-1 rounded border border-alert/30 bg-alert/5 px-2.5 text-xs font-bold text-alert hover:border-alert hover:bg-alert hover:text-white transition-colors focus-visible:outline-none"
+            className="flex h-10 items-center gap-1 whitespace-nowrap rounded border border-alert/30 bg-alert/5 px-3 text-sm font-bold text-alert hover:border-alert hover:bg-alert hover:text-white transition-colors focus-visible:outline-none"
           >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            <Trash2 className="h-4 w-4" aria-hidden />
             <span>削除</span>
           </button>
         </div>

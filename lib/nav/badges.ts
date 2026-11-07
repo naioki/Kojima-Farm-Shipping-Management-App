@@ -24,6 +24,12 @@ export async function getNavBadges(role: 'admin' | 'staff'): Promise<Record<stri
         .in('status', ['ai_failed', 'unmatched'])
       if (failed.error) throw new Error(failed.error.message)
       badges['/admin/inbox'] = failed.count ?? 0
+      // 現場からの規格報告（未対応）。取得できなくてもほかのバッジは出す
+      const specs = await supabase
+        .from('spec_reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+      if (!specs.error) badges['/admin/spec-reports'] = specs.count ?? 0
     }
     return badges
   } catch (e) {

@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
-import { jstTodayStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 
 /**
  * ロット作成フォーム（J-GAPトレサ）。収穫日×圃場×品目で1ロット。
@@ -20,7 +20,10 @@ export function LotForm({ products }: { products: { id: string; name: string }[]
   const [harvestDate, setHarvestDate] = useState(jstTodayStr())
   const [fieldName, setFieldName] = useState('')
   const [gapRef, setGapRef] = useState('')
-  const [assignDate, setAssignDate] = useState(jstTodayStr())
+  // 収穫・パックは出荷日の前日（engineering.md §3）→ 出荷日の既定＝収穫日＋1日
+  const [assignDate, setAssignDate] = useState(() => shiftDateStr(jstTodayStr(), 1))
+  // 出荷日を手で変えるまでは、収穫日の変更に追従させる
+  const [assignTouched, setAssignTouched] = useState(false)
   const [doAssign, setDoAssign] = useState(true)
   const [busy, setBusy] = useState(false)
 
@@ -55,6 +58,8 @@ export function LotForm({ products }: { products: { id: string; name: string }[]
       setFieldName('')
       setGapRef('')
       router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '作成できませんでした')
     } finally {
       setBusy(false)
     }
@@ -75,7 +80,11 @@ export function LotForm({ products }: { products: { id: string; name: string }[]
           required
           type="date"
           value={harvestDate}
-          onChange={(e) => setHarvestDate(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value
+            setHarvestDate(v)
+            if (!assignTouched && /^\d{4}-\d{2}-\d{2}$/.test(v)) setAssignDate(shiftDateStr(v, 1))
+          }}
         />
         <Input
           label="圃場名"
@@ -91,23 +100,29 @@ export function LotForm({ products }: { products: { id: string; name: string }[]
         />
       </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={doAssign}
-            onChange={(e) => setDoAssign(e.target.checked)}
-            className="h-5 w-5 rounded border-line-strong accent-earth-600"
-          />
-          この出荷日の同品目の明細に一括紐付け：
+        <div className="space-y-1">
+          <label className="flex min-h-10 items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={doAssign}
+              onChange={(e) => setDoAssign(e.target.checked)}
+              className="h-5 w-5 rounded border-line-strong accent-earth-600"
+            />
+            この出荷日の同品目の明細に一括紐付け
+          </label>
           <input
             type="date"
             value={assignDate}
-            onChange={(e) => setAssignDate(e.target.value)}
+            onChange={(e) => {
+              setAssignDate(e.target.value)
+              setAssignTouched(true)
+            }}
             disabled={!doAssign}
             aria-label="紐付ける出荷日"
             className="num h-10 rounded border border-line-strong bg-bg-card px-3 text-sm text-ink focus:border-trust-500 focus:outline-none focus:ring-2 focus:ring-trust-100 disabled:opacity-50"
           />
-        </label>
+          <p className="text-xs text-ink-soft">出荷日は収穫日の翌日が既定です（収穫・パックは出荷の前日）。</p>
+        </div>
         <Button variant="primary" size="md" isLoading={busy} onClick={() => void submit()}>
           <Plus className="h-4 w-4" aria-hidden />
           ロットを作成

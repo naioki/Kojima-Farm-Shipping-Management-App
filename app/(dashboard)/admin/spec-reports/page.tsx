@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Camera, ChevronRight } from 'lucide-react'
+import { Ruler, ChevronRight } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
@@ -27,7 +27,7 @@ export default async function SpecReportsPage() {
     .order('created_at', { ascending: false })
   if (error) return <ErrorState message={error.message} />
 
-  // 取引先・商品・報告者名を解決
+  // 取引先・品目・報告者名を解決
   const customerIds = [...new Set((reports ?? []).map((r) => r.customer_id).filter(Boolean))] as string[]
   const productIds = [...new Set((reports ?? []).map((r) => r.product_id).filter(Boolean))] as string[]
   const reporterIds = [...new Set((reports ?? []).map((r) => r.reported_by).filter(Boolean))] as string[]
@@ -57,8 +57,8 @@ export default async function SpecReportsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center gap-2">
-        <Camera className="h-5 w-5 text-earth-700" aria-hidden />
-        <h1 className="font-display text-2xl font-bold text-ink">規格の報告（現場から）</h1>
+        <Ruler className="h-5 w-5 text-earth-700" aria-hidden />
+        <h1 className="font-display text-2xl font-bold text-ink">現場からの規格報告</h1>
       </div>
 
       {!reports?.length ? (
@@ -74,7 +74,7 @@ export default async function SpecReportsPage() {
                     <p className="font-medium text-ink">
                       {r.customer_id ? (custName.get(r.customer_id) ?? '（不明な取引先）') : '取引先 未指定'}
                       {r.product_id && (
-                        <span className="ml-2 text-sm text-ink-soft">/ {prodName.get(r.product_id) ?? '（不明な商品）'}</span>
+                        <span className="ml-2 text-sm text-ink-soft">/ {prodName.get(r.product_id) ?? '（不明な品目）'}</span>
                       )}
                     </p>
                     <p className="text-xs text-ink-faint">

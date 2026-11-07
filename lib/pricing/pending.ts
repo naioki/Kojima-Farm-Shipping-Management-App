@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 /**
  * 価格確定が必要な明細の「フラット一覧」（フィルター＋一括値付け画面用）。
+ * 対象は承認済み（出荷予定）と出荷済みの注文の、単価が未確定の明細。
  * 品目・取引先・日付・荷姿で横断的に絞り込み、選択して一括確定するための素材。
  */
 export interface PricingFlatItem {
@@ -14,12 +15,17 @@ export interface PricingFlatItem {
   customerColor: string | null
   channel: string
   deliveryDate: string | null
+  /** 注文が出荷済みか（false＝承認済みで出荷前。出荷前でも単価を先に決めたいことがある） */
+  isShipped: boolean
   packConfigId: string | null
   /** 荷姿の販売単位名（無ければ「総数」） */
   packLabel: string
   orderedQty: number
   shippedQty: number | null
   billableQty: number
+  /** 請求数量が明示的に設定済み（billable_qty あり）か。未設定なら出荷数→注文数で決まる */
+  billableOverridden: boolean
+  billableReason: string | null
   priceStatus: 'unpriced' | 'provisional' | 'confirmed'
   unitPrice: number
   taxRate: number
@@ -32,7 +38,7 @@ export async function getPricingItemsFlat(): Promise<PricingFlatItem[]> {
   // error.tsx に拾わせるため、握りつぶさず throw する（CLAUDE.md: NEVER swallow errors）。
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
-    .select('id, customer_id, source, delivery_date')
+    .select('id, customer_id, source, delivery_date, status')
     .in('status', ['approved', 'shipped'])
   if (ordersErr) throw new Error(`価格確定対象の注文取得に失敗しました: ${ordersErr.message}`)
   if (!orders || orders.length === 0) return []
@@ -42,7 +48,7 @@ export async function getPricingItemsFlat(): Promise<PricingFlatItem[]> {
 
   const { data: items, error: itemsErr } = await supabase
     .from('order_items')
-    .select('id, order_id, product_id, product_name, quantity, shipped_qty, billable_qty, price_status, unit_price, tax_rate, pack_config_id')
+    .select('id, order_id, product_id, product_name, quantity, shipped_qty, billable_qty, billable_reason, price_status, unit_price, tax_rate, pack_config_id')
     .in('order_id', orderIds)
     .neq('price_status', 'confirmed')
   if (itemsErr) throw new Error(`価格確定対象の明細取得に失敗しました: ${itemsErr.message}`)
@@ -78,11 +84,14 @@ export async function getPricingItemsFlat(): Promise<PricingFlatItem[]> {
       customerColor: o.customer_id ? (custColor.get(o.customer_id) ?? null) : null,
       channel: o.source,
       deliveryDate: o.delivery_date,
+      isShipped: o.status === 'shipped',
       packConfigId: it.pack_config_id,
       packLabel: it.pack_config_id ? (packLabelById.get(it.pack_config_id) ?? '荷姿') : '総数',
       orderedQty: ordered,
       shippedQty: shipped,
       billableQty: it.billable_qty != null ? Number(it.billable_qty) : (shipped ?? ordered),
+      billableOverridden: it.billable_qty != null,
+      billableReason: it.billable_reason ?? null,
       priceStatus: it.price_status,
       unitPrice: Number(it.unit_price),
       taxRate: Number(it.tax_rate),

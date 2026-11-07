@@ -61,12 +61,12 @@ export function AddProductForm({ categories = [] }: { categories?: string[] }) {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Input label="品目名" placeholder="トマトバラ" value={name} onChange={(e) => setName(e.target.value)} required />
-        <Input label="カナ" placeholder="トマトバラ" value={kana} onChange={(e) => setKana(e.target.value)} />
+        <Input label="品目名" placeholder="例: トマトバラ" value={name} onChange={(e) => setName(e.target.value)} required />
+        <Input label="読み仮名" placeholder="例: トマトバラ" value={kana} onChange={(e) => setKana(e.target.value)} />
         <Input
           label="品目グループ"
           hint="選択メニューでまとめる分類（例: トマト）。空欄可＝「その他」"
-          placeholder="トマト"
+          placeholder="例: トマト"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           list="product-category-list"
@@ -79,7 +79,7 @@ export function AddProductForm({ categories = [] }: { categories?: string[] }) {
         <Input
           label="基準単位"
           hint="個 / 本 / 束 / kg。在庫・集計の基準"
-          placeholder="個"
+          placeholder="例: 個"
           value={baseUnit}
           onChange={(e) => setBaseUnit(e.target.value)}
         />
@@ -96,7 +96,7 @@ export function AddProductForm({ categories = [] }: { categories?: string[] }) {
       <p className="rounded border border-line bg-bg-soft px-3 py-2 text-xs text-ink-soft">
         荷姿（ケース・箱・スタンドパック等）と単価は
         <Link href="/admin/pricing-master" className="mx-1 font-medium text-trust-600 hover:underline">
-          価格・荷姿
+          単価・荷姿の設定
         </Link>
         で管理します。「トマト（箱）」のように荷姿違いを別品目にせず、1品目＋複数荷姿で登録してください。
       </p>

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft, ExternalLink } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ExternalLink } from 'lucide-react'
 import { ErrorState } from '@/components/ui/States'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
@@ -29,8 +29,12 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
   try {
     order = await getOrderDetail(params.id)
   } catch (e) {
-    const message = e instanceof Error ? e.message : '受注詳細の取得に失敗しました'
-    return <ErrorState message={message} />
+    return (
+      <ErrorState
+        message="受注詳細を読み込めませんでした。時間をおいて再度お試しください。"
+        detail={e instanceof Error ? e.message : String(e)}
+      />
+    )
   }
   if (!order) notFound()
 
@@ -57,58 +61,88 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
     spec: it.spec ?? '',
     mateHan: it.containerType ?? '',
   }))
+  const isPending = order.status === 'pending_review'
+  // 出荷票は承認後（収穫・出荷の予定に入ってから）だけ出す
+  const canIssueSlip = order.status === 'approved' || order.status === 'shipped' || order.status === 'invoiced'
+  const destinationLabel =
+    order.destinationName ?? (destinations.length > 0 ? (isPending ? '納入先 未定' : '納入先なし（取引先あて）') : null)
   const slipDestination = order.destinationName
     ? `${order.customerName}\n${order.destinationName}`
     : order.customerName
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
           href="/admin/orders"
-          className="inline-flex items-center gap-1 text-sm font-medium text-trust-600 hover:underline"
+          className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-trust-700 hover:underline"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          受注一覧へ戻る
+          受注台帳へ戻る
         </Link>
         <div className="flex flex-wrap items-center gap-2">
-          {order.deliveryDate && (
+          {order.deliveryDate && !isPending && (
             <Link
               href={`/field/shipments?date=${order.deliveryDate}`}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-forest-200 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
+              className="inline-flex h-10 items-center gap-1 rounded-lg border border-forest-200 bg-forest-50 px-3 text-xs font-bold text-forest-900 hover:bg-forest-100"
             >
-              <span>🥬 この日のパックボードを見る</span>
-              <ExternalLink className="h-3.5 w-3.5" />
+              <span>この日の収穫・パックボードを見る</span>
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
             </Link>
           )}
-          <ShippingSlipIssuer
-            orderId={order.id}
-            items={slipItems}
-            defaultHeaderCompany={order.customerName}
-            companyOptions={companyOptions}
-            defaultDestination={slipDestination}
-            deliveryDate={order.deliveryDate}
-          />
-          <DeleteOrderButton orderId={order.id} customerName={order.customerName} />
+          {canIssueSlip && (
+            <ShippingSlipIssuer
+              orderId={order.id}
+              items={slipItems}
+              defaultHeaderCompany={order.customerName}
+              companyOptions={companyOptions}
+              defaultDestination={slipDestination}
+              deliveryDate={order.deliveryDate}
+            />
+          )}
         </div>
       </div>
 
-      {/* ヘッダーサマリー */}
+      {/* 承認待ちの注文は、承認待ちの画面で原本と見比べて承認する */}
+      {isPending && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-earth-300 bg-earth-50 p-3">
+          <p className="text-sm text-ink">
+            この注文は<strong>承認待ち</strong>です。承認すると収穫・パックの予定に入り、出荷票を出せるようになります。
+          </p>
+          <Link
+            href="/admin/approvals"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-earth-600 px-4 text-sm font-bold text-white hover:bg-earth-700"
+          >
+            <CheckCircle2 className="h-4 w-4" aria-hidden />
+            承認待ちで承認する
+          </Link>
+        </div>
+      )}
+
+      {/* ヘッダーサマリー（取引先 ＞ 納入先） */}
       <Card className="space-y-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <ColorDot color={order.customerColor} name={order.customerName} size="md" />
-            <div>
-              <h1 className="font-display text-xl font-bold text-ink">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <ColorDot color={order.customerColor} name={order.customerName} size="md" className="mt-1" />
+            <div className="min-w-0">
+              <h1 className="break-words font-display text-xl font-bold text-ink">
                 {order.customerName}
-                {order.destinationName && (
-                  <span className="ml-1.5 text-base font-bold text-forest-800">＞{order.destinationName}</span>
+                {destinationLabel && (
+                  <span
+                    className={
+                      order.destinationName ? 'ml-1.5 text-base font-bold text-forest-800' : 'ml-1.5 text-base font-bold text-ink-soft'
+                    }
+                  >
+                    ＞ {destinationLabel}
+                  </span>
                 )}
               </h1>
               <p className="text-xs text-ink-faint">受注元: {intakeLabel(order.source, order.intakeChannel)}</p>
             </div>
           </div>
-          <OrderStatusBadge status={order.status} />
+          <span className="shrink-0 whitespace-nowrap">
+            <OrderStatusBadge status={order.status} />
+          </span>
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
           <div>
@@ -136,6 +170,12 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
         destinations={destinations}
         initialItems={order.items}
       />
+
+      {/* 注文の削除は、出荷票などのよく使う操作から離して一番下に置く */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-alert/30 p-3">
+        <p className="text-xs text-ink-soft">間違って登録した注文は削除できます（取り消せません）。</p>
+        <DeleteOrderButton orderId={order.id} customerName={order.customerName} />
+      </div>
     </div>
   )
 }

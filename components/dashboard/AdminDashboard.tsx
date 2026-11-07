@@ -7,7 +7,7 @@ import { QuickActionsGrid, type QuickAction } from './QuickActionsGrid'
 import { RecentOrdersTable } from './RecentOrdersTable'
 import { MonthlySummary } from './MonthlySummary'
 import { AlertsPanel, type AlertItem } from './AlertsPanel'
-import type { TodayShipmentStats, TomorrowPackStats, TrendPoint, RecentOrderRow, SummaryRow } from './types'
+import type { OverdueInvoiceRow, TodayShipmentStats, TomorrowPackStats, TrendPoint, RecentOrderRow, SummaryRow } from './types'
 
 export interface AdminDashboardData {
   header: DashboardHeaderProps
@@ -18,6 +18,10 @@ export interface AdminDashboardData {
   actions: QuickAction[]
   recentOrders: RecentOrderRow[]
   summary: SummaryRow[]
+  /** 支払期日を過ぎた未入金の請求書（期日の古い順） */
+  overdueInvoices?: OverdueInvoiceRow[]
+  /** サマリーの比較期間（例: 11/1〜11/6 と 10/1〜10/6） */
+  summaryPeriod?: { current: string; previous: string }
 }
 
 /**
@@ -49,13 +53,15 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
                   🥬 本日パック作業（明日 {tp.deliveryDateLabel} 納品分）の進捗
                 </h2>
                 <p className="text-xs text-harvest-100 font-medium">
-                  全 {tp.totalItems} 明細中 {tp.completedItems} 明細が完了
+                  {tp.totalBoxes > 0
+                    ? `目標 ${tp.totalBoxes.toLocaleString()} 箱のうち ${tp.completedBoxes.toLocaleString()} 箱が完成（${tp.progressPct}%）`
+                    : 'まだ注文がありません'}
                 </p>
               </div>
             </div>
             <Link
               href={`/field/shipments?date=${tp.deliveryDate}`}
-              className="inline-flex items-center gap-1 rounded-xl bg-bg-card px-3.5 py-2 text-xs font-black text-ink shadow-xs hover:bg-bg-soft transition"
+              className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-bg-card px-3.5 py-2 text-xs font-black text-ink shadow-xs hover:bg-bg-soft transition"
             >
               <span>収穫・パックボードを開く</span>
               <ArrowRight className="h-3.5 w-3.5" />
@@ -86,7 +92,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
                 <span className="text-harvest-100">
                   残り: あと {Math.max(0, tp.totalBoxes - tp.completedBoxes)} 箱
                 </span>
-                <span>{tp.progressPct}%</span>
+                <span className="num">{tp.progressPct}%（箱数）</span>
               </div>
               <div className="h-2.5 w-full rounded-full bg-black/30 overflow-hidden p-0.5">
                 <div
@@ -112,7 +118,7 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
       {/* お金（今月の受注・出荷・請求・未請求）と最近の受注を、売上グラフより先に置く */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-1 lg:order-2">
-          <MonthlySummary rows={data.summary} />
+          <MonthlySummary rows={data.summary} period={data.summaryPeriod} />
         </div>
         <div className="min-w-0 lg:col-span-2 lg:order-1">
           <RecentOrdersTable orders={data.recentOrders} />

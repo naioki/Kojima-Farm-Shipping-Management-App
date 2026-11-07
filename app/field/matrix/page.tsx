@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid, type MatrixDestinationItem } from '@/components/field/MatrixGrid'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
-import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -193,23 +193,26 @@ export default async function MatrixPage({
         <div className="grid grid-cols-3 sm:inline-flex items-center gap-1.5 w-full sm:w-auto">
           <Link
             href={`${PATH}?week=${shiftDateStr(week, -7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
+            className="flex h-10 items-center justify-center rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold text-ink-soft hover:bg-bg-soft text-center"
           >
             ← 前週
           </Link>
           <Link
             href={`${PATH}?week=${jstTodayStr()}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-forest-200 bg-forest-50 px-3 text-xs sm:text-sm font-black leading-10 text-forest-900 hover:bg-forest-100 text-center"
+            className="flex h-10 items-center justify-center rounded-xl border border-forest-200 bg-forest-50 px-3 text-xs sm:text-sm font-black text-forest-900 hover:bg-forest-100 text-center"
           >
             今日〜1週間
           </Link>
           <Link
             href={`${PATH}?week=${shiftDateStr(week, 7)}&product=${selected.id}`}
-            className="h-10 rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold leading-10 text-ink-soft hover:bg-bg-soft text-center"
+            className="flex h-10 items-center justify-center rounded-xl border border-line bg-bg-card px-3 text-xs sm:text-sm font-bold text-ink-soft hover:bg-bg-soft text-center"
           >
             翌週 →
           </Link>
         </div>
+        <p className="num text-sm font-black text-ink-soft">
+          {formatJpDateShort(dates[0])} 〜 {formatJpDateShort(dates[6])}
+        </p>
       </div>
 
       {/* 品目タブ */}
@@ -223,7 +226,7 @@ export default async function MatrixPage({
                 href={`${PATH}?week=${week}&product=${p.id}`}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'rounded-full border px-4 py-2 text-sm font-black transition-all flex items-center gap-2',
+                  'min-h-10 rounded-full border px-4 py-2 text-sm font-black transition-all flex items-center gap-2',
                   active
                     ? 'border-forest-600 bg-forest-600 text-white shadow-sm'
                     : 'border-line bg-bg-card text-ink-soft hover:bg-bg-soft hover:text-ink',
@@ -247,7 +250,7 @@ export default async function MatrixPage({
                 if (e.target.value) e.target.form?.submit()
               }}
               defaultValue=""
-              className="h-8 rounded-lg border border-line bg-bg-card px-2.5 text-xs font-semibold text-ink hover:bg-bg-soft focus:outline-none"
+              className="h-10 rounded-lg border border-line bg-bg-card px-2.5 text-xs font-semibold text-ink hover:bg-bg-soft focus:outline-none"
             >
               <option value="" disabled>
                 品目を選択して予定を入力...

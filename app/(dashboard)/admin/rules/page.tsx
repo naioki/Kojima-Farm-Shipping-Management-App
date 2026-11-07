@@ -1,8 +1,8 @@
-import { Sparkles } from 'lucide-react'
+import { BrainCircuit } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { getSetting } from '@/lib/settings'
-import { isAutoApproveOn } from '@/lib/ingestion/auto-approve'
+import { resolveToggle } from '@/lib/settings-spec'
 import { DEFAULT_HIGH_GEMINI_MODEL, DEFAULT_MAIN_GEMINI_MODEL } from '@/lib/gemini/models'
 import { ErrorState } from '@/components/ui/States'
 import { AiRulesManager } from '@/components/admin/AiRulesManager'
@@ -12,11 +12,10 @@ import type { AiRule } from '@/types/database'
 export const dynamic = 'force-dynamic'
 
 /**
- * AIルール・ナレッジ管理画面（/admin/rules）。
- * - 承認パイプラインのON/OFF（手動承認 ⇔ 自動確定モード）ワンクリック切り替え
- * - 2段階AIモデル（メインモデル `gemini-3.5-flash-lite` ＆ 重要箇所モデル `gemini-3.8-flash`）の自由入力指定
- * - 取引先別（和郷園・房総食料センター・勘兵衛・NSK・共通）の読取ルール一覧表示、ON/OFFトグル切り替え、追加・編集・削除
- * - ルール・モデルのドライラン動作テスト機能
+ * AI学習ルール画面（/admin/rules）。
+ * - 自動確定のオン／オフと基準（オンにするときは確認あり）
+ * - 取引先ごとの読み取りルールの一覧・追加・編集・削除、試し読み
+ * - 読み取りに使うAIの選択（詳細設定に畳む）
  */
 export default async function AdminAiRulesPage() {
   const guard = await requireAdmin('AIルール管理は管理者のみです。')
@@ -45,7 +44,7 @@ export default async function AdminAiRulesPage() {
   if (rulesRes.error) {
     return (
       <ErrorState
-        message="AI学習ルールを読み込めませんでした。マイグレーション（0025_ai_rules.sql）が適用されているか確認してください。"
+        message="AI学習ルールを読み込めませんでした。時間をおいて再度お試しください。続く場合は開発担当にお知らせください。"
         detail={rulesRes.error.message}
       />
     )
@@ -59,18 +58,19 @@ export default async function AdminAiRulesPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-earth-700" aria-hidden />
+            <BrainCircuit className="h-6 w-6 text-earth-700" aria-hidden />
             <h1 className="font-display text-2xl font-bold text-ink">AI学習ルール</h1>
           </div>
           <p className="mt-1 text-sm text-ink-soft">
-            AIモデル（通常: <code className="font-mono">{currentMainModel ?? DEFAULT_MAIN_GEMINI_MODEL}</code> ／ 重要箇所: <code className="font-mono">{currentHighModel ?? DEFAULT_HIGH_GEMINI_MODEL}</code>）、自動承認の切替、取引先別の読取ルールを管理します。変更はすぐに反映されます。
+            取引先ごとのFAX・メールの読み取りルールと、自動確定の設定を管理します。保存した内容はすぐに反映されます。
           </p>
         </div>
       </div>
 
       {/* 管理者専用：承認パイプラインのON/OFF（手動確認 ⇔ 自動確定モード）ワンクリック切替 */}
       <ApprovalPipelineToggle
-        initialAutoApprove={isAutoApproveOn(autoApproveRaw)}
+        // 未設定のときの実際の動作（取り込み処理は未設定＝オン）に表示をそろえる
+        initialAutoApprove={resolveToggle(autoApproveRaw, 'on') === 'on'}
         initialThreshold={thresholdRaw?.trim() || '0.80'}
       />
 

@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ErrorState } from '@/components/ui/States'
 import { SettingsForm, type SettingItem } from '@/components/admin/SettingsForm'
-import { SETTINGS_SPEC } from '@/lib/settings-spec'
+import { SETTINGS_SPEC, resolveToggle } from '@/lib/settings-spec'
 import { ThemeToggle } from '@/components/layouts/ThemeToggle'
 import { requireAdmin } from '@/lib/auth/require-admin'
 
@@ -43,8 +43,13 @@ export default async function SettingsPage() {
       options: spec.options,
       selectDefault: spec.selectDefault,
       isSet,
-      // 秘密は値を返さない。非秘密のみ現在値（DB→env）を渡す。
-      value: spec.secret ? undefined : dbVal ?? envVal ?? '',
+      // 秘密は値を返さない。トグルは未設定のとき実際の動作（toggleDefault）に解決して渡す。
+      value: spec.secret
+        ? undefined
+        : spec.kind === 'toggle'
+          ? resolveToggle(dbVal ?? envVal, spec.toggleDefault)
+          : dbVal ?? envVal ?? '',
+      managedAt: spec.managedAt,
       defaultPrompt: spec.defaultPrompt,
       dependsOn: spec.dependsOn,
       danger: spec.danger,
@@ -56,7 +61,7 @@ export default async function SettingsPage() {
       <div>
         <h1 className="font-display text-2xl sm:text-3xl font-black text-ink">設定</h1>
         <p className="mt-1 text-base text-ink-soft">
-          上から順に、ふだんよく触る項目です。取引先・品目はメニューの「マスタ・設定」、改善要望は「振り返り・記録」にあります。
+          上から順に、ふだんよく触る項目です。取引先・品目はメニューの「マスタ・設定」、改善要望・バグ報告はメニュー下部の「改善要望・バグ報告」から送れます。
         </p>
       </div>
 

@@ -102,8 +102,8 @@ export function pendingReasons(o: PendingOrder, opts: { kana?: boolean } = {}): 
   if (o.needsDeliveryDate) r.push(kana ? 'のうひん日 みてい' : '納品日 未定')
   if (o.needsDestination) r.push(kana ? 'のうにゅうさき みてい' : '納入先 未定')
   if (o.items.some((it) => it.packConfigOptions.length > 0 && !it.packConfigId)) r.push(kana ? '荷姿 みてい' : '荷姿 未定')
-  if (o.minConfidence == null || o.minConfidence < 0.7) r.push(kana ? 'AI じしんなし' : 'AIの確信度が低い')
-  if (o.items.some((it) => it.quantityAnomaly)) r.push('数量がいつもと違う')
+  if (o.minConfidence == null || o.minConfidence < 0.7) r.push(kana ? 'AI じしんなし' : 'AIの読み取りに自信なし')
+  if (o.items.some((it) => it.quantityAnomaly)) r.push(kana ? 'かず が いつもと ちがう' : '数量がいつもと違う')
   return r
 }
 
