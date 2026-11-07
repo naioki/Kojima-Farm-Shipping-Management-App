@@ -64,7 +64,7 @@ export function SalesTrendChart({ data }: { data: TrendPoint[] }) {
                 formatter={(v: number) => [yen(v), '出荷']}
               />
               <Line
-                type="monotone"
+                type="linear"
                 dataKey="value"
                 stroke="var(--harvest-600)"
                 strokeWidth={2.5}

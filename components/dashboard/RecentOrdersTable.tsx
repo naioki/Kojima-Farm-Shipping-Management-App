@@ -24,7 +24,7 @@ export function RecentOrdersTable({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ink">最新の受注</h2>
         <Link href={allHref} className="inline-flex min-h-10 items-center text-xs font-medium text-trust-600 hover:underline">
-          受注一覧へ →
+          受注台帳へ →
         </Link>
       </div>
 

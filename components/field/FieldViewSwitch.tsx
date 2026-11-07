@@ -47,7 +47,7 @@ export function FieldViewSwitch({
         )}
       >
         <PackageCheck className="h-4 w-4 shrink-0" aria-hidden />
-        <span>収穫・パック</span>
+        <span className="whitespace-nowrap"><span className="hidden sm:inline">収穫・</span>パック</span>
       </Link>
       <Link
         href={`/field/deliveries?date=${date}${prodParam}`}
@@ -61,7 +61,7 @@ export function FieldViewSwitch({
         )}
       >
         <Truck className="h-4 w-4 shrink-0" aria-hidden />
-        <span>積込・配送</span>
+        <span className="whitespace-nowrap">積込・配送</span>
       </Link>
       <Link
         href={`/field/matrix?week=${date}&date=${date}${prodParam}`}
@@ -75,7 +75,7 @@ export function FieldViewSwitch({
         )}
       >
         <CalendarRange className="h-4 w-4 shrink-0" aria-hidden />
-        <span>週の管理</span>
+        <span className="whitespace-nowrap">週の管理</span>
       </Link>
     </div>
   )

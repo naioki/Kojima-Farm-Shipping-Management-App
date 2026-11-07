@@ -39,7 +39,7 @@ export const SAMPLE_DASHBOARD: AdminDashboardData = {
     { id: 'a3', tone: 'alert', label: '解析失敗が 2件 あります', meta: '最終更新: 1時間前', count: 2, href: '/admin/inbox?status=ai_failed' },
   ],
   actions: [
-    { href: '/admin/orders', label: '受注一覧', icon: ClipboardList, tone: 'trust' },
+    { href: '/admin/orders', label: '受注台帳', icon: ClipboardList, tone: 'trust' },
     { href: '/admin/approvals', label: '受注承認', icon: CheckCircle2, tone: 'harvest' },
     { href: '/admin/master-import', label: 'マスタ取込 (OCR)', icon: Camera, tone: 'earth' },
     { href: '/field/matrix', label: '出荷マトリックス', icon: LayoutGrid, tone: 'forest' },
