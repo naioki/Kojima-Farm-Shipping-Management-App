@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Save, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -17,6 +17,8 @@ export interface OrderDetailEditorProps {
   initialDestinationId: string | null
   initialNote: string | null
   destinations: { id: string; label: string }[]
+  /** 納入先「なし」の選択肢の表示（既定: 納入先なし（取引先あて）） */
+  emptyDestinationLabel?: string
   initialItems: OrderDetailItem[]
 }
 
@@ -39,6 +41,7 @@ export function OrderDetailEditor({
   initialDestinationId,
   initialNote,
   destinations,
+  emptyDestinationLabel = '納入先なし（取引先あて）',
   initialItems,
 }: OrderDetailEditorProps) {
   const router = useRouter()
@@ -46,6 +49,12 @@ export function OrderDetailEditor({
   const [destinationId, setDestinationId] = useState(initialDestinationId ?? '')
   const [note, setNote] = useState(initialNote ?? '')
   const [savingHeader, setSavingHeader] = useState(false)
+  // 保存済みの基本情報（未保存の変更があるかの判定に使う）
+  const [savedHeader, setSavedHeader] = useState({
+    deliveryDate: initialDeliveryDate ?? '',
+    destinationId: initialDestinationId ?? '',
+    note: initialNote ?? '',
+  })
   const [deleteTarget, setDeleteTarget] = useState<EditableItemState | null>(null)
 
   const [items, setItems] = useState<EditableItemState[]>(() =>
@@ -89,6 +98,7 @@ export function OrderDetailEditor({
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
+      setSavedHeader({ deliveryDate, destinationId, note })
       toast.success('納品日・納入先・備考を保存しました')
       router.refresh()
     } catch (e) {
@@ -124,9 +134,14 @@ export function OrderDetailEditor({
         item?: { version: number; quantity: number }
         error?: string
       }
+      if (res.status === 409) throw new Error('他の人が先に変更しました。画面を再読み込みしてください')
       if (!res.ok) throw new Error(json.error ?? `明細の保存に失敗 (${res.status})`)
       patchItem(it.id, {
         quantity: q,
+        draftQty: String(q),
+        spec: it.draftSpec.trim() || null,
+        containerType: it.draftContainer.trim() || null,
+        ...(up !== undefined ? { unitPrice: up, draftPrice: String(up) } : {}),
         version: json.item?.version ?? it.version + 1,
         saving: false,
       })
@@ -153,20 +168,58 @@ export function OrderDetailEditor({
     }
   }
 
+  const headerDirty =
+    deliveryDate !== savedHeader.deliveryDate ||
+    destinationId !== savedHeader.destinationId ||
+    note !== savedHeader.note
+  const itemDirty = (it: EditableItemState) =>
+    it.draftQty !== String(it.quantity) ||
+    it.draftSpec !== (it.spec ?? '') ||
+    it.draftContainer !== (it.containerType ?? '') ||
+    it.draftPrice !== (it.unitPrice != null ? String(it.unitPrice) : '')
+  const dirtyItems = items.filter(itemDirty)
+  const dirty = headerDirty || dirtyItems.length > 0
+  const savingAny = savingHeader || items.some((it) => it.saving)
+
+  // 未保存の変更があるまま離れようとしたら止める（再読み込み・タブを閉じる・画面内のリンク）
+  useEffect(() => {
+    if (!dirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!a || a.target === '_blank' || e.defaultPrevented) return
+      if (!window.confirm('保存していない変更があります。保存せずにこの画面を離れますか？')) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    document.addEventListener('click', onClick, true)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      document.removeEventListener('click', onClick, true)
+    }
+  }, [dirty])
+
+  async function saveAll() {
+    if (headerDirty) await saveHeader()
+    for (const it of dirtyItems) await saveItem(it)
+  }
+
   const inputCls =
-    'h-9 rounded-lg border border-line-strong bg-bg-card px-2.5 text-sm text-ink focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-100'
+    'h-10 rounded-lg border border-line-strong bg-bg-card px-2.5 text-sm text-ink focus:border-forest-600 focus:outline-none focus:ring-2 focus:ring-forest-100'
 
   return (
     <div className="space-y-4">
       {/* 納品日・納入先・備考のインライン編集カード */}
       <Card className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-sm font-black text-ink">📝 納品日・納入先・備考の編集</h2>
-          <Button size="sm" onClick={saveHeader} isLoading={savingHeader}>
-            <Save className="h-3.5 w-3.5" />
-            <span>基本情報を保存</span>
-          </Button>
-        </div>
+        <h2 className="font-display text-sm font-black text-ink">
+          納品日・納入先・備考
+          {headerDirty && <span className="ml-2 text-xs font-bold text-warning">（未保存）</span>}
+        </h2>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="space-y-1">
@@ -186,7 +239,7 @@ export function OrderDetailEditor({
               onChange={(e) => setDestinationId(e.target.value)}
               className={`${inputCls} w-full font-bold`}
             >
-              <option value="">指定なし（直接納品）</option>
+              <option value="">{emptyDestinationLabel}</option>
               {destinations.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.label}
@@ -206,13 +259,19 @@ export function OrderDetailEditor({
             />
           </label>
         </div>
+        <div className="flex justify-end">
+          <Button size="md" onClick={saveHeader} isLoading={savingHeader} disabled={!headerDirty} className="whitespace-nowrap">
+            <Save className="h-4 w-4" aria-hidden />
+            <span>納品日・納入先・備考を保存</span>
+          </Button>
+        </div>
       </Card>
 
       {/* 明細のインライン編集テーブル */}
       <Card variant="elevated" className="overflow-hidden p-0">
-        <div className="border-b border-line bg-bg-soft px-4 py-2.5 flex items-center justify-between">
-          <h2 className="font-display text-sm font-black text-ink">📦 出荷明細・数量・荷姿・単価の編集</h2>
-          <span className="text-xs text-ink-soft">数値を変更して各行の「保存」を押してください</span>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line bg-bg-soft px-4 py-2.5">
+          <h2 className="font-display text-sm font-black text-ink">明細（数量・規格・容器・単価）</h2>
+          <span className="text-xs text-ink-soft">直したら各行の「保存」か、下の「まとめて保存」を押してください</span>
         </div>
         <div className="divide-y divide-line">
           {items.map((it) => {
@@ -222,26 +281,32 @@ export function OrderDetailEditor({
             return (
               <div key={it.id} className="p-3.5 space-y-2.5 hover:bg-bg-soft/30">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="font-black text-base text-ink">{it.productName}</span>
-                    <span title={`📦 ${boxes} 箱（${qNum.toLocaleString()} ${it.unit} / 1箱${ppc}入）`} className="inline-block align-bottom truncate max-w-[12rem] rounded-md bg-forest-100 text-forest-900 px-2 py-0.5 text-xs font-black tabular-nums">
-                      📦 {boxes} 箱（{qNum.toLocaleString()} {it.unit} / 1箱{ppc}入）
+                    <span className="rounded-md bg-forest-100 px-2 py-0.5 text-xs font-black tabular-nums text-forest-900">
+                      {boxes}箱（{qNum.toLocaleString()}
+                      {it.unit}・1箱{ppc}入）
                     </span>
+                    {itemDirty(it) && <span className="text-xs font-bold text-warning">未保存</span>}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Button
-                      size="sm"
+                      size="md"
+                      variant={itemDirty(it) ? 'primary' : 'secondary'}
                       onClick={() => saveItem(it)}
                       isLoading={it.saving}
+                      disabled={!itemDirty(it)}
+                      className="whitespace-nowrap"
                     >
-                      <Save className="h-3.5 w-3.5" />
-                      <span>明細を保存</span>
+                      <Save className="h-4 w-4" aria-hidden />
+                      <span>保存</span>
                     </Button>
                     <button
                       type="button"
                       disabled={it.saving}
                       onClick={() => setDeleteTarget(it)}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-alert/30 bg-alert/5 px-2.5 text-xs font-bold text-alert hover:bg-alert hover:text-white transition"
+                      aria-label={`${it.productName} の明細を削除`}
+                      className="inline-flex h-10 items-center gap-1 rounded-lg border border-alert/30 bg-alert/5 px-3 text-xs font-bold text-alert hover:bg-alert hover:text-white transition"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       <span>削除</span>
@@ -304,6 +369,19 @@ export function OrderDetailEditor({
           })}
         </div>
       </Card>
+
+      {/* 未保存の変更があるときだけ出る、まとめて保存バー */}
+      {dirty && (
+        <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg p-3 shadow-lg">
+          <p className="text-sm font-bold text-ink">
+            保存していない変更があります（{(headerDirty ? 1 : 0) + dirtyItems.length}か所）
+          </p>
+          <Button size="md" onClick={saveAll} isLoading={savingAny} className="whitespace-nowrap">
+            <Save className="h-4 w-4" aria-hidden />
+            まとめて保存
+          </Button>
+        </div>
+      )}
 
       <ConfirmModal
         open={Boolean(deleteTarget)}

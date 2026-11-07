@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { AlertTriangle, Trash2, Lightbulb, Columns, ChevronDown, ChevronUp } from 'lucide-react'
+import { AlertTriangle, Trash2, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Card } from '@/components/ui/Card'
 import { ColorDot } from '@/components/ui/ColorDot'
@@ -15,6 +14,7 @@ import type { ReceiptOriginalInfo } from '@/lib/orders/pending'
 import { formatJpDateShort } from '@/lib/dates'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
+import { quantityAnomalyFor } from '@/lib/orders/pending-types'
 
 export interface PackConfigOption {
   id: string
@@ -35,6 +35,8 @@ export interface EditableOrderItem {
   spec?: string | null
   containerType?: string | null
   lineNote?: string | null
+  /** いつもの数量（同じ取引先×品目の中央値）。あれば「いつもと違う数量」を判定して表示する */
+  usualQuantity?: number | null
 }
 
 export interface DestinationOption {
@@ -48,6 +50,8 @@ export interface EditableOrderCardProps {
   customerColor?: string | null
   deliveryDate: string | null
   destinationName?: string | null
+  /** FAX・メモに書かれていた納入先の文字（マスタと照合できなかったときの参考表示） */
+  destinationHint?: string | null
   notes?: string | null
   needsDeliveryDate: boolean
   /** 納入先が未確定（取引先に納入先があるのに未選択）。承認時に選択させる。 */
@@ -94,6 +98,7 @@ export function EditableOrderCard({
   customerColor,
   deliveryDate,
   destinationName,
+  destinationHint = null,
   notes,
   needsDeliveryDate,
   needsDestination = false,
@@ -121,7 +126,7 @@ export function EditableOrderCard({
     if (!suggestedRule) return
     setSavingRule(true)
     try {
-      const client = customerName.includes('未紐付け') ? '共通' : customerName
+      const client = customerName.includes('未登録') || customerName.includes('未紐付け') ? '共通' : customerName
       const res = await fetch('/api/ai-rules', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -226,113 +231,74 @@ export function EditableOrderCard({
     }
   }
 
+  // 承認ボタンへ渡す: 荷姿の選び忘れ（押す前に止める）と、いつもと違う数量（押したときに確認）
+  const missingPack = rows
+    .filter((r) => (r.packConfigOptions?.length ?? 0) > 0 && !r.packConfigId)
+    .map((r) => r.productName)
+  const anomalies = rows.flatMap((r) => {
+    const kind = quantityAnomalyFor(r.quantity, r.usualQuantity)
+    return kind && r.usualQuantity != null
+      ? [{ productName: r.productName, quantity: r.quantity, unit: r.unit, usualQuantity: r.usualQuantity, kind }]
+      : []
+  })
+  const note = extractActionableNote(notes)
+
   return (
     <Card className={caution ? 'space-y-3 border-warning/50' : 'space-y-3'}>
-      {/* サマリーバー（常時表示） */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <ColorDot color={customerColor} name={customerName} size="md" />
-          <span className="font-semibold text-ink text-base">{customerName}</span>
-
-          {destinationName ? (
-            <span title={`🏢 届先: ${destinationName}`} className="inline-block align-bottom truncate max-w-[12rem] rounded-lg bg-trust-50 px-2.5 py-0.5 text-xs font-bold text-trust-700 border border-trust-100">
-              🏢 届先: {destinationName}
+      {/* 見出し: 取引先 ＞ 納入先・納品日 */}
+      <div className="space-y-2">
+        <div className="flex items-start gap-2">
+          <ColorDot color={customerColor} name={customerName} size="md" className="mt-1" />
+          <p className="min-w-0 break-words text-base font-bold text-ink">
+            {customerName}
+            <span className={destinationName ? 'font-normal text-ink-soft' : needsDestination ? 'font-bold text-alert' : 'font-normal text-ink-faint'}>
+              {' '}＞ {destinationName ?? (needsDestination ? 'のうにゅうさき みてい' : '納入先なし')}
             </span>
-          ) : needsDestination ? (
-            <span className="whitespace-nowrap rounded-lg bg-warning-bg px-2.5 py-0.5 text-xs font-bold text-ink border border-warning">
-              ⚠️ 納入先未定
-            </span>
-          ) : null}
-
+          </p>
+        </div>
+        {!destinationName && destinationHint && (
+          <p className="text-xs text-ink-soft">FAXの記載: {destinationHint}</p>
+        )}
+        <div className="flex flex-wrap items-center gap-1.5">
           <span
-            className={`rounded-lg px-2.5 py-0.5 text-xs font-bold border ${
-              deliveryDate
-                ? 'bg-trust-50 text-trust-700 border-trust-100'
-                : 'bg-warning-bg text-warning border-warning/40'
+            className={`rounded-lg border px-2.5 py-0.5 text-xs font-bold ${
+              deliveryDate ? 'border-trust-100 bg-trust-50 text-trust-700' : 'border-warning/40 bg-warning-bg text-warning'
             }`}
           >
-            {deliveryDate ? `📅 納品: ${formatJpDateShort(deliveryDate)}` : '納品日未定'}
+            {deliveryDate ? `のうひん ${formatJpDateShort(deliveryDate)}` : 'のうひん日 みてい'}
           </span>
-
-          {/* #34 品目サマリー（箱数＋パック数の両方をバッジ表示） */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {rows.map((r) => {
-              const ppc = resolveCardPacksPerCase(customerName, r.spec, r.containerType)
-              const boxes = r.quantity > 0 ? Math.ceil(r.quantity / ppc) : 0
-              return (
-                <span
-                  key={r.id}
-                  className="inline-flex items-center gap-1 rounded-md border border-forest-200 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
-                >
-                  <span className="font-bold">{r.productName}</span>
-                  <span className="font-black tabular-nums text-forest-800">
-                    📦 {boxes}箱
-                  </span>
-                  <span className="font-bold tabular-nums text-ink-soft">
-                    ({r.quantity.toLocaleString()}{r.unit})
-                  </span>
+          {/* 品目サマリー（箱数＋パック数） */}
+          {rows.map((r) => {
+            const ppc = resolveCardPacksPerCase(customerName, r.spec, r.containerType)
+            const boxes = r.quantity > 0 ? Math.ceil(r.quantity / ppc) : 0
+            return (
+              <span
+                key={r.id}
+                className="inline-flex items-center gap-1 rounded-md border border-forest-200 bg-forest-50/80 px-2.5 py-0.5 text-xs text-ink"
+              >
+                <span className="font-bold">{r.productName}</span>
+                <span className="font-black tabular-nums text-forest-800">{boxes}箱</span>
+                <span className="font-bold tabular-nums text-ink-soft">
+                  ({r.quantity.toLocaleString()}
+                  {r.unit})
                 </span>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 原本FAXプレビュー */}
-          {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
-
-          <Link
-            href="/admin/approvals"
-            className="hidden items-center gap-1 rounded-lg border border-line-strong bg-bg-card px-2.5 py-1 text-xs font-medium text-trust-700 hover:bg-trust-50 sm:inline-flex"
-          >
-            <Columns className="h-3.5 w-3.5" aria-hidden />
-            スプリット比較
-          </Link>
-
-          {/* 開閉トグルボタン */}
-          <button
-            type="button"
-            onClick={() => setIsOpen(!isOpen)}
-            className="inline-flex items-center gap-1 rounded-lg border border-line bg-bg-card px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-bg-soft hover:text-ink"
-            aria-expanded={isOpen}
-          >
-            <span>{isOpen ? '閉じる' : `詳細・編集 (${rows.length}品目)`}</span>
-            {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-
-          {/* 承認しない（却下）ボタン */}
-          <RejectOrderButton
-            orderId={orderId}
-            customerName={customerName}
-            deliveryDate={deliveryDate}
-            size={size}
-          />
-
-          {/* 即時承認ボタン（閉じた状態でも承認可能。編集中は連打・競合防止でロック） */}
-          <div className={rows.some((r) => r.saving) ? 'pointer-events-none opacity-50' : ''}>
-            <ApproveOrderButton
-              orderId={orderId}
-              needsDeliveryDate={needsDeliveryDate}
-              needsDestination={needsDestination}
-              destinationOptions={destinationOptions}
-              label={approveLabel}
-              size={size}
-            />
-          </div>
+              </span>
+            )
+          })}
         </div>
       </div>
 
-      {/* 注文備考・FAXメモ表示（システムタグを除去した純粋な伝達事項のみ表示 #23） */}
-      {extractActionableNote(notes) && (
+      {/* 注文備考（システムタグを除いた伝達事項のみ） */}
+      {note && (
         <div className="rounded-lg border border-warning/80 bg-warning-bg/70 px-3 py-1.5 text-xs text-ink">
-          <span className="font-bold">📝 注文備考・OCR情報: </span>
-          <span>{extractActionableNote(notes)}</span>
+          <span className="font-bold">FAX・メモ: </span>
+          <span>{note}</span>
         </div>
       )}
 
-      {/* 要確認バッジ（サマリー下に表示） */}
+      {/* 確認が必要な理由 */}
       {caution && (
-        <div className="flex flex-wrap gap-1 pt-1">
+        <div className="flex flex-wrap gap-1">
           {reasons.map((r) => (
             <span key={r} className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
               ⚠️ {r}
@@ -341,72 +307,95 @@ export function EditableOrderCard({
         </div>
       )}
 
-      {/* 詳細展開エリア（アコーディオン） */}
+      {/* いつもと違う数量（閉じていても見えるように） */}
+      {anomalies.length > 0 && (
+        <ul className="space-y-1">
+          {anomalies.map((a) => (
+            <li
+              key={a.productName}
+              className="flex items-start gap-1.5 rounded-md bg-alert-bg px-2.5 py-1.5 text-sm font-bold text-alert"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                {a.productName} {Math.round(a.quantity).toLocaleString()}
+                {a.unit}（いつもは {Math.round(a.usualQuantity).toLocaleString()}
+                {a.unit} ぐらい）
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-line bg-bg-card px-3 text-sm font-medium text-ink-soft hover:bg-bg-soft hover:text-ink"
+          aria-expanded={isOpen}
+        >
+          <span>{isOpen ? 'とじる' : `なかみを見る・なおす（${rows.length}品目）`}</span>
+          {isOpen ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}
+        </button>
+      </div>
+
+      {/* 明細（なおす） */}
       {isOpen && (
         <div className="space-y-3 border-t border-line/60 pt-3">
-          {receipt && <ReceiptOriginalTrigger receipt={receipt} />}
-
           {suggestedRule && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-earth-300 bg-earth-50 px-3 py-2 text-xs text-ink">
               <span className="flex items-center gap-1.5 font-medium text-earth-800">
                 <Lightbulb className="h-4 w-4 shrink-0 text-earth-600" aria-hidden />
-                💡 この修正を取引先ルールとして学習させる
+                この直し方を AI に覚えさせる
               </span>
               <div className="flex items-center gap-1.5">
-                <Button variant="primary" size="sm" onClick={saveLearnedRule} isLoading={savingRule}>
-                  ワンクリック保存
+                <Button variant="primary" size="sm" className="h-10" onClick={saveLearnedRule} isLoading={savingRule}>
+                  覚えさせる
                 </Button>
                 <button
                   type="button"
                   onClick={() => setSuggestedRule(null)}
-                  className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-bg-soft"
+                  className="min-h-10 rounded px-3 text-xs text-ink-soft hover:bg-bg-soft"
                 >
-                  閉じる
+                  とじる
                 </button>
               </div>
             </div>
           )}
 
-          {caution && (
-            <p className="flex items-start gap-1.5 rounded-lg bg-warning-bg px-3 py-2 text-sm font-medium text-warning">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              確認が必要な項目があります。数量や荷姿をご確認・修正の上、承認してください。
-            </p>
-          )}
-
-          <ul className="divide-y divide-line rounded-lg border border-line overflow-hidden">
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
             {rows.map((row) => {
               const low = row.confidence == null || row.confidence < 0.7
               const needsPack = (row.packConfigOptions?.length ?? 0) > 0 && !row.packConfigId
+              const draftNum = Number(row.draft)
+              const anomaly = quantityAnomalyFor(
+                Number.isFinite(draftNum) && row.draft.trim() !== '' ? draftNum : row.quantity,
+                row.usualQuantity,
+              )
               const itemDetails = [row.spec, row.containerType, extractActionableNote(row.lineNote)].filter(Boolean).join(' ・ ')
               return (
-                <li key={row.id} className="space-y-2 px-3.5 py-3 hover:bg-bg-soft/30 transition-colors">
+                <li key={row.id} className="space-y-2 px-3.5 py-3 transition-colors hover:bg-bg-soft/30">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold text-base text-ink">{row.productName}</span>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="text-base font-bold text-ink">{row.productName}</span>
                       {itemDetails && (
-                        <span className="rounded-md bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft border border-line">
+                        <span className="rounded-md border border-line bg-bg-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
                           {itemDetails}
                         </span>
                       )}
                     </div>
                     {low && (
-                      <span className="whitespace-nowrap num shrink-0 rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
-                        {row.confidence != null ? `精度 ${Math.round(row.confidence * 100)}%` : '要確認'}
+                      <span className="num shrink-0 whitespace-nowrap rounded bg-alert-bg px-2 py-0.5 text-xs font-bold text-alert">
+                        AI じしんなし{row.confidence != null ? `（${Math.round(row.confidence * 100)}%）` : ''}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center justify-end gap-2">
-                    {row.saving && (
-                      <span className="text-xs font-bold text-trust-600 animate-pulse">
-                        保存中...
-                      </span>
-                    )}
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {row.saving && <span className="animate-pulse text-xs font-bold text-trust-600">ほぞん中...</span>}
                     <input
                       type="text"
                       inputMode="text"
                       placeholder="例:30c"
-                      min={0}
                       value={row.draft}
                       disabled={row.saving}
                       onChange={(e) => patch(row.id, { draft: e.target.value })}
@@ -414,11 +403,13 @@ export function EditableOrderCard({
                       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                       aria-label={`${row.productName} の数量`}
                       className={`num h-11 w-24 rounded-lg border bg-bg-card px-2.5 text-right text-base font-bold tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
-                        low ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
+                        low || anomaly ? 'border-alert/60 focus:border-alert' : 'border-line-strong focus:border-trust-500'
                       }`}
                     />
                     <span className="shrink-0 text-xs font-bold text-ink-soft">
-                      {row.unit}（約{Math.ceil((Number(row.draft) || 0) / resolveCardPacksPerCase(customerName, row.spec, row.containerType))}箱）
+                      {row.unit}（約
+                      {Math.ceil((Number(row.draft) || 0) / resolveCardPacksPerCase(customerName, row.spec, row.containerType))}
+                      箱）
                     </span>
                     {row.confirmDelete ? (
                       <span className="flex shrink-0 items-center gap-1">
@@ -426,17 +417,17 @@ export function EditableOrderCard({
                           type="button"
                           disabled={row.saving}
                           onClick={() => deleteRow(row)}
-                          className="rounded-lg bg-alert px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                          className="min-h-10 rounded-lg bg-alert px-3 text-xs font-bold text-white disabled:opacity-50"
                         >
-                          削除
+                          けす
                         </button>
                         <button
                           type="button"
                           disabled={row.saving}
                           onClick={() => patch(row.id, { confirmDelete: false })}
-                          className="rounded-lg border border-line px-2.5 py-1.5 text-xs text-ink-soft hover:bg-bg-soft disabled:opacity-50"
+                          className="min-h-10 rounded-lg border border-line px-3 text-xs text-ink-soft hover:bg-bg-soft disabled:opacity-50"
                         >
-                          キャンセル
+                          やめる
                         </button>
                       </span>
                     ) : (
@@ -444,28 +435,33 @@ export function EditableOrderCard({
                         type="button"
                         onClick={() => patch(row.id, { confirmDelete: true })}
                         disabled={row.saving}
-                        aria-label={`${row.productName} を削除`}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-faint hover:bg-alert/5 hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20 disabled:opacity-40"
+                        aria-label={`${row.productName} を けす`}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded text-ink-faint hover:bg-alert/5 hover:text-alert focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-alert/20 disabled:opacity-40"
                       >
                         <Trash2 className="h-4 w-4" aria-hidden />
                       </button>
                     )}
                   </div>
+                  {anomaly && row.usualQuantity != null && (
+                    <p className="text-right text-xs font-bold text-alert">
+                      いつもは {Math.round(row.usualQuantity).toLocaleString()}
+                      {row.unit} ぐらいです。FAX を たしかめてください。
+                    </p>
+                  )}
                   {(row.packConfigOptions?.length ?? 0) > 0 && (
                     <label className="flex items-center gap-2">
                       <span className={`shrink-0 text-xs font-bold ${needsPack ? 'text-alert' : 'text-ink-soft'}`}>
-                        荷姿{needsPack ? '（未設定）' : ''}
+                        にすがた{needsPack ? '（えらんでください）' : ''}
                       </span>
                       <select
                         value={row.packConfigId ?? ''}
                         disabled={row.saving}
                         onChange={(e) => savePackConfig(row, e.target.value)}
-                        aria-label={`${row.productName} の荷姿`}
-                        className={`h-9 flex-1 rounded-lg border bg-bg-card px-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
+                        className={`h-10 min-w-0 flex-1 rounded-lg border bg-bg-card px-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-trust-100 ${
                           needsPack ? 'border-alert/50 focus:border-alert' : 'border-line-strong focus:border-trust-500'
                         }`}
                       >
-                        <option value="">選択してください</option>
+                        <option value="">えらんでください</option>
                         {row.packConfigOptions!.map((pc) => (
                           <option key={pc.id} value={pc.id}>
                             {pc.label}
@@ -480,10 +476,30 @@ export function EditableOrderCard({
           </ul>
 
           {rows.length === 0 && (
-            <p className="text-sm text-ink-soft">明細がありません。受注一覧から この注文を削除できます。</p>
+            <p className="text-sm text-ink-soft">明細がありません。管理者に この注文の削除を たのんでください。</p>
           )}
         </div>
       )}
+
+      {/* 承認・却下（理由と明細のあと） */}
+      <div className="flex flex-wrap items-start justify-end gap-2 border-t border-line/60 pt-3">
+        <RejectOrderButton orderId={orderId} customerName={customerName} deliveryDate={deliveryDate} size={size} />
+        {/* 編集中は連打・競合防止でロック */}
+        <div className={rows.some((r) => r.saving) ? 'pointer-events-none opacity-50' : ''}>
+          <ApproveOrderButton
+            orderId={orderId}
+            needsDeliveryDate={needsDeliveryDate}
+            needsDestination={needsDestination}
+            destinationOptions={destinationOptions}
+            destinationHint={destinationHint}
+            missingPackProducts={missingPack}
+            anomalies={anomalies}
+            label={approveLabel}
+            size={size}
+            kana
+          />
+        </div>
+      </div>
     </Card>
   )
 }

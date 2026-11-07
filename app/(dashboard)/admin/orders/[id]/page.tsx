@@ -9,6 +9,7 @@ import { DeleteOrderButton } from '@/components/admin/DeleteOrderButton'
 import { ShippingSlipIssuer } from '@/components/admin/ShippingSlipIssuer'
 import { OrderDetailEditor } from '@/components/admin/OrderDetailEditor'
 import { getOrderDetail } from '@/lib/orders/list'
+import { resolvePendingDestination } from '@/lib/orders/pending-types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { yen } from '@/lib/format'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -43,7 +44,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
     supabase.from('customers').select('name').eq('is_active', true).order('name'),
     supabase
       .from('delivery_destinations')
-      .select('id, code, full_name')
+      .select('id, code, full_name, aliases')
       .eq('customer_id', order.customerId)
       .eq('is_active', true)
       .order('sort_order'),
@@ -64,8 +65,34 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
   const isPending = order.status === 'pending_review'
   // 出荷票は承認後（収穫・出荷の予定に入ってから）だけ出す
   const canIssueSlip = order.status === 'approved' || order.status === 'shipped' || order.status === 'invoiced'
+  // 承認待ちで納入先が未登録の注文は、承認画面・承認APIと同じ規則で納入先を判定して表示する
+  // （画面ごとに納入先が食い違わないように）
+  const pendingDest =
+    isPending && !order.destinationId
+      ? resolvePendingDestination({
+          destinationId: null,
+          destinations: (destRows ?? []).map((d) => ({
+            id: d.id as string,
+            code: (d.code as string | null) ?? null,
+            full_name: d.full_name as string,
+            aliases: (d as { aliases?: string[] | null }).aliases ?? null,
+          })),
+          noteText: order.note,
+          productNames: order.items.map((it) => it.productName),
+        })
+      : null
+  const pendingDestLabel = pendingDest?.destinationId
+    ? destinations.find((d) => d.id === pendingDest.destinationId)?.label ?? null
+    : null
   const destinationLabel =
-    order.destinationName ?? (destinations.length > 0 ? (isPending ? '納入先 未定' : '納入先なし（取引先あて）') : null)
+    order.destinationName ??
+    (pendingDestLabel
+      ? `${pendingDestLabel}（承認時に確定）`
+      : destinations.length > 0
+        ? isPending
+          ? '納入先 未定'
+          : '納入先なし（取引先あて）'
+        : null)
   const slipDestination = order.destinationName
     ? `${order.customerName}\n${order.destinationName}`
     : order.customerName
@@ -168,6 +195,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
         initialDestinationId={order.destinationId}
         initialNote={order.note}
         destinations={destinations}
+        emptyDestinationLabel={isPending && destinations.length > 0 ? '未選択（承認のときに決める）' : undefined}
         initialItems={order.items}
       />
 

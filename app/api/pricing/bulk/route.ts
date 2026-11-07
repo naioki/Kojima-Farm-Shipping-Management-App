@@ -36,8 +36,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? '入力値が不正です' }, { status: 400 })
   }
   const { itemIds, mode, unit_price, tax_rate, status } = parsed.data
-  if (mode === 'flat' && (unit_price == null || tax_rate == null)) {
-    return NextResponse.json({ error: '一律適用には単価と税率が必要です' }, { status: 400 })
+  // 税率は受注時に明細へ固定済み（tax.md）。単価確定で税率は書き換えない（tax_rate は受け取っても使わない）。
+  void tax_rate
+  if (mode === 'flat' && unit_price == null) {
+    return NextResponse.json({ error: '一律適用には単価が必要です' }, { status: 400 })
   }
 
   const admin = createAdminClient()
@@ -69,11 +71,9 @@ export async function POST(req: Request) {
   for (const it of items) {
     const order = it.orders as unknown as { customer_id: string | null; source: string; delivery_date: string | null }
     let price: number
-    let tax: 8 | 10
 
     if (mode === 'flat') {
       price = unit_price!
-      tax = tax_rate!
     } else {
       const referenceDate = order.delivery_date ?? nowIso.slice(0, 10)
       const resolved = resolvePrice(rules, {
@@ -88,12 +88,11 @@ export async function POST(req: Request) {
         continue
       }
       price = resolved.rule.unit_price
-      tax = resolved.rule.tax_rate
     }
 
     const { error: updErr } = await admin
       .from('order_items')
-      .update({ unit_price: price, tax_rate: tax, price_status: status, priced_at: nowIso, priced_by: user.id })
+      .update({ unit_price: price, price_status: status, priced_at: nowIso, priced_by: user.id })
       .eq('id', it.id)
     if (updErr) skipped.push(it.id)
     else updated++

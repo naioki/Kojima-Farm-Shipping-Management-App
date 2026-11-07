@@ -206,8 +206,10 @@ export default async function DeliveryNotesPage({
       <Card className="space-y-3">
         <h2 className="font-display text-base font-bold text-ink">納品書を発行</h2>
         <DeliveryNoteForm
+          key={targetDate}
           customers={(customers ?? []).map((c) => ({ id: c.id, name: c.name }))}
           defaultMode={defaultMode}
+          defaultDate={targetDate}
         />
         <p className="text-sm text-ink-faint">
           選んだ取引先・納品日のその日の明細をまとめて1枚の納品書にします。プレビューで「発行して保存」を押すと

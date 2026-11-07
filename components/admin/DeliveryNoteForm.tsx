@@ -14,14 +14,17 @@ import { jstTodayStr as today } from '@/lib/dates'
 export function DeliveryNoteForm({
   customers,
   defaultMode = 'full',
+  defaultDate,
 }: {
   customers: { id: string; name: string }[]
   /** 金額表示の初期値（設定 DELIVERY_NOTE_AMOUNT_MODE 由来） */
   defaultMode?: DeliveryAmountMode
+  /** 納品日の初期値（ページ上部で選んだ日付に合わせる） */
+  defaultDate?: string
 }) {
   const router = useRouter()
   const [customerId, setCustomerId] = useState('')
-  const [date, setDate] = useState(today())
+  const [date, setDate] = useState(defaultDate ?? today())
   const [mode, setMode] = useState<DeliveryAmountMode>(defaultMode)
 
   function open() {
