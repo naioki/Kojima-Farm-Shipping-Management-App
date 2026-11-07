@@ -42,10 +42,10 @@ import {
 
 const UNDO_GRACE_MS = 5000
 
-/** 袋の種類の表示名（保存値は変えない。FG 袋＝OPP防曇袋） */
+/** 袋の種類の表示名（保存値は変えない）。FG袋＝OPP防曇袋・印字なし。FAXの表記どおり「FG袋」と出す */
 const BAG_DISPLAY_LABELS: Record<string, string> = {
-  '印字袋(FG)': 'OPP防曇袋（FG・印字あり）',
-  無地袋: '印字なし（無地）',
+  '印字袋(FG)': 'FG袋',
+  無地袋: '無地袋',
 }
 function bagDisplayLabel(bag: string): string {
   return BAG_DISPLAY_LABELS[bag] ?? bag
