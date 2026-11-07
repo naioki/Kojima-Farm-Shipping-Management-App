@@ -10,6 +10,9 @@ import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
+import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
+
+type PerCasePackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
 export const runtime = 'nodejs'
 
@@ -178,14 +181,69 @@ export async function POST(req: Request) {
   if (ruleErr) console.error('[api/shipments] P/Cルールの取得に失敗:', ruleErr.message)
   const rule = ruleRaw as Record<string, unknown> | null
 
-  // 入数の決定：クライアント指定値 → 取引ルール → 商品既定容量 → NSK判定(24) → 20
-  const isNsk = confirmedCustName.includes('農業総合研究所') || confirmedCustName.toUpperCase().includes('NSK')
-  const rulePacks = typeof rule?.packs_per_case === 'number' && rule.packs_per_case > 0 ? rule.packs_per_case : null
+  // 同一 (取引先 × 納入先 × 出荷日) の有効注文（キャンセル除外）を検索
+  const findQuery = supabase
+    .from('orders')
+    .select('id')
+    .eq('customer_id', customer_id)
+    .eq('delivery_date', delivery_date)
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+  const { data: existing, error: findErr } = await (
+    destination_id ? findQuery.eq('destination_id', destination_id) : findQuery.is('destination_id', null)
+  )
+    .limit(1)
+    .maybeSingle()
+  if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 })
+
+  type OrderItemRow = {
+    id: string
+    quantity: number
+    version?: number | null
+    shipped_qty?: number | null
+    field_status?: string | null
+    line_note: string | null
+    spec?: string | null
+    container_type?: string | null
+    has_card?: boolean | null
+    has_seal?: boolean | null
+    seal_text?: string | null
+    bag_type?: string | null
+    [key: string]: unknown
+  }
+  let existingItem: OrderItemRow | null = null
+  if (existing?.id) {
+    const { data: itm } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', existing.id)
+      .eq('product_id', product_id)
+      .limit(1)
+      .maybeSingle()
+    existingItem = itm as OrderItemRow | null
+  }
+
+  // 入数の決定：画面で入力された入数 → 取引先別の設定 → 荷姿（既存明細の荷姿 → 取引先専用 → 取引先共通）
+  // → 品目の標準 → 20（lib/masters/packs-per-case.ts。取引先名からの推測はしない）
+  const { data: perCasePacks, error: perCasePacksErr } = await supabase
+    .from('pack_configs')
+    .select('id, product_id, customer_id, base_per_selling, is_active')
+    .eq('product_id', product_id)
+  if (perCasePacksErr) console.error('[api/shipments] 入数用の荷姿の取得に失敗:', perCasePacksErr.message)
+  const perCasePackRows = (perCasePacks ?? []) as PerCasePackRow[]
+  const linePackId = typeof existingItem?.pack_config_id === 'string' ? existingItem.pack_config_id : null
+  const { customerPacks, sharedPacks } = splitPacksForCustomer(perCasePackRows, customer_id, product_id)
   const effectivePacksPerCase =
-    (clientPacksPerCase && clientPacksPerCase > 0 ? clientPacksPerCase : null) ??
-    rulePacks ??
-    (product.container_capacity && product.container_capacity > 0 ? product.container_capacity : null) ??
-    (isNsk ? 24 : 20)
+    positiveNumber(clientPacksPerCase) ??
+    resolvePacksPerCase({
+      rule: rule ? { packs_per_case: rule.packs_per_case as number | null } : null,
+      packConfig: linePackId ? perCasePackRows.find((p) => p.id === linePackId) ?? null : null,
+      customerPacks,
+      sharedPacks,
+      product,
+    }).value
+  // 規格・シールの既定（入数とは別の規則。ここでは変えない）
+  const isNsk = confirmedCustName.includes('農業総合研究所') || confirmedCustName.toUpperCase().includes('NSK')
 
   // 規格（spec）・コンテナ種別（container_type）・カード有無（has_card）・シール（has_seal/seal_text）の決定論的フォールバック
   const ruleSpec = (typeof rule?.spec === 'string' && rule.spec) || (typeof rule?.label_spec === 'string' && rule.label_spec) || ''
@@ -258,48 +316,6 @@ export async function POST(req: Request) {
   }
 
   const deltaQty = result.total.toNumber()
-
-  // 同一 (取引先 × 納入先 × 出荷日) の有効注文（キャンセル除外）を検索
-  const findQuery = supabase
-    .from('orders')
-    .select('id')
-    .eq('customer_id', customer_id)
-    .eq('delivery_date', delivery_date)
-    .neq('status', 'cancelled')
-    .order('created_at', { ascending: false })
-  const { data: existing, error: findErr } = await (
-    destination_id ? findQuery.eq('destination_id', destination_id) : findQuery.is('destination_id', null)
-  )
-    .limit(1)
-    .maybeSingle()
-  if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 })
-
-  type OrderItemRow = {
-    id: string
-    quantity: number
-    version?: number | null
-    shipped_qty?: number | null
-    field_status?: string | null
-    line_note: string | null
-    spec?: string | null
-    container_type?: string | null
-    has_card?: boolean | null
-    has_seal?: boolean | null
-    seal_text?: string | null
-    bag_type?: string | null
-    [key: string]: unknown
-  }
-  let existingItem: OrderItemRow | null = null
-  if (existing?.id) {
-    const { data: itm } = await supabase
-      .from('order_items')
-      .select('*')
-      .eq('order_id', existing.id)
-      .eq('product_id', product_id)
-      .limit(1)
-      .maybeSingle()
-    existingItem = itm as OrderItemRow | null
-  }
 
   // ⚡ 数量 0（キャンセル・削除指示）のハンドリング
   if (deltaQty === 0) {
@@ -543,7 +559,9 @@ export async function POST(req: Request) {
   if (customer_id && product_id) {
     try {
       const rulePayload: Record<string, unknown> = {
-        packs_per_case: effectivePacksPerCase,
+        // 入数は画面で入力されたときだけ保存する（荷姿・品目の標準から決まった値を取引先別の設定に
+        // 書き込むと、後で荷姿を直しても反映されなくなるため）
+        ...(positiveNumber(clientPacksPerCase) != null ? { packs_per_case: positiveNumber(clientPacksPerCase) } : {}),
         spec: effectiveSpec,
         label_spec: effectiveSpec,
         container_type: effectiveContainerType,

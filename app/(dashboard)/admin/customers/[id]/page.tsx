@@ -4,7 +4,8 @@ import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
-import { CustomerRulesEditor, type RuleRow } from '@/components/admin/CustomerRulesEditor'
+import { CustomerRulesEditor, type PerCaseFallback, type RuleRow } from '@/components/admin/CustomerRulesEditor'
+import { positiveNumber, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { CustomerManage } from '@/components/admin/CustomerManage'
 import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHistory'
 import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
@@ -39,13 +40,14 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     lockRaw,
     masterRaw,
     routeOverrides,
+    { data: packRows, error: packErr },
   ] = await Promise.all([
     supabase
       .from('customers')
       .select('id, name, name_kana, payment_terms, is_active, display_color, channel_identifiers')
       .eq('id', params.id)
       .maybeSingle(),
-    supabase.from('products').select('id, name, unit').eq('is_active', true).order('name'),
+    supabase.from('products').select('id, name, unit, container_capacity').eq('is_active', true).order('name'),
     supabase
       .from('customer_product_rules')
       .select('*')
@@ -75,6 +77,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
     getRouteOverrides(supabase).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    // 「使われる入数」の表示用（取引先別の設定が未入力のときの 荷姿 → 品目の標準）
+    supabase.from('pack_configs').select('id, product_id, customer_id, base_per_selling, is_active').eq('is_active', true),
   ])
   // 取引ルール・納入先は編集の主データ。取得失敗を「未登録（空）」に化けさせない
   // （荷姿マスタが空に見えた実害と同種の事故を防ぐ・CLAUDE.md）。
@@ -113,6 +117,17 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     }
   }
   const productName = new Map((products ?? []).map((p) => [p.id, p.name]))
+
+  // 入数の材料（lib/masters/packs-per-case.ts）。読めなかったときは渡さず、編集画面側で読み込み直す。
+  if (packErr) console.error('[customers/[id]] 入数用の荷姿の取得に失敗:', packErr.message)
+  let perCaseFallbacks: Record<string, PerCaseFallback> | undefined
+  if (!packErr) {
+    perCaseFallbacks = {}
+    for (const p of products ?? []) {
+      const { customerPacks, sharedPacks } = splitPacksForCustomer(packRows ?? [], customer.id, p.id)
+      perCaseFallbacks[p.id] = { customerPacks, sharedPacks, capacity: positiveNumber(p.container_capacity) }
+    }
+  }
 
   // この取引先の規格変更履歴（audit_log を customer_id でJSフィルタ→整形）
   type Vals = Record<string, unknown> | null
@@ -221,7 +236,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
         <div>
           <h2 className="font-display text-base font-bold text-ink">取引ルール（品目別・規格）</h2>
           <p className="text-sm text-ink-soft">
-            入数はケース記法（例 <span className="num">15c2</span>）の換算基準。「いつものセット」はポータルの初期表示に使われます。
+            入数は1箱のパック数で、ケース記法（例 <span className="num">15c2</span>）の換算や、収穫・パック・出荷表の箱数に使われます。
+            決め方は「取引先別の設定（ここ）→ 荷姿 → 品目の標準 → 20」の順です。「いつものセット」はポータルの初期表示に使われます。
           </p>
         </div>
         {lock && !canEdit && (
@@ -241,6 +257,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
             products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit }))}
             initialRules={initialRules}
             canEdit={canEdit}
+            perCaseFallbacks={perCaseFallbacks}
           />
         )}
       </Card>

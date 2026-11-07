@@ -8,6 +8,7 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 
 export const runtime = 'nodejs'
 
@@ -57,11 +58,24 @@ export async function PUT(req: Request) {
 
   const custName = cust?.name ?? ''
   const destName = destRes.data?.code || destRes.data?.full_name || ''
+  // 規格・シールの既定（入数とは別の規則。ここでは変えない）
   const isNsk = custName.includes('農業総合研究所') || custName.toUpperCase().includes('NSK')
-  const rulePacks = typeof rule?.packs_per_case === 'number' && rule.packs_per_case > 0 ? rule.packs_per_case : null
-  const defaultPpc =
-    rulePacks ??
-    (isNsk ? 24 : product.container_capacity ?? 20)
+
+  // 入数：取引先別の設定 → 荷姿（取引先専用 → 取引先共通）→ 品目の標準 → 20（lib/masters/packs-per-case.ts）。
+  // 週の管理の画面（app/field/matrix/page.tsx）と同じく取引先単位で決め、明細の荷姿は使わない
+  // （画面の「1箱＝◯P」と保存される数量を一致させるため）。取引先名からの推測はしない。
+  const { data: perCasePacks, error: perCasePacksErr } = await supabase
+    .from('pack_configs')
+    .select('id, product_id, customer_id, base_per_selling, is_active')
+    .eq('product_id', product_id)
+  if (perCasePacksErr) console.error('[api/shipments/cell] 入数用の荷姿の取得に失敗:', perCasePacksErr.message)
+  const { customerPacks, sharedPacks } = splitPacksForCustomer(perCasePacks ?? [], customer_id, product_id)
+  const defaultPpc = resolvePacksPerCase({
+    rule: rule ? { packs_per_case: rule.packs_per_case as number | null } : null,
+    customerPacks,
+    sharedPacks,
+    product,
+  }).value
 
   let orderQuery = supabase
     .from('orders')

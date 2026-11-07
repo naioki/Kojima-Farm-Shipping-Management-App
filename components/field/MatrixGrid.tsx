@@ -96,13 +96,11 @@ export function MatrixGrid({
     })
   }
 
-  const getCustomerPpc = useCallback((customerId: string, customerName?: string): number => {
+  // 入数はサーバー側（lib/masters/packs-per-case.ts）で取引先ごとに決めて渡される。取引先名からは推測しない。
+  // customerName は呼び出し側の互換のために受け取るだけで使わない。
+  const getCustomerPpc = useCallback((customerId: string, _customerName?: string): number => {
     const ppc = packsByCustomer[customerId]
-    if (ppc && ppc > 0) return ppc
-    if (customerName && (customerName.includes('農業総合研究所') || customerName.toUpperCase().includes('NSK'))) {
-      return 24
-    }
-    return 20
+    return ppc && ppc > 0 ? ppc : 20
   }, [packsByCustomer])
 
   /**

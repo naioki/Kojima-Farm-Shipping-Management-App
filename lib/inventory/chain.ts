@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { shiftDateStr } from '@/lib/dates'
+import { resolvePacksPerCase, splitPacksForCustomer, type PackLike } from '@/lib/masters/packs-per-case'
 
 export interface ChainInventoryResult {
   /** 基準日の有効開始在庫（手動設定値があればそれ、なければ過去からの累積自動繰越） */
@@ -74,6 +75,65 @@ export async function writeFallbackInventory(
     )
 }
 
+export interface ChainBoxItem {
+  order_id: string
+  delivery_date: string
+  customer_id: string | null
+  product_id: string
+  quantity: number
+  pack_config_id?: string | null
+  rule_id?: string | null
+}
+export interface ChainRuleRow {
+  id?: string | null
+  customer_id: string
+  product_id?: string | null
+  packs_per_case: number | null
+}
+export type ChainPackRow = PackLike & { id: string; product_id: string; customer_id: string | null }
+
+/**
+ * 日ごとの必要箱数（明細ごとに切り上げて合計）。
+ * 入数は収穫・パックボード（app/field/shipments/page.tsx）と同じく lib/masters/packs-per-case.ts の
+ * resolvePacksPerCase（取引先別の設定 → 明細の荷姿 → 取引先専用 → 取引先共通 → 品目の標準 → 20）で決める。
+ * 規格の文字列（「入数24」）や取引先名からの推測はしない。
+ */
+export function sumDailyBoxes(
+  items: readonly ChainBoxItem[],
+  ctx: {
+    productId: string
+    product: { container_capacity?: number | string | null } | null
+    rules: readonly ChainRuleRow[]
+    packs: readonly ChainPackRow[]
+  },
+): Map<string, number> {
+  const ruleById = new Map<string, ChainRuleRow>()
+  const ruleByCust = new Map<string, ChainRuleRow>()
+  for (const r of ctx.rules) {
+    if (r.product_id && r.product_id !== ctx.productId) continue
+    if (r.id) ruleById.set(r.id, r)
+    ruleByCust.set(r.customer_id, r)
+  }
+  const packById = new Map(ctx.packs.map((p) => [p.id, p]))
+
+  const out = new Map<string, number>()
+  for (const it of items) {
+    const qty = Number(it.quantity) || 0
+    if (qty <= 0) continue
+    const rule = (it.rule_id ? ruleById.get(it.rule_id) : null) ?? (it.customer_id ? ruleByCust.get(it.customer_id) : null) ?? null
+    const { customerPacks, sharedPacks } = splitPacksForCustomer(ctx.packs, it.customer_id, ctx.productId)
+    const perCase = resolvePacksPerCase({
+      rule,
+      packConfig: it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
+      customerPacks,
+      sharedPacks,
+      product: ctx.product,
+    }).value
+    out.set(it.delivery_date, (out.get(it.delivery_date) ?? 0) + Math.ceil(qty / perCase))
+  }
+  return out
+}
+
 /**
  * 過去の日付（デフォルト14日間）の在庫手動設定と注文出荷実績から、日跨ぎの連鎖キャリーオーバー在庫を算出する。
  * - 週末・祝日や出荷のない日を挟んでも、未消化分が翌日・翌々日以降へ連続して自動波及する。
@@ -144,13 +204,9 @@ export async function calculateChainInventory(
   const dailyBoxesMap = new Map<string, number>()
 
   if (orderIds.length > 0) {
-    type PastOrderItem = { order_id: string; quantity: number; product_id: string; pack_config_id: string | null; spec: string | null }
-    type RuleItem = { customer_id: string; product_id: string; packs_per_case: number | null }
-    type PackConfigItem = { id: string; base_per_selling: number }
-
     const pastItemsPromise = supabase
       .from('order_items')
-      .select('order_id, quantity, product_id, pack_config_id, spec')
+      .select('order_id, quantity, product_id, pack_config_id, rule_id')
       .eq('product_id', productId)
       .in('order_id', orderIds)
 
@@ -160,13 +216,16 @@ export async function calculateChainInventory(
       .eq('id', productId)
       .maybeSingle()
 
-    // 顧客別ルール・荷姿マスタを安全に取得
+    // 取引先別ルール・荷姿マスタ（この品目のもの）を安全に取得
     const rulesPromise = Promise.resolve(
-      supabase.from('customer_product_rules').select('customer_id, product_id, packs_per_case').eq('product_id', productId)
+      supabase.from('customer_product_rules').select('id, customer_id, product_id, packs_per_case').eq('product_id', productId)
     ).catch(() => ({ data: [] }))
 
     const packConfigsPromise = Promise.resolve(
-      supabase.from('pack_configs').select('id, base_per_selling')
+      supabase
+        .from('pack_configs')
+        .select('id, product_id, customer_id, base_per_selling, is_active')
+        .eq('product_id', productId)
     ).catch(() => ({ data: [] }))
 
     const [{ data: pastItems }, { data: prod }, rulesRes, packRes] = await Promise.all([
@@ -176,25 +235,19 @@ export async function calculateChainInventory(
       packConfigsPromise,
     ])
 
-    const defaultCapacity = prod?.container_capacity ?? 20
-    const ruleByCust = new Map(((rulesRes?.data ?? []) as RuleItem[]).map((r) => [r.customer_id, r.packs_per_case]))
-    const packMap = new Map(((packRes?.data ?? []) as PackConfigItem[]).map((p) => [p.id, Number(p.base_per_selling)]))
-
-    for (const it of ((pastItems ?? []) as PastOrderItem[])) {
+    const items: ChainBoxItem[] = []
+    for (const it of ((pastItems ?? []) as Array<Omit<ChainBoxItem, 'delivery_date' | 'customer_id'>>)) {
       const d = orderDateMap.get(it.order_id)
       if (!d) continue
-      const custId = orderCustMap.get(it.order_id)
-
-      const packBase = it.pack_config_id ? packMap.get(it.pack_config_id) : null
-      const rulePacks = custId ? ruleByCust.get(custId) : null
-
-      let perCase = packBase || rulePacks || defaultCapacity || 20
-      if ((it.spec ?? '').includes('24')) {
-        perCase = 24
-      }
-
-      const boxes = Math.ceil(it.quantity / (perCase > 0 ? perCase : 20))
-      dailyBoxesMap.set(d, (dailyBoxesMap.get(d) ?? 0) + boxes)
+      items.push({ ...it, delivery_date: d, customer_id: orderCustMap.get(it.order_id) ?? null })
+    }
+    for (const [d, boxes] of sumDailyBoxes(items, {
+      productId,
+      product: prod ?? null,
+      rules: (rulesRes?.data ?? []) as ChainRuleRow[],
+      packs: (packRes?.data ?? []) as ChainPackRow[],
+    })) {
+      dailyBoxesMap.set(d, boxes)
     }
   }
 
