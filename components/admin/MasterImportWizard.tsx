@@ -84,6 +84,9 @@ interface CommitResult {
   standards: Counts
   customers: Counts
   errors: string[]
+  /** 店舗を納入先として登録したとき */
+  customersAs?: 'destinations'
+  parentName?: string
 }
 
 let seq = 0
@@ -101,8 +104,16 @@ async function compressImage(file: File): Promise<Img> {
   return { dataUrl: img.dataUrl, base64: img.base64, mimeType: img.mimeType, name: file.name }
 }
 
-export function MasterImportWizard({ existing }: { existing: ExistingForDedup }) {
+export function MasterImportWizard({
+  existing,
+  parentOptions = [],
+}: {
+  existing: ExistingForDedup
+  /** 店舗を納入先として登録するときの親の取引先候補 */
+  parentOptions?: { id: string; name: string }[]
+}) {
   const [phase, setPhase] = useState<Phase>('select')
+  const [storeParentId, setStoreParentId] = useState('')
   const [images, setImages] = useState<Img[]>([])
   const [model, setModel] = useState<string | null>(null)
 
@@ -272,6 +283,7 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
             name: x.name.trim(),
             name_kana: x.name_kana.trim() || null,
           })),
+          customer_parent_id: storeParentId || null,
         }),
       })
       const json = await res.json()
@@ -324,6 +336,9 @@ export function MasterImportWizard({ existing }: { existing: ExistingForDedup })
           setProducts={setProducts}
           setStandards={setStandards}
           setCustomers={setCustomers}
+          parentOptions={parentOptions}
+          storeParentId={storeParentId}
+          setStoreParentId={setStoreParentId}
           onCommit={runCommit}
           onBack={reset}
           committing={phase === 'committing'}
@@ -543,6 +558,9 @@ function ReviewScreen({
   setProducts,
   setStandards,
   setCustomers,
+  parentOptions,
+  storeParentId,
+  setStoreParentId,
   onCommit,
   onBack,
   committing,
@@ -555,6 +573,9 @@ function ReviewScreen({
   setProducts: Dispatch<SetStateAction<ProductRow[]>>
   setStandards: Dispatch<SetStateAction<StandardRow[]>>
   setCustomers: Dispatch<SetStateAction<CustomerRow[]>>
+  parentOptions: { id: string; name: string }[]
+  storeParentId: string
+  setStoreParentId: (v: string) => void
   onCommit: () => void
   onBack: () => void
   committing: boolean
@@ -723,9 +744,27 @@ function ReviewScreen({
       {/* 取引先 */}
       <section className="space-y-2">
         <SectionHeader icon={Users} title="店舗・取引先" rows={customers} onAll={setAll(setCustomers)} />
-        <p className="rounded border border-line bg-bg-soft px-3 py-2 text-sm text-ink-soft">
-          店舗は取引先として登録されます。納入先にしたい場合は、「取引先・納入先」の画面で追加してください。
-        </p>
+        <div className="space-y-1 rounded border border-line bg-bg-soft px-3 py-2">
+          <label htmlFor="store-parent" className="block text-sm font-medium text-ink">
+            登録先
+          </label>
+          <select
+            id="store-parent"
+            value={storeParentId}
+            onChange={(e) => setStoreParentId(e.target.value)}
+            className="min-h-10 w-full rounded border border-line-strong bg-bg-card px-3 text-sm text-ink"
+          >
+            <option value="">新しい取引先として登録する</option>
+            {parentOptions.map((c) => (
+              <option key={c.id} value={c.id}>
+                「{c.name}」の納入先として登録する
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-ink-soft">
+            同じ取引先の店舗一覧（例: スーパーの各店）は、その取引先を選ぶと「取引先 ＞ 納入先」で登録されます。
+          </p>
+        </div>
         {customers.length === 0 ? (
           <Empty />
         ) : (
@@ -825,7 +864,7 @@ function DoneScreen({ result, onReset }: { result: CommitResult; onReset: () => 
   const rows: { label: string; c: Counts }[] = [
     { label: '品目', c: result.products },
     { label: '規格・荷姿', c: result.standards },
-    { label: '店舗・取引先', c: result.customers },
+    { label: result.customersAs === 'destinations' ? `店舗（「${result.parentName ?? ''}」の納入先）` : '店舗（取引先）', c: result.customers },
   ]
   return (
     <div className="space-y-5">

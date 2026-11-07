@@ -18,7 +18,7 @@ export default async function MasterImportPage() {
   const supabase = createAdminClient()
 
   const [{ data: customers }, { data: products }, { data: packs }] = await Promise.all([
-    supabase.from('customers').select('name').eq('is_active', true),
+    supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
     supabase.from('products').select('id, name').eq('is_active', true),
     supabase.from('pack_configs').select('product_id, label').eq('is_active', true),
   ])
@@ -48,7 +48,10 @@ export default async function MasterImportPage() {
       </div>
 
       <Card>
-        <MasterImportWizard existing={existing} />
+        <MasterImportWizard
+          existing={existing}
+          parentOptions={(customers ?? []).map((c) => ({ id: c.id, name: c.name }))}
+        />
       </Card>
     </div>
   )

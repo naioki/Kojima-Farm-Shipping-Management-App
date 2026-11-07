@@ -37,6 +37,8 @@ const commitSchema = z
         }),
       )
       .default([]),
+    /** 指定すると、読み取った「店舗」をこの取引先の納入先として登録する（未指定は新しい取引先） */
+    customer_parent_id: z.string().uuid().nullish(),
   })
   .refine((d) => d.products.length + d.standards.length + d.customers.length > 0, {
     message: '登録対象が1件もありません',
@@ -148,6 +150,32 @@ export async function POST(req: Request) {
       continue
     }
     standards.created++
+  }
+
+  // ③ 店舗: 親の取引先が指定されていれば、その取引先の納入先として登録（取引先 ＞ 納入先）
+  if (data.customer_parent_id) {
+    const { data: parent, error: parentErr } = await supabase
+      .from('customers')
+      .select('id, name')
+      .eq('id', data.customer_parent_id)
+      .maybeSingle()
+    if (parentErr) return NextResponse.json({ error: `取引先の確認に失敗しました: ${parentErr.message}` }, { status: 500 })
+    if (!parent) return NextResponse.json({ error: '登録先の取引先が見つかりません' }, { status: 400 })
+    for (const c of data.customers) {
+      const { error } = await supabase.from('delivery_destinations').insert({
+        customer_id: parent.id,
+        full_name: c.name,
+        code: c.name,
+        aliases: c.name_kana ? [c.name_kana] : [],
+      })
+      if (error) {
+        customers.skipped++
+        if (error.code !== '23505') errors.push(`納入先「${c.name}」: ${error.message}`)
+        continue
+      }
+      customers.created++
+    }
+    return NextResponse.json({ products, standards, customers, errors, customersAs: 'destinations', parentName: parent.name })
   }
 
   // ③ 取引先
