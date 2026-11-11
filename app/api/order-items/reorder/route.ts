@@ -4,6 +4,17 @@ import { requireStaffApi } from '@/lib/auth/api-guard'
 import { noteSideEffectFailure, runSideEffect, withWarnings } from '@/lib/api/side-effects'
 
 export const dynamic = 'force-dynamic'
+
+/** 退避ストアの値を読む。JSON として壊れている／オブジェクトでないときは null。 */
+function parsePackSortMap(raw: unknown): Record<string, number> | null {
+  try {
+    const v: unknown = JSON.parse(String(raw))
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, number>) : null
+  } catch {
+    // 壊れた JSON は null を返す（記録と作り直しは呼び出し側）
+    return null
+  }
+}
 export const runtime = 'nodejs'
 
 /**
@@ -53,11 +64,12 @@ export async function POST(req: NextRequest) {
 
       let map: Record<string, number> = {}
       if (settingRow?.value) {
-        try {
-          map = JSON.parse(settingRow.value) as Record<string, number>
-        } catch (parseErr) {
-          // 壊れた値は読み直せないので作り直す（ログに残す）
-          console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します:', parseErr)
+        const parsedMap = parsePackSortMap(settingRow.value)
+        if (parsedMap) {
+          map = parsedMap
+        } else {
+          // 壊れた値は読み直せないので作り直す（元の値をログに残す）
+          console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します。壊れていた値:', settingRow.value)
         }
       }
 
@@ -111,39 +123,38 @@ export async function POST(req: NextRequest) {
   if (syncReadErr) {
     noteSideEffectFailure(warnings, SYNC_TAG, syncReadErr, SYNC_WARN)
   } else if (settingRow?.value) {
-    let map: Record<string, number> | null = null
-    try {
-      map = JSON.parse(settingRow.value) as Record<string, number>
-    } catch (parseErr) {
-      noteSideEffectFailure(warnings, SYNC_TAG, parseErr, SYNC_WARN)
+    // 壊れた値は自然に直らないので、退避先経路と同じく元の値をログに残して作り直す
+    let map = parsePackSortMap(settingRow.value)
+    let changed = false
+    if (!map) {
+      console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します。壊れていた値:', settingRow.value)
+      map = {}
+      changed = true
     }
-    if (map) {
-      let changed = false
-      for (const it of items) {
-        if (it.sortOrder == null) {
-          if (map[it.id] !== undefined) {
-            delete map[it.id]
-            changed = true
-          }
-        } else if (map[it.id] !== it.sortOrder) {
-          map[it.id] = it.sortOrder
+    for (const it of items) {
+      if (it.sortOrder == null) {
+        if (map[it.id] !== undefined) {
+          delete map[it.id]
           changed = true
         }
+      } else if (map[it.id] !== it.sortOrder) {
+        map[it.id] = it.sortOrder
+        changed = true
       }
-      if (changed) {
-        const syncMap = map
-        await runSideEffect(warnings, SYNC_TAG, SYNC_WARN, () =>
-          admin.from('app_settings').upsert(
-            {
-              key: 'v5_pack_sort_order',
-              value: JSON.stringify(syncMap),
-              is_secret: false,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'key' },
-          ),
-        )
-      }
+    }
+    if (changed) {
+      const syncMap = map
+      await runSideEffect(warnings, SYNC_TAG, SYNC_WARN, () =>
+        admin.from('app_settings').upsert(
+          {
+            key: 'v5_pack_sort_order',
+            value: JSON.stringify(syncMap),
+            is_secret: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' },
+        ),
+      )
     }
   }
 

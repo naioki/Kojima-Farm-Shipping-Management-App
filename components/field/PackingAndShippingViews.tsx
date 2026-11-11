@@ -401,6 +401,7 @@ export function PackingAndShippingViews({
       toast.success('自動の優先順に戻しました')
       showResponseWarnings(await res.json().catch(() => null))
     } catch {
+      toast.error('自動の優先順に戻せませんでした。もう一度お試しください')
       setItems((prev) =>
         prev.map((it) => ({
           ...it,
@@ -799,6 +800,7 @@ export function PackingAndShippingViews({
                         sortOrder: (idx + 1) * 10,
                       }))
                       const updatedMap = new Map(updates.map((u) => [u.id, u.sortOrder]))
+                      const prevSortMap = new Map(items.map((it) => [it.itemId, it.dailyPackSortOrder]))
                       setItems((prev) =>
                         prev.map((it) => ({
                           ...it,
@@ -816,8 +818,16 @@ export function PackingAndShippingViews({
                         toast.success('未完了のカードをすべて上段に集めました')
                         showResponseWarnings(await res.json().catch(() => null))
                       } catch {
-                        // 画面上は並べ替え済みだが保存されていない。読み込み直すと元に戻ることを伝える
-                        toast.error('並び順を保存できませんでした。画面を読み込み直して確認してください')
+                        // 保存できていないので、画面の並びも元に戻す（他の並び順保存と同じ）
+                        toast.error('並び順を保存できませんでした。もう一度お試しください')
+                        setItems((prev) =>
+                          prev.map((it) => ({
+                            ...it,
+                            dailyPackSortOrder: prevSortMap.has(it.itemId)
+                              ? (prevSortMap.get(it.itemId) ?? null)
+                              : it.dailyPackSortOrder,
+                          })),
+                        )
                       } finally {
                         setBusyReorder(false)
                       }

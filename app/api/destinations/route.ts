@@ -62,6 +62,8 @@ export async function POST(req: Request) {
 
   const hasRouteData = Boolean(parsed.data.departure_time?.trim() || parsed.data.shipping_route_name?.trim() || parsed.data.default_container_type?.trim())
   let insRes: { data: Record<string, unknown> | null; error: { code?: string; message?: string } | null } = { data: null, error: null }
+  // 出発時刻・便名を列に保存できたか（本番は列が無いので false。そのときは退避ストアが唯一の保存先）
+  let routeSavedToColumns = false
 
   if (hasRouteData) {
     // 拡張カラム指定時: カラムが存在すれば直接保存を試みる
@@ -87,6 +89,7 @@ export async function POST(req: Request) {
       insRes = { data: r2.data as Record<string, unknown> | null, error: r2.error }
     } else {
       insRes = { data: r1.data as Record<string, unknown> | null, error: r1.error }
+      routeSavedToColumns = !r1.error
     }
   } else {
     // 通常（納入先名・略称のみ）: 未適用カラムへのアクセスを最初から完全に回避し一発で作成
@@ -100,8 +103,9 @@ export async function POST(req: Request) {
 
   if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 500 })
 
-  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
-  // （0026 未適用の本番ではここが唯一の保存先。失敗は 500 にせず警告で返す）
+  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存。
+  // 納入先そのもの（名前など）は作成済みなので 500 にはしない（500 にすると再登録が重複扱いになる）。
+  // ただし列に保存できていないときは出発時刻・便名が未保存なので、それが分かる警告にする。
   const warnings: string[] = []
   if (insRes.data?.id && (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined)) {
     try {
@@ -113,9 +117,13 @@ export async function POST(req: Request) {
     } catch (e) {
       noteSideEffectFailure(
         warnings,
-        '[api/destinations] 出発時刻・便名の退避保存（app_settings v5_destination_routes）に失敗',
+        routeSavedToColumns
+          ? '[api/destinations] 出発時刻・便名の退避保存（app_settings v5_destination_routes）の同期に失敗'
+          : '[api/destinations] 出発時刻・便名の保存（app_settings v5_destination_routes・唯一の保存先）に失敗',
         e,
-        '納入先は保存しましたが、出発時刻・便名の保存に失敗しました。もう一度保存するか、画面を読み込み直して確認してください',
+        routeSavedToColumns
+          ? '納入先と出発時刻・便名は保存しましたが、控えの更新に失敗しました。表示が古いままの場合は、出発時刻・便名をもう一度保存してください'
+          : '納入先は登録しましたが、出発時刻・便名は保存できませんでした。この納入先の出発時刻・便名をもう一度保存してください',
       )
     }
   }

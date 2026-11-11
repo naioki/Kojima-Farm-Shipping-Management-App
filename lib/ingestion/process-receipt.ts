@@ -366,8 +366,9 @@ export async function processReceipt(
           payload['file_base64'] = rot.base64
           payload['content_type'] = rot.mimeType
         }
-      } catch {
-        // 回転再試行の失敗は無視して初回結果を使う
+      } catch (rotErr) {
+        // 回転再試行の失敗は初回結果を使って続行（失敗はログに残す）
+        console.warn('[process-receipt] 画像の回転再試行に失敗。初回の解析結果を使います:', rotErr)
       }
     }
   } catch (e) {

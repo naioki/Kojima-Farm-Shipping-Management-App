@@ -174,8 +174,9 @@ async function driveAuth() {
   if (saJson) {
     try {
       return new google.auth.GoogleAuth({ credentials: JSON.parse(saJson), scopes })
-    } catch {
-      // 不正な JSON は ADC にフォールバック
+    } catch (jsonErr) {
+      // 不正な JSON は ADC にフォールバック（設定ミスに気づけるようログに残す。値そのものは秘密なので出さない）
+      console.error('[poll-drive] GOOGLE_SERVICE_ACCOUNT_JSON が JSON として読めません。ADC で続行します:', String(jsonErr))
     }
   }
   return new google.auth.GoogleAuth({ scopes })

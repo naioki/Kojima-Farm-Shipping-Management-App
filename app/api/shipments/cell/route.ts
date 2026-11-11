@@ -91,17 +91,21 @@ export async function PUT(req: Request) {
     .maybeSingle()
   if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
 
-  const existingItem = order
-    ? (
-        await supabase
-          .from('order_items')
-          .select('*')
-          .eq('order_id', order.id)
-          .eq('product_id', product_id)
-          .limit(1)
-          .maybeSingle()
-      ).data
-    : null
+  // 既存明細の読み込みに失敗したまま進むと「無い」と誤認して新規 insert し、明細が二重になる。ここで止める
+  const itemRead = order
+    ? await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', order.id)
+        .eq('product_id', product_id)
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null }
+  if (itemRead.error) {
+    console.error('[api/shipments/cell] 既存明細の読み込みに失敗:', itemRead.error.message)
+    return NextResponse.json({ error: '明細を読み込めなかったため保存していません。もう一度お試しください' }, { status: 500 })
+  }
+  const existingItem = itemRead.data
 
   const result = parseQuantity(quantity_raw, { packsPerCase: defaultPpc })
   // 付随更新（収穫数の同期など）の失敗は 500 にせず、成功応答の warnings で現場に知らせる

@@ -211,13 +211,18 @@ export async function POST(req: Request) {
   }
   let existingItem: OrderItemRow | null = null
   if (existing?.id) {
-    const { data: itm } = await supabase
+    const { data: itm, error: itemFindErr } = await supabase
       .from('order_items')
       .select('*')
       .eq('order_id', existing.id)
       .eq('product_id', product_id)
       .limit(1)
       .maybeSingle()
+    // 読み込みに失敗したまま進むと「明細なし」と誤認して新規 insert し、明細が二重になる。ここで止める
+    if (itemFindErr) {
+      console.error('[api/shipments] 既存明細の読み込みに失敗:', itemFindErr.message)
+      return NextResponse.json({ error: '明細を読み込めなかったため保存していません。もう一度お試しください' }, { status: 500 })
+    }
     existingItem = itm as OrderItemRow | null
   }
 
@@ -317,6 +322,7 @@ export async function POST(req: Request) {
   // 付随更新（収穫数・出荷時間帯・写真の保存など）の失敗は 500 にせず、成功応答の warnings で知らせる
   const warnings: string[] = []
   const HARVEST_WARN = '数量は保存しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください'
+  const HARVEST_DELETE_WARN = '明細は削除しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください'
   const EMPTY_ORDER_WARN = '明細は削除しましたが、空になった注文の片付けに失敗しました。画面を読み込み直して確認してください'
 
   // 明細の削除（本体）と、付随する収穫タスク・空になった注文の片付け。
@@ -325,7 +331,7 @@ export async function POST(req: Request) {
     await runSideEffect(
       warnings,
       '[api/shipments] 明細削除時の harvest_tasks 削除に失敗',
-      HARVEST_WARN,
+      HARVEST_DELETE_WARN,
       () => supabase.from('harvest_tasks').delete().eq('order_item_id', itemId),
     )
     const { error: delErr } = await supabase.from('order_items').delete().eq('id', itemId)

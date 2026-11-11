@@ -48,6 +48,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .select('id, code, full_name, aliases, is_active, departure_time, shipping_route_name, pack_sort_order, default_container_type')
     .single()
 
+  // 出発時刻・便名を列に保存できたか（本番は列が無いので false。そのときは退避ストアが唯一の保存先）
+  const routeSavedToColumns = !updRes.error
+  // 出発時刻・便名以外の項目（名前など）を保存したか
+  let otherFieldsSaved = !updRes.error && ['code', 'full_name', 'aliases', 'is_active'].some((k) => k in patch)
   if (updRes.error && isMissingColumnError(updRes.error)) {
     // 0026 未適用環境（PGRST204 / 42703 両対応）: 新規追加カラムを除外して更新
     const fallbackPatch: Record<string, unknown> = {}
@@ -57,6 +61,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (parsed.data.is_active !== undefined) fallbackPatch.is_active = parsed.data.is_active
 
     if (Object.keys(fallbackPatch).length > 0) {
+      otherFieldsSaved = true
       updRes = await admin
         .from('delivery_destinations')
         .update(fallbackPatch)
@@ -74,8 +79,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   if (updRes.error) return NextResponse.json({ error: updRes.error.message }, { status: 500 })
 
-  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
-  // （0026 未適用の本番ではここが唯一の保存先。失敗は 500 にせず警告で返す）
+  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存。
+  // - 列に保存できていない（0026 未適用の本番）かつ他の項目も無い → ここが唯一の保存先なので失敗は 500
+  // - 名前など他の項目は保存済み → 成功＋警告（出発時刻・便名が未保存と分かる文）
+  // - 列に保存済みで退避側の同期だけ失敗 → 成功＋警告
   const warnings: string[] = []
   if (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined) {
     try {
@@ -84,11 +91,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         shippingRouteName: parsed.data.shipping_route_name ?? null,
       })
     } catch (e) {
+      if (!routeSavedToColumns && !otherFieldsSaved) {
+        console.error(
+          '[api/destinations/[id]] 出発時刻・便名の保存（app_settings v5_destination_routes・唯一の保存先）に失敗:',
+          e instanceof Error ? e.message : e,
+        )
+        return NextResponse.json(
+          { error: '出発時刻・便名を保存できませんでした。もう一度お試しください' },
+          { status: 500 },
+        )
+      }
       noteSideEffectFailure(
         warnings,
-        '[api/destinations/[id]] 出発時刻・便名の退避保存（app_settings v5_destination_routes）に失敗',
+        routeSavedToColumns
+          ? '[api/destinations/[id]] 出発時刻・便名の退避保存（app_settings v5_destination_routes）の同期に失敗'
+          : '[api/destinations/[id]] 出発時刻・便名の保存（app_settings v5_destination_routes・唯一の保存先）に失敗',
         e,
-        '納入先は保存しましたが、出発時刻・便名の保存に失敗しました。もう一度保存するか、画面を読み込み直して確認してください',
+        routeSavedToColumns
+          ? '出発時刻・便名は保存しましたが、控えの更新に失敗しました。表示が古いままの場合は、もう一度保存してください'
+          : '納入先名などは保存しましたが、出発時刻・便名は保存できませんでした。出発時刻・便名をもう一度保存してください',
       )
     }
   }
