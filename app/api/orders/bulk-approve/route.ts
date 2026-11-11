@@ -35,6 +35,8 @@ export async function POST(req: Request) {
   let successCount = 0
   let failedCount = 0
   const errors: Array<{ orderId: string; error: string; reason?: string }> = []
+  /** 承認は成功したが付随更新に失敗したときの警告（重複は1つにまとめる） */
+  const warnings: string[] = []
 
   for (const orderId of orderIds) {
     try {
@@ -45,6 +47,7 @@ export async function POST(req: Request) {
       })
       if (result.ok) {
         successCount++
+        for (const w of result.warnings ?? []) if (!warnings.includes(w)) warnings.push(w)
       } else {
         failedCount++
         errors.push({ orderId, error: result.error, reason: result.reason })
@@ -64,5 +67,6 @@ export async function POST(req: Request) {
     successCount,
     failedCount,
     errors,
+    ...(warnings.length > 0 ? { warnings } : {}),
   })
 }

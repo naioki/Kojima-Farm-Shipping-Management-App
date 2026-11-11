@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isMissingRelationError } from '@/lib/supabase/missing-column'
 import { shiftDateStr } from '@/lib/dates'
 import { resolvePacksPerCase, splitPacksForCustomer, type PackLike } from '@/lib/masters/packs-per-case'
 
@@ -22,25 +23,39 @@ export type FallbackInventoryRecord = Record<
 >
 
 /**
- * 0026未適用環境（daily_container_inventory不在）用の在庫フォールバック読み込み
+ * 退避ストア（app_settings の v5_container_inv:*）を読む。読み込み失敗は throw する
+ * （書き込み前の読み込みで失敗を空扱いにすると、他の日付の退避データを上書きで消してしまうため）。
+ */
+async function readFallbackInventoryStrict(
+  admin: SupabaseClient,
+  productId: string,
+): Promise<FallbackInventoryRecord> {
+  const res = await admin
+    .from('app_settings')
+    .select('value')
+    .eq('key', `v5_container_inv:${productId}`)
+    .maybeSingle()
+  if (res?.error) throw new Error(`在庫の退避データの読み込みに失敗: ${res.error.message}`)
+  if (!res?.data?.value) return {}
+  try {
+    return (JSON.parse(res.data.value) as FallbackInventoryRecord) ?? {}
+  } catch (e) {
+    throw new Error(`在庫の退避データが壊れています（v5_container_inv:${productId}）: ${String(e)}`)
+  }
+}
+
+/**
+ * 0026未適用環境（daily_container_inventory不在）用の在庫フォールバック読み込み。
+ * 表示用の読み込みなので、失敗時は console.error に残して空として扱う。
  */
 export async function readFallbackInventory(
   admin: SupabaseClient,
   productId: string,
 ): Promise<FallbackInventoryRecord> {
   try {
-    const res = await admin
-      .from('app_settings')
-      .select('value')
-      .eq('key', `v5_container_inv:${productId}`)
-      .maybeSingle()
-    if (!res?.data?.value) return {}
-    try {
-      return (JSON.parse(res.data.value) as FallbackInventoryRecord) ?? {}
-    } catch {
-      return {}
-    }
-  } catch {
+    return await readFallbackInventoryStrict(admin, productId)
+  } catch (e) {
+    console.error('[inventory/chain] 在庫の退避データを読めませんでした:', e)
     return {}
   }
 }
@@ -54,7 +69,7 @@ export async function writeFallbackInventory(
   date: string,
   patch: { stock_containers?: number | null; carryover_to_next_day?: number | null },
 ): Promise<void> {
-  const existing = await readFallbackInventory(admin, productId)
+  const existing = await readFallbackInventoryStrict(admin, productId)
   const current = existing[date] ?? {}
   existing[date] = {
     ...current,
@@ -62,7 +77,7 @@ export async function writeFallbackInventory(
     ...(patch.carryover_to_next_day !== undefined ? { carryover_to_next_day: patch.carryover_to_next_day } : {}),
     updated_at: new Date().toISOString(),
   }
-  await admin
+  const { error } = await admin
     .from('app_settings')
     .upsert(
       {
@@ -73,6 +88,8 @@ export async function writeFallbackInventory(
       },
       { onConflict: 'key' },
     )
+  // 保存できていないのに成功扱いにしない（呼び出し側が 500 で返す）
+  if (error) throw new Error(`在庫の退避データの保存に失敗: ${error.message}`)
 }
 
 export interface ChainBoxItem {
@@ -149,13 +166,17 @@ export async function calculateChainInventory(
   const startDateStr = shiftDateStr(targetDate, -daysLookback)
 
   // 1. 過去14日間の在庫レコード（手動在庫・持ち越し）を取得
-  const { data: invRows } = await supabase
+  const { data: invRows, error: invErr } = await supabase
     .from('daily_container_inventory')
     .select('target_date, stock_containers, carryover_to_next_day')
     .eq('product_id', productId)
     .gte('target_date', startDateStr)
     .lte('target_date', targetDate)
     .order('target_date', { ascending: true })
+  // テーブル未作成（0026未適用）は想定内で、下の退避ストアから読む。それ以外の失敗はログに残す
+  if (invErr && !isMissingRelationError(invErr)) {
+    console.error('[inventory/chain] daily_container_inventory の取得に失敗:', invErr.message)
+  }
 
   const invByDate = new Map<
     string,
@@ -174,7 +195,10 @@ export async function calculateChainInventory(
     let adminClient = supabase
     try {
       adminClient = createAdminClient()
-    } catch {}
+    } catch {
+      // service_role 未設定（単体テスト等）では、渡されたクライアントでそのまま読む
+      adminClient = supabase
+    }
     const fallback = await readFallbackInventory(adminClient, productId)
     for (const [d, rec] of Object.entries(fallback)) {
       if (d >= startDateStr && d <= targetDate) {
@@ -185,8 +209,9 @@ export async function calculateChainInventory(
         })
       }
     }
-  } catch {
-    // 単体テスト等でのモック不在時は安全に無視
+  } catch (e) {
+    // 単体テスト等でのモック不在時。表示は退避分なしで続ける（ログには残す）
+    console.error('[inventory/chain] 在庫の退避データのマージに失敗:', e)
   }
 
   // 2. 過去14日間の注文・明細データを取得（日ごとの必要箱数を集計）

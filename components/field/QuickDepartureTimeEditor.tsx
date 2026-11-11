@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { getThaiDepartureTime, THAI_LABELS } from '@/lib/field/thai-dict'
 import { cleanShippingRouteName } from '@/lib/field/shipment-sort'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 interface Props {
   deliveryDate: string
@@ -102,6 +103,7 @@ export function QuickDepartureTimeEditor({
             : '出荷時間・便名（今後ずっと共通）を更新しました'
           : `${deliveryDate} 当日限定で出荷時間・便名を更新しました`,
       )
+      showResponseWarnings(await res.json().catch(() => null))
       setOpen(false)
       router.refresh()
     } catch (e) {

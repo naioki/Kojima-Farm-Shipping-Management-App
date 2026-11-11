@@ -6,6 +6,7 @@ import { Plus, Trash2, Save, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface Destination {
   id: string
@@ -65,6 +66,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
       setRows((p) => [...p, json.destination!])
       setCode(''); setFullName(''); setAliases(''); setDepartureTime(''); setShippingRouteName(''); setDefaultContainerType('')
       toast.success('納入先を登録しました')
+      showResponseWarnings(json)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '登録に失敗しました')
     } finally {
@@ -96,6 +98,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error ?? `保存失敗 (${res.status})`)
       toast.success('保存しました')
+      showResponseWarnings(json)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {

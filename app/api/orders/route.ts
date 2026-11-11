@@ -601,7 +601,7 @@ export async function POST(req: NextRequest) {
           created_order_ids: [orderId],
         },
       })
-      purgeOldReceiptBase64(admin, 7).catch(() => {})
+      purgeOldReceiptBase64(admin, 7).catch((e) => console.error('[api/orders] 古い受信画像の片付けに失敗:', e))
     } catch (e) {
       console.error('[POST /api/orders] original_file receipt insert error', e)
     }

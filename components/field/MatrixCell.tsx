@@ -81,7 +81,10 @@ export function MatrixCell({
           await enqueue({ itemId, fieldStatus: target, version, ts: Date.now() })
           toast('圏外のため一時保存しました（復帰時に自動送信）', { icon: '📡' })
           return
-        } catch {}
+        } catch (queueErr) {
+          // 一時保存もできなかった。下でロールバックし toast.error で失敗を知らせる
+          console.error('[MatrixCell] 圏外時の一時保存に失敗:', queueErr)
+        }
       }
       setStatus(prev) // ロールバック
       toast.error(fieldErrorMessage(e, '更新に失敗しました'))

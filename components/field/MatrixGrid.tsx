@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { formatJpDateShort, jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { fieldErrorMessage } from '@/lib/field/net-error'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface MatrixDestinationItem {
   id: string
@@ -238,6 +239,7 @@ export function MatrixGrid({
         error?: string
       }
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
+      showResponseWarnings(json)
       const normalized = json.deleted ? '' : json.item != null ? String(json.item.quantity) : effectiveRaw
 
       if (isDestRow) {

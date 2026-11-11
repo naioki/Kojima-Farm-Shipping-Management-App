@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { openDB, type IDBPDatabase } from 'idb'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 import {
   collapseOutbox,
   toPatchPayload,
@@ -192,6 +193,8 @@ export function useOutbox() {
                 body: JSON.stringify(shipEntry.payload),
               })
               if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
+                // 送信できたが付随更新（収穫数など）に失敗した場合の警告を出す
+                if (res.ok) showResponseWarnings(await res.json().catch(() => null))
                 await d.delete(STORE_SHIPMENT, shipEntry.id)
               } else {
                 const updated: ShipmentOutboxEntry = {

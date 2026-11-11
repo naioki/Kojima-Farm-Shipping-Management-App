@@ -39,3 +39,13 @@ export async function writeDroppingMissingColumns<T, E extends { code?: string; 
     dropped.push(col)
   }
 }
+
+/**
+ * テーブル自体が無い（マイグレーション未適用）エラーか。PGRST205（schema cache にテーブルが無い）/
+ * 42P01（relation does not exist）。退避ストアへのフォールバックが用意されている「想定内の失敗」の判定に使う。
+ */
+export function isMissingRelationError(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false
+  if (err.code === 'PGRST205' || err.code === '42P01') return true
+  return /Could not find the table|relation "?[\w.]+"? does not exist/.test(err.message ?? '')
+}

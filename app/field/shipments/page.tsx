@@ -269,8 +269,12 @@ export default async function ShipmentsPage({
           .select('value')
           .eq('key', 'v5_pack_sort_order')
           .maybeSingle()
+        // 並び順の退避データは表示順の補助。読めなければ自動の並び順で表示する（ログには残す）
+        if (r.error) console.error('[field/shipments] v5_pack_sort_order の取得に失敗:', r.error.message)
         if (r.data?.value) return JSON.parse(r.data.value) as Record<string, number>
-      } catch {}
+      } catch (e) {
+        console.error('[field/shipments] v5_pack_sort_order を読めませんでした:', e)
+      }
       return {}
     })(),
   ])
@@ -680,6 +684,8 @@ export default async function ShipmentsPage({
           `)
           .eq('product_id', selectedProductId)
           .in('order_id', nextOrderIds)
+        // 翌日先行枠は閲覧用の補助表示。取れなくても当日分は出すが、無言にはしない。
+        if (fbNext.error) console.error('[field/shipments] 翌日明細の取得に失敗:', fbNext.error.message)
         nextItems = (fbNext.data ?? []) as typeof nextItems
       }
 

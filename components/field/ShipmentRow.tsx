@@ -39,6 +39,7 @@ import {
   getThaiSpec,
   THAI_LABELS,
 } from '@/lib/field/thai-dict'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 const UNDO_GRACE_MS = 5000
 
@@ -269,7 +270,8 @@ export function ShipmentRow({
         setCustomContainers(Array.isArray(data.containers) ? data.containers : [])
         setCustomBags(Array.isArray(data.bags) ? data.bags : [])
       })
-      .catch(() => {})
+      // 追加の容器・袋の候補が取れないだけ。標準の候補で選べる（ログには残す）
+      .catch((e) => console.error('[ShipmentRow] 容器・袋の候補の取得に失敗:', e))
     return () => {
       cancelled = true
     }
@@ -488,6 +490,7 @@ export function ShipmentRow({
       }
       if (!res.ok) throw new Error(`戻す操作に失敗 (${res.status})`)
       const json = (await res.json()) as { item: { field_status: FieldStatus; version: number } }
+      showResponseWarnings(json)
       setStatus(json.item.field_status)
       setVersion(json.item.version)
       setConflict(false)
@@ -515,6 +518,7 @@ export function ShipmentRow({
         throw new Error(j.error ?? `削除に失敗 (${res.status})`)
       }
       toast.success('明細を削除しました')
+      showResponseWarnings(await res.json().catch(() => null))
       setDeleteOpen(false)
       onDeleted?.(itemId)
       router.refresh()
@@ -762,7 +766,10 @@ export function ShipmentRow({
           onDetailsChange?.(itemId, nextSpec || null, nextCont || null, nextCard)
           toast('圏外のため設定変更を一時保存しました', { icon: '📡' })
           return
-        } catch {}
+        } catch (queueErr) {
+          // 一時保存もできなかった。下の toast.error で保存失敗を知らせる
+          console.error('[ShipmentRow] 圏外時の一時保存に失敗:', queueErr)
+        }
       }
       toast.error(fieldErrorMessage(e, '設定の保存に失敗しました'))
     } finally {

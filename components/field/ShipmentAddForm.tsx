@@ -36,6 +36,7 @@ import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
 import { inputKindOf, suggestIntakeChannel } from '@/lib/orders/intake-suggest'
+import { extractWarnings, showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface CustomerProductRuleSummary {
   packsPerCase?: number | null
@@ -629,7 +630,8 @@ export function ShipmentAddForm({
           setMode((m) => (m !== 'create' ? 'create' : m))
         }
       })
-      .catch(() => {})
+      // 既存出荷の有無は入力補助の表示だけ。取れなければ「新規」として入力を続けられる（ログには残す）
+      .catch((e) => console.error('[ShipmentAddForm] 既存出荷の確認に失敗:', e))
     return () => {
       cancelled = true
     }
@@ -1851,6 +1853,7 @@ export function ShipmentAddForm({
     let sharedReceiptId: string | null = null
     const updatedList = [...parsedCandidates]
     const failures: string[] = []
+    const batchWarnings = new Set<string>()
     const createdDests: Array<{ id: string; label: string; customerId: string }> = []
     const registeredDates: string[] = []
     const planMode = createBatchModePlanner()
@@ -2025,6 +2028,7 @@ export function ShipmentAddForm({
           })
           if (res.ok) {
             const okJson = await res.json().catch(() => ({}))
+            for (const w of extractWarnings(okJson)) batchWarnings.add(w)
             if (okJson?.receiptId && !sharedReceiptId) {
               sharedReceiptId = okJson.receiptId as string
             }
@@ -2046,6 +2050,8 @@ export function ShipmentAddForm({
       if (failures.length > 0) {
         toast.error(`登録できなかった明細 ${failures.length} 件:\n${failures.slice(0, 5).join('\n')}`, { duration: 12000 })
       }
+      // 登録はできたが付随更新（収穫数など）に失敗した明細の警告。同じ文言は1回だけ出す
+      showResponseWarnings({ warnings: Array.from(batchWarnings) })
 
       setParsedCandidates(updatedList)
 
@@ -2156,6 +2162,7 @@ export function ShipmentAddForm({
           ? '出荷数量を減量しました！'
           : '出荷を登録・更新しました！',
       )
+      showResponseWarnings(json)
 
       if (json.learnedMistake) {
         toast('💡 修正内容をAI自動学習ループに蓄積しました（次回から自動補正されます）', {
@@ -2555,7 +2562,7 @@ export function ShipmentAddForm({
                 <div className="flex items-center justify-between rounded-xl bg-bg-card p-2.5 border-2 border-forest-200 shadow-2xs">
                   <div className="flex items-center gap-2.5">
                     {photoPreview ? (
-                      /* eslint-disable-next-line @next/next/no-img-element -- ローカルで選んだ写真のblob/data URLプレビュー。next/imageは最適化対象外のURLに向かない */
+                      /* eslint-disable-next-line @next/next/no-img-element -- ローカルで選んだ写真のdata URLプレビュー。next/imageは最適化対象外のURLに向かない */
                       <img src={photoPreview} alt="添付画像" className="h-11 w-11 object-cover rounded-lg border border-forest-200" />
                     ) : (
                       <div className="h-11 w-11 rounded-lg bg-forest-100 text-forest-800 flex items-center justify-center font-black text-xs">

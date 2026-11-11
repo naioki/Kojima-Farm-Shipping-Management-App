@@ -58,8 +58,8 @@ export default async function MatrixPage({
   ])
   if (prodErr) return <ErrorState message={prodErr.message} />
   if (custErr) return <ErrorState message={custErr.message} />
-  // 納入先は列見出しの補助（取れなくても取引先単位で表示できる）。無言にはしない。
-  if (destErr) console.error('[field/matrix] 納入先の取得に失敗:', destErr.message)
+  // 納入先は入力対象のサブ行（取れないと destination_id: null で保存されうる）ので主表示として扱う。
+  if (destErr) return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destErr.message} />
 
   if (!products?.length) {
     return (

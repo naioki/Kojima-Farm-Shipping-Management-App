@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
+import { runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { requireStaffApi } from '@/lib/auth/api-guard'
@@ -316,20 +317,31 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: '請求確定済みのため削除できません' }, { status: 409 })
   }
 
-  await admin.from('harvest_tasks').delete().eq('order_item_id', params.id)
+  // 収穫タスクの削除は付随更新。失敗しても明細の削除は進め、警告で返す
+  const warnings: string[] = []
+  await runSideEffect(
+    warnings,
+    '[order-items/[id]] 明細削除時の harvest_tasks 削除に失敗',
+    '明細は削除しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください',
+    () => admin.from('harvest_tasks').delete().eq('order_item_id', params.id),
+  )
 
   const { error } = await admin.from('order_items').delete().eq('id', params.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const snapshot: Record<string, unknown> = { ...(item as Record<string, unknown>) }
   delete snapshot.orders
-  await writeAudit(admin, {
-    entityType: 'order_items',
-    entityId: params.id,
-    action: 'DELETE',
-    oldValues: snapshot,
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    admin,
+    {
+      entityType: 'order_items',
+      entityId: params.id,
+      action: 'DELETE',
+      oldValues: snapshot,
+      userId: user.id,
+    },
+    '[order-items/[id]] 削除の監査ログ記録に失敗',
+  )
 
-  return NextResponse.json({ deleted: true })
+  return NextResponse.json(withWarnings({ deleted: true }, warnings))
 }

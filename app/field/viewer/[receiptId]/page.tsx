@@ -55,7 +55,9 @@ export default function ReceiptViewerPage() {
     if (window.opener && window.history.length <= 1) {
       try {
         window.close()
-      } catch {}
+      } catch {
+        // ブラウザが閉じるのを拒んだ場合は、下の通常の戻り遷移で一覧へ戻す
+      }
     }
     const qs = new URLSearchParams()
     if (returnDate) qs.set('date', returnDate)

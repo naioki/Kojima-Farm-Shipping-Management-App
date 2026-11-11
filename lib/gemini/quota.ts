@@ -89,7 +89,7 @@ export async function canRunGeminiNow(priority: GeminiPriority): Promise<{
       level: 'alert',
       title: `Gemini 無料枠 残${remaining}`,
       body: `本日の使用量: ${(count ?? 0)}/${GEMINI_DAILY_FREE_LIMIT}。自動解析を停止します。`,
-    }).catch(() => {})
+    }).catch((e) => console.error('[gemini/quota] 無料枠残量の通知に失敗:', e))
   }
 
   return { allowed: canRunGemini(priority, remaining), status }

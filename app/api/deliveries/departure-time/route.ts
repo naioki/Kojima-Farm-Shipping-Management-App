@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
+import { noteSideEffectFailure, withWarnings } from '@/lib/api/side-effects'
 import { cleanShippingRouteName } from '@/lib/field/shipment-sort'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
@@ -119,6 +120,9 @@ export async function POST(req: Request) {
       }
     }
 
+    // 付随更新の失敗は 500 にせず、成功応答の warnings で知らせる
+    const warnings: string[] = []
+
     // 3. 当日の orders テーブル更新（#13 特定 destinationId が指定されていた場合は該当注文のみ更新し、別注文の巻き添えを防止）
     const orderUpdatePayload: Record<string, unknown> = {}
     if (targetDestId && !wasExplicitDestId) {
@@ -144,11 +148,16 @@ export async function POST(req: Request) {
 
       const { error: orderErr } = await orderQuery
       if (orderErr) {
-        console.warn('[departure-time] orders 更新警告:', orderErr)
+        noteSideEffectFailure(
+          warnings,
+          '[departure-time] 当日の orders（shipping_time / destination_id）更新に失敗',
+          orderErr,
+          'その日の注文への出荷時間・納入先の反映に失敗しました。画面を読み込み直して確認してください',
+        )
       }
     }
 
-    // 4. app_settings に RouteOverride を保存
+    // 4. app_settings に RouteOverride を保存（0026 未適用の本番ではここが唯一の保存先。失敗は警告で返す）
     try {
       const overrideKeys: string[] = []
       const cleanDestName = destinationName?.trim() || ''
@@ -175,16 +184,26 @@ export async function POST(req: Request) {
         shippingRouteName: cleanRoute,
       })
     } catch (saveErr) {
-      console.warn('[departure-time] saveRouteOverride エラー:', saveErr)
+      noteSideEffectFailure(
+        warnings,
+        '[departure-time] 出発時刻・便名の退避保存（app_settings v5_destination_routes）に失敗',
+        saveErr,
+        '出発時刻・便名の保存に失敗しました。もう一度保存し、画面を読み込み直して確認してください',
+      )
     }
 
-    return NextResponse.json({
-      ok: true,
-      destinationId: targetDestId,
-      departureTime: cleanTime,
-      shippingRouteName: cleanRoute,
-      scope,
-    })
+    return NextResponse.json(
+      withWarnings(
+        {
+          ok: true,
+          destinationId: targetDestId,
+          departureTime: cleanTime,
+          shippingRouteName: cleanRoute,
+          scope,
+        },
+        warnings,
+      ),
+    )
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : (e as { message?: string })?.message || '出荷時間の設定に失敗しました'
     console.error('[departure-time] 出荷時間の設定に失敗:', errMsg, e)

@@ -196,7 +196,7 @@ export async function runShadowDiff(date: string): Promise<ShadowRunResult> {
     title: `影実行レポート（${targetCustomerName}・${date}）`,
     body: report,
     url: '/admin/inbox',
-  }).catch(() => {})
+  }).catch((e) => console.error('[shadow/run] 影実行レポートの通知に失敗:', e))
 
   return { date, v4Lines: v4Lines.length, appLines: appLines.length, result, report }
 }

@@ -15,6 +15,7 @@ import { formatJpDateShort } from '@/lib/dates'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { quantityAnomalyFor } from '@/lib/orders/pending-types'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface PackConfigOption {
   id: string
@@ -224,6 +225,7 @@ export function EditableOrderCard({
       }
       setRows((rs) => rs.filter((r) => r.id !== row.id))
       toast.success('明細を消しました')
+      showResponseWarnings(await res.json().catch(() => null))
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '削除に失敗しました')

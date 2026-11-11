@@ -39,8 +39,8 @@ export default async function DeliveryNotesPage({
   const [
     { data: customers, error },
     { data: notes, error: notesErr },
-    { data: dayOrders },
-    { count: pendingCount },
+    { data: dayOrders, error: dayOrdersErr },
+    { count: pendingCount, error: pendingErr },
     amountModeSetting,
   ] = await Promise.all([
     supabase.from('customers').select('id, name, channel_identifiers').eq('is_active', true).order('name'),
@@ -63,6 +63,10 @@ export default async function DeliveryNotesPage({
   if (error) return <ErrorState message="取引先を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
   if (notesErr)
     return <ErrorState message="発行済みの納品書を読み込めませんでした。時間をおいて再度お試しください。" detail={notesErr.message} />
+  if (dayOrdersErr)
+    return <ErrorState message="納品日の出荷状況を読み込めませんでした。時間をおいて再度お試しください。" detail={dayOrdersErr.message} />
+  // 未承認件数は補助バナー。取れなくてもページは出すが、無言にはしない。
+  if (pendingErr) console.error('[admin/delivery-notes] 未承認件数の取得に失敗:', pendingErr.message)
   const defaultMode = parseAmountMode(amountModeSetting)
 
   const activeDayCustIds = new Set((dayOrders ?? []).map((o) => o.customer_id))

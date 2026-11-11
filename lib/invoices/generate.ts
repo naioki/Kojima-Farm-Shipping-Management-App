@@ -325,7 +325,7 @@ async function createInvoiceLegacy(
       oldValues: { status: 'draft' },
       newValues: { status: 'void', reason: `明細の保存に失敗: ${iiErr.message}` },
       userId: h.userId,
-    }).catch(() => {})
+    }).catch((e) => console.error(`[invoices/generate] 請求書 ${invoiceNumber} の無効化の監査記録に失敗:`, e))
     return { ok: false, message: `請求書 ${invoiceNumber} の明細保存に失敗したため無効にしました: ${iiErr.message}` }
   }
 

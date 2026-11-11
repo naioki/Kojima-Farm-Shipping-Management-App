@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { calculateChainInventory, readFallbackInventory, writeFallbackInventory } from '@/lib/inventory/chain'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { isMissingRelationError } from '@/lib/supabase/missing-column'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -28,31 +29,33 @@ export async function GET(req: NextRequest) {
 
   // 当日レコード
   let current: Record<string, unknown> | null = null
-  try {
-    const { data, error } = await admin
-      .from('daily_container_inventory')
-      .select('*')
-      .eq('target_date', date)
-      .eq('product_id', productId)
-      .maybeSingle()
-    if (!error && data) {
-      current = data as Record<string, unknown>
+  const { data: curRow, error: curErr } = await admin
+    .from('daily_container_inventory')
+    .select('*')
+    .eq('target_date', date)
+    .eq('product_id', productId)
+    .maybeSingle()
+  if (curErr) {
+    // テーブル未作成（0026未適用）は想定内で、下の退避ストアから読む。それ以外はログに残す
+    if (!isMissingRelationError(curErr)) {
+      console.error('[api/inventory/container] daily_container_inventory の取得に失敗:', curErr.message)
     }
-  } catch {}
+  } else if (curRow) {
+    current = curRow as Record<string, unknown>
+  }
 
   // 0026未適用環境（daily_container_inventory不在）の場合は app_settings から取得
+  // readFallbackInventory は失敗時に console.error を出して空を返す
   if (!current) {
-    try {
-      const fb = await readFallbackInventory(admin, productId)
-      if (fb[date]) {
-        current = {
-          target_date: date,
-          product_id: productId,
-          stock_containers: fb[date].stock_containers ?? null,
-          carryover_to_next_day: fb[date].carryover_to_next_day ?? null,
-        }
+    const fb = await readFallbackInventory(admin, productId)
+    if (fb[date]) {
+      current = {
+        target_date: date,
+        product_id: productId,
+        stock_containers: fb[date].stock_containers ?? null,
+        carryover_to_next_day: fb[date].carryover_to_next_day ?? null,
       }
-    } catch {}
+    }
   }
 
   return NextResponse.json({
@@ -117,6 +120,7 @@ export async function POST(req: NextRequest) {
       })
     } catch (fbErr: unknown) {
       const msg = fbErr instanceof Error ? fbErr.message : String(fbErr)
+      console.error('[api/inventory/container] 在庫の保存に失敗（本テーブル・退避ストアとも）:', error.message, '/', msg)
       return NextResponse.json({ error: error.message || msg }, { status: 500 })
     }
   }

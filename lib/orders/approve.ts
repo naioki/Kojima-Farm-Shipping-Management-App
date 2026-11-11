@@ -2,6 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/supabase'
 import { writeAudit } from '@/lib/audit/log'
+import { noteSideEffectFailure, runSideEffect, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { shiftDateStr } from '@/lib/dates'
 import { getSetting } from '@/lib/settings'
@@ -25,7 +26,17 @@ export interface ApproveOrderInput {
 }
 
 export type ApproveOrderResult =
-  | { ok: true; tasksCreated: number; deliveryDate: string; mergedIntoOrderId?: string }
+  | {
+      ok: true
+      tasksCreated: number
+      deliveryDate: string
+      mergedIntoOrderId?: string
+      /**
+       * 承認自体は成功したが、付随する更新（受信票の付け替え・統合元の削除・監査ログ）に失敗したときの
+       * 現場向けの文言。失敗の詳細は console.error に出す。警告が無いときはキーごと省く。
+       */
+      warnings?: string[]
+    }
   | { ok: false; status: number; error: string; reason?: string }
 
 /**
@@ -229,6 +240,10 @@ export async function approveOrder(
     if (error) console.error('[approve] 承認の取り消しに失敗:', error.message)
   }
 
+  // 承認（本体）が成功した後の付随更新の失敗は、承認結果の warnings で返す（詳細は console.error）
+  const warnings: string[] = []
+  const AUDIT_WARN = '承認はしましたが、操作の記録（履歴）を残せませんでした。念のため開発担当に伝えてください'
+
   // #36 既に同じ (customer_id, destination_id, delivery_date) の承認済み注文があるかチェックし、あれば統合する
   // ※ ただしサンプル注文（note に「サンプル」を含む場合）は別口のサンプル依頼または通常大口便と混ざらないよう自動統合しない
   const isCurrentSample = Boolean(order.note && order.note.includes('サンプル'))
@@ -320,7 +335,7 @@ export async function approveOrder(
                 merged_from_order_id: order.id,
               },
               userId,
-            }).catch((e) => console.error('[approve] 統合の監査記録に失敗', e))
+            }).catch((e) => noteSideEffectFailure(warnings, '[approve] 統合（数量上書き）の監査記録 audit_log に失敗', e, AUDIT_WARN))
           }
           check(
             `収穫タスク更新(${it.product_name})`,
@@ -358,28 +373,52 @@ export async function approveOrder(
         }
       }
 
-      try {
-        await admin
-          .from('order_receipts')
-          .update({ order_id: targetExistingOrder.id, status: 'approved' })
-          .eq('order_id', order.id)
-      } catch {}
+      // ここから先は統合（本体）が終わった後の付随更新。失敗しても承認は成功のまま、警告で返す
+      const receiptsMoved = await runSideEffect(
+        warnings,
+        '[approve] 統合時の order_receipts 付け替え（order_id/status）に失敗',
+        '承認はしましたが、受信したFAX・メールを統合先の注文に付け替えられませんでした。受信箱で原本の紐付けを確認してください',
+        () =>
+          admin
+            .from('order_receipts')
+            .update({ order_id: targetExistingOrder.id, status: 'approved' })
+            .eq('order_id', order.id),
+      )
 
-      const { error: delErr } = await admin.from('orders').delete().eq('id', order.id)
-      if (delErr) console.error('[approve] 統合元の注文の削除に失敗:', delErr.message)
+      // 受信票の付け替えに失敗したまま統合元を消すと、原本が注文から外れるので消さずに残す
+      if (receiptsMoved) {
+        await runSideEffect(
+          warnings,
+          `[approve] 統合元の注文 orders(${order.id}) の削除に失敗`,
+          '承認はしましたが、統合元の空の注文を片付けられませんでした。注文一覧に空の注文が残っていないか確認してください',
+          () => admin.from('orders').delete().eq('id', order.id),
+        )
+      } else {
+        console.error(`[approve] 受信票の付け替えに失敗したため、統合元の注文 orders(${order.id}) は削除せず残します`)
+      }
 
-      try {
-        await writeAudit(admin, {
+      await writeAuditAfterSuccess(
+        admin,
+        {
           entityType: 'orders',
           entityId: targetExistingOrder.id,
           action: 'UPDATE',
           oldValues: { merged_from_order_id: order.id },
           newValues: { status: 'approved', approved_by: userId },
           userId,
-        })
-      } catch {}
+        },
+        '[approve] 統合承認の監査記録 audit_log に失敗',
+        warnings,
+        AUDIT_WARN,
+      )
 
-      return { ok: true, tasksCreated, deliveryDate, mergedIntoOrderId: targetExistingOrder.id }
+      return {
+        ok: true,
+        tasksCreated,
+        deliveryDate,
+        mergedIntoOrderId: targetExistingOrder.id,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      }
     }
   }
 
@@ -400,14 +439,16 @@ export async function approveOrder(
     }
   }
 
-  try {
-    await admin.from('order_receipts').update({ status: 'approved' }).eq('order_id', order.id)
-  } catch (e) {
-    console.error('[approve] order_receipts status update failed', e)
-  }
+  await runSideEffect(
+    warnings,
+    '[approve] order_receipts.status の approved 更新に失敗',
+    '承認はしましたが、受信箱の表示を「承認済み」に変えられませんでした。受信箱で状態を確認してください',
+    () => admin.from('order_receipts').update({ status: 'approved' }).eq('order_id', order.id),
+  )
 
-  try {
-    await writeAudit(admin, {
+  await writeAuditAfterSuccess(
+    admin,
+    {
       entityType: 'orders',
       entityId: order.id,
       action: 'UPDATE',
@@ -419,10 +460,11 @@ export async function approveOrder(
         ...(!destinationId && customerSkipsGate ? { destination: '納入先なし（取引先設定）' } : {}),
       },
       userId,
-    })
-  } catch (e) {
-    console.error('[approve] audit write failed', e)
-  }
+    },
+    '[approve] 承認の監査記録 audit_log に失敗',
+    warnings,
+    AUDIT_WARN,
+  )
 
-  return { ok: true, tasksCreated: tasks.length, deliveryDate }
+  return { ok: true, tasksCreated: tasks.length, deliveryDate, ...(warnings.length > 0 ? { warnings } : {}) }
 }

@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
+import { noteSideEffectFailure, withWarnings } from '@/lib/api/side-effects'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
@@ -100,6 +101,8 @@ export async function POST(req: Request) {
   if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 500 })
 
   // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
+  // （0026 未適用の本番ではここが唯一の保存先。失敗は 500 にせず警告で返す）
+  const warnings: string[] = []
   if (insRes.data?.id && (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined)) {
     try {
       const admin = createAdminClient()
@@ -107,8 +110,15 @@ export async function POST(req: Request) {
         departureTime: parsed.data.departure_time ?? null,
         shippingRouteName: parsed.data.shipping_route_name ?? null,
       })
-    } catch {}
+    } catch (e) {
+      noteSideEffectFailure(
+        warnings,
+        '[api/destinations] 出発時刻・便名の退避保存（app_settings v5_destination_routes）に失敗',
+        e,
+        '納入先は保存しましたが、出発時刻・便名の保存に失敗しました。もう一度保存するか、画面を読み込み直して確認してください',
+      )
+    }
   }
 
-  return NextResponse.json({ destination: insRes.data }, { status: 201 })
+  return NextResponse.json(withWarnings({ destination: insRes.data }, warnings), { status: 201 })
 }

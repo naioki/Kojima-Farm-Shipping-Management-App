@@ -28,6 +28,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { findBestMatchingCustomer, findBestMatchingDestination } from '@/lib/orders/natural-parser'
 import type { ConciergeAction, ConciergeResponse } from '@/lib/concierge/schema'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 interface ConciergeChatProps {
   defaultDate: string
@@ -301,7 +302,9 @@ export function ConciergeChat({
         const parsed = JSON.parse(saved) as ExecutionReceipt[]
         if (Array.isArray(parsed)) setHistoryReceipts(parsed)
       }
-    } catch {}
+    } catch {
+      // 端末に残した実行履歴（表示用の控え）が読めないだけ。履歴なしで始める
+    }
   }, [])
 
   useEffect(() => {
@@ -355,7 +358,9 @@ export function ConciergeChat({
       const next = [receipt, ...prev.filter((r) => r.id !== receipt.id)].slice(0, 25)
       try {
         window.localStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(next))
-      } catch {}
+      } catch {
+        // 端末への控えの保存だけ失敗（実行結果そのものはサーバーに保存済み）。画面の表示は続ける
+      }
       return next
     })
   }
@@ -374,7 +379,9 @@ export function ConciergeChat({
       const next = prev.map((r) => (r.id === receiptId ? { ...r, undone: true } : r))
       try {
         window.localStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(next))
-      } catch {}
+      } catch {
+        // 端末への控えの保存だけ失敗（実行結果そのものはサーバーに保存済み）。画面の表示は続ける
+      }
       return next
     })
   }
@@ -538,6 +545,7 @@ export function ConciergeChat({
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error ?? '注文の登録に失敗しました')
+        showResponseWarnings(j)
 
         const savedItem = (j.item ?? {}) as Record<string, unknown>
         const itemId = String(savedItem.id ?? '')
@@ -786,6 +794,7 @@ export function ConciergeChat({
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error ?? '出発時間の更新に失敗しました')
+        showResponseWarnings(j)
 
         const receipt: ExecutionReceipt = {
           id: `rec-${Date.now()}`,
@@ -885,6 +894,7 @@ export function ConciergeChat({
       if (up.kind === 'delete_order_item') {
         const res = await fetch(`/api/order-items/${up.itemId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('注文の取り消しに失敗しました')
+        showResponseWarnings(await res.json().catch(() => null))
       } else if (up.kind === 'restore_order_item_qty') {
         const res = await fetch(`/api/order-items/${up.itemId}`, {
           method: 'PATCH',

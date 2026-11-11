@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/cn'
 import { isSampleOrderText, isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -174,14 +175,18 @@ export function PackingAndShippingViews({
       if (saved === 'time' || saved === 'destination' || saved === 'container') {
         setSortMode(saved)
       }
-    } catch {}
+    } catch {
+      // localStorage が使えない環境では既定の並び順のまま使う
+    }
   }, [])
 
   const handleSortModeChange = (mode: PackSortMode) => {
     setSortMode(mode)
     try {
       localStorage.setItem('kojima_pack_board_sort_mode', mode)
-    } catch {}
+    } catch {
+      // 保存できなくても画面上の並び替えは効いている（次回は既定の並び順に戻るだけ）
+    }
   }
 
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
@@ -341,11 +346,13 @@ export function PackingAndShippingViews({
         body: JSON.stringify({ items: updates }),
       })
       if (!res.ok) throw new Error('並び順の保存に失敗しました')
+      const reorderJson = await res.json().catch(() => null)
       toast.success(
         customToast ||
           (isThaiMode ? 'เปลี่ยนลำดับเรียบร้อยแล้ว (並び順を更新しました)' : 'パック作業順を更新しました'),
         { id: 'reorder-toast' },
       )
+      showResponseWarnings(reorderJson)
     } catch {
       toast.error('並び替えに失敗しました')
       setItems((prev) =>
@@ -384,12 +391,15 @@ export function PackingAndShippingViews({
     setItems((prev) => prev.map((it) => ({ ...it, dailyPackSortOrder: null })))
     setBusyReorder(true)
     try {
-      await fetch('/api/order-items/reorder', {
+      const res = await fetch('/api/order-items/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: updates }),
       })
+      // 保存できなかったのに「戻しました」と出さない（下の catch で元の並びに戻す）
+      if (!res.ok) throw new Error('並び順の保存に失敗しました')
       toast.success('自動の優先順に戻しました')
+      showResponseWarnings(await res.json().catch(() => null))
     } catch {
       setItems((prev) =>
         prev.map((it) => ({
@@ -797,12 +807,17 @@ export function PackingAndShippingViews({
                       )
                       setBusyReorder(true)
                       try {
-                        await fetch('/api/order-items/reorder', {
+                        const res = await fetch('/api/order-items/reorder', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ items: updates }),
                         })
+                        if (!res.ok) throw new Error('並び順の保存に失敗しました')
                         toast.success('未完了のカードをすべて上段に集めました')
+                        showResponseWarnings(await res.json().catch(() => null))
+                      } catch {
+                        // 画面上は並べ替え済みだが保存されていない。読み込み直すと元に戻ることを伝える
+                        toast.error('並び順を保存できませんでした。画面を読み込み直して確認してください')
                       } finally {
                         setBusyReorder(false)
                       }

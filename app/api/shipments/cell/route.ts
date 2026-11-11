@@ -4,7 +4,7 @@ import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
-import { writeAudit } from '@/lib/audit/log'
+import { runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
@@ -104,30 +104,49 @@ export async function PUT(req: Request) {
     : null
 
   const result = parseQuantity(quantity_raw, { packsPerCase: defaultPpc })
+  // 付随更新（収穫数の同期など）の失敗は 500 にせず、成功応答の warnings で現場に知らせる
+  const warnings: string[] = []
 
   // 空欄または0＝削除
   if (result.type === 'delete' || (result.type === 'ok' && result.total.toNumber() <= 0)) {
     if (existingItem) {
-      await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
+      await runSideEffect(
+        warnings,
+        '[api/shipments/cell] 削除時の harvest_tasks 削除に失敗',
+        '数量は削除しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください',
+        () => supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id),
+      )
       const { error: delErr } = await supabase.from('order_items').delete().eq('id', existingItem.id)
       if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
-      await writeAudit(supabase, {
-        entityType: 'order_items',
-        entityId: existingItem.id,
-        action: 'DELETE',
-        oldValues: existingItem,
-        newValues: null,
-        userId: user.id,
-      })
+      await writeAuditAfterSuccess(
+        supabase,
+        {
+          entityType: 'order_items',
+          entityId: existingItem.id,
+          action: 'DELETE',
+          oldValues: existingItem,
+          newValues: null,
+          userId: user.id,
+        },
+        '[api/shipments/cell] 削除の監査ログ記録に失敗',
+      )
       if (order) {
-        const { count } = await supabase
+        const { count, error: countErr } = await supabase
           .from('order_items')
           .select('id', { count: 'exact', head: true })
           .eq('order_id', order.id)
-        if ((count ?? 0) === 0) await supabase.from('orders').delete().eq('id', order.id)
+        if (countErr) console.error('[api/shipments/cell] 残り明細数の取得に失敗:', countErr.message)
+        if (!countErr && (count ?? 0) === 0) {
+          await runSideEffect(
+            warnings,
+            '[api/shipments/cell] 明細が空になった orders の削除に失敗',
+            '数量は削除しましたが、空になった注文の片付けに失敗しました。画面を読み込み直して確認してください',
+            () => supabase.from('orders').delete().eq('id', order.id),
+          )
+        }
       }
     }
-    return NextResponse.json({ deleted: true })
+    return NextResponse.json(withWarnings({ deleted: true }, warnings))
   }
 
   if (result.type === 'error') {
@@ -165,22 +184,30 @@ export async function PUT(req: Request) {
     )
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-    try {
-      await supabase
-        .from('harvest_tasks')
-        .update({ required_qty: quantity })
-        .eq('order_item_id', existingItem.id)
-    } catch {}
+    await runSideEffect(
+      warnings,
+      '[api/shipments/cell] 数量変更後の harvest_tasks.required_qty 同期に失敗',
+      '数量は保存しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください',
+      () =>
+        supabase
+          .from('harvest_tasks')
+          .update({ required_qty: quantity })
+          .eq('order_item_id', existingItem.id),
+    )
 
-    await writeAudit(supabase, {
-      entityType: 'order_items',
-      entityId: existingItem.id,
-      action: 'UPDATE',
-      oldValues: existingItem,
-      newValues: updated,
-      userId: user.id,
-    })
-    return NextResponse.json({ item: updated })
+    await writeAuditAfterSuccess(
+      supabase,
+      {
+        entityType: 'order_items',
+        entityId: existingItem.id,
+        action: 'UPDATE',
+        oldValues: existingItem,
+        newValues: updated,
+        userId: user.id,
+      },
+      '[api/shipments/cell] 更新の監査ログ記録に失敗',
+    )
+    return NextResponse.json(withWarnings({ item: updated }, warnings))
   }
 
   let orderId = order?.id
@@ -270,27 +297,34 @@ export async function PUT(req: Request) {
   )
   if (itemErr || !item) return NextResponse.json({ error: itemErr?.message ?? 'insert failed' }, { status: 500 })
 
-  await writeAudit(supabase, {
-    entityType: 'order_items',
-    entityId: String(item.id),
-    action: 'INSERT',
-    oldValues: null,
-    newValues: item,
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    supabase,
+    {
+      entityType: 'order_items',
+      entityId: String(item.id),
+      action: 'INSERT',
+      oldValues: null,
+      newValues: item,
+      userId: user.id,
+    },
+    '[api/shipments/cell] 追加の監査ログ記録に失敗',
+  )
 
-  try {
-    const harvestDate = shiftDateStr(delivery_date, -1)
-    await supabase.from('harvest_tasks').insert({
-      product_id,
-      order_item_id: String(item.id),
-      required_qty: quantity,
-      task_date: harvestDate,
-      status: 'not_started',
-    })
-  } catch (htErr) {
-    console.warn('[api/shipments/cell] harvest_tasks 生成警告:', htErr)
-  }
+  // 全品目「出荷日の前日に収穫・パック」（engineering.md §3）
+  const harvestDate = shiftDateStr(delivery_date, -1)
+  await runSideEffect(
+    warnings,
+    '[api/shipments/cell] harvest_tasks の生成に失敗',
+    '数量は保存しましたが、収穫の予定に追加できませんでした。画面を読み込み直して確認してください',
+    () =>
+      supabase.from('harvest_tasks').insert({
+        product_id,
+        order_item_id: String(item.id),
+        required_qty: quantity,
+        task_date: harvestDate,
+        status: 'not_started',
+      }),
+  )
 
-  return NextResponse.json({ item }, { status: 201 })
+  return NextResponse.json(withWarnings({ item }, warnings), { status: 201 })
 }

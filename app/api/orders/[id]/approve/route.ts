@@ -51,5 +51,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json(body, { status: result.status })
   }
 
-  return NextResponse.json({ ok: true, tasksCreated: result.tasksCreated })
+  // 付随更新（受信票の付け替え・監査ログ等）の失敗は承認成功のまま warnings で返す（lib/orders/approve.ts）
+  return NextResponse.json({
+    ok: true,
+    tasksCreated: result.tasksCreated,
+    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+  })
 }

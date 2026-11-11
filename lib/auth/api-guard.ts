@@ -25,7 +25,7 @@ async function resolve(
 ): Promise<ApiGuardResult> {
   const user = await getAuthedUser()
   if (!user) {
-    return { ok: false, response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) }
+    return { ok: false, response: NextResponse.json({ error: 'ログインが必要です' }, { status: 401 }) }
   }
   const admin = createAdminClient()
   const { data, error } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
