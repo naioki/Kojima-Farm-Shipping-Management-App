@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { customerCreateSchema } from '@/types/database'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -19,11 +18,8 @@ export const runtime = 'nodejs'
  * （existed:true）。色・締め・規格は未設定のまま作られ、admin が後から補完する運用。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
 
   const body = await req.json().catch(() => null)
   const parsed = customerCreateSchema.safeParse(body)

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyCronRequest } from '@/lib/config/ingestion'
-import { getAuthedUser } from '@/lib/supabase/server'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 import { jstTodayStr } from '@/lib/dates'
 import { runShadowDiff } from '@/lib/shadow/run'
 
@@ -13,10 +13,12 @@ export const dynamic = 'force-dynamic'
  * GET /api/cron/shadow-diff?date=YYYY-MM-DD（省略時はJST今日）
  */
 export async function GET(req: Request) {
+  // Cloud Scheduler は x-cron-secret（verifyCronRequest）。手動実行はログイン中の社内ユーザー
+  // （admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も実行できた（fail open）。
   const isCron = await verifyCronRequest(req.headers)
-  const user = isCron ? null : await getAuthedUser()
-  if (!isCron && !user) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isCron) {
+    const guard = await requireStaffApi()
+    if (!guard.ok) return guard.response
   }
 
   const { searchParams } = new URL(req.url)

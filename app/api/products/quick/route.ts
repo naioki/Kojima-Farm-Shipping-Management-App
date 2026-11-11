@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { productCreateSchema } from '@/types/database'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -17,11 +16,8 @@ export const runtime = 'nodejs'
  * default_tax_rate はマスタ既定であり計算には order_items.tax_rate を使う（tax.md）。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
 
   const body = await req.json().catch(() => null)
   const parsed = productCreateSchema.safeParse(body)

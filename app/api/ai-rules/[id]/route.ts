@@ -1,28 +1,16 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aiRuleUpdateSchema } from '@/types/database'
 import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 async function verifyAdmin() {
-  const user = await getAuthedUser()
-  if (!user) return { ok: false as const, status: 401, error: '認証が必要です' }
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profileErr) console.error('[app/api/ai-rules/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return { ok: false as const, status: 403, error: '管理者権限が必要です' }
-  }
-  return { ok: true as const, userId: user.id }
+  const guard = await requireAdminApi('管理者権限が必要です')
+  if (!guard.ok) return guard
+  return { ok: true as const, userId: guard.user.id }
 }
 
 /**
@@ -31,7 +19,7 @@ async function verifyAdmin() {
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await verifyAdmin()
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (!auth.ok) return auth.response
 
   const body = await req.json().catch(() => null)
   const parsed = aiRuleUpdateSchema.safeParse(body)
@@ -88,7 +76,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
  */
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await verifyAdmin()
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (!auth.ok) return auth.response
 
   const admin = createAdminClient()
   const { data: before } = await admin

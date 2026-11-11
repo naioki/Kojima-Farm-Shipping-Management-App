@@ -1,13 +1,12 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isMissingColumnError } from '@/lib/supabase/missing-column'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { saveRouteOverride } from '@/lib/field/destination-routes-store'
 import { cleanShippingRouteName } from '@/lib/field/shipment-sort'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -33,11 +32,8 @@ const bodySchema = z.object({
  * - 【#13 解消】特定納品先（destinationId）が既に指定されている場合は、その納品先の注文のみを更新し、destination_id IS NULL の別注文を巻き添えにしない。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const jsonBody = await req.json().catch(() => null)
   const parsed = bodySchema.safeParse(jsonBody)

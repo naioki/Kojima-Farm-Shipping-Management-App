@@ -1,9 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolvePrice, type PriceRule } from '@/lib/pricing/resolve'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -23,13 +23,9 @@ const bodySchema = z.object({
  * 解決できない明細は skip して結果に返す（未設定のまま＝請求ゲートで止まる）。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/pricing/bulk/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: '価格確定は管理者のみです' }, { status: 403 })
+  const guard = await requireAdminApi('価格確定は管理者のみです')
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

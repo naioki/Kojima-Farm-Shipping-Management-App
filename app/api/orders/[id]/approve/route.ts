@@ -1,9 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { approveOrder } from '@/lib/orders/approve'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -25,17 +25,9 @@ const bodySchema = z.object({
  *     （低確信・未紐付け・納品日未定は管理者専用。決して安全性を緩めない）
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/orders/[id]/approve/route.ts] ロールの取得に失敗:', profileErr.message)
-  const role = profile?.role
-  if (role !== 'admin' && role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const { user, role } = guard
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) {

@@ -1,22 +1,17 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { packConfigInstructionsSchema } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 const uuidRe = /^[0-9a-f-]{36}$/i
 
 async function requireAdmin() {
-  const user = await getAuthedUser()
-  if (!user) return { error: NextResponse.json({ error: '認証が必要です' }, { status: 401 }) }
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/pack-configs/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return { error: NextResponse.json({ error: '管理者のみ操作できます' }, { status: 403 }) }
-  return { supabase }
+  const guard = await requireAdminApi('管理者のみ操作できます')
+  if (!guard.ok) return { error: guard.response }
+  return { supabase: createAdminClient() }
 }
 
 /** 荷姿の作業指示（詳細）を更新（管理者）。基本項目（換算等）は含めず作業指示のみを対象にする。 */

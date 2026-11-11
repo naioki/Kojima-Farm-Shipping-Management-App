@@ -1,18 +1,19 @@
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { DeliveryNotePdf } from '@/lib/pdf/DeliveryNotePdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
 import { parseAmountMode } from '@/lib/delivery-notes/amount-mode'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 /** 保存済み納品書PDF（スナップショットから再印刷）。元注文を編集しても当時の内容のまま。 */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も他社の帳票を取得できた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const supabase = createAdminClient()
   const { data: note, error } = await supabase

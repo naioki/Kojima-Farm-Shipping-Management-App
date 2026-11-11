@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { ShippingSlipPdf, type ShippingSlip, type SlipPaperSize } from '@/lib/pdf/ShippingSlipPdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
 import { getSetting } from '@/lib/settings'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -13,8 +13,9 @@ export const runtime = 'nodejs'
  * ヘッダー会社名は取引先ごとに選択／記入で切替できる。
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も他社の帳票を取得できた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   let body: { slips?: unknown; size?: unknown }
   try {

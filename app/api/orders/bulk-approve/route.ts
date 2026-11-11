@@ -1,9 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { approveOrder } from '@/lib/orders/approve'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -17,21 +17,9 @@ const bulkApproveSchema = z.object({
  * 高確信（AI自信あり・納品日確定・納入先確定）な注文の一括処理、または選択チェックボックスによる一括承認。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileErr) console.error('[POST /api/orders/bulk-approve] ロール取得失敗:', profileErr.message)
-
-  const role = profile?.role
-  if (role !== 'admin' && role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const { user, role } = guard
 
   const parsed = bulkApproveSchema.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) {

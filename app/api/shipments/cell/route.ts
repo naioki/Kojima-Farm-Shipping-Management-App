@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { matrixCellSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -17,11 +16,9 @@ export const runtime = 'nodejs'
  * (取引先 × 納入先(任意) × 品目 × 出荷日) を1セルとして upsert / 削除する。
  */
 export async function PUT(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = matrixCellSchema.safeParse(body)

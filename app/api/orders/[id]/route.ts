@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { shiftDateStr } from '@/lib/dates'
+import { requireAdminApi, requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -18,18 +18,14 @@ const orderPatchSchema = z.object({
  * 受注ヘッダー（納品日・納入先・備考・ステータス）の更新（#38 注文詳細画面からのインライン編集用）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   if (!z.string().uuid().safeParse(params.id).success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
 
   const admin = createAdminClient()
-  const { data: profile } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const body = await req.json().catch(() => null)
   const parsed = orderPatchSchema.safeParse(body)
@@ -95,18 +91,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
  * 受注（注文）の削除（admin のみ・誤登録の取消）。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireAdminApi('受注の削除は管理者のみです')
+  if (!guard.ok) return guard.response
+  const user = guard.user
   if (!z.string().uuid().safeParse(params.id).success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
-  }
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profileErr) console.error('[app/api/orders/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: '受注の削除は管理者のみです' }, { status: 403 })
   }
 
   const admin = createAdminClient()

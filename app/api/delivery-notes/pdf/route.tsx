@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { DeliveryNotePdf, type DeliveryNoteSheetProps } from '@/lib/pdf/DeliveryNotePdf'
 import { registerPdfFonts } from '@/lib/pdf/fonts'
@@ -20,6 +19,7 @@ import { shiftDateStr } from '@/lib/dates'
 import { deliveryNoteMonthKey, formatDeliveryNoteNumber } from '@/lib/delivery-notes/number'
 import { isSameNoteSnapshot } from '@/lib/delivery-notes/snapshot'
 import { reviseDeliveryNote } from '@/lib/delivery-notes/revise'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -190,8 +190,10 @@ async function autoUpsertDeliveryNoteSnapshot(params: {
  * - オレンジファームは納品書に印字する日付を FAX記載の着日（11/5・11/7・11/12等）1つに自動解決。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も他社の帳票を取得できた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const { searchParams } = new URL(req.url)
   const singleCustomer = searchParams.get('customer') ?? ''

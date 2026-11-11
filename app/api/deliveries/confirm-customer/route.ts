@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import type { DeliveryStatus } from '@/types/database'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -19,11 +18,9 @@ const schema = z.object({
  * 指定した取引先の全納品先 deliveries レコードを一括で loaded（積込OK）または planned（戻し）に更新する。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = schema.safeParse(body)

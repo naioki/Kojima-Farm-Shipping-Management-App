@@ -1,9 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeName as norm } from '@/lib/master-import/dedupe'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -56,19 +56,9 @@ interface Counts {
  * 途中の想定外エラーも全体を止めず errors[] に記録して継続する（部分登録の混乱を避ける）。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
+  const guard = await requireAdminApi('マスタ一括取込は管理者のみ利用できます')
+  if (!guard.ok) return guard.response
   const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileErr) console.error('[api/master-import/commit] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: 'マスタ一括取込は管理者のみ利用できます' }, { status: 403 })
-  }
 
   const parsed = commitSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

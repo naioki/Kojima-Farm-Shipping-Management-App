@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { writeAudit } from '@/lib/audit/log'
@@ -11,6 +9,7 @@ import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 type PerCasePackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
@@ -33,8 +32,9 @@ function stripPriceFromNote(text?: string | null): string | null {
  * 登録・変更前の既存出荷状況（差分プレビュー用）を高速チェック。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も読めた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const { searchParams } = new URL(req.url)
   const customerId = searchParams.get('customerId')
@@ -105,11 +105,9 @@ export async function GET(req: Request) {
  *   - mode: 'increase' | 'decrease' | 'set' | 'create' による既存出荷の加算・減量・上書きに対応。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = shipmentAddSchema.safeParse(body)

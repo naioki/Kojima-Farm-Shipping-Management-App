@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -13,11 +13,13 @@ const uuidRe = /^[0-9a-f-]{36}$/i
  * 積込写真（配送 Phase 2）。配送単位に1枚、任意で残す（誤配送クレーム時の物証）。
  * POST: multipart/form-data（delivery_date, customer_id, destination_id?, file）
  *       → Supabase Storage に保存し deliveries.photo_url を更新、delivery_events に追記
- * GET:  ?id=<deliveryId> → 15分の署名URLへリダイレクト（認証済みのみ）
+ * GET:  ?id=<deliveryId> → 15分の署名URLへリダイレクト
+ * 権限: GET/POST とも社内ユーザー（admin/staff）のみ。取引先ポータルの利用者は 403（他社の写真を見せない）。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const form = await req.formData().catch(() => null)
   if (!form) return NextResponse.json({ error: 'invalid' }, { status: 400 })
@@ -81,8 +83,8 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const id = new URL(req.url).searchParams.get('id') ?? ''
   if (!uuidRe.test(id)) return NextResponse.json({ error: 'invalid' }, { status: 400 })

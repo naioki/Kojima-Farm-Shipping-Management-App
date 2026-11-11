@@ -1,9 +1,7 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { writeAudit } from '@/lib/audit/log'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -15,6 +13,7 @@ import {
 } from '@/lib/pipeline/schemas'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -85,22 +84,10 @@ const orderSchema = z.object({
  *   0026 未適用DB環境でも writeDroppingMissingColumns で安全に保存する。
  */
 export async function POST(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const admin = createAdminClient()
-  const { data: profile, error: profileErr } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileErr) console.error('[app/api/orders/route.ts] ロールの取得に失敗:', profileErr.message)
-
-  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
-  const effectiveRole = profile?.role ?? jwtRole
-  if (effectiveRole !== 'admin' && effectiveRole !== 'staff' && !(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   let body: unknown
   try {

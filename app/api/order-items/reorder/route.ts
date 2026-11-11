@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,23 +9,10 @@ export const runtime = 'nodejs'
  * 現場・管理者によるパック作業順（daily_pack_sort_order）更新API
  */
 export async function POST(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  // 認証済みユーザーであれば並び順の更新を許可（社内スタッフ・管理者）。改ざん可能な user_metadata は参照しない
-  let role = user.app_metadata?.role as string | undefined
-  if (!role) {
-    const admin = createAdminClient()
-    const { data: profile } = await admin
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle()
-    role = (profile?.role as string) ?? 'staff'
-  }
-  if (role === 'portal') {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  // 社内ユーザー（admin/staff）のみ。旧実装はロール不明を staff 扱いにしていたため（fail open）、
+  // 取引先ポータルの利用者も並び順を書き換えられた。public.users の行で判定し、無ければ 403。
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const body = await req.json()
   const { items } = body as { items: Array<{ id: string; sortOrder: number | null }> }

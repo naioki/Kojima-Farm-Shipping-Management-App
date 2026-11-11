@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { toGoogleDrivePreviewUrl, toGoogleDriveViewUrl } from '@/lib/pipeline/schemas'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -12,19 +12,9 @@ export const runtime = 'nodejs'
  * また未解析（ai_failed / pending_ai）で raw_payload.file_base64 がある場合はインラインでバイナリを返却する。
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileErr) console.error('[app/api/receipts/[id]/original/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
+  const { role } = guard
 
   // RLS環境でもスタッフが原本を安全に参照できるよう createAdminClient を使用
   const admin = createAdminClient()
@@ -76,7 +66,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   // プレビュー表示時または現場スタッフ表示時: サニタイズ済み（買値切除）画像があれば最優先で配信
   const hasSanitized = typeof payload['sanitized_file_base64'] === 'string' && Boolean(payload['sanitized_file_base64'])
-  const useSanitized = hasSanitized && (isPreview || profile?.role !== 'admin')
+  const useSanitized = hasSanitized && (isPreview || role !== 'admin')
 
   // Google Drive URL が無い場合でも一時保持された file_base64 があればインライン返却
   if (useSanitized || (typeof payload['file_base64'] === 'string' && payload['file_base64'])) {

@@ -1,7 +1,6 @@
 import { shiftDateStr } from '@/lib/dates'
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   invalidateAiRulesCache,
@@ -9,6 +8,7 @@ import {
   type ParsedOrder,
 } from '@/lib/gemini/analyze'
 import { isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -21,14 +21,8 @@ export const maxDuration = 60
  * 「恒久ルールの自動抽出・指示書（ai_rules）自己更新」を Web アプリ上で実行するエンドポイント。
  */
 export async function POST(req: NextRequest) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'ログインが必要です' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   let body: {
     orderId?: string

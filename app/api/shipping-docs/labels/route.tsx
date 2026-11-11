@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { renderShippingDocPdf } from '@/lib/shipping-docs/render'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -13,8 +13,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
  * reverse=1 で供給先順を逆にする（積み込み順の都合。v4 の PDF逆順と同じ）。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も他社の帳票を取得できた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const { searchParams } = new URL(req.url)
   const date = searchParams.get('date') ?? ''

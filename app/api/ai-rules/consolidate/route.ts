@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
 import { highModelTryOrder } from '@/lib/gemini/models'
 import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
 import type { AiRule } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -52,18 +52,9 @@ const CONSOLIDATE_SYSTEM_PROMPT = `あなたは「小島農園」の受発注AI�
 }`
 
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireAdminApi('管理者権限が必要です')
+  if (!guard.ok) return guard.response
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
 
   const body = (await req.json().catch(() => null)) as {
     action?: 'diagnose' | 'apply'

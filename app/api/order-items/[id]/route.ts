@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
 import { writeAudit } from '@/lib/audit/log'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -19,19 +19,10 @@ function parsePatch(body: unknown) {
  * 数量変更・タップ更新・現場仕様更新（#09 注文数の直接変更, #10 シール・袋種別の変更対応）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const body = await req.json().catch(() => null)
   const parsed = parsePatch(body)
@@ -303,19 +294,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const { data: item, error: itemErr } = await admin
     .from('order_items')

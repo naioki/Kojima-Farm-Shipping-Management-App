@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -17,23 +17,14 @@ const rejectSchema = z.object({
  * 紐づく harvest_tasks（収穫タスク）もクリーンアップして現場のゴースト作業を防止する。
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   if (!z.string().uuid().safeParse(params.id).success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
 
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const body = await req.json().catch(() => ({}))
   const parsed = rejectSchema.safeParse(body)
