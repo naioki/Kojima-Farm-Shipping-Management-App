@@ -40,7 +40,7 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
   if (!order) notFound()
 
   const supabase = createAdminClient()
-  const [{ data: custRows }, { data: destRows }] = await Promise.all([
+  const [{ data: custRows, error: custErr }, { data: destRows, error: destErr }] = await Promise.all([
     supabase.from('customers').select('name').eq('is_active', true).order('name'),
     supabase
       .from('delivery_destinations')
@@ -49,6 +49,11 @@ export default async function AdminOrderDetailPage({ params }: { params: { id: s
       .eq('is_active', true)
       .order('sort_order'),
   ])
+  if (destErr) {
+    return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destErr.message} />
+  }
+  // 会社名の候補は出荷票の入力補助。取れなくても注文は表示する。
+  if (custErr) console.error('[admin/orders/[id]] 会社名候補の取得に失敗:', custErr.message)
   const companyOptions = [...new Set((custRows ?? []).map((c) => c.name as string))]
   const destinations = (destRows ?? []).map((d) => ({
     id: d.id as string,

@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { getMissingSpecs } from '@/lib/masters/missing-specs'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { ErrorState } from '@/components/ui/States'
+import type { MissingSpec } from '@/lib/masters/missing-specs'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +32,17 @@ export default async function RulesMissingPage() {
   const guard = await requireAdmin('このページは管理者のみ利用できます。')
   if (guard) return guard
 
-  const missing = await getMissingSpecs(createAdminClient())
+  let missing: MissingSpec[]
+  try {
+    missing = await getMissingSpecs(createAdminClient())
+  } catch (e) {
+    return (
+      <ErrorState
+        message="規格未登録の一覧を読み込めませんでした。時間をおいて再度お試しください。"
+        detail={e instanceof Error ? e.message : String(e)}
+      />
+    )
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">

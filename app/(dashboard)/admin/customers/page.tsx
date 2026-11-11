@@ -26,7 +26,8 @@ export default async function CustomersPage() {
 
   // 納入先の件数（取引先ごと）。取得できなくても一覧は出す
   const destCount = new Map<string, number>()
-  const { data: dests } = await admin.from('delivery_destinations').select('customer_id').eq('is_active', true)
+  const { data: dests, error: destsErr } = await admin.from('delivery_destinations').select('customer_id').eq('is_active', true)
+  if (destsErr) console.error('[admin/customers] 納入先件数の取得に失敗:', destsErr.message)
   for (const d of dests ?? []) {
     if (d.customer_id) destCount.set(d.customer_id, (destCount.get(d.customer_id) ?? 0) + 1)
   }

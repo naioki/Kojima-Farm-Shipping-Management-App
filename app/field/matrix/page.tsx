@@ -46,7 +46,7 @@ export default async function MatrixPage({
   const [
     { data: products, error: prodErr },
     { data: customers, error: custErr },
-    { data: destinations },
+    { data: destinations, error: destErr },
   ] = await Promise.all([
     supabase.from('products').select('id, name, unit, category, container_capacity').eq('is_active', true).order('name'),
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
@@ -58,6 +58,8 @@ export default async function MatrixPage({
   ])
   if (prodErr) return <ErrorState message={prodErr.message} />
   if (custErr) return <ErrorState message={custErr.message} />
+  // 納入先は列見出しの補助（取れなくても取引先単位で表示できる）。無言にはしない。
+  if (destErr) console.error('[field/matrix] 納入先の取得に失敗:', destErr.message)
 
   if (!products?.length) {
     return (

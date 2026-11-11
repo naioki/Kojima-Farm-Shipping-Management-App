@@ -284,6 +284,7 @@ export function InboxReceiptCard({ receipt: r, email = null }: { receipt: InboxR
             <div className="rounded-lg border border-line bg-bg-card p-2">
               <p className="mb-1 text-xs font-bold text-ink-soft">原本（縮小）</p>
               <div className="flex justify-center bg-earth-100/50 rounded overflow-hidden max-h-64">
+                {/* eslint-disable-next-line @next/next/no-img-element -- 認証付きAPI(receipts original)が返す原本画像。next/imageの最適化経由ではCookie認証が通らないため素の<img>を使う */}
                 <img
                   src={`/api/receipts/${r.id}/original`}
                   alt="FAX原本プレビュー"

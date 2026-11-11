@@ -108,7 +108,7 @@ export function MatrixGrid({
    * - `unitMode === 'boxes'` のとき、純粋な数値（例: "30"）が入力されたら「30箱（"30c"）」として扱う。
    * - 明示的に "150p" / "150P" と入力された場合はパック数（"150"）として扱う。
    */
-  const normalizeRawForUnitMode = (rawInput: string, prevPacksStr: string, ppc: number): string => {
+  const normalizeRawForUnitMode = (rawInput: string, prevPacksStr: string): string => {
     const trimmed = rawInput.trim().normalize('NFKC')
     if (!trimmed) return ''
     if (/^\d+\s*[pPパック点]$/.test(trimmed)) {
@@ -206,7 +206,7 @@ export function MatrixGrid({
     if (raw === prevSaved) return
 
     const ppc = getCustomerPpc(customerId)
-    const effectiveRaw = normalizeRawForUnitMode(raw, prevSaved, ppc)
+    const effectiveRaw = normalizeRawForUnitMode(raw, prevSaved)
     if (effectiveRaw === prevSaved) return
 
     if (effectiveRaw.trim() !== '') {

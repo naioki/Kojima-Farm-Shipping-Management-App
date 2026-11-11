@@ -16,11 +16,10 @@ import {
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
-import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
-import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 import { getStaffFeatures } from '@/lib/field/features'
 
@@ -79,6 +78,8 @@ export default async function DeliveriesPage({
 
   if (ordersRes.error) return <ErrorState message={ordersRes.error.message} />
   const orders = ordersRes.data ?? []
+  // 未承認件数は補助表示。取れなくても配送リストは出す。
+  if (pendingRes.error) console.error('[field/deliveries] 未承認件数の取得に失敗:', pendingRes.error.message)
   const pendingReviewCount = (pendingRes.data ?? []).filter((po) => {
     const rawItems = Array.isArray(po.order_items) ? po.order_items : []
     return rawItems.some((it: { quantity?: number | null }) => (Number(it.quantity) || 0) > 0)
@@ -162,6 +163,7 @@ export default async function DeliveriesPage({
             .from('customer_product_rules')
             .select('customer_id, product_id, packs_per_case, container_type')
             .in('customer_id', customerIds)
+          if (r2.error) console.error('[field/deliveries] 入数ルールの取得に失敗:', r2.error.message)
           return { data: (r2.data ?? []) as RuleRow[], error: null }
         })()
       : Promise.resolve({ data: [] as RuleRow[], error: null }),
@@ -177,6 +179,11 @@ export default async function DeliveriesPage({
   if (packRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={packRes.error.message} />
   if (productPackRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={productPackRes.error.message} />
   if (deliveryRes.error) return <ErrorState message="配送チェック状態を読み込めませんでした。" detail={deliveryRes.error.message} />
+
+  // 追加フォームの選択肢・入数ルールは補助データ。取れなくても配送リストは出す。
+  for (const [label, r] of [['入数ルール', rulesRes], ['取引先一覧', allCustsRes], ['商品一覧', allProdsRes], ['納入先一覧', allDestsRes]] as const) {
+    if (r.error) console.error(`[field/deliveries] ${label}の取得に失敗:`, r.error.message)
+  }
 
   const custById = new Map((custRes.data ?? []).map((c) => [c.id, { name: c.name, display_color: c.display_color }]))
   const destById = new Map((destRes.data ?? []).map((d) => [d.id, d]))
@@ -463,8 +470,6 @@ export default async function DeliveriesPage({
       }
     }),
   )
-  const todayStr = jstTodayStr()
-  const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
     <div className="mx-auto max-w-2xl space-y-3 pb-24">

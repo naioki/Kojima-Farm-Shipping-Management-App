@@ -84,6 +84,8 @@ export default async function ShipmentsPage({
   if (prodListRes.error) return <ErrorState message={`商品の読み込みに失敗しました: ${prodListRes.error.message}`} />
   if (ordersRes.error) return <ErrorState message={ordersRes.error.message} />
 
+  // 未承認件数は補助表示。取れなくても画面は出す。
+  if (pendingRes.error) console.error('[field/shipments] 未承認件数の取得に失敗:', pendingRes.error.message)
   const allProducts = prodListRes.data ?? []
   const orders = ordersRes.data ?? []
   const pendingReviewCount = (pendingRes.data ?? []).filter((po) => {
@@ -226,6 +228,7 @@ export default async function ShipmentsPage({
     default_container_type?: string | null
   }
 
+  let destFetchError: string | null = null
   // マスタ取得（RLS遮断防止のためすべて admin クライアントで取得・非アクティブ化した過去取引先も注文表示用に名前を引けるよう全件取得）
   const [custRes, prodCapRes, destRows, rulesRes, routeOverrides, packSortMap] = await Promise.all([
     (async () => {
@@ -254,6 +257,7 @@ export default async function ShipmentsPage({
         .select('id, customer_id, code, full_name, sort_order')
         .eq('is_active', true)
         .order('sort_order')
+      if (r2.error) destFetchError = r2.error.message
       return (r2.data ?? []) as DestRow[]
     })(),
     admin.from('customer_product_rules').select('*'),
@@ -270,6 +274,13 @@ export default async function ShipmentsPage({
       return {}
     })(),
   ])
+
+  // 取引先名・納入先は表示の主役。取れないまま空表示にせずエラーにする。
+  if (custRes.error) return <ErrorState message="取引先を読み込めませんでした。" detail={custRes.error.message} />
+  if (destFetchError) return <ErrorState message="納入先を読み込めませんでした。" detail={destFetchError} />
+  // 容器容量・入数ルールは補助データ。取れなくても画面は出す（無言にはしない）。
+  if (prodCapRes.error) console.error('[field/shipments] 品目の容器容量の取得に失敗:', prodCapRes.error.message)
+  if (rulesRes.error) console.error('[field/shipments] 取引先別ルールの取得に失敗:', rulesRes.error.message)
 
   const ruleRows = rulesRes.data
 

@@ -2555,6 +2555,7 @@ export function ShipmentAddForm({
                 <div className="flex items-center justify-between rounded-xl bg-bg-card p-2.5 border-2 border-forest-200 shadow-2xs">
                   <div className="flex items-center gap-2.5">
                     {photoPreview ? (
+                      /* eslint-disable-next-line @next/next/no-img-element -- ローカルで選んだ写真のblob/data URLプレビュー。next/imageは最適化対象外のURLに向かない */
                       <img src={photoPreview} alt="添付画像" className="h-11 w-11 object-cover rounded-lg border border-forest-200" />
                     ) : (
                       <div className="h-11 w-11 rounded-lg bg-forest-100 text-forest-800 flex items-center justify-center font-black text-xs">

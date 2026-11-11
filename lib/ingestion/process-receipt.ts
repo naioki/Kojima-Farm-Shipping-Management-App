@@ -18,7 +18,6 @@ import {
   determineContainerType,
   determineHasCard,
   determineUnitCount,
-  isGenericOrInvalidContainer,
   resolveContainerType,
   formatQuantityCaseText,
   generateOrderKey,

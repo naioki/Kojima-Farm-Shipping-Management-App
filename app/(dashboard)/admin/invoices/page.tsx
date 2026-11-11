@@ -34,7 +34,7 @@ export default async function InvoicesPage() {
   if (guard) return guard
 
   const supabase = createAdminClient()
-  const [{ data: invoices, error }, { count: pendingCount }, shippedRes] = await Promise.all([
+  const [{ data: invoices, error }, { count: pendingCount, error: pendingErr }, shippedRes] = await Promise.all([
     supabase
       .from('invoices')
       .select('id, invoice_number, customer_id, billing_month, period_end, total_amount, status, issue_date, due_date')
@@ -50,6 +50,9 @@ export default async function InvoicesPage() {
       .eq('orders.status', 'shipped'),
   ])
   if (error) return <ErrorState message="請求書の一覧を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
+
+  // 未承認件数は補助表示。失敗しても一覧は出す（無言にはしない）。
+  if (pendingErr) console.error('[invoices] 未承認件数の取得に失敗:', pendingErr.message)
 
   // 未請求の明細数は補助表示。失敗しても一覧は出し、件数は出さない（0件と誤表示しない）。
   let uninvoicedCount: number | null = null
