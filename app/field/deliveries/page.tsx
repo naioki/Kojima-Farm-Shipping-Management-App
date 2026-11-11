@@ -3,7 +3,7 @@ import { findPreflightIssues } from '@/lib/deliveries/preflight'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getRouteOverrides } from '@/lib/field/destination-routes-store'
+import type { RouteOverride } from '@/lib/field/destination-routes-store'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { DateNav } from '@/components/field/DateNav'
@@ -36,6 +36,36 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 const PATH = '/field/deliveries'
+
+/**
+ * 出発時刻・便名の退避データ（app_settings `v5_destination_routes`。本番では納入先の列が未適用のため唯一の保存先）。
+ * lib の getRouteOverrides は読めないとき空を返し、画面から失敗が見えないため、ここで直接読んで失敗を返す。
+ */
+async function readRouteOverrides(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<{ data: Record<string, RouteOverride>; error: string | null }> {
+  const r = await admin.from('app_settings').select('value').eq('key', 'v5_destination_routes').maybeSingle()
+  if (r.error) return { data: {}, error: r.error.message }
+  if (!r.data?.value) return { data: {}, error: null }
+  try {
+    return { data: JSON.parse(r.data.value) as Record<string, RouteOverride>, error: null }
+  } catch (e) {
+    return { data: {}, error: `app_settings v5_destination_routes が壊れています: ${String(e)}` }
+  }
+}
+
+/** 一部のデータが読めなかったことを知らせる帯（未承認件数の通知バーと同じ見た目。技術的な詳細は折りたたみ） */
+function LoadWarning({ message, detail }: { message: string; detail: string }) {
+  return (
+    <div role="alert" className="rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink print:hidden">
+      <p>⚠️ {message}</p>
+      <details className="mt-1 font-normal text-ink-faint">
+        <summary className="cursor-pointer select-none text-ink-soft hover:text-ink">詳細を表示</summary>
+        <p className="mt-1 whitespace-pre-wrap break-words font-mono">{detail}</p>
+      </details>
+    </div>
+  )
+}
 
 /**
  * 配送リスト（手書き伝票思想の「取引先ワンボックス集約」画面）。
@@ -123,7 +153,7 @@ export default async function DeliveriesPage({
 
   type ProductPackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
-  const [custRes, destRes, prodRes, packRes, productPackRes, deliveryRes, rulesRes, routeOverrides, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
+  const [custRes, destRes, prodRes, packRes, productPackRes, deliveryRes, rulesRes, routeRes, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
     customerIds.length
       ? admin.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
@@ -153,7 +183,7 @@ export default async function DeliveriesPage({
       : Promise.resolve({ data: [] as ProductPackRow[], error: null }),
     admin.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
     customerIds.length
-      ? (async (): Promise<{ data: RuleRow[]; error: null }> => {
+      ? (async (): Promise<{ data: RuleRow[]; error: { message: string } | null }> => {
           const r1 = await admin
             .from('customer_product_rules')
             .select('customer_id, product_id, packs_per_case, default_container_type')
@@ -163,11 +193,12 @@ export default async function DeliveriesPage({
             .from('customer_product_rules')
             .select('customer_id, product_id, packs_per_case, container_type')
             .in('customer_id', customerIds)
-          if (r2.error) console.error('[field/deliveries] 入数ルールの取得に失敗:', r2.error.message)
+          // 1回目は未適用列で失敗しうる。エラー扱いは基本列での取り直しも失敗したときだけ。
+          if (r2.error) return { data: [], error: r2.error }
           return { data: (r2.data ?? []) as RuleRow[], error: null }
         })()
       : Promise.resolve({ data: [] as RuleRow[], error: null }),
-    getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    readRouteOverrides(admin),
     admin.from('customers').select('id, name').eq('is_active', true).order('name'),
     admin.from('products').select('id, name, unit, category').eq('is_active', true).order('name'),
     admin.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).order('sort_order'),
@@ -179,11 +210,14 @@ export default async function DeliveriesPage({
   if (packRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={packRes.error.message} />
   if (productPackRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={productPackRes.error.message} />
   if (deliveryRes.error) return <ErrorState message="配送チェック状態を読み込めませんでした。" detail={deliveryRes.error.message} />
+  // 取引先別の入数は納入先ごと・全体の箱数と容器の判定に効く（荷姿・品目と同じ扱い）。
+  if (rulesRes.error) return <ErrorState message="取引先別の入数を読み込めませんでした。" detail={rulesRes.error.message} />
 
-  // 追加フォームの選択肢・入数ルールは補助データ。取れなくても配送リストは出す。
-  for (const [label, r] of [['入数ルール', rulesRes], ['取引先一覧', allCustsRes], ['商品一覧', allProdsRes], ['納入先一覧', allDestsRes]] as const) {
-    if (r.error) console.error(`[field/deliveries] ${label}の取得に失敗:`, r.error.message)
-  }
+  // 出発時刻・便名は便のまとまりと積込の並び順に効く。配送リストは止めず、画面に警告を出す。
+  const routeOverrides = routeRes.data
+  const routeLoadError = routeRes.error
+  // 追加フォームの選択肢。取れないと候補が空で選べず原因も分からないため、フォームの位置にエラーを出す。
+  const addFormError = allCustsRes.error ?? allProdsRes.error ?? allDestsRes.error
 
   const custById = new Map((custRes.data ?? []).map((c) => [c.id, { name: c.name, display_color: c.display_color }]))
   const destById = new Map((destRes.data ?? []).map((d) => [d.id, d]))
@@ -504,6 +538,13 @@ export default async function DeliveriesPage({
         </div>
       )}
 
+      {routeLoadError && (
+        <LoadWarning
+          message="出発時刻・便名を読み込めませんでした。便の締め時刻と積込の並び順が正しくない可能性があります。再読み込みしてください。"
+          detail={routeLoadError}
+        />
+      )}
+
       {preflight.length > 0 && !packingStarted && (
         <p data-guide="preflight" className="rounded-xl border border-line bg-bg-soft px-3.5 py-2 text-xs font-bold text-ink-soft print:hidden">
           積込前チェック: まだパック作業が始まっていません（{preflight.length}明細）
@@ -539,30 +580,38 @@ export default async function DeliveriesPage({
       )}
 
       {/* 配送リスト画面からも直接新規追加・数量変更が可能（#20） */}
-      <ShipmentAddForm
-        deliveryDate={date}
-        defaultProductId={selectedProduct}
-        allowAiRead={allowAiRead}
-        customers={(allCustsRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
-        products={(allProdsRes.data ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
-        destinations={(allDestsRes.data ?? []).map((d) => ({
-          id: d.id,
-          customerId: d.customer_id ?? '',
-          label: d.code?.trim() || d.full_name,
-        }))}
-        packsByPair={Object.fromEntries(
-          (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),
-        )}
-        rulesByPair={Object.fromEntries(
-          (rulesRes.data ?? []).map((r) => [
-            `${r.customer_id}:${r.product_id}`,
-            {
-              packsPerCase: r.packs_per_case ?? null,
-              containerType: (r as { container_type?: string | null }).container_type ?? r.default_container_type ?? null,
-            },
-          ]),
-        )}
-      />
+      {addFormError ? (
+        <ErrorState
+          title="追加フォームを表示できません"
+          message="取引先・品目・納入先の候補を読み込めませんでした。配送リストはそのまま使えます。再読み込みしてください。"
+          detail={addFormError.message}
+        />
+      ) : (
+        <ShipmentAddForm
+          deliveryDate={date}
+          defaultProductId={selectedProduct}
+          allowAiRead={allowAiRead}
+          customers={(allCustsRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          products={(allProdsRes.data ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
+          destinations={(allDestsRes.data ?? []).map((d) => ({
+            id: d.id,
+            customerId: d.customer_id ?? '',
+            label: d.code?.trim() || d.full_name,
+          }))}
+          packsByPair={Object.fromEntries(
+            (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),
+          )}
+          rulesByPair={Object.fromEntries(
+            (rulesRes.data ?? []).map((r) => [
+              `${r.customer_id}:${r.product_id}`,
+              {
+                packsPerCase: r.packs_per_case ?? null,
+                containerType: (r as { container_type?: string | null }).container_type ?? r.default_container_type ?? null,
+              },
+            ]),
+          )}
+        />
+      )}
     </div>
   )
 }

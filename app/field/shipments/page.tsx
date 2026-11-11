@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getRouteOverrides } from '@/lib/field/destination-routes-store'
+import type { RouteOverride } from '@/lib/field/destination-routes-store'
 import { ErrorState } from '@/components/ui/States'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
@@ -35,6 +35,36 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 const PATH = '/field/shipments'
+
+/**
+ * 出発時刻・便名の退避データ（app_settings `v5_destination_routes`。本番では納入先の列が未適用のため唯一の保存先）。
+ * lib の getRouteOverrides は読めないとき空を返し、画面から失敗が見えないため、ここで直接読んで失敗を返す。
+ */
+async function readRouteOverrides(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<{ data: Record<string, RouteOverride>; error: string | null }> {
+  const r = await admin.from('app_settings').select('value').eq('key', 'v5_destination_routes').maybeSingle()
+  if (r.error) return { data: {}, error: r.error.message }
+  if (!r.data?.value) return { data: {}, error: null }
+  try {
+    return { data: JSON.parse(r.data.value) as Record<string, RouteOverride>, error: null }
+  } catch (e) {
+    return { data: {}, error: `app_settings v5_destination_routes が壊れています: ${String(e)}` }
+  }
+}
+
+/** 一部のデータが読めなかったことを知らせる帯（未承認件数の通知バーと同じ見た目。技術的な詳細は折りたたみ） */
+function LoadWarning({ message, detail }: { message: string; detail: string }) {
+  return (
+    <div role="alert" className="rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink print:hidden">
+      <p>⚠️ {message}</p>
+      <details className="mt-1 font-normal text-ink-faint">
+        <summary className="cursor-pointer select-none text-ink-soft hover:text-ink">詳細を表示</summary>
+        <p className="mt-1 whitespace-pre-wrap break-words font-mono">{detail}</p>
+      </details>
+    </div>
+  )
+}
 
 export default async function ShipmentsPage({
   searchParams,
@@ -230,7 +260,7 @@ export default async function ShipmentsPage({
 
   let destFetchError: string | null = null
   // マスタ取得（RLS遮断防止のためすべて admin クライアントで取得・非アクティブ化した過去取引先も注文表示用に名前を引けるよう全件取得）
-  const [custRes, prodCapRes, destRows, rulesRes, routeOverrides, packSortMap] = await Promise.all([
+  const [custRes, prodCapRes, destRows, rulesRes, routeRes, packSortMap] = await Promise.all([
     (async () => {
       const r1 = await admin
         .from('customers')
@@ -261,7 +291,7 @@ export default async function ShipmentsPage({
       return (r2.data ?? []) as DestRow[]
     })(),
     admin.from('customer_product_rules').select('*'),
-    getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    readRouteOverrides(admin),
     (async (): Promise<Record<string, number>> => {
       try {
         const r = await admin
@@ -282,9 +312,15 @@ export default async function ShipmentsPage({
   // 取引先名・納入先は表示の主役。取れないまま空表示にせずエラーにする。
   if (custRes.error) return <ErrorState message="取引先を読み込めませんでした。" detail={custRes.error.message} />
   if (destFetchError) return <ErrorState message="納入先を読み込めませんでした。" detail={destFetchError} />
-  // 容器容量・入数ルールは補助データ。取れなくても画面は出す（無言にはしない）。
-  if (prodCapRes.error) console.error('[field/shipments] 品目の容器容量の取得に失敗:', prodCapRes.error.message)
-  if (rulesRes.error) console.error('[field/shipments] 取引先別ルールの取得に失敗:', rulesRes.error.message)
+  // 品目の標準入数（容器容量）と取引先別ルールは入数（resolveItemPerCase）の材料。
+  // 取れないまま出すと各カードの箱数・端数・規格内訳・ラベル/テープ/梱包メモの指示が黙って変わるためエラーにする。
+  if (prodCapRes.error)
+    return <ErrorState message="品目の入数（標準の箱詰め数）を読み込めませんでした。時間をおいて再度お試しください。" detail={prodCapRes.error.message} />
+  if (rulesRes.error)
+    return <ErrorState message="取引先別の入数・荷姿の設定を読み込めませんでした。時間をおいて再度お試しください。" detail={rulesRes.error.message} />
+  // 出発時刻・便名は各カードの締め時刻と並び順に効く。読めなくても作業は止めず、画面に警告を出す。
+  const routeOverrides = routeRes.data
+  const routeLoadError = routeRes.error
 
   const ruleRows = rulesRes.data
 
@@ -350,7 +386,9 @@ export default async function ShipmentsPage({
         `)
         .in('id', packIds)
     : { data: [] as PackInstructionRow[], error: null }
-  if (packErr) console.error('[field/shipments] pack_configs 取得失敗:', packErr.message)
+  // 明細の荷姿は入数・ラベル/テープ/梱包メモの指示そのもの。取れないまま出さない。
+  if (packErr)
+    return <ErrorState message="荷姿（入数・梱包の指示）を読み込めませんでした。時間をおいて再度お試しください。" detail={packErr.message} />
 
   const packById = new Map((packRows ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]))
 
@@ -362,7 +400,8 @@ export default async function ShipmentsPage({
         .select('id, product_id, customer_id, base_per_selling, is_active')
         .eq('product_id', selectedProductId)
     : { data: [] as PerCasePackRow[], error: null }
-  if (productPackErr) console.error('[field/shipments] 入数用の荷姿の取得に失敗:', productPackErr.message)
+  if (productPackErr)
+    return <ErrorState message="荷姿（入数）を読み込めませんでした。時間をおいて再度お試しください。" detail={productPackErr.message} />
   const perCasePackById = new Map(((productPackRows ?? []) as PerCasePackRow[]).map((p) => [p.id, p]))
   /** 取引先別の設定 → 荷姿（明細 → 取引先専用 → 取引先共通）→ 品目の標準 → 既定20（lib/masters/packs-per-case.ts） */
   const resolveItemPerCase = (
@@ -409,12 +448,14 @@ export default async function ShipmentsPage({
   }
 
   const receiptByOrder = new Map<string, ReceiptOriginalInfo>()
+  // 原本が読めないと各カードの「原本を見る」が出ず、原本が無いように見える。作業は止めず警告を出す。
+  let receiptLoadError: string | null = null
   if (orderIds.length > 0) {
     const { data: directReceipts, error: directReceiptsErr } = await admin
       .from('order_receipts')
       .select('id, order_id, channel, r2_key, raw_payload, is_revision, delivery_date, customer_id')
       .in('order_id', orderIds)
-    if (directReceiptsErr) console.error('[field/shipments] 原本(order_receipts)の取得に失敗:', directReceiptsErr.message)
+    if (directReceiptsErr) receiptLoadError = directReceiptsErr.message
 
     for (const rr of directReceipts ?? []) {
       if (rr.order_id) {
@@ -439,7 +480,7 @@ export default async function ShipmentsPage({
         .in('customer_id', customerIds)
         .order('created_at', { ascending: false })
         .limit(40)
-      if (candidateReceiptsErr) console.error('[field/shipments] 原本候補(order_receipts)の取得に失敗:', candidateReceiptsErr.message)
+      if (candidateReceiptsErr) receiptLoadError = receiptLoadError ?? candidateReceiptsErr.message
 
       for (const cr of candidateReceipts ?? []) {
         const p = (cr.raw_payload ?? {}) as Record<string, unknown>
@@ -648,6 +689,9 @@ export default async function ShipmentsPage({
   // 翌日の承認済み注文明細（翌日先行枠・閲覧用）
   const nextDateStr = shiftDateStr(date, 1)
   const nextShipmentItems: ShipmentItemData[] = []
+  // 翌日先行枠（「先行分をパック済にする」操作つき）。読めないと枠ごと消えて「先行作業が無い」ように見えるため、
+  // ページは止めずに先行枠の位置へエラーを出す。
+  let nextDayLoadError: string | null = null
 
   if (selectedProductId) {
     const { data: nextOrders, error: nextOrdersErr } = await admin
@@ -655,7 +699,7 @@ export default async function ShipmentsPage({
       .select('id, customer_id, destination_id')
       .eq('delivery_date', nextDateStr)
       .in('status', ['approved', 'shipped', 'invoiced'])
-    if (nextOrdersErr) console.error('[field/shipments] 翌日注文の取得に失敗:', nextOrdersErr.message)
+    if (nextOrdersErr) nextDayLoadError = nextOrdersErr.message
 
     const nextOrderIds = (nextOrders ?? []).map((o) => o.id)
     const nextOrderCustMap = new Map((nextOrders ?? []).map((o) => [o.id, o.customer_id]))
@@ -684,8 +728,8 @@ export default async function ShipmentsPage({
           `)
           .eq('product_id', selectedProductId)
           .in('order_id', nextOrderIds)
-        // 翌日先行枠は閲覧用の補助表示。取れなくても当日分は出すが、無言にはしない。
-        if (fbNext.error) console.error('[field/shipments] 翌日明細の取得に失敗:', fbNext.error.message)
+        // 1回目は未適用列（bag_type 等）で失敗しうる（本番では常に失敗）。エラー扱いは基本列での取り直しも失敗したときだけ。
+        if (fbNext.error) nextDayLoadError = fbNext.error.message
         nextItems = (fbNext.data ?? []) as typeof nextItems
       }
 
@@ -820,6 +864,19 @@ export default async function ShipmentsPage({
         </div>
       )}
 
+      {routeLoadError && (
+        <LoadWarning
+          message="出発時刻・便名を読み込めませんでした。各カードの締め時刻・便名と並び順が正しくない可能性があります。再読み込みしてください。"
+          detail={routeLoadError}
+        />
+      )}
+      {receiptLoadError && (
+        <LoadWarning
+          message="受注原本（FAX・メール）へのリンクを読み込めませんでした。「原本」ボタンが出ていない注文にも原本がある可能性があります。"
+          detail={receiptLoadError}
+        />
+      )}
+
       {/* ① 最上部：品目セレクタ（タブ） */}
       <ProductSelectorTabs
         products={productTabs}
@@ -864,6 +921,15 @@ export default async function ShipmentsPage({
             )}
           </div>
         </div>
+      )}
+
+      {/* ③ 翌日先行枠が読めなかったときは、枠の位置にそのことを出す（「先行作業なし」に見せない） */}
+      {nextDayLoadError && (
+        <ErrorState
+          title="翌日分を読み込めませんでした"
+          message={`翌日（${nextDateStr}）の作業予定（先行枠）を表示できません。当日分の作業はそのまま進められます。再読み込みしてください。`}
+          detail={nextDayLoadError}
+        />
       )}
 
       {/* ④ スマート追加フォーム（操作ガイドの対象） */}

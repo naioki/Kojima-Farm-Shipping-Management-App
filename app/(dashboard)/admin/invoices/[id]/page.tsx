@@ -63,8 +63,15 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
     )
   }
   const items = itemsRes.data
-  // 宛名（取引先名）の解決は補助。失敗しても帳票本体は出す。
-  if (customerRes.error) console.error('[invoices/[id]] 宛名の取得に失敗:', customerRes.error.message)
+  // 宛名（取引先名）と支払条件は請求書の記載事項。取れないまま「— 御中」や既定の支払期日で出さない。
+  if (customerRes.error) {
+    return (
+      <ErrorState
+        message="請求書の宛名・支払条件（取引先）を読み込めませんでした。時間をおいて再度お試しください。"
+        detail={customerRes.error.message}
+      />
+    )
+  }
   const customer = customerRes.data
 
   const status = invoice.status as InvoiceStatus

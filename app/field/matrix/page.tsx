@@ -150,8 +150,9 @@ export default async function MatrixPage({
       .select('id, product_id, customer_id, base_per_selling, is_active')
       .eq('product_id', selected.id),
   ])
-  if (rulesErr) console.error('[field/matrix] 入数の読み込みに失敗:', rulesErr.message)
-  if (packsErr) console.error('[field/matrix] 荷姿の読み込みに失敗:', packsErr.message)
+  // 入数は箱数モードの表示・合計箱数・入力プレビューの換算に効く（保存される数量はサーバー側で換算するので影響なし）。
+  // ページは止めず、箱数が正しくない可能性を画面に出す。
+  const perCaseLoadError = rulesErr?.message ?? packsErr?.message ?? null
   const ruleByCustomer = new Map((rules ?? []).map((r) => [r.customer_id, r]))
   const packsByCustomer: Record<string, number | null> = {}
   for (const c of customers ?? []) {
@@ -261,6 +262,16 @@ export default async function MatrixPage({
             week={week}
             products={nonMaterialProducts.map((p) => ({ id: p.id, name: p.name }))}
           />
+        </div>
+      )}
+
+      {perCaseLoadError && (
+        <div role="alert" className="rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink print:hidden">
+          <p>⚠️ 入数（1箱あたりの数）を読み込めませんでした。箱数の表示・合計箱数が正しくない可能性があります。数量の入力・保存はそのまま使えます。</p>
+          <details className="mt-1 font-normal text-ink-faint">
+            <summary className="cursor-pointer select-none text-ink-soft hover:text-ink">詳細を表示</summary>
+            <p className="mt-1 whitespace-pre-wrap break-words font-mono">{perCaseLoadError}</p>
+          </details>
         </div>
       )}
 
