@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { shiftDateStr } from '@/lib/dates'
+import { requireAdminApi, requireStaffApi } from '@/lib/auth/api-guard'
+import { noteSideEffectFailure, runSideEffect, withWarnings } from '@/lib/api/side-effects'
 
 export const runtime = 'nodejs'
 
@@ -18,18 +19,14 @@ const orderPatchSchema = z.object({
  * 受注ヘッダー（納品日・納入先・備考・ステータス）の更新（#38 注文詳細画面からのインライン編集用）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   if (!z.string().uuid().safeParse(params.id).success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
 
   const admin = createAdminClient()
-  const { data: profile } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const body = await req.json().catch(() => null)
   const parsed = orderPatchSchema.safeParse(body)
@@ -63,19 +60,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .single()
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-  // 納品日が変更された場合は紐づく harvest_tasks の task_date（出荷日前日）も自動同期
+  // 納品日が変更された場合は紐づく harvest_tasks の task_date（出荷日前日）も自動同期（付随更新。失敗は警告で返す）
+  const warnings: string[] = []
   if (d.delivery_date && d.delivery_date !== current.delivery_date) {
-    try {
-      const { data: items } = await admin.from('order_items').select('id').eq('order_id', params.id)
-      const itemIds = (items ?? []).map((i) => i.id)
-      if (itemIds.length > 0) {
-        await admin
-          .from('harvest_tasks')
-          .update({ task_date: shiftDateStr(d.delivery_date, -1) })
-          .in('order_item_id', itemIds)
-      }
-    } catch (e) {
-      console.warn('[api/orders/[id]] harvest_tasks 日付同期警告:', e)
+    const HARVEST_DATE_WARNING = '納品日は変更しましたが、収穫・パックの作業日を移せませんでした。収穫一覧の日付を確認してください'
+    const taskDate = shiftDateStr(d.delivery_date, -1)
+    const { data: items, error: itemsErr } = await admin.from('order_items').select('id').eq('order_id', params.id)
+    if (itemsErr) {
+      noteSideEffectFailure(warnings, '[api/orders/[id]] harvest_tasks 日付同期用の明細読み込みに失敗', itemsErr, HARVEST_DATE_WARNING)
+    }
+    const itemIds = (items ?? []).map((i) => i.id)
+    if (itemIds.length > 0) {
+      await runSideEffect(warnings, '[api/orders/[id]] harvest_tasks の日付同期に失敗', HARVEST_DATE_WARNING, () =>
+        admin.from('harvest_tasks').update({ task_date: taskDate }).in('order_item_id', itemIds),
+      )
     }
   }
 
@@ -88,25 +86,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     userId: user.id,
   })
 
-  return NextResponse.json({ order: updated })
+  return NextResponse.json(withWarnings({ order: updated }, warnings))
 }
 
 /**
  * 受注（注文）の削除（admin のみ・誤登録の取消）。
  */
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireAdminApi('受注の削除は管理者のみです')
+  if (!guard.ok) return guard.response
+  const user = guard.user
   if (!z.string().uuid().safeParse(params.id).success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
-  }
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  if (profileErr) console.error('[app/api/orders/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: '受注の削除は管理者のみです' }, { status: 403 })
   }
 
   const admin = createAdminClient()

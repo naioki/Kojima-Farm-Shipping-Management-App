@@ -116,10 +116,11 @@ export async function GET(req: NextRequest) {
         const cName = r.customer_id ? customerNameMap.get(r.customer_id) ?? 'FAX' : 'FAX'
         let shortTime = ''
         if (r.received_at) {
-          try {
-            const d = new Date(r.received_at)
+          // new Date は例外を投げない（不正な日時は NaN）。表示できない時刻は付けない
+          const d = new Date(r.received_at)
+          if (!Number.isNaN(d.getTime())) {
             shortTime = ` (${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')})`
-          } catch {}
+          }
         }
         receiptsList.push({
           id: r.id,

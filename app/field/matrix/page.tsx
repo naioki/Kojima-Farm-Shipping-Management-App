@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { EmptyState, ErrorState } from '@/components/ui/States'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid, type MatrixDestinationItem } from '@/components/field/MatrixGrid'
@@ -46,7 +47,7 @@ export default async function MatrixPage({
   const [
     { data: products, error: prodErr },
     { data: customers, error: custErr },
-    { data: destinations },
+    { data: destinations, error: destErr },
   ] = await Promise.all([
     supabase.from('products').select('id, name, unit, category, container_capacity').eq('is_active', true).order('name'),
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
@@ -58,6 +59,8 @@ export default async function MatrixPage({
   ])
   if (prodErr) return <ErrorState message={prodErr.message} />
   if (custErr) return <ErrorState message={custErr.message} />
+  // 納入先は入力対象のサブ行（取れないと destination_id: null で保存されうる）ので主表示として扱う。
+  if (destErr) return <ErrorState message="納入先を読み込めませんでした。時間をおいて再度お試しください。" detail={destErr.message} />
 
   if (!products?.length) {
     return (
@@ -148,8 +151,9 @@ export default async function MatrixPage({
       .select('id, product_id, customer_id, base_per_selling, is_active')
       .eq('product_id', selected.id),
   ])
-  if (rulesErr) console.error('[field/matrix] 入数の読み込みに失敗:', rulesErr.message)
-  if (packsErr) console.error('[field/matrix] 荷姿の読み込みに失敗:', packsErr.message)
+  // 入数は箱数モードの表示・合計箱数・入力プレビューの換算に効く（保存される数量はサーバー側で換算するので影響なし）。
+  // ページは止めず、箱数が正しくない可能性を画面に出す。
+  const perCaseLoadError = rulesErr?.message ?? packsErr?.message ?? null
   const ruleByCustomer = new Map((rules ?? []).map((r) => [r.customer_id, r]))
   const packsByCustomer: Record<string, number | null> = {}
   for (const c of customers ?? []) {
@@ -260,6 +264,13 @@ export default async function MatrixPage({
             products={nonMaterialProducts.map((p) => ({ id: p.id, name: p.name }))}
           />
         </div>
+      )}
+
+      {perCaseLoadError && (
+        <LoadWarning
+          message="入数（1箱あたりの数）を読み込めませんでした。箱数の表示・合計箱数が正しくない可能性があります。数量の入力・保存はそのまま使えます。"
+          detail={perCaseLoadError}
+        />
       )}
 
       {!customers?.length ? (

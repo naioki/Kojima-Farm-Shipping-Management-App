@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 /** 「納入先なし（取引先あて）」を表す選択値（納入先IDと衝突しない値）。 */
 const NO_DESTINATION = '__none__'
@@ -109,6 +110,7 @@ export function ApproveOrderButton({
         throw new Error(json.error ?? `承認できませんでした (${res.status})`)
       }
       toast.success(`承認しました（収穫・パックの予定 ${json.tasksCreated ?? 0} 件）`)
+      showResponseWarnings(json)
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '承認に失敗しました')

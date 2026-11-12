@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { FieldViewSwitch } from '@/components/field/FieldViewSwitch'
 import { ConciergeChat } from '@/components/field/ConciergeChat'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { ErrorState } from '@/components/ui/States'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +40,15 @@ export default async function ConciergePage({
     admin.from('products').select('id, name, unit, category').eq('is_active', true).order('name'),
   ])
 
+  // 取引先・納入先・品目が取れないまま相談窓口を出すと、候補が空で何も選べず原因も分からない
+  const masterErr = custRes.error ?? destRes.error ?? prodRes.error
+  if (masterErr) {
+    return (
+      <ErrorState message="取引先・品目を読み込めませんでした。時間をおいて再度お試しください。" detail={masterErr.message} />
+    )
+  }
+  // ロール取得に失敗したら一般（最小権限）扱いにする。無言にはしない。
+  if (profileRes.error) console.error('[field/concierge] ロール取得に失敗:', profileRes.error.message)
   const isAdmin = profileRes.data?.role === 'admin'
   const customers = (custRes.data ?? []).map((c) => {
     const ch = (c as { channel_identifiers?: { aliases?: string[] } | null }).channel_identifiers

@@ -24,6 +24,8 @@ import {
 import { cn } from '@/lib/cn'
 import { isSampleOrderText, isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { computeProgressBoxes, type ProgressLine } from '@/lib/field/progress-boxes'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface ShipmentItemData extends ShipmentRowProps {
   itemId: string
@@ -174,22 +176,26 @@ export function PackingAndShippingViews({
       if (saved === 'time' || saved === 'destination' || saved === 'container') {
         setSortMode(saved)
       }
-    } catch {}
+    } catch {
+      // localStorage が使えない環境では既定の並び順のまま使う
+    }
   }, [])
 
   const handleSortModeChange = (mode: PackSortMode) => {
     setSortMode(mode)
     try {
       localStorage.setItem('kojima_pack_board_sort_mode', mode)
-    } catch {}
+    } catch {
+      // 保存できなくても画面上の並び替えは効いている（次回は既定の並び順に戻るだけ）
+    }
   }
 
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
-  // 上部進捗コックピット（目標箱数・完成箱数・残り箱数）は取引先別の個別入数にかかわらず一律「総パック数 ÷ 20」で算出
+  // 上部進捗コックピット（目標・完成・残り・翌日分）は lib/field/progress-boxes.ts で数える
+  // （青梗菜は品目全体で一律20入、それ以外は各行の実入数。engineering.md §3）。
   // コンテナ別・規格別の内訳は各行の実入数（NSK=24入、オレンジファーム=25入、やなぎさわ=10入、標準=20入等）で算出
-  let totalPacks = 0
-  let completedPacks = 0
+  const progressLines: ProgressLine[] = []
   const liveContainerMap = new Map<string, number>()
   const liveSpecMap = new Map<string, { packs: number; boxes: number }>()
 
@@ -198,15 +204,11 @@ export function PackingAndShippingViews({
     const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
     const isSmallSample = isSample && it.orderedQty < perCase
     const boxCount = isSmallSample ? 0 : Math.ceil(it.orderedQty / perCase)
-    totalPacks += it.orderedQty
-    if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') {
-      completedPacks += it.orderedQty
-    } else {
-      const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
-      if (partialPacks > 0) {
-        completedPacks += partialPacks
-      }
-    }
+    const donePacks =
+      it.initialStatus === 'packed' || it.initialStatus === 'shipped'
+        ? it.orderedQty
+        : Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
+    progressLines.push({ productName, qty: it.orderedQty, donePacks, packsPerCase: perCase, isSmallSample })
 
     if (!isSmallSample && boxCount > 0) {
       const cType =
@@ -224,13 +226,23 @@ export function PackingAndShippingViews({
   }
 
   // 完成箱数は「満杯になった箱」だけ数える（切り捨て）。カードの途中経過「1箱+5P完了」と同じ規則。
-  // 残り箱数 = 目標 − 完成 =「まだ満杯になっていない箱」の数（青梗菜のニコイチ20入で一律）
-  const totalBoxes = totalPacks > 0 ? Math.ceil(totalPacks / 20) : 0
-  const completedBoxes = completedCaseCount(completedPacks, totalPacks, 20)
-  const remainingBoxesTotal = Math.max(0, totalBoxes - completedBoxes)
+  // 残り箱数 = 目標 − 完成 =「まだ満杯になっていない箱」の数
+  const progress = computeProgressBoxes(progressLines)
+  const totalPacks = progress.totalPacks
+  const completedPacks = progress.completedPacks
+  const totalBoxes = progress.totalBoxes
+  const completedBoxes = progress.completedBoxes
+  const remainingBoxesTotal = progress.remainingBoxes
 
-  const nextDayTotalPacks = nextItems.reduce((acc, it) => acc + it.orderedQty, 0)
-  const nextDayTotalBoxes = nextDayTotalPacks > 0 ? Math.ceil(nextDayTotalPacks / 20) : 0
+  const nextDayProgress = computeProgressBoxes(
+    nextItems.map((it) => {
+      const perCase = packsPerCaseOf(it)
+      const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
+      return { productName, qty: it.orderedQty, packsPerCase: perCase, isSmallSample: isSample && it.orderedQty < perCase }
+    }),
+  )
+  const nextDayTotalPacks = nextDayProgress.totalPacks
+  const nextDayTotalBoxes = nextDayProgress.totalBoxes
 
   const liveContainerBreakdown: ContainerBreakdownItem[] =
     items.length > 0
@@ -341,11 +353,13 @@ export function PackingAndShippingViews({
         body: JSON.stringify({ items: updates }),
       })
       if (!res.ok) throw new Error('並び順の保存に失敗しました')
+      const reorderJson = await res.json().catch(() => null)
       toast.success(
         customToast ||
           (isThaiMode ? 'เปลี่ยนลำดับเรียบร้อยแล้ว (並び順を更新しました)' : 'パック作業順を更新しました'),
         { id: 'reorder-toast' },
       )
+      showResponseWarnings(reorderJson)
     } catch {
       toast.error('並び替えに失敗しました')
       setItems((prev) =>
@@ -384,13 +398,17 @@ export function PackingAndShippingViews({
     setItems((prev) => prev.map((it) => ({ ...it, dailyPackSortOrder: null })))
     setBusyReorder(true)
     try {
-      await fetch('/api/order-items/reorder', {
+      const res = await fetch('/api/order-items/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: updates }),
       })
+      // 保存できなかったのに「戻しました」と出さない（下の catch で元の並びに戻す）
+      if (!res.ok) throw new Error('並び順の保存に失敗しました')
       toast.success('自動の優先順に戻しました')
+      showResponseWarnings(await res.json().catch(() => null))
     } catch {
+      toast.error('自動の優先順に戻せませんでした。もう一度お試しください')
       setItems((prev) =>
         prev.map((it) => ({
           ...it,
@@ -789,6 +807,7 @@ export function PackingAndShippingViews({
                         sortOrder: (idx + 1) * 10,
                       }))
                       const updatedMap = new Map(updates.map((u) => [u.id, u.sortOrder]))
+                      const prevSortMap = new Map(items.map((it) => [it.itemId, it.dailyPackSortOrder]))
                       setItems((prev) =>
                         prev.map((it) => ({
                           ...it,
@@ -797,12 +816,25 @@ export function PackingAndShippingViews({
                       )
                       setBusyReorder(true)
                       try {
-                        await fetch('/api/order-items/reorder', {
+                        const res = await fetch('/api/order-items/reorder', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ items: updates }),
                         })
+                        if (!res.ok) throw new Error('並び順の保存に失敗しました')
                         toast.success('未完了のカードをすべて上段に集めました')
+                        showResponseWarnings(await res.json().catch(() => null))
+                      } catch {
+                        // 保存できていないので、画面の並びも元に戻す（他の並び順保存と同じ）
+                        toast.error('並び順を保存できませんでした。もう一度お試しください')
+                        setItems((prev) =>
+                          prev.map((it) => ({
+                            ...it,
+                            dailyPackSortOrder: prevSortMap.has(it.itemId)
+                              ? (prevSortMap.get(it.itemId) ?? null)
+                              : it.dailyPackSortOrder,
+                          })),
+                        )
                       } finally {
                         setBusyReorder(false)
                       }

@@ -142,9 +142,14 @@ export async function pollDriveOnce(): Promise<PollDriveResult> {
     if (retryRowsErr) console.error('[poll-drive] 再試行対象の取得に失敗:', retryRowsErr.message)
 
     // 再試行前に status を pending_ai に戻す（processReceipt が pending_ai しか処理しない）
-    const retryIds = (retryRows ?? []).map((r) => r.id as string)
+    let retryIds = (retryRows ?? []).map((r) => r.id as string)
     if (retryIds.length > 0) {
-      await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+      const { error: reopenErr } = await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+      if (reopenErr) {
+        // 戻せなかった受信票は ai_failed のまま残る（次回のポーリングで再び拾う）。今回は再試行しない
+        console.error('[poll-drive] 再試行対象を pending_ai に戻せませんでした（次回に再試行）:', reopenErr.message)
+        retryIds = []
+      }
     }
 
     const allIds = [...newIds, ...retryIds].slice(0, MAX_PROCESS_PER_POLL)
@@ -174,8 +179,11 @@ async function driveAuth() {
   if (saJson) {
     try {
       return new google.auth.GoogleAuth({ credentials: JSON.parse(saJson), scopes })
-    } catch {
-      // 不正な JSON は ADC にフォールバック
+    } catch (jsonErr) {
+      // 不正な JSON は ADC にフォールバック（設定ミスに気づけるようログに残す。値そのものは秘密なので出さない）
+      // JSON.parse のエラー文には入力の前後の文字（鍵の断片）が含まれうるため、エラーの種類（name）だけを出す
+      const kind = jsonErr instanceof Error ? jsonErr.name : typeof jsonErr
+      console.error(`[poll-drive] GOOGLE_SERVICE_ACCOUNT_JSON が JSON として読めません（${kind}）。ADC で続行します`)
     }
   }
   return new google.auth.GoogleAuth({ scopes })

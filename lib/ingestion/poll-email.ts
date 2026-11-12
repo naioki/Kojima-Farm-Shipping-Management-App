@@ -140,14 +140,20 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
 
         // 全パート正常時のみ削除マーク（POP3ではDELEがIMAPの\Flaggedに相当）
         if (allOk) toDelete.push(num)
-      } catch {
-        // このメッセージは削除せず次ポーリングで再取得（重複は exact_hash / message_id で防止）
+      } catch (msgErr) {
+        // このメッセージは削除せず次ポーリングで再取得（重複は exact_hash / message_id で防止）。失敗はログに残す
+        console.error(`[poll-email] メッセージ ${num} の取り込みに失敗（次回再取得）:`, msgErr)
       }
     }
 
     // DELE は QUIT 前にまとめて送る
     for (const num of toDelete) {
-      try { await pop3Cmd(conn, `DELE ${num}`) } catch { /* 失敗しても続行 */ }
+      try {
+        await pop3Cmd(conn, `DELE ${num}`)
+      } catch (delErr) {
+        // 削除できなくても続行（次回再取得されるが message_id で重複は防げる）。失敗はログに残す
+        console.error(`[poll-email] メッセージ ${num} の削除（DELE）に失敗:`, delErr)
+      }
     }
     await pop3Cmd(conn, 'QUIT')
   } catch (e) {
@@ -173,7 +179,9 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
 
     const retryIds = (retryRows ?? []).map((r) => r.id as string)
     if (retryIds.length > 0) {
-      await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+      const { error: reopenErr } = await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+      // 戻せなかった受信票は ai_failed のまま残り、次回のポーリングで再び拾う（下の pending_ai 取得には入らない）
+      if (reopenErr) console.error('[poll-email] 再試行対象を pending_ai に戻せませんでした（次回に再試行）:', reopenErr.message)
     }
 
     // pending_ai を DB から直接拾う。今回取り込んだ分（pendingReceiptIds）だけでなく、

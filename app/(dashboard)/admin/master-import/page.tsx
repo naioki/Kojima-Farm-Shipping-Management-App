@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { MasterImportWizard, type ExistingForDedup } from '@/components/admin/MasterImportWizard'
 import { requireAdmin } from '@/lib/auth/require-admin'
+import { ErrorState } from '@/components/ui/States'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,11 +18,19 @@ export default async function MasterImportPage() {
 
   const supabase = createAdminClient()
 
-  const [{ data: customers }, { data: products }, { data: packs }] = await Promise.all([
+  const [
+    { data: customers, error: customersErr },
+    { data: products, error: productsErr },
+    { data: packs, error: packsErr },
+  ] = await Promise.all([
     supabase.from('customers').select('id, name').eq('is_active', true).order('name'),
     supabase.from('products').select('id, name').eq('is_active', true),
     supabase.from('pack_configs').select('product_id, label').eq('is_active', true),
   ])
+
+  // 重複判定の元データが欠けたまま登録に進むと二重登録になるため、空表示にせずエラーで止める
+  const queryError = customersErr ?? productsErr ?? packsErr
+  if (queryError) return <ErrorState message="既存マスタを読み込めませんでした。時間をおいて再度お試しください。" detail={queryError.message} />
 
   const productNameById = new Map((products ?? []).map((p) => [p.id, p.name]))
   const existing: ExistingForDedup = {

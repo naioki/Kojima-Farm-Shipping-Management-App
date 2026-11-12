@@ -1,5 +1,6 @@
 import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { analyzeOrders, type ParsedOrder, type ParsedItem } from '@/lib/gemini/analyze'
 import { preprocessFaxImage, preprocessFaxImageRotated180 } from '@/lib/ocr/preprocess'
 import { matchProductName, type ProductCandidate } from '@/lib/matching/name-match'
@@ -13,12 +14,12 @@ import { shiftDateStr } from '@/lib/dates'
 import { foldKana } from '@/lib/normalize/kana'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
+import { INGEST_REVIEW_HOLD_KEY } from '@/lib/ingestion/review-hold'
 import {
   calculateContainerBoxes,
   determineContainerType,
   determineHasCard,
   determineUnitCount,
-  isGenericOrInvalidContainer,
   resolveContainerType,
   formatQuantityCaseText,
   generateOrderKey,
@@ -367,8 +368,9 @@ export async function processReceipt(
           payload['file_base64'] = rot.base64
           payload['content_type'] = rot.mimeType
         }
-      } catch {
-        // 回転再試行の失敗は無視して初回結果を使う
+      } catch (rotErr) {
+        // 回転再試行の失敗は初回結果を使って続行（失敗はログに残す）
+        console.warn('[process-receipt] 画像の回転再試行に失敗。初回の解析結果を使います:', rotErr)
       }
     }
   } catch (e) {
@@ -511,6 +513,38 @@ export async function processReceipt(
   let minOverallConfidence = 1
   let firstResolvedCustomerId: string | null = customerId
   const changeAlerts: PipelineAlertItem[] = [...slipData.alerts]
+  /**
+   * 取り込み中の書き込み失敗（supabase は例外を投げず { error } を返す）。画面が無いので
+   * console.error に残し、受信票を「要確認」にして error_message と alerts（受信箱・ビューアに出る）に記録する。
+   */
+  const ingestIssues: string[] = []
+  /**
+   * 保存の失敗ではないが、人の確認が要るため受信票を要確認に残す理由（受信箱の自動同期で消さない。
+   * lib/ingestion/review-hold.ts）。例: 承認済みの注文に確認が必要な再送を反映した。
+   */
+  const reviewHoldReasons: string[] = []
+  const noteReviewHold = (alertMessage: string) => {
+    reviewHoldReasons.push(alertMessage)
+    changeAlerts.push({
+      alert_id: `ALT-${Date.now().toString(36).toUpperCase()}-H${reviewHoldReasons.length}`,
+      created_at: formatJstShortTimestamp(),
+      alert_type: '要確認',
+      message: alertMessage,
+      resolved: false,
+    })
+  }
+  const noteIngestIssue = (logTag: string, err: { message?: string } | string | null | undefined, alertMessage: string) => {
+    const detail = typeof err === 'string' ? err : (err?.message ?? 'unknown')
+    console.error(`[process-receipt] ${logTag}:`, detail.slice(0, 300))
+    ingestIssues.push(alertMessage)
+    changeAlerts.push({
+      alert_id: `ALT-${Date.now().toString(36).toUpperCase()}-${ingestIssues.length}`,
+      created_at: formatJstShortTimestamp(),
+      alert_type: '要確認',
+      message: alertMessage,
+      resolved: false,
+    })
+  }
 
   // ── ARCHITECTURE.md §3.3 & V5 明細行の更新判定ルール（A.新規 / B.再送維持 / C.数量変更 / D.取消復活 / E.和郷園消滅2段階ガード）──
   for (const po of parsedOrders) {
@@ -528,7 +562,7 @@ export async function processReceipt(
       // 納品先もAIが追加判別してくれるため、未登録の納入先は自動でマスタ追加して即時バインド
       try {
         // code は帳票・画面に表示される名称。切り詰めると「相模セ」のように途切れるため必ず全文を保存する。
-        const { data: newDest } = await admin
+        const { data: newDest, error: newDestErr } = await admin
           .from('delivery_destinations')
           .insert({
             customer_id: orderCustomerId,
@@ -538,13 +572,24 @@ export async function processReceipt(
           })
           .select('id, code, full_name, aliases')
           .single()
-        if (newDest) {
+        if (newDestErr) {
+          // 納入先なしで続ける（注文は「納入先要確認」で残る）。登録できなかったことは受信票に残す
+          noteIngestIssue(
+            '未登録の納入先の自動登録に失敗',
+            newDestErr,
+            `納入先「${po.destination_name}」を自動登録できませんでした。取引先の納入先を確認してください`,
+          )
+        } else if (newDest) {
           destinationId = newDest.id
           custDests.push({ ...newDest, customer_id: orderCustomerId, aliases: [] })
           allDests.push({ ...newDest, customer_id: orderCustomerId, aliases: [] })
         }
       } catch (err) {
-        console.warn('[process-receipt] 自動納入先登録スキップ:', err)
+        noteIngestIssue(
+          '未登録の納入先の自動登録で例外',
+          err instanceof Error ? err.message : String(err),
+          `納入先「${po.destination_name}」を自動登録できませんでした。取引先の納入先を確認してください`,
+        )
       }
     }
     const needsDestination = custDests.length > 0 && destinationId === null
@@ -778,13 +823,21 @@ export async function processReceipt(
       const effectiveSlip = po.slip_no || slipNo
 
       // 同一顧客・同一出荷日の既存未キャンセル注文を取得（宛先誤読込修正・伝票No一致を漏らさず照合）
-      const { data: candidateOrders } = await admin
+      const { data: candidateOrders, error: candidateErr } = await admin
         .from('orders')
         .select('id, status, note, destination_id')
         .eq('customer_id', orderCustomerId)
         .eq('delivery_date', po.delivery_date)
         .neq('status', 'cancelled')
         .limit(20)
+      if (candidateErr) {
+        // 読めないまま「既存なし」として新規作成に進むと注文が二重になる。取り込み失敗として後で再試行する
+        console.error('[process-receipt] 既存注文の読み込みに失敗:', candidateErr.message.slice(0, 300))
+        return await failReceipt(
+          receiptId,
+          `既存注文の読み込みに失敗したため取り込みを中断しました（自動で再試行します）: ${candidateErr.message}`,
+        )
+      }
 
       if (candidateOrders && candidateOrders.length > 0) {
         // 1. 完全一致: destination_id が一致し、かつサンプル種別も一致（サンプル注文は伝票Noが異なる別サンプルを上書きしない #11-04）
@@ -829,10 +882,18 @@ export async function processReceipt(
       }
 
       if (existingOrder) {
-        const { data: pItems } = await admin
+        const { data: pItems, error: pItemsErr } = await admin
           .from('order_items')
           .select('*')
           .eq('order_id', existingOrder.id)
+        if (pItemsErr) {
+          // 読めないまま「明細なし」として進むと、既存の明細と同じ品目を新規行で足して二重になる
+          console.error('[process-receipt] 既存明細の読み込みに失敗:', pItemsErr.message.slice(0, 300))
+          return await failReceipt(
+            receiptId,
+            `既存注文の明細の読み込みに失敗したため取り込みを中断しました（自動で再試行します）: ${pItemsErr.message}`,
+          )
+        }
         prevItems = (pItems ?? []) as PrevItemRow[]
 
         for (const eItem of enriched) {
@@ -924,7 +985,7 @@ export async function processReceipt(
       })),
     })
 
-    const orderStatus: 'approved' | 'pending_review' =
+    let orderStatus: 'approved' | 'pending_review' =
       approvalDecision.action === 'auto_approve' ? 'approved' : 'pending_review'
 
     for (const e of enriched) {
@@ -970,18 +1031,38 @@ export async function processReceipt(
 
     if (existingOrder) {
       targetOrderId = existingOrder.id
+      // 状態を書き換えてよいのは、取り込み前の状態が承認待ち（pending_review）か承認済み（approved）の注文だけ。
+      // 承認済みの注文に「確認が必要」と判定された追加・訂正FAXが来たら、従来どおり承認待ちに戻す
+      // （人が再承認するまで、書き換わった数量を出荷一覧に出さないための確認ゲート）。
+      // 出荷済み・請求済みなどの注文の状態は、取り込みの判定で上書きしない（出荷・請求の進行を巻き戻さない）。
+      const mayChangeStatus = existingOrder.status === 'pending_review' || existingOrder.status === 'approved'
       const updatePayload: Record<string, unknown> = {
-        status: orderStatus,
+        ...(mayChangeStatus ? { status: orderStatus } : {}),
         note: safeNoteParts.length > 0 ? safeNoteParts.join('\n') : existingOrder.note,
+      }
+      if (!mayChangeStatus && orderStatus === 'pending_review') {
+        // 以前は承認待ちに戻して人に見せていた内容。状態は変えない代わりに受信票を要確認に残す
+        noteReviewHold(
+          `${po.delivery_date ?? ''}の注文（${existingOrder.status}）: 確認が必要な内容の再送を反映しました。注文の内容をFAXと見比べてください`,
+        )
       }
       if (destinationId && existingOrder.destination_id !== destinationId) {
         updatePayload.destination_id = destinationId
       }
-      await admin
+      const { error: ordUpdErr } = await admin
         .from('orders')
         .update(updatePayload)
         .eq('id', targetOrderId)
+      if (ordUpdErr) {
+        noteIngestIssue(
+          '既存注文のヘッダー更新に失敗',
+          ordUpdErr,
+          `${po.delivery_date ?? ''}の注文: 状態・備考・納入先の更新に失敗しました。注文の内容を確認してください`,
+        )
+      }
       createdOrderIds.push(targetOrderId)
+      /** この注文で明細の更新・追加に失敗したか（失敗したら注文を要確認に戻して人が気づけるようにする） */
+      let itemWriteFailed = false
 
       for (const e of enriched) {
         const targetName =
@@ -996,13 +1077,20 @@ export async function processReceipt(
         if (prev) {
           if (prev.is_manual_modified) {
             // 手動修正保護された明細は数量・現場ステータスを維持し、line_note と is_flagged のみ追記
-            await admin
+            const { error: flagErr } = await admin
               .from('order_items')
               .update({
                 line_note: e.lineNote,
                 is_flagged: true,
               })
               .eq('id', prev.id)
+            if (flagErr) {
+              noteIngestIssue(
+                '手動修正済み明細への要確認メモの追記に失敗',
+                flagErr,
+                `${po.delivery_date ?? ''} ${targetName}: 手動修正済みの明細に最新FAXの内容（メモ）を書き込めませんでした。FAXと見比べてください`,
+              )
+            }
             insertedOrUpdatedItems.push({
               id: prev.id,
               product_id: e.matchedProduct?.id ?? null,
@@ -1064,19 +1152,25 @@ export async function processReceipt(
             .from('order_items')
             .update(v5UpdatePayload)
             .eq('id', prev.id)
-          if (upErr) {
-            // 0026 未適用環境へのフォールバック
+          if (upErr && isMissingColumnError(upErr)) {
+            // 0026 未適用環境（列が無い）へのフォールバック。想定内なので記録しない
             const retry = await admin.from('order_items').update(baseUpdatePayload).eq('id', prev.id)
             upErr = retry.error
           }
           if (upErr) {
-            console.error('[process-receipt] 既存明細の更新に失敗:', upErr.message)
+            itemWriteFailed = true
+            noteIngestIssue(
+              '既存明細の更新に失敗',
+              upErr,
+              `${po.delivery_date ?? ''} ${targetName}: 数量 ${oldQty}→${newQty} の更新に失敗しました。注文の数量を確認してください`,
+            )
+          } else {
+            insertedOrUpdatedItems.push({
+              id: prev.id,
+              product_id: e.matchedProduct?.id ?? null,
+              quantity: newQty,
+            })
           }
-          insertedOrUpdatedItems.push({
-            id: prev.id,
-            product_id: e.matchedProduct?.id ?? null,
-            quantity: newQty,
-          })
         } else {
           // 既存注文への新規品目行の追加
           const baseInsertRow = {
@@ -1115,7 +1209,8 @@ export async function processReceipt(
             .insert(v5InsertRow)
             .select('id, product_id, quantity')
             .single()
-          if (newItErr) {
+          if (newItErr && isMissingColumnError(newItErr)) {
+            // 0026 未適用環境（列が無い）へのフォールバック。想定内なので記録しない
             const retry = await admin
               .from('order_items')
               .insert(baseInsertRow)
@@ -1130,9 +1225,35 @@ export async function processReceipt(
               product_id: (newIt.product_id as string | null) ?? null,
               quantity: Number(newIt.quantity),
             })
+          } else {
+            // 明細を黙って欠落させない: 受信票と注文を要確認に残し、受信箱で人が気づけるようにする
+            itemWriteFailed = true
+            noteIngestIssue(
+              '既存注文への新規明細の追加に失敗',
+              newItErr ?? 'no row returned',
+              `${po.delivery_date ?? ''} ${targetName} ${e.resolvedQty ?? ''}${e.resolvedUnit ?? ''}: 明細を注文に追加できませんでした。FAXを見て手で追加してください`,
+            )
           }
         }
       }
+
+      if (itemWriteFailed && orderStatus === 'approved') {
+        // この注文の収穫タスクの同期（下）は行わない
+        orderStatus = 'pending_review'
+        // 取り込み前が承認待ち・承認済みだった注文は、承認待ちに戻す（そのまま現場ボードに出すと欠けた明細に
+        // 誰も気づかないため）。元から出荷済み・請求済みの注文は状態を変えず、受信票の要確認
+        // （noteIngestIssue で error_message・alerts に記録済み）で人に知らせる。
+        if (mayChangeStatus) {
+          const { error: backErr } = await admin
+            .from('orders')
+            .update({ status: 'pending_review' })
+            .eq('id', targetOrderId)
+          if (backErr) {
+            noteIngestIssue('明細の失敗後に注文を要確認へ戻せなかった', backErr, `${po.delivery_date ?? ''}の注文: 要確認に戻せませんでした。注文を確認してください`)
+          }
+        }
+      }
+      if (itemWriteFailed) anyPendingReview = true
     } else {
       const { data: order, error: orderErr } = await admin
         .from('orders')
@@ -1201,7 +1322,15 @@ export async function processReceipt(
         itemsErr = retry.error
       }
       if (itemsErr) {
-        await admin.from('orders').delete().eq('id', targetOrderId)
+        // 巻き戻し（order_items は orders の ON DELETE CASCADE）
+        const { error: rollbackErr } = await admin.from('orders').delete().eq('id', targetOrderId)
+        if (rollbackErr) {
+          console.error('[process-receipt] 巻き戻し（注文の削除）に失敗。明細の無い注文が残っています:', targetOrderId, rollbackErr.message)
+          return await failReceipt(
+            receiptId,
+            `注文明細の保存失敗: ${itemsErr.message}（作りかけの注文の一部が残っている可能性があります。注文一覧で確認してください）`,
+          )
+        }
         return await failReceipt(receiptId, `注文明細の保存失敗: ${itemsErr.message}`)
       }
       for (const it of insertedItems ?? []) {
@@ -1217,7 +1346,8 @@ export async function processReceipt(
     if (orderStatus === 'approved' && po.delivery_date && insertedOrUpdatedItems.length > 0) {
       const harvestTaskDate = shiftDateStr(po.delivery_date, -1)
       const itemIdsForTasks = insertedOrUpdatedItems.map((it) => it.id)
-      await admin.from('harvest_tasks').delete().in('order_item_id', itemIdsForTasks)
+      const HARVEST_ALERT = `${po.delivery_date}の注文: 収穫・パックの作業一覧を更新できませんでした。収穫一覧を確認してください`
+      const { error: tasksDelErr } = await admin.from('harvest_tasks').delete().in('order_item_id', itemIdsForTasks)
       const taskRows = insertedOrUpdatedItems
         .filter((it) => Boolean(it.product_id))
         .map((it) => ({
@@ -1226,11 +1356,12 @@ export async function processReceipt(
           required_qty: Number(it.quantity),
           task_date: harvestTaskDate,
         }))
-      if (taskRows.length > 0) {
+      if (tasksDelErr) {
+        // 古いタスクを消せないまま作ると二重になるので作らない
+        noteIngestIssue('harvest_tasks の削除に失敗', tasksDelErr, HARVEST_ALERT)
+      } else if (taskRows.length > 0) {
         const { error: tasksErr } = await admin.from('harvest_tasks').insert(taskRows)
-        if (tasksErr) {
-          console.error('[process-receipt] harvest_tasks の自動生成に失敗:', tasksErr.message)
-        }
+        if (tasksErr) noteIngestIssue('harvest_tasks の自動生成に失敗', tasksErr, HARVEST_ALERT)
       }
     }
   }
@@ -1279,6 +1410,13 @@ export async function processReceipt(
           .eq('customer_id', firstResolvedCustomerId)
           .neq('status', 'cancelled')
           .ilike('note', `%伝票No: ${effectiveSlipNo}%`)
+        if (fbSlip.error) {
+          noteIngestIssue(
+            '同じ伝票Noの旧注文の読み込みに失敗（自動整理を行わない）',
+            fbSlip.error,
+            `伝票No ${effectiveSlipNo} の古い注文を読み込めず、自動整理できませんでした。同じ伝票の注文が重複していないか確認してください`,
+          )
+        }
         slipOrders = (fbSlip.data ?? []) as typeof slipOrders
       }
       for (const row of slipOrders ?? []) {
@@ -1301,6 +1439,13 @@ export async function processReceipt(
           .eq('customer_id', firstResolvedCustomerId)
           .neq('status', 'cancelled')
           .in('delivery_date', matrixDates)
+        if (fbDate.error) {
+          noteIngestIssue(
+            '同じ日付の旧注文の読み込みに失敗（自動整理を行わない）',
+            fbDate.error,
+            `${matrixDates.join('・')}の古い注文を読み込めず、自動整理できませんでした。注文が重複していないか確認してください`,
+          )
+        }
         dateOrders = (fbDate.data ?? []) as typeof dateOrders
       }
       for (const row of dateOrders ?? []) {
@@ -1333,20 +1478,33 @@ export async function processReceipt(
           `[process-receipt] 最新FAX完全同期により不要・消滅した未着手注文を自動整理: order_id=${ex.id}, date=${ex.delivery_date}`,
         )
         const itemIds = items.map((it) => it.id)
+        const CLEANUP_ALERT = `${ex.delivery_date}の注文: 最新FAXに無い古い注文を自動整理できませんでした。重複していないか確認して手で片付けてください`
+        let itemsCleared = true
         if (itemIds.length > 0) {
-          await admin.from('harvest_tasks').delete().in('order_item_id', itemIds)
-          await admin.from('order_items').delete().in('id', itemIds)
+          // harvest_tasks は order_items の ON DELETE CASCADE でも消えるので、ここの失敗はログのみ
+          const { error: htDelErr } = await admin.from('harvest_tasks').delete().in('order_item_id', itemIds)
+          if (htDelErr) console.error('[process-receipt] 自動整理: harvest_tasks の削除に失敗（明細削除のカスケードで消える）:', htDelErr.message)
+          const { error: itDelErr } = await admin.from('order_items').delete().in('id', itemIds)
+          if (itDelErr) {
+            itemsCleared = false
+            noteIngestIssue('自動整理: 古い注文の明細の削除に失敗', itDelErr, CLEANUP_ALERT)
+          }
         }
-        await admin.from('orders').delete().eq('id', ex.id)
+        if (itemsCleared) {
+          const { error: ordDelErr } = await admin.from('orders').delete().eq('id', ex.id)
+          if (ordDelErr) noteIngestIssue('自動整理: 古い注文の削除に失敗', ordDelErr, CLEANUP_ALERT)
+        }
       } else {
         // 現場で作業中または完了済みの場合は、データ保護のため自動削除せず警告バッジを付与
         const guardNote = `【要確認】最新FAX(${effectiveSlipNo || '再送'})に記載なし（現場作業済のため保護）`
         const prevNote = ex.note
         const updatedNote = prevNote && !prevNote.includes(guardNote) ? `${prevNote}\n${guardNote}` : guardNote
-        await admin
+        const { error: guardNoteErr } = await admin
           .from('orders')
           .update({ note: updatedNote })
           .eq('id', ex.id)
+        // 警告バッジ（下の alerts）は受信票に残るので、注文の備考に書けなかったことはログに残す
+        if (guardNoteErr) console.error('[process-receipt] 保護した注文への【要確認】備考の追記に失敗:', ex.id, guardNoteErr.message)
         changeAlerts.push({
           alert_id: `ALT-${Date.now().toString(36).toUpperCase()}`,
           created_at: formatJstShortTimestamp(),
@@ -1362,6 +1520,14 @@ export async function processReceipt(
   cleanPayload['slip_data'] = slipData
   cleanPayload['created_order_ids'] = createdOrderIds
 
+  // 書き込みの失敗があった受信票は、自動承認でも「要確認」に残す（受信箱で人が気づけるように）。
+  // 受信箱の自動同期（注文が承認済みなら受信票を approved にする）で消えないよう、明示の印を立てる。
+  if (ingestIssues.length > 0 || reviewHoldReasons.length > 0) {
+    anyPendingReview = true
+    cleanPayload[INGEST_REVIEW_HOLD_KEY] = true
+  } else {
+    delete cleanPayload[INGEST_REVIEW_HOLD_KEY]
+  }
   const finalReceiptStatus: 'pending_review' | 'approved' = anyPendingReview
     ? 'pending_review'
     : 'approved'
@@ -1375,7 +1541,12 @@ export async function processReceipt(
       delivery_date: parsedOrders[0]?.delivery_date ?? null,
       ocr_confidence: minOverallConfidence,
       status: finalReceiptStatus,
-      error_message: null,
+      error_message:
+        ingestIssues.length > 0
+          ? `取り込み中に一部の保存に失敗しました: ${[...ingestIssues, ...reviewHoldReasons].join(' / ')}`.slice(0, 500)
+          : reviewHoldReasons.length > 0
+            ? `確認が必要です: ${reviewHoldReasons.join(' / ')}`.slice(0, 500)
+            : null,
       raw_payload: cleanPayload,
     })
     .eq('id', receiptId)

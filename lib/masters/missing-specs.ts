@@ -19,7 +19,7 @@ export interface MissingSpec {
  * 規格未登録一覧ページとダッシュボードのアラートで共有する。
  */
 export async function getMissingSpecs(admin: AdminClient): Promise<MissingSpec[]> {
-  const [{ data: items }, { data: rules }, { data: packs }] = await Promise.all([
+  const [{ data: items, error: itemsErr }, { data: rules, error: rulesErr }, { data: packs, error: packsErr }] = await Promise.all([
     admin
       .from('order_items')
       .select('product_id, products(name), orders!inner(customer_id, status, customers(name))'),
@@ -27,6 +27,10 @@ export async function getMissingSpecs(admin: AdminClient): Promise<MissingSpec[]
     // 荷姿（取引先共通=customer_id NULL／取引先専用）。登録済みなら規格は登録済み扱い
     admin.from('pack_configs').select('customer_id, product_id').eq('is_active', true),
   ])
+
+  // 取得失敗を「未登録なし」に化けさせない（呼び出し側で ErrorState / ログにする）
+  const queryErr = itemsErr ?? rulesErr ?? packsErr
+  if (queryErr) throw new Error(`規格未登録の集計に失敗しました: ${queryErr.message}`)
 
   const sharedPackProducts = new Set<string>()
   const customerPackKeys = new Set<string>()

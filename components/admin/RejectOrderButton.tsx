@@ -6,6 +6,7 @@ import { XCircle, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 interface Props {
   orderId: string
@@ -44,6 +45,7 @@ export function RejectOrderButton({ orderId, customerName, deliveryDate, size = 
         throw new Error(j.error ?? `却下に失敗しました (${res.status})`)
       }
 
+      showResponseWarnings(await res.json().catch(() => null))
       toast.success('注文を却下（承認しない）しました')
       setOpen(false)
       router.refresh()

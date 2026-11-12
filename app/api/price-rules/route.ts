@@ -1,26 +1,21 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { priceRuleCreateSchema } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 async function requireAdmin() {
-  const user = await getAuthedUser()
-  if (!user) return { error: '認証が必要です', status: 401 as const }
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/price-rules/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return { error: '管理者のみ操作できます', status: 403 as const }
-  return { user, supabase }
+  const guard = await requireAdminApi('管理者のみ操作できます')
+  if (!guard.ok) return { response: guard.response }
+  return { user: guard.user, supabase: createAdminClient() }
 }
 
 /** 価格ルールの作成（管理者）。期間×取引先×荷姿×チャネル。 */
 export async function POST(req: Request) {
   const auth = await requireAdmin()
-  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if ('response' in auth) return auth.response
 
   const parsed = priceRuleCreateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

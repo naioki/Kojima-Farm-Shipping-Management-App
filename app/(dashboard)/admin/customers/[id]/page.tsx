@@ -11,7 +11,8 @@ import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHis
 import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
 import { DestinationManager, type Destination } from '@/components/admin/DestinationManager'
 import { getSetting } from '@/lib/settings'
-import { getRouteOverrides } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
 import type { FractionPolicy } from '@/types/database'
@@ -39,7 +40,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     { data: destinations, error: destErr },
     lockRaw,
     masterRaw,
-    routeOverrides,
+    routeRes,
     { data: packRows, error: packErr },
   ] = await Promise.all([
     supabase
@@ -76,7 +77,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     })(),
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
-    getRouteOverrides(supabase).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    // 出発時刻・便名の退避データ（本番では納入先の列が未適用のため唯一の保存先）。読めないときは error が入る。
+    loadRouteOverrides(supabase),
     // 「使われる入数」の表示用（取引先別の設定が未入力のときの 荷姿 → 品目の標準）
     supabase.from('pack_configs').select('id, product_id, customer_id, base_per_selling, is_active').eq('is_active', true),
   ])
@@ -157,6 +159,10 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     }
   })
 
+  // 出発時刻・便名が読めないときは、納入先の一覧・追加・削除は出したまま、出発時刻・便名の欄だけ止める
+  // （「未設定」に見えたまま保存して上書きしないよう、DestinationManager は2項目を送らない）。
+  const routeOverrides = routeRes.overrides
+  const routeLoadError = routeRes.error
   const mergedDestinations = ((destinations ?? []) as Array<Record<string, unknown>>).map((d) => {
     const destId = d.id as string
     const code = d.code as string | null
@@ -170,6 +176,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       ...d,
       departure_time: (d.departure_time as string | null) ?? ov?.departureTime ?? null,
       shipping_route_name: (d.shipping_route_name as string | null) ?? ov?.shippingRouteName ?? null,
+      // 規定コンテナ: 列の値 → 退避ストアの値（列が無い本番では退避ストアが唯一の保存先）
+      default_container_type: resolveDestDefaultContainer(destId, d.default_container_type, routeRes.containers),
     }
   })
 
@@ -225,10 +233,17 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
             「<strong className="text-ink">{customer.name} ＞ 納入先</strong>」。略称は普段の表示、正式名は伝票、表記ゆれはOCRの名寄せに使います。
           </p>
         </div>
+        {routeLoadError && (
+          <LoadWarning
+            message="出発時刻・便名・規定コンテナを読み込めませんでした。誤って消さないよう、出発時刻・便名・規定コンテナの欄は変更できない状態にしています（略称・正式名などの保存、追加・削除はできます）。これらを変えるときは、ページを再読み込みしてください。"
+            detail={routeLoadError}
+          />
+        )}
         <DestinationManager
           customerId={customer.id}
           customerName={customer.name}
           initial={mergedDestinations as unknown as Destination[]}
+          routesUnavailable={Boolean(routeLoadError)}
         />
       </Card>
 

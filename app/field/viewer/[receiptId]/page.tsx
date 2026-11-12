@@ -21,6 +21,8 @@ export default function ReceiptViewerPage() {
   const [receipts, setReceipts] = useState<ViewerReceiptTab[]>([])
   const [targetItems, setTargetItems] = useState<ViewerTargetItem[]>([])
   const [loadingMeta, setLoadingMeta] = useState<boolean>(true)
+  // 照合データが読めなかったとき、「該当明細なし」と区別して出すため
+  const [metaError, setMetaError] = useState<string | null>(null)
 
   const originalUrl = `/api/receipts/${receiptId}/original?mode=preview&rot=${rotation}`
   const directFileUrl = `/api/receipts/${receiptId}/original?rot=${rotation}`
@@ -30,6 +32,7 @@ export default function ReceiptViewerPage() {
     async function loadMeta() {
       try {
         setLoadingMeta(true)
+        setMetaError(null)
         const res = await fetch(`/api/field/viewer-meta?receiptId=${receiptId}&date=${returnDate}`)
         if (res.ok) {
           const data = (await res.json()) as { receipts: ViewerReceiptTab[]; targetItems: ViewerTargetItem[] }
@@ -37,9 +40,12 @@ export default function ReceiptViewerPage() {
             setReceipts(data.receipts || [])
             setTargetItems(data.targetItems || [])
           }
+        } else if (active) {
+          setMetaError(`HTTP ${res.status}`)
         }
       } catch (e) {
         console.error('Failed to load viewer meta:', e)
+        if (active) setMetaError(e instanceof Error ? e.message : String(e))
       } finally {
         if (active) setLoadingMeta(false)
       }
@@ -55,7 +61,9 @@ export default function ReceiptViewerPage() {
     if (window.opener && window.history.length <= 1) {
       try {
         window.close()
-      } catch {}
+      } catch {
+        // ブラウザが閉じるのを拒んだ場合は、下の通常の戻り遷移で一覧へ戻す
+      }
     }
     const qs = new URLSearchParams()
     if (returnDate) qs.set('date', returnDate)
@@ -244,6 +252,10 @@ export default function ReceiptViewerPage() {
           {showTargetItems && (
             loadingMeta ? (
               <span className="text-xs font-bold text-ink animate-pulse">照合データ読込中...</span>
+            ) : metaError ? (
+              <span role="alert" className="text-xs font-bold text-alert" title={metaError}>
+                ⚠️ 該当明細を読み込めませんでした（原本の表示はそのまま使えます）。再読み込みしてください。
+              </span>
             ) : targetItems.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {targetItems.map((it, idx) => (

@@ -1,7 +1,6 @@
 import 'server-only'
 import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseFaxFilename } from '@/lib/config/ingestion'
 import { getSetting } from '@/lib/settings'
@@ -12,6 +11,7 @@ import {
   processReceipt,
 } from '@/lib/ingestion/process-receipt'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -83,16 +83,16 @@ export async function POST(req: NextRequest) {
     (cronSecret && headerToken === cronSecret)
 
   if (!isTokenValid) {
-    const user = await getAuthedUser()
-    if (!user) {
-      return NextResponse.json(
-        { detail: '認証トークン（X-Pipeline-Token / Authorization）またはログインが必要です', error: 'unauthorized' },
-        { status: 401 },
-      )
-    }
-    const supabase = createAdminClient()
-    const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-    if (profile?.role !== 'admin' && profile?.role !== 'staff') {
+    // 2) トークンが無い／違う場合は、ログイン中の社内ユーザー（admin/staff）のみ（管理画面からの投入）。
+    //    応答本文は Kojima-FAX 互換の { detail, error } を保つ。
+    const guard = await requireStaffApi()
+    if (!guard.ok) {
+      if (guard.response.status === 401) {
+        return NextResponse.json(
+          { detail: '認証トークン（X-Pipeline-Token / Authorization）またはログインが必要です', error: 'unauthorized' },
+          { status: 401 },
+        )
+      }
       return NextResponse.json({ detail: '権限がありません', error: 'forbidden' }, { status: 403 })
     }
   }
@@ -323,7 +323,7 @@ export async function POST(req: NextRequest) {
   let receiptId: string
   if (existingExact && existingExact.status === 'ai_failed') {
     receiptId = existingExact.id as string
-    await admin
+    const { error: reopenErr } = await admin
       .from('order_receipts')
       .update({
         status: 'pending_ai',
@@ -331,6 +331,17 @@ export async function POST(req: NextRequest) {
         raw_payload: initialPayload,
       })
       .eq('id', receiptId)
+    if (reopenErr) {
+      // 受信票を再受付できないまま解析すると、古い原本情報のまま処理してしまう
+      console.error('[POST /api/receipts] order_receipts の再受付（pending_ai への更新）に失敗:', reopenErr.message)
+      return NextResponse.json(
+        {
+          detail: `受信レコードの再登録に失敗しました: ${reopenErr.message}`,
+          error: reopenErr.message,
+        },
+        { status: 500 },
+      )
+    }
   } else {
     const { data: newReceipt, error: insertErr } = await admin
       .from('order_receipts')

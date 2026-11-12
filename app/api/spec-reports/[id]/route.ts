@@ -1,8 +1,8 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { specReportUpdateSchema } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -11,16 +11,10 @@ export const runtime = 'nodejs'
  * RLS（admin_all）で管理者のみ UPDATE 可能だが、API でも role を確認する（二重）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
+  const guard = await requireAdminApi('管理者のみ処理できます')
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/spec-reports/[id]/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: '管理者のみ処理できます' }, { status: 403 })
-  }
 
   const parsed = specReportUpdateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

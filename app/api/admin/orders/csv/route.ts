@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrdersList, type OrderFilter } from '@/lib/orders/list'
 import { statusLabel, sourceLabel } from '@/components/admin/OrderStatusBadge'
 import { jstTodayStr } from '@/lib/dates'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -30,14 +29,8 @@ function cell(v: string | number): string {
  * 一覧画面と同じ絞り込み（状態・取引先・期間）をクエリで受け取り、同じ並び順で出力する。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/admin/orders/csv/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const guard = await requireAdminApi('forbidden')
+  if (!guard.ok) return guard.response
 
   const { searchParams } = new URL(req.url)
   const parsed = querySchema.safeParse({

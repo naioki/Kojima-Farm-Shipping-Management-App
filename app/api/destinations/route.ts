@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isMissingColumnError } from '@/lib/supabase/missing-column'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
-import { saveRouteOverride } from '@/lib/field/destination-routes-store'
+import { saveDestinationOverride } from '@/lib/field/destination-routes-store'
+import { noteSideEffectFailure, withWarnings } from '@/lib/api/side-effects'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
@@ -61,6 +62,8 @@ export async function POST(req: Request) {
 
   const hasRouteData = Boolean(parsed.data.departure_time?.trim() || parsed.data.shipping_route_name?.trim() || parsed.data.default_container_type?.trim())
   let insRes: { data: Record<string, unknown> | null; error: { code?: string; message?: string } | null } = { data: null, error: null }
+  // 出発時刻・便名・規定コンテナを列に保存できたか（本番は列が無いので false。そのときは退避ストアが唯一の保存先）
+  let routeSavedToColumns = false
 
   if (hasRouteData) {
     // 拡張カラム指定時: カラムが存在すれば直接保存を試みる
@@ -86,6 +89,7 @@ export async function POST(req: Request) {
       insRes = { data: r2.data as Record<string, unknown> | null, error: r2.error }
     } else {
       insRes = { data: r1.data as Record<string, unknown> | null, error: r1.error }
+      routeSavedToColumns = !r1.error
     }
   } else {
     // 通常（納入先名・略称のみ）: 未適用カラムへのアクセスを最初から完全に回避し一発で作成
@@ -99,16 +103,48 @@ export async function POST(req: Request) {
 
   if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 500 })
 
-  // departure_time や shipping_route_name が指定されている場合は app_settings の RouteOverride にも保存
-  if (insRes.data?.id && (parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined)) {
+  // 出発時刻・便名は app_settings の退避ストア（v5_destination_routes）にも保存する（列ありでも控えとして同期）。
+  // 規定コンテナは列に保存できなかったとき（本番）だけ、同じ納入先エントリへ保存する。
+  // 納入先そのもの（名前など）は作成済みなので 500 にはしない（500 にすると再登録が重複扱いになる）。
+  // ただし列に保存できていないときは該当項目が未保存なので、それが分かる警告にする。
+  const warnings: string[] = []
+  const routeRequested = parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined
+  const containerValue = parsed.data.default_container_type?.trim() || null
+  const containerToStore = Boolean(containerValue) && !routeSavedToColumns
+  const storeLabel = [
+    ...(routeRequested ? ['出発時刻・便名'] : []),
+    ...(containerToStore ? ['規定コンテナ'] : []),
+  ].join('と')
+  let containerSavedToStore = false
+  if (insRes.data?.id && storeLabel) {
     try {
       const admin = createAdminClient()
-      await saveRouteOverride(admin, [`dest:${insRes.data.id}`], {
-        departureTime: parsed.data.departure_time ?? null,
-        shippingRouteName: parsed.data.shipping_route_name ?? null,
+      await saveDestinationOverride(admin, [`dest:${insRes.data.id}`], {
+        ...(routeRequested
+          ? {
+              departureTime: parsed.data.departure_time ?? null,
+              shippingRouteName: parsed.data.shipping_route_name ?? null,
+            }
+          : {}),
+        ...(containerToStore ? { defaultContainerType: containerValue } : {}),
       })
-    } catch {}
+      containerSavedToStore = containerToStore
+    } catch (e) {
+      noteSideEffectFailure(
+        warnings,
+        routeSavedToColumns
+          ? '[api/destinations] 出発時刻・便名の退避保存（app_settings v5_destination_routes）の同期に失敗'
+          : `[api/destinations] ${storeLabel}の保存（app_settings v5_destination_routes・唯一の保存先）に失敗`,
+        e,
+        routeSavedToColumns
+          ? '納入先と出発時刻・便名は保存しましたが、控えの更新に失敗しました。表示が古いままの場合は、出発時刻・便名をもう一度保存してください'
+          : `納入先は登録しましたが、${storeLabel}は保存できませんでした。この納入先の${storeLabel}をもう一度保存してください`,
+      )
+    }
   }
 
-  return NextResponse.json({ destination: insRes.data }, { status: 201 })
+  const destination: Record<string, unknown> | null = insRes.data ? { ...insRes.data } : null
+  if (destination && containerSavedToStore) destination.default_container_type = containerValue
+
+  return NextResponse.json(withWarnings({ destination }, warnings), { status: 201 })
 }

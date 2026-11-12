@@ -6,6 +6,7 @@ import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { portalOrderInputSchema } from '@/types/database'
 import { jstTodayStr } from '@/lib/dates'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
+import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -56,6 +57,8 @@ export async function POST(req: Request) {
   const { data: custRow } = await admin.from('customers').select('name').eq('id', customerId).maybeSingle()
   const custName = custRow?.name ?? ''
   const destName = destRow?.full_name || destRow?.code || ''
+  // 規定コンテナは「列の値 → 退避ストアの値」（列が無い本番では退避ストアが唯一の保存先）
+  const destDefaultContainer = await loadDestDefaultContainer(admin, destRow?.id, destRow?.default_container_type)
 
   // 商品マスタおよび取引ルールから単価・税率・規格・荷姿を確定（税率は注文時に冗長保持・tax.md）
   const productIds = parsed.data.items.map((i) => i.product_id)
@@ -116,7 +119,7 @@ export async function POST(req: Request) {
         spec: rule?.spec ?? rule?.label_spec ?? null,
         container_type: resolveContainerType({
           ruleContainer: rule?.container_type ?? null,
-          destDefaultContainer: destRow?.default_container_type ?? null,
+          destDefaultContainer,
           clientName: custName,
           destination: destName,
           rawText: parsed.data.note ?? '',
@@ -131,7 +134,15 @@ export async function POST(req: Request) {
       (payload) => admin.from('order_items').insert(payload as never).select('id').single(),
     )
     if (itemsErr) {
-      await admin.from('orders').delete().eq('id', order.id)
+      // 巻き戻し（先に入った明細は orders の ON DELETE CASCADE で一緒に消える）
+      const { error: rollbackErr } = await admin.from('orders').delete().eq('id', order.id)
+      if (rollbackErr) {
+        console.error('[portal/orders] 巻き戻し（注文の削除）に失敗。作りかけの注文が残っています:', order.id, rollbackErr.message)
+        return NextResponse.json(
+          { error: `${itemsErr.message}（送信途中の注文の一部が残っている可能性があります。農園へご連絡ください）` },
+          { status: 500 },
+        )
+      }
       return NextResponse.json({ error: itemsErr.message }, { status: 500 })
     }
   }

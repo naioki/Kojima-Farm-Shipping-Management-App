@@ -1,8 +1,7 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { pollEmailOnce } from '@/lib/ingestion/poll-email'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,15 +13,8 @@ export const dynamic = 'force-dynamic'
  * Message-ID / exact_hash 判定により、何度押しても二重計上しない。
  */
 export async function POST() {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-  const sb = createAdminClient()
-  const { data: profile, error: profileErr } = await sb.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/admin/ingest-email/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
+  const guard = await requireAdminApi('管理者権限が必要です')
+  if (!guard.ok) return guard.response
 
   const result = await pollEmailOnce()
   if (result.error) return NextResponse.json(result, { status: 500 })

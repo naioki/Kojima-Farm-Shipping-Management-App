@@ -78,7 +78,9 @@ export default async function DeliveryNoteView({
       .eq('customer_id', customerId)
       .eq('delivery_date', prevDate)
       .in('status', ['approved', 'shipped', 'invoiced'])
-    if (prevOrdersErr) console.error('[delivery-notes/view] 前日注文の取得に失敗:', prevOrdersErr.message)
+    // 失敗を「対象注文なし」に化けさせない（空の納品書を出さない）
+    if (prevOrdersErr)
+      return <ErrorState message="納品書の対象注文（前日出荷分）を読み込めませんでした。時間をおいて再度お試しください。" detail={prevOrdersErr.message} />
     if (prevOrders && prevOrders.length > 0) {
       allOrders = prevOrders
       effectiveOrderDate = prevDate
@@ -89,7 +91,8 @@ export default async function DeliveryNoteView({
   const { data: destRows, error: destErr } = distinctDestIds.length
     ? await supabase.from('delivery_destinations').select('id, code, full_name').in('id', distinctDestIds)
     : { data: [] as { id: string; code: string | null; full_name: string }[], error: null }
-  if (destErr) console.error('[delivery-notes/view] 納入先名の解決に失敗:', destErr.message)
+  // 納入先名は納品書の宛名（取引先＞納入先）。取れないまま取引先名だけの宛名で印刷させない。
+  if (destErr) return <ErrorState message="納品書の宛名（納入先名）を読み込めませんでした。時間をおいて再度お試しください。" detail={destErr.message} />
   const destLabel = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
 
   // 納入先を1つに絞り込み中なら、その納入先の注文だけを対象にする（表示は常に「取引先＞納入先」）。

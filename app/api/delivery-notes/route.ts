@@ -220,7 +220,17 @@ export async function POST(req: Request) {
   }))
   const { error: itemsErr } = await supabase.from('delivery_note_items').insert(itemRows)
   if (itemsErr) {
-    await supabase.from('delivery_notes').delete().eq('id', note.id)
+    // 巻き戻し（明細の無い納品書を残さない）
+    const { error: rollbackErr } = await supabase.from('delivery_notes').delete().eq('id', note.id)
+    if (rollbackErr) {
+      console.error('[delivery-notes] 巻き戻し（納品書の削除）に失敗。明細の無い納品書が残っています:', note.id, rollbackErr.message)
+      return NextResponse.json(
+        {
+          error: `納品書の明細を保存できませんでした: ${itemsErr.message}。作りかけの納品書（${note.note_number}）の一部が残っている可能性があります。納品書一覧で確認してください`,
+        },
+        { status: 500 },
+      )
+    }
     return NextResponse.json({ error: itemsErr.message }, { status: 500 })
   }
 

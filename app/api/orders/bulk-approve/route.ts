@@ -1,9 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { approveOrder } from '@/lib/orders/approve'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -17,21 +17,9 @@ const bulkApproveSchema = z.object({
  * 高確信（AI自信あり・納品日確定・納入先確定）な注文の一括処理、または選択チェックボックスによる一括承認。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileErr) console.error('[POST /api/orders/bulk-approve] ロール取得失敗:', profileErr.message)
-
-  const role = profile?.role
-  if (role !== 'admin' && role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const { user, role } = guard
 
   const parsed = bulkApproveSchema.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) {
@@ -47,6 +35,8 @@ export async function POST(req: Request) {
   let successCount = 0
   let failedCount = 0
   const errors: Array<{ orderId: string; error: string; reason?: string }> = []
+  /** 承認は成功したが付随更新に失敗したときの警告（重複は1つにまとめる） */
+  const warnings: string[] = []
 
   for (const orderId of orderIds) {
     try {
@@ -57,6 +47,7 @@ export async function POST(req: Request) {
       })
       if (result.ok) {
         successCount++
+        for (const w of result.warnings ?? []) if (!warnings.includes(w)) warnings.push(w)
       } else {
         failedCount++
         errors.push({ orderId, error: result.error, reason: result.reason })
@@ -76,5 +67,6 @@ export async function POST(req: Request) {
     successCount,
     failedCount,
     errors,
+    ...(warnings.length > 0 ? { warnings } : {}),
   })
 }

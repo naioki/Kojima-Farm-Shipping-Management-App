@@ -1,7 +1,7 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireAdminApi, requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -17,8 +17,9 @@ const uuidRe = /^[0-9a-f-]{36}$/i
  * POST: multipart/form-data（file, kind）→ Storage 保存 + pack_config_photos に登録。
  */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も読めた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
   if (!uuidRe.test(params.id)) return NextResponse.json({ error: '入力値が不正です' }, { status: 400 })
 
   const supabase = createAdminClient()
@@ -33,15 +34,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  const guard = await requireAdminApi('管理者のみ操作できます')
+  if (!guard.ok) return guard.response
   if (!uuidRe.test(params.id)) return NextResponse.json({ error: '入力値が不正です' }, { status: 400 })
-
   const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/pack-configs/[id]/photos/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: '管理者のみ操作できます' }, { status: 403 })
 
   const form = await req.formData().catch(() => null)
   if (!form) return NextResponse.json({ error: '入力値が不正です' }, { status: 400 })

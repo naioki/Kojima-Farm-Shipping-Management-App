@@ -36,6 +36,13 @@ import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
 import { inputKindOf, suggestIntakeChannel } from '@/lib/orders/intake-suggest'
+import {
+  INTAKE_CHANNEL_REQUIRED_MESSAGE,
+  existingOrderKnownFromLookup,
+  requiresIntakeChannel,
+  resolveIntakeChannel,
+} from '@/lib/orders/intake-channel'
+import { extractWarnings, showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface CustomerProductRuleSummary {
   packsPerCase?: number | null
@@ -170,6 +177,11 @@ export interface ParsedCandidateEntry {
   is_handwritten_modified?: boolean | null
   explicit_cancel_in_slip?: boolean | null
   existing_quantity?: number | null
+  /**
+   * 読み取り時に照合できた既存の注文（取引先・納入先・納品日）。登録時に同じ取引先・納入先・納品日のままなら
+   * 「既存の注文への変更」とみなし、受注経路を求めない（lib/orders/intake-channel.ts requiresIntakeChannel）。
+   */
+  existing_order_ref?: { customer_id: string | null; destination_id: string | null; delivery_date: string } | null
   selected: boolean
   registered?: boolean
   /** 欄外内訳（例: ライフ近畿40箱 / サンプラザ20箱）を分割可能かどうかのメタ情報 */
@@ -268,6 +280,28 @@ export function ShipmentAddForm({
     intakeChannelRef.current = intakeChannel
   }, [intakeChannel])
   /** AI読み取りの入力から受注経路を推定して初期値にする（違えば画面で選び直せる） */
+  // 受注経路が未選択のまま登録しようとしたとき true（欄の下に案内を出す）
+  const [intakeChannelMissing, setIntakeChannelMissing] = useState(false)
+  /**
+   * 受注経路が決まっているか確かめる（CLAUDE.md: 手入力の注文は intake_channel を必ず埋める）。
+   * 未選択なら登録を止め、入力画面に戻して欄の近くで選ぶよう促す。
+   */
+  function hasIntakeChannel(): boolean {
+    return Boolean(resolveIntakeChannel(fixedIntakeChannel, intakeChannelRef.current ?? intakeChannel))
+  }
+  /** 未選択を知らせ、入力画面に戻して欄の近くで選ぶよう促す */
+  function promptIntakeChannel(): void {
+    setIntakeChannelMissing(true)
+    setStep('input')
+    toast.error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+  }
+  /** 新しい注文を作りうる操作（requiresIntakeChannel）のときだけ経路を求める。既存の注文への変更は止めない */
+  function ensureIntakeChannel(needed: boolean): boolean {
+    if (!needed || hasIntakeChannel()) return true
+    promptIntakeChannel()
+    return false
+  }
+
   function applyIntakeSuggestion(suggested: ManualIntakeChannel | null) {
     if (!suggested || intakeChannelRef.current === suggested) return
     intakeChannelRef.current = suggested
@@ -317,6 +351,11 @@ export function ShipmentAddForm({
     product_name: string
     delivery_date: string
   } | null>(null)
+  /**
+   * existingShipmentInfo をどの選択（取引先|納品日|品目|納入先）で確かめたか。選択を変えた直後の古い結果で
+   * 「既存の注文がある」と誤って判定しないため、受注経路の要否はこの値が今の選択と一致するときだけ既存扱いにする。
+   */
+  const [existingShipmentFor, setExistingShipmentFor] = useState<string | null>(null)
 
   // ⚡ AI初回読取の記録（ユーザー修正差分を学習ループへ蓄積用）
   const aiOriginalParsedRef = useRef<{
@@ -623,13 +662,15 @@ export function ShipmentAddForm({
         if (cancelled) return
         const ex = json?.existingShipment || null
         setExistingShipmentInfo(ex)
+        setExistingShipmentFor(ex ? `${customerId}|${targetDate}|${productId}|${destinationId}` : null)
         if (ex) {
           setMode((m) => (m === 'create' ? 'set' : m))
         } else {
           setMode((m) => (m !== 'create' ? 'create' : m))
         }
       })
-      .catch(() => {})
+      // 既存出荷の有無は入力補助の表示だけ。取れなければ「新規」として入力を続けられる（ログには残す）
+      .catch((e) => console.error('[ShipmentAddForm] 既存出荷の確認に失敗:', e))
     return () => {
       cancelled = true
     }
@@ -979,6 +1020,13 @@ export function ShipmentAddForm({
           (matchedDest ? ex.destination_id === matchedDest.id : !ex.destination_id),
       )
       const existingQty = existingMatch ? existingMatch.total_quantity : null
+      const existingRef = existingMatch
+        ? {
+            customer_id: existingMatch.customer_id,
+            destination_id: existingMatch.destination_id,
+            delivery_date: existingMatch.delivery_date,
+          }
+        : null
 
       if (items.length === 0) {
         entries.push({
@@ -987,6 +1035,7 @@ export function ShipmentAddForm({
           delivery_date: ord.delivery_date,
           destination_name: ord.destination_name,
           existing_quantity: existingQty,
+          existing_order_ref: existingRef,
           selected: true,
           registered: false,
         })
@@ -1021,6 +1070,7 @@ export function ShipmentAddForm({
             is_handwritten_modified: it.is_handwritten_modified ?? null,
             explicit_cancel_in_slip: it.explicit_cancel_in_slip ?? null,
             existing_quantity: existingQty,
+            existing_order_ref: existingRef,
             breakdownParts: breakdown,
             selected: shouldSelect,
             registered: false,
@@ -1711,6 +1761,8 @@ export function ShipmentAddForm({
       })
       const json = await res.json()
       if (!res.ok || !json.id) throw new Error(json.error ?? '作成失敗')
+      // 取引先は登録済みでも、入数ルール・AIルールなどの付随の保存に失敗したときは警告を出す
+      showResponseWarnings(json)
 
       const createdAliases = aliasList.length > 0 ? aliasList : undefined
       setCustomers((prev) =>
@@ -1823,6 +1875,7 @@ export function ShipmentAddForm({
       if (res.ok) {
         const json = await res.json()
         setExistingShipmentInfo(json.existingShipment || null)
+        setExistingShipmentFor(json.existingShipment ? `${customerId}|${targetDate}|${productId}|${destinationId}` : null)
         if (json.existingShipment && mode === 'create') {
           setMode('increase')
         }
@@ -1851,9 +1904,12 @@ export function ShipmentAddForm({
     let sharedReceiptId: string | null = null
     const updatedList = [...parsedCandidates]
     const failures: string[] = []
+    const batchWarnings = new Set<string>()
     const createdDests: Array<{ id: string; label: string; customerId: string }> = []
     const registeredDates: string[] = []
     const planMode = createBatchModePlanner()
+    /** 受注経路が未選択のため登録しなかった明細（新しい注文を作りうる行だけ。既存の注文への変更・0取消は登録する） */
+    let blockedForIntake = 0
 
     try {
       for (const { cand, idx } of targets) {
@@ -1961,6 +2017,24 @@ export function ShipmentAddForm({
               date: cDate,
             })
 
+        // 新しい注文を作りうる行は受注経路が必要。既存の注文への変更（読み取り時に照合できた同じ取引先・納入先・
+        // 納品日の注文がある）と0取消は経路なしで通す
+        const ref = cand.existing_order_ref
+        const rowExistingKnown = Boolean(
+          ref &&
+            ref.customer_id === matchedCust.id &&
+            (ref.destination_id ?? null) === (matchedDest?.id ?? null) &&
+            ref.delivery_date === cDate,
+        )
+        const rowQty = isZeroCancel ? 0 : Number.isFinite(qNum) && qNum > 0 ? qNum : null
+        if (
+          requiresIntakeChannel({ mode: rowMode, quantity: rowQty, existingOrderKnown: rowExistingKnown }) &&
+          !hasIntakeChannel()
+        ) {
+          blockedForIntake++
+          continue
+        }
+
         const destDefaultContainer = allDestinations.find((d) => d.id === matchedDest?.id)?.defaultContainerType
         const cContainer = resolveContainerType({
           explicitContainer: cand.container_type || destDefaultContainer || ruleObj?.containerType,
@@ -1994,7 +2068,7 @@ export function ShipmentAddForm({
           has_seal: cand.has_seal ?? ruleObj?.hasSeal ?? undefined,
           seal_text: cand.seal_text ?? ruleObj?.sealText ?? undefined,
           bag_type: cand.bag_type ?? ruleObj?.bagType ?? undefined,
-          intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
+          intake_channel: resolveIntakeChannel(fixedIntakeChannel, intakeChannel) ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
@@ -2025,6 +2099,7 @@ export function ShipmentAddForm({
           })
           if (res.ok) {
             const okJson = await res.json().catch(() => ({}))
+            for (const w of extractWarnings(okJson)) batchWarnings.add(w)
             if (okJson?.receiptId && !sharedReceiptId) {
               sharedReceiptId = okJson.receiptId as string
             }
@@ -2046,6 +2121,12 @@ export function ShipmentAddForm({
       if (failures.length > 0) {
         toast.error(`登録できなかった明細 ${failures.length} 件:\n${failures.slice(0, 5).join('\n')}`, { duration: 12000 })
       }
+      if (blockedForIntake > 0) {
+        // 新しい注文になる明細は、受注経路を選んでからもう一度「一括登録」を押してもらう（選択は残したまま）
+        promptIntakeChannel()
+      }
+      // 登録はできたが付随更新（収穫数など）に失敗した明細の警告。同じ文言は1回だけ出す
+      showResponseWarnings({ warnings: Array.from(batchWarnings) })
 
       setParsedCandidates(updatedList)
 
@@ -2083,13 +2164,22 @@ export function ShipmentAddForm({
   // ステップ2: 最終確定・DB保存
   // -------------------------------------------------------------
   async function submitFinal() {
+    const currentQty = preview?.type === 'ok' ? preview.total.toNumber() : null
+    const existingKnown =
+      existingShipmentFor === `${customerId}|${targetDate}|${productId}|${destinationId}` &&
+      existingOrderKnownFromLookup({
+        existingFound: existingShipmentInfo != null,
+        destinationId,
+        customerHasDestinations: customerDestinations.length > 0,
+      })
+    if (!ensureIntakeChannel(requiresIntakeChannel({ mode, quantity: currentQty, existingOrderKnown: existingKnown }))) return
     setSubmitting(true)
     const shipmentPayload = {
       customer_id: customerId,
       product_id: productId,
       delivery_date: targetDate,
       shipping_time: shippingTime || undefined,
-      intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
+      intake_channel: resolveIntakeChannel(fixedIntakeChannel, intakeChannel) ?? undefined,
       quantity_raw: qtyRaw,
       packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
       spec: spec.trim() || undefined,
@@ -2156,6 +2246,7 @@ export function ShipmentAddForm({
           ? '出荷数量を減量しました！'
           : '出荷を登録・更新しました！',
       )
+      showResponseWarnings(json)
 
       if (json.learnedMistake) {
         toast('💡 修正内容をAI自動学習ループに蓄積しました（次回から自動補正されます）', {
@@ -2516,7 +2607,14 @@ export function ShipmentAddForm({
                   受注経路: {fixedIntakeChannel === 'fax' ? 'FAX' : 'メール'}（受信ボックスの原本から読み取り）
                 </p>
               ) : (
-                <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
+                <IntakeChannelPicker
+                  value={intakeChannel}
+                  onChange={(v) => {
+                    setIntakeChannel(v)
+                    setIntakeChannelMissing(false)
+                  }}
+                  showRequiredError={intakeChannelMissing}
+                />
               )}
 
               <div className="flex items-center justify-between gap-2">
@@ -2555,6 +2653,7 @@ export function ShipmentAddForm({
                 <div className="flex items-center justify-between rounded-xl bg-bg-card p-2.5 border-2 border-forest-200 shadow-2xs">
                   <div className="flex items-center gap-2.5">
                     {photoPreview ? (
+                      /* eslint-disable-next-line @next/next/no-img-element -- ローカルで選んだ写真のdata URLプレビュー。next/imageは最適化対象外のURLに向かない */
                       <img src={photoPreview} alt="添付画像" className="h-11 w-11 object-cover rounded-lg border border-forest-200" />
                     ) : (
                       <div className="h-11 w-11 rounded-lg bg-forest-100 text-forest-800 flex items-center justify-center font-black text-xs">

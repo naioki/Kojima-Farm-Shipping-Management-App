@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/receipts/[id]/dismiss/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const guard = await requireAdminApi('forbidden')
+  if (!guard.ok) return guard.response
 
   const admin = createAdminClient()
   const { data, error } = await admin

@@ -1,8 +1,8 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { productMergeSchema } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -13,13 +13,9 @@ export const runtime = 'nodejs'
  * 既存注文の product_id は再ポインティングしない（履歴は元のまま＝安全）。
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  const guard = await requireAdminApi('管理者のみ操作できます')
+  if (!guard.ok) return guard.response
   const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/products/[id]/merge/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: '管理者のみ操作できます' }, { status: 403 })
 
   const parsed = productMergeSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
@@ -66,7 +62,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const { error: delErr } = await supabase.from('products').delete().eq('id', sourceId)
     if (delErr) {
       // 物理削除に失敗したら無効化にフォールバック
-      await supabase.from('products').update({ is_active: false }).eq('id', sourceId)
+      console.error('[products/merge] 重複品目の物理削除に失敗（無効化に切り替え）:', delErr.message)
+      const { error: deactErr } = await supabase.from('products').update({ is_active: false }).eq('id', sourceId)
+      if (deactErr) {
+        console.error('[products/merge] 重複品目の無効化に失敗:', deactErr.message)
+        return NextResponse.json(
+          { error: `荷姿は作成しましたが、重複品目の削除・無効化に失敗しました: ${deactErr.message}` },
+          { status: 500 },
+        )
+      }
     } else {
       deleted = true
     }

@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
-import { writeAudit } from '@/lib/audit/log'
+import { runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -19,19 +19,10 @@ function parsePatch(body: unknown) {
  * 数量変更・タップ更新・現場仕様更新（#09 注文数の直接変更, #10 シール・袋種別の変更対応）。
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const body = await req.json().catch(() => null)
   const parsed = parsePatch(body)
@@ -143,15 +134,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
   }
 
+  // 本体（明細の更新）は保存済み。以降の付随更新の失敗は 500 にせず warnings で返す
+  const patchWarnings: string[] = []
   if ('quantity' in input && input.quantity != null && input.quantity !== current.quantity) {
-    try {
-      await admin
-        .from('harvest_tasks')
-        .update({ required_qty: input.quantity })
-        .eq('order_item_id', params.id)
-    } catch (htErr) {
-      console.warn('[order-items] harvest_tasks 数量同期警告:', htErr)
-    }
+    const newQty = input.quantity
+    await runSideEffect(
+      patchWarnings,
+      '[order-items/[id]] PATCH の harvest_tasks 数量同期に失敗',
+      '数量は保存しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください',
+      () => admin.from('harvest_tasks').update({ required_qty: newQty }).eq('order_item_id', params.id),
+    )
   }
 
   // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」「カード有無」「シール」「袋」手動修正を自動学習ループ & 取引先×品目ルール＋納入先マスタへ自動蓄積（#3-01〜#3-05）
@@ -180,10 +172,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         const destLabel = destRow?.code || destRow?.full_name || ''
 
         // 【#3-02 解消】納入先（destination_id）が紐づいている場合、納入先ごとの既定コンテナ（default_container_type）も自動更新
+        // 列がある環境でだけ列を更新する。列が無い本番では何もしない（退避ストアには書かない・警告も出さない）。
+        // その日だけの明細の変更を以後の既定値にしないため。退避ストアへの保存は取引先詳細での明示的な保存
+        // （/api/destinations の PATCH / POST）だけが行う。
         if (ord.destination_id && input.container_type && input.container_type !== current.container_type) {
-          await writeDroppingMissingColumns(
-            { default_container_type: input.container_type },
-            (p) => admin.from('delivery_destinations').update(p).eq('id', ord.destination_id!),
+          const destId = ord.destination_id
+          const containerType = input.container_type
+          await runSideEffect(
+            patchWarnings,
+            '[order-items/[id]] 納入先の規定コンテナの自動更新に失敗',
+            '明細のコンテナは保存しましたが、納入先の規定コンテナの更新に失敗しました',
+            () =>
+              writeDroppingMissingColumns({ default_container_type: containerType }, (p) =>
+                admin.from('delivery_destinations').update(p).eq('id', destId),
+              ),
           )
         }
 
@@ -205,10 +207,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         if (input.has_card !== undefined && input.has_card !== current.has_card && input.has_card !== null) {
           rulePatch.has_card = input.has_card
         }
-        if (input.has_seal !== undefined && input.has_seal !== current.has_seal) {
+        // 値が null / undefined の項目は送らない（has_seal が NOT NULL の環境に null を書かない）。
+        // 本番の customer_product_rules には has_seal / seal_text / bag_type が無い。列を外して書く列が残らなければ
+        // writeDroppingMissingColumns が書き込みを投げずに成功で返すので、一括保存のたびに警告は出ない。
+        if (typeof input.has_seal === 'boolean' && input.has_seal !== current.has_seal) {
           rulePatch.has_seal = input.has_seal
         }
-        if (input.seal_text !== undefined) {
+        if (typeof input.seal_text === 'string') {
           rulePatch.seal_text = input.seal_text
         }
         if (input.bag_type && input.bag_type !== current.bag_type) {
@@ -222,18 +227,29 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             .eq('customer_id', ord.customer_id)
             .eq('product_id', current.product_id)
             .maybeSingle()
+          // 取引先×品目ルールへの記憶は付随更新（列が無いだけの失敗は writeDroppingMissingColumns が外して再試行する）
+          const RULE_WARNING = '明細は保存しましたが、次回からの自動適用（取引先×品目の設定）の記憶に失敗しました'
+          const productId = current.product_id
+          const customerId = ord.customer_id
           if (existingRule) {
-            await writeDroppingMissingColumns(rulePatch, (p) =>
-              admin.from('customer_product_rules').update(p).eq('id', existingRule.id),
+            await runSideEffect(patchWarnings, '[order-items/[id]] customer_product_rules の更新に失敗', RULE_WARNING, () =>
+              writeDroppingMissingColumns(rulePatch, (p) =>
+                admin.from('customer_product_rules').update(p).eq('id', existingRule.id),
+              ),
             )
           } else {
-            await writeDroppingMissingColumns(
-              {
-                customer_id: ord.customer_id,
-                product_id: current.product_id,
-                ...rulePatch,
-              },
-              (p) => admin.from('customer_product_rules').insert(p as never),
+            await runSideEffect(patchWarnings, '[order-items/[id]] customer_product_rules の作成に失敗', RULE_WARNING, () =>
+              writeDroppingMissingColumns(
+                {
+                  customer_id: customerId,
+                  product_id: productId,
+                  ...rulePatch,
+                },
+                (p) => admin.from('customer_product_rules').insert(p as never),
+                5,
+                // 取引先・品目だけの空のルール行は作らない
+                { keyColumns: ['customer_id', 'product_id'] },
+              ),
             )
           }
         }
@@ -290,32 +306,27 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  await writeAudit(admin, {
-    entityType: 'order_items',
-    entityId: params.id,
-    action: 'UPDATE',
-    oldValues: current,
-    newValues: updated,
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    admin,
+    {
+      entityType: 'order_items',
+      entityId: params.id,
+      action: 'UPDATE',
+      oldValues: current,
+      newValues: updated,
+      userId: user.id,
+    },
+    '[order-items/[id]] PATCH の監査ログ記録に失敗',
+  )
 
-  return NextResponse.json({ item: updated })
+  return NextResponse.json(withWarnings({ item: updated }, patchWarnings))
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'admin' && profile?.role !== 'staff') {
-    return NextResponse.json({ error: '権限がありません' }, { status: 403 })
-  }
 
   const { data: item, error: itemErr } = await admin
     .from('order_items')
@@ -334,20 +345,31 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: '請求確定済みのため削除できません' }, { status: 409 })
   }
 
-  await admin.from('harvest_tasks').delete().eq('order_item_id', params.id)
+  // 収穫タスクの削除は付随更新。失敗しても明細の削除は進め、警告で返す
+  const warnings: string[] = []
+  await runSideEffect(
+    warnings,
+    '[order-items/[id]] 明細削除時の harvest_tasks 削除に失敗',
+    '明細は削除しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください',
+    () => admin.from('harvest_tasks').delete().eq('order_item_id', params.id),
+  )
 
   const { error } = await admin.from('order_items').delete().eq('id', params.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const snapshot: Record<string, unknown> = { ...(item as Record<string, unknown>) }
   delete snapshot.orders
-  await writeAudit(admin, {
-    entityType: 'order_items',
-    entityId: params.id,
-    action: 'DELETE',
-    oldValues: snapshot,
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    admin,
+    {
+      entityType: 'order_items',
+      entityId: params.id,
+      action: 'DELETE',
+      oldValues: snapshot,
+      userId: user.id,
+    },
+    '[order-items/[id]] 削除の監査ログ記録に失敗',
+  )
 
-  return NextResponse.json({ deleted: true })
+  return NextResponse.json(withWarnings({ deleted: true }, warnings))
 }

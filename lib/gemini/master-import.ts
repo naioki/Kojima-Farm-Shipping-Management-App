@@ -2,6 +2,7 @@ import 'server-only'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSetting } from '@/lib/settings'
+import { runSideEffect } from '@/lib/api/side-effects'
 import { GEMINI_FALLBACK_ORDER, modelTryOrder } from '@/lib/gemini/models'
 
 /**
@@ -222,13 +223,13 @@ const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 const FALLBACK_STATUS = new Set([429, 503, 404])
 
 async function logUsage(success: boolean) {
-  try {
-    await createAdminClient()
+  // 記録失敗で取り込み本体は止めないが、無料枠の残数判定（lib/gemini/quota.ts）がこの件数を数えるため、
+  // 失敗（{ error } の返却・例外とも）は必ずサーバーログに残す
+  await runSideEffect(null, '[gemini/master-import] gemini_usage_log への記録に失敗（無料枠の残数がずれる）', undefined, () =>
+    createAdminClient()
       .from('gemini_usage_log')
-      .insert({ mode: 'master_import', channel: 'manual', success })
-  } catch {
-    // 記録失敗で本処理は止めない（無料枠管理は best-effort）
-  }
+      .insert({ mode: 'master_import', channel: 'manual', success }),
+  )
 }
 
 /** ```json フェンスや前後ノイズを取り除いて JSON テキストを取り出す。 */

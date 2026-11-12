@@ -29,14 +29,18 @@ export function FieldLangProvider({ children }: { children: React.ReactNode }) {
       if (saved === 'th' || saved === 'ja') {
         setLangState(saved)
       }
-    } catch {}
+    } catch {
+      // localStorage が使えない環境（プライベートモード等）は既定の言語のまま使う
+    }
   }, [])
 
   const setLangMode = (mode: FieldLangMode) => {
     setLangState(mode)
     try {
       localStorage.setItem(STORAGE_KEY, mode)
-    } catch {}
+    } catch {
+      // 保存できなくても画面上の切り替えは効いている（次回起動時に既定へ戻るだけ）
+    }
   }
 
   const toggleLangMode = () => {

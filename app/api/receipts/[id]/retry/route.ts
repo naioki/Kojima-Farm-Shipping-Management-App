@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { processReceipt } from '@/lib/ingestion/process-receipt'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -11,14 +11,8 @@ export const runtime = 'nodejs'
  * 引っかからず放置されるため、ここで processReceipt() を直接呼んで同期的に再処理する。
  */
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/receipts/[id]/retry/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const guard = await requireAdminApi('forbidden')
+  if (!guard.ok) return guard.response
 
   // read-then-update は二重クリックで競合する（両リクエストが status='ai_failed' を読んでしまう）。
   // 条件付き1回のUPDATEにし、実際に更新できた行数で「自分が処理する権利を得たか」を判定する。

@@ -1,31 +1,16 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { aiRuleCreateSchema } from '@/types/database'
 import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
 async function verifyStaffOrAdmin() {
-  const user = await getAuthedUser()
-  if (!user) return { ok: false as const, status: 401, error: '認証が必要です' }
-
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profileErr) console.error('[app/api/ai-rules/route.ts] ロールの取得に失敗:', profileErr.message)
-  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
-  const role = profile?.role ?? jwtRole
-  if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
-    return { ok: false as const, status: 403, error: 'スタッフまたは管理者権限が必要です' }
-  }
-  return { ok: true as const, userId: user.id }
+  const guard = await requireStaffApi('スタッフまたは管理者権限が必要です')
+  if (!guard.ok) return guard
+  return { ok: true as const, userId: guard.user.id }
 }
 
 /**
@@ -34,7 +19,7 @@ async function verifyStaffOrAdmin() {
  */
 export async function GET(req: NextRequest) {
   const auth = await verifyStaffOrAdmin()
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (!auth.ok) return auth.response
 
   const clientName = req.nextUrl.searchParams.get('client_name')?.trim()
   const activeOnly = req.nextUrl.searchParams.get('active_only') === '1'
@@ -61,7 +46,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   const auth = await verifyStaffOrAdmin()
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (!auth.ok) return auth.response
 
   const body = await req.json().catch(() => null)
   const parsed = aiRuleCreateSchema.safeParse(body)

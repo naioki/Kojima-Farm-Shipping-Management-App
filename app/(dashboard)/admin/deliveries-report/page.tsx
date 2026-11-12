@@ -57,13 +57,17 @@ export default async function DeliveriesReportPage({
   // 表示名（取引先＞納入先）と revert イベント数
   const customerIds = [...new Set(deliveries.map((d) => d.customer_id))]
   const destinationIds = [...new Set(deliveries.map((d) => d.destination_id).filter(Boolean))] as string[]
-  const [{ data: custRows }, { data: destRows }, { data: eventRows }] = await Promise.all([
+  const [
+    { data: custRows, error: custErr },
+    { data: destRows, error: destErr },
+    { data: eventRows, error: eventErr },
+  ] = await Promise.all([
     customerIds.length
       ? supabase.from('customers').select('id, name').in('id', customerIds)
-      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+      : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
     destinationIds.length
       ? supabase.from('delivery_destinations').select('id, code, full_name').in('id', destinationIds)
-      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[] }),
+      : Promise.resolve({ data: [] as { id: string; code: string | null; full_name: string }[], error: null }),
     deliveryIds.length
       ? supabase
           .from('delivery_events')
@@ -73,8 +77,16 @@ export default async function DeliveriesReportPage({
           .order('created_at', { ascending: false })
       : Promise.resolve({
           data: [] as { delivery_id: string; action: string; after: unknown; created_at: string }[],
+          error: null,
         }),
   ])
+  // もどす・問題の件数は主表示の一部なので、取れなければ空表示にせずエラーにする
+  if (eventErr) {
+    return <ErrorState message="配送の履歴を読み込めませんでした。時間をおいて再度お試しください。" detail={eventErr.message} />
+  }
+  // 取引先・納入先の表示名だけ欠けても実績は出す（名前は「—」表示）。無言にはしない。
+  const nameErr = custErr ?? destErr
+  if (nameErr) console.error('[admin/deliveries-report] 取引先・納入先名の取得に失敗:', nameErr.message)
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const destinationName = new Map((destRows ?? []).map((d) => [d.id, d.code || d.full_name]))
   const revertsByDelivery = new Map<string, number>()

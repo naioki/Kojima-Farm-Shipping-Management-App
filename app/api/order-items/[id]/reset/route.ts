@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fieldStatusResetSchema } from '@/types/database'
 import { resetOneStep } from '@/lib/field/tap-loop'
-import { writeAudit } from '@/lib/audit/log'
+import { noteSideEffectFailure, runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
@@ -59,36 +59,53 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   // shipped から戻した場合は orders.status と deliveries.status も planned/approved に整合させる（#9-08）
+  // 本体（order_items）は戻し済みなので、ここの失敗は 500 にせず警告で返す
+  const warnings: string[] = []
   if (current.field_status === 'shipped' && current.order_id) {
-    try {
-      const { data: ord } = await supabase
-        .from('orders')
-        .select('id, customer_id, destination_id, delivery_date, status')
-        .eq('id', current.order_id)
-        .maybeSingle()
-      if (ord) {
-        if (ord.status === 'shipped') {
-          await supabase.from('orders').update({ status: 'approved' }).eq('id', ord.id)
-        }
-        let delQuery = supabase
-          .from('deliveries')
-          .update({ status: 'planned', checked_at: null, checked_by: null })
-          .eq('delivery_date', ord.delivery_date)
-          .eq('customer_id', ord.customer_id)
-        delQuery = ord.destination_id ? delQuery.eq('destination_id', ord.destination_id) : delQuery.is('destination_id', null)
-        await delQuery
+    const STATUS_WARN =
+      '出荷済みは取り消しましたが、注文・配送チェックの状態を戻せませんでした。画面を読み込み直して確認してください'
+    const { data: ord, error: ordErr } = await supabase
+      .from('orders')
+      .select('id, customer_id, destination_id, delivery_date, status')
+      .eq('id', current.order_id)
+      .maybeSingle()
+    if (ordErr) {
+      noteSideEffectFailure(warnings, '[order-items/reset] 戻し対象の orders の取得に失敗', ordErr, STATUS_WARN)
+    }
+    if (ord) {
+      if (ord.status === 'shipped') {
+        await runSideEffect(warnings, '[order-items/reset] orders.status を approved に戻せませんでした', STATUS_WARN, () =>
+          supabase.from('orders').update({ status: 'approved' }).eq('id', ord.id),
+        )
       }
-    } catch {}
+      let delQuery = supabase
+        .from('deliveries')
+        .update({ status: 'planned', checked_at: null, checked_by: null })
+        .eq('delivery_date', ord.delivery_date)
+        .eq('customer_id', ord.customer_id)
+      delQuery = ord.destination_id ? delQuery.eq('destination_id', ord.destination_id) : delQuery.is('destination_id', null)
+      const finalDelQuery = delQuery
+      await runSideEffect(
+        warnings,
+        '[order-items/reset] deliveries の配送チェック（status/checked_at）を戻せませんでした',
+        STATUS_WARN,
+        () => finalDelQuery,
+      )
+    }
   }
 
-  await writeAudit(supabase, {
-    entityType: 'order_items',
-    entityId: params.id,
-    action: 'undo',
-    oldValues: current,
-    newValues: updated,
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    supabase,
+    {
+      entityType: 'order_items',
+      entityId: params.id,
+      action: 'undo',
+      oldValues: current,
+      newValues: updated,
+      userId: user.id,
+    },
+    '[order-items/reset] 監査ログの記録に失敗',
+  )
 
-  return NextResponse.json({ item: updated })
+  return NextResponse.json(withWarnings({ item: updated }, warnings))
 }

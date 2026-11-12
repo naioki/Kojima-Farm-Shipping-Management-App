@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { settingsUpdateSchema } from '@/types/database'
 import { SETTINGS_BY_KEY } from '@/lib/settings-spec'
 import { invalidateSettingsCache } from '@/lib/settings'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -15,19 +15,10 @@ export const runtime = 'nodejs'
  *   - RLSによる保存遮断を防ぐため createAdminClient を使用。
  */
 export async function PUT(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
+  const guard = await requireAdminApi('forbidden')
+  if (!guard.ok) return guard.response
+  const user = guard.user
   const admin = createAdminClient()
-  const { data: profile } = await admin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
 
   const body = await req.json().catch(() => null)
   const parsed = settingsUpdateSchema.safeParse(body)

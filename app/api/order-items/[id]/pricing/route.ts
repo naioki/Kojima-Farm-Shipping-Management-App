@@ -1,9 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { itemPricingSchema } from '@/types/database'
+import { requireAdminApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 
@@ -13,13 +13,9 @@ export const runtime = 'nodejs'
  * 価格状態を provisional/confirmed に。変更は audit_log に記録（tax.md 7年）。
  */
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-  const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/order-items/[id]/pricing/route.ts] ロールの取得に失敗:', profileErr.message)
-  if (profile?.role !== 'admin') return NextResponse.json({ error: '価格確定は管理者のみです' }, { status: 403 })
+  const guard = await requireAdminApi('価格確定は管理者のみです')
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const parsed = itemPricingSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

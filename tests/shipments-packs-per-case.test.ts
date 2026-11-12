@@ -14,7 +14,11 @@ let fake = createFakeSupabase((c) => resolver(c))
 
 vi.mock('@/lib/supabase/server', () => ({ getAuthedUser: async () => ({ id: 'u-1' }) }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }))
-vi.mock('@/lib/auth/is-staff-user', () => ({ isStaffUser: async () => true }))
+// 権限ガードは tests/api-guards.test.ts で確かめる。ここでは社内スタッフとして通す
+vi.mock('@/lib/auth/api-guard', () => {
+  const ok = async () => ({ ok: true, user: { id: 'u-1' }, role: 'staff' })
+  return { requireStaffApi: ok, requireAdminApi: ok }
+})
 vi.mock('@/lib/audit/log', () => ({ writeAudit: async () => undefined }))
 vi.mock('@/lib/ai/learning-loop', () => ({ recordMistakeFeedback: async () => undefined }))
 vi.mock('@/lib/receipts/retention', () => ({ purgeOldReceiptBase64: async () => 0 }))
@@ -64,7 +68,7 @@ async function putCell(quantity_raw: string) {
   const res = await PUT(
     new Request('http://x/api/shipments/cell', {
       method: 'PUT',
-      body: JSON.stringify({ customer_id: CUST, product_id: PROD, delivery_date: '2026-11-10', quantity_raw }),
+      body: JSON.stringify({ customer_id: CUST, product_id: PROD, delivery_date: '2026-11-10', quantity_raw, intake_channel: 'phone' }),
     }),
   )
   return res.status

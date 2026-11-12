@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { shipmentAddSchema } from '@/types/database'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
-import { writeAudit } from '@/lib/audit/log'
+import { noteSideEffectFailure, runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
+import { requireStaffApi } from '@/lib/auth/api-guard'
+import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 type PerCasePackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
@@ -33,8 +33,9 @@ function stripPriceFromNote(text?: string | null): string | null {
  * 登録・変更前の既存出荷状況（差分プレビュー用）を高速チェック。
  */
 export async function GET(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザー（admin/staff）のみ。旧実装はログインだけで通り、取引先ポータルの利用者も読めた（fail open）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
 
   const { searchParams } = new URL(req.url)
   const customerId = searchParams.get('customerId')
@@ -105,11 +106,9 @@ export async function GET(req: Request) {
  *   - mode: 'increase' | 'decrease' | 'set' | 'create' による既存出荷の加算・減量・上書きに対応。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (!(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireStaffApi('forbidden')
+  if (!guard.ok) return guard.response
+  const user = guard.user
 
   const body = await req.json().catch(() => null)
   const parsed = shipmentAddSchema.safeParse(body)
@@ -213,13 +212,18 @@ export async function POST(req: Request) {
   }
   let existingItem: OrderItemRow | null = null
   if (existing?.id) {
-    const { data: itm } = await supabase
+    const { data: itm, error: itemFindErr } = await supabase
       .from('order_items')
       .select('*')
       .eq('order_id', existing.id)
       .eq('product_id', product_id)
       .limit(1)
       .maybeSingle()
+    // 読み込みに失敗したまま進むと「明細なし」と誤認して新規 insert し、明細が二重になる。ここで止める
+    if (itemFindErr) {
+      console.error('[api/shipments] 既存明細の読み込みに失敗:', itemFindErr.message)
+      return NextResponse.json({ error: '明細を読み込めなかったため保存していません。もう一度お試しください' }, { status: 500 })
+    }
     existingItem = itm as OrderItemRow | null
   }
 
@@ -267,7 +271,8 @@ export async function POST(req: Request) {
   const effectiveContainerType = resolveContainerType({
     explicitContainer: clientContainerType?.trim() || null,
     ruleContainer: (typeof rule?.container_type === 'string' && rule.container_type) || (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null),
-    destDefaultContainer: destRow?.default_container_type ?? null,
+    // 規定コンテナは「列の値 → 退避ストアの値」（列が無い本番では退避ストアが唯一の保存先）
+    destDefaultContainer: await loadDestDefaultContainer(supabase, destRow?.id, destRow?.default_container_type),
     clientName: confirmedCustName,
     destination: confirmedDestName,
     rawText: `${rawNote ?? ''} ${clientSpec ?? ''}`,
@@ -316,32 +321,63 @@ export async function POST(req: Request) {
   }
 
   const deltaQty = result.total.toNumber()
+  // 付随更新（収穫数・出荷時間帯・写真の保存など）の失敗は 500 にせず、成功応答の warnings で知らせる
+  const warnings: string[] = []
+  const HARVEST_WARN = '数量は保存しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください'
+  const HARVEST_DELETE_WARN = '明細は削除しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください'
+  const EMPTY_ORDER_WARN = '明細は削除しましたが、空になった注文の片付けに失敗しました。画面を読み込み直して確認してください'
 
-  // ⚡ 数量 0（キャンセル・削除指示）のハンドリング
-  if (deltaQty === 0) {
-    if (existingItem && (mode === 'set' || mode === 'create')) {
-      await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
-      await supabase.from('order_items').delete().eq('id', existingItem.id)
-      try {
-        await writeAudit(supabase, {
+  // 明細の削除（本体）と、付随する収穫タスク・空になった注文の片付け。
+  // 本体の削除に失敗したら 500、付随の失敗は警告。
+  const deleteItemAndCleanup = async (itemId: string, withAudit: boolean): Promise<NextResponse | null> => {
+    await runSideEffect(
+      warnings,
+      '[api/shipments] 明細削除時の harvest_tasks 削除に失敗',
+      HARVEST_DELETE_WARN,
+      () => supabase.from('harvest_tasks').delete().eq('order_item_id', itemId),
+    )
+    const { error: delErr } = await supabase.from('order_items').delete().eq('id', itemId)
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+    if (withAudit && existingItem) {
+      await writeAuditAfterSuccess(
+        supabase,
+        {
           entityType: 'order_items',
-          entityId: existingItem.id,
+          entityId: itemId,
           action: 'DELETE',
           oldValues: existingItem,
           newValues: null,
           userId: user.id,
-        })
-      } catch {}
-      if (existing?.id) {
-        const { count } = await supabase
-          .from('order_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('order_id', existing.id)
-        if ((count ?? 0) === 0) {
-          await supabase.from('orders').delete().eq('id', existing.id)
-        }
+        },
+        '[api/shipments] 削除の監査ログ記録に失敗',
+      )
+    }
+    if (existing?.id) {
+      const orderIdToCheck = existing.id
+      const { count, error: countErr } = await supabase
+        .from('order_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('order_id', orderIdToCheck)
+      if (countErr) {
+        noteSideEffectFailure(null, '[api/shipments] 残り明細数の取得に失敗', countErr)
+      } else if ((count ?? 0) === 0) {
+        await runSideEffect(
+          warnings,
+          '[api/shipments] 明細が空になった orders の削除に失敗',
+          EMPTY_ORDER_WARN,
+          () => supabase.from('orders').delete().eq('id', orderIdToCheck),
+        )
       }
-      return NextResponse.json({ deleted: true, cancelled: true, mode }, { status: 200 })
+    }
+    return null
+  }
+
+  // ⚡ 数量 0（キャンセル・削除指示）のハンドリング
+  if (deltaQty === 0) {
+    if (existingItem && (mode === 'set' || mode === 'create')) {
+      const failed = await deleteItemAndCleanup(existingItem.id, true)
+      if (failed) return failed
+      return NextResponse.json(withWarnings({ deleted: true, cancelled: true, mode }, warnings), { status: 200 })
     }
     return NextResponse.json({ deleted: true, skipped: true, mode }, { status: 200 })
   }
@@ -370,8 +406,23 @@ export async function POST(req: Request) {
       .single()
     if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
     orderId = order.id
+    if (!parsed.data.intake_channel) {
+      // 受注経路なしで新しい注文を作った。拒否はしない（デプロイ前にオフラインで溜まった注文の再送を
+      // 4xx で捨てさせないため。hooks/useOutbox.ts は 4xx で一時保存を消す）。画面側は新規になりうる操作で
+      // 経路を必須にしている（lib/orders/intake-channel.ts requiresIntakeChannel）ので、ここに来たら記録して追う
+      console.warn('[api/shipments] 受注経路なしで新しい注文を作成しました（intake_channel は NULL）:', {
+        orderId: order.id,
+        source: 'manual',
+      })
+    }
   } else if (shipping_time && orderId) {
-    await supabase.from('orders').update({ shipping_time }).eq('id', orderId)
+    const orderIdForTime = orderId
+    await runSideEffect(
+      warnings,
+      '[api/shipments] 既存注文の orders.shipping_time 更新に失敗',
+      '数量は保存しましたが、出荷の時間帯（午前・午後）の更新に失敗しました。注文の画面で確認してください',
+      () => supabase.from('orders').update({ shipping_time }).eq('id', orderIdForTime),
+    )
   }
 
   let finalItem: Record<string, unknown>
@@ -384,18 +435,9 @@ export async function POST(req: Request) {
 
     // 減量または上書きの結果 0 になった場合は明細を削除してクリーンアップ
     if (newQty <= 0) {
-      await supabase.from('harvest_tasks').delete().eq('order_item_id', existingItem.id)
-      await supabase.from('order_items').delete().eq('id', existingItem.id)
-      if (existing?.id) {
-        const { count } = await supabase
-          .from('order_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('order_id', existing.id)
-        if ((count ?? 0) === 0) {
-          await supabase.from('orders').delete().eq('id', existing.id)
-        }
-      }
-      return NextResponse.json({ deleted: true, cancelled: true, mode }, { status: 200 })
+      const failed = await deleteItemAndCleanup(existingItem.id, false)
+      if (failed) return failed
+      return NextResponse.json(withWarnings({ deleted: true, cancelled: true, mode }, warnings), { status: 200 })
     }
 
     const qtyChanged = newQty !== oldQty
@@ -458,18 +500,18 @@ export async function POST(req: Request) {
     if (upErr || !updatedItem) return NextResponse.json({ error: upErr?.message ?? 'update failed' }, { status: 500 })
     finalItem = updatedItem
 
-    try {
-      await writeAudit(supabase, {
+    await writeAuditAfterSuccess(
+      supabase,
+      {
         entityType: 'order_items',
         entityId: existingItem.id,
         action: 'UPDATE',
         oldValues: existingItem,
         newValues: updatedItem,
         userId: user.id,
-      })
-    } catch (auditErr) {
-      console.warn('[api/shipments] audit warning:', auditErr)
-    }
+      },
+      '[api/shipments] 更新の監査ログ記録に失敗',
+    )
   } else {
     // 新規明細作成（単価・税率は商品マスタから。★新規追加トークンでボード上の新規バッジを点灯）
     const initCases = Math.floor(deltaQty / effectivePacksPerCase)
@@ -506,51 +548,67 @@ export async function POST(req: Request) {
     if (itemErr || !item) return NextResponse.json({ error: itemErr?.message ?? 'insert failed' }, { status: 500 })
     finalItem = item
 
-    try {
-      await writeAudit(supabase, {
+    await writeAuditAfterSuccess(
+      supabase,
+      {
         entityType: 'order_items',
         entityId: String(item.id),
         action: 'INSERT',
         oldValues: null,
         newValues: item,
         userId: user.id,
-      })
-    } catch (auditErr) {
-      console.warn('[api/shipments] audit warning:', auditErr)
-    }
+      },
+      '[api/shipments] 追加の監査ログ記録に失敗',
+    )
   }
 
   // 全品目「出荷日の前日に収穫・パック」原則に従い harvest_tasks を自動同期
   if (delivery_date && finalItem && finalItem['id'] && product_id) {
-    try {
-      const finalQty = Number(finalItem['quantity']) || 0
-      const harvestDate = shiftDateStr(delivery_date, -1)
-      if (finalQty <= 0) {
-        await supabase.from('harvest_tasks').delete().eq('order_item_id', finalItem['id'] as string)
-      } else {
-        const { data: existingTask } = await supabase
-          .from('harvest_tasks')
-          .select('id')
-          .eq('order_item_id', finalItem['id'] as string)
-          .maybeSingle()
+    const finalItemId = finalItem['id'] as string
+    const finalQty = Number(finalItem['quantity']) || 0
+    const harvestDate = shiftDateStr(delivery_date, -1)
+    if (finalQty <= 0) {
+      await runSideEffect(
+        warnings,
+        '[api/shipments] harvest_tasks の削除に失敗',
+        HARVEST_WARN,
+        () => supabase.from('harvest_tasks').delete().eq('order_item_id', finalItemId),
+      )
+    } else {
+      const { data: existingTask, error: taskFindErr } = await supabase
+        .from('harvest_tasks')
+        .select('id')
+        .eq('order_item_id', finalItemId)
+        .maybeSingle()
 
-        if (existingTask) {
-          await supabase
-            .from('harvest_tasks')
-            .update({ required_qty: finalQty, task_date: harvestDate })
-            .eq('id', existingTask.id)
-        } else {
-          await supabase.from('harvest_tasks').insert({
-            product_id,
-            order_item_id: finalItem['id'] as string,
-            required_qty: finalQty,
-            task_date: harvestDate,
-            status: 'not_started',
-          })
-        }
+      if (taskFindErr) {
+        noteSideEffectFailure(warnings, '[api/shipments] harvest_tasks の取得に失敗', taskFindErr, HARVEST_WARN)
+      } else if (existingTask) {
+        await runSideEffect(
+          warnings,
+          '[api/shipments] harvest_tasks の更新に失敗',
+          HARVEST_WARN,
+          () =>
+            supabase
+              .from('harvest_tasks')
+              .update({ required_qty: finalQty, task_date: harvestDate })
+              .eq('id', existingTask.id),
+        )
+      } else {
+        await runSideEffect(
+          warnings,
+          '[api/shipments] harvest_tasks の生成に失敗',
+          HARVEST_WARN,
+          () =>
+            supabase.from('harvest_tasks').insert({
+              product_id,
+              order_item_id: finalItemId,
+              required_qty: finalQty,
+              task_date: harvestDate,
+              status: 'not_started',
+            }),
+        )
       }
-    } catch (htErr) {
-      console.warn('[api/shipments] harvest_tasks 同期警告:', htErr)
     }
   }
 
@@ -576,22 +634,23 @@ export async function POST(req: Request) {
       if (effectiveBagType) {
         rulePayload.bag_type = effectiveBagType
       }
-      if (rule && typeof rule.id === 'string') {
-        await writeDroppingMissingColumns(rulePayload, (p) =>
-          supabase.from('customer_product_rules').update(p).eq('id', rule.id as string),
-        )
-      } else {
-        await writeDroppingMissingColumns(
-          {
-            customer_id,
-            product_id,
-            ...rulePayload,
-          },
-          (p) => supabase.from('customer_product_rules').insert(p as never),
-        )
-      }
+      // 次回の自動入力用の学習保存。失敗しても今回の注文には影響しないため警告は出さずログのみ
+      const { error: ruleSaveErr } =
+        rule && typeof rule.id === 'string'
+          ? await writeDroppingMissingColumns(rulePayload, (p) =>
+              supabase.from('customer_product_rules').update(p).eq('id', rule.id as string),
+            )
+          : await writeDroppingMissingColumns(
+              {
+                customer_id,
+                product_id,
+                ...rulePayload,
+              },
+              (p) => supabase.from('customer_product_rules').insert(p as never),
+            )
+      if (ruleSaveErr) noteSideEffectFailure(null, '[api/shipments] customer_product_rules の自動保存に失敗', ruleSaveErr)
     } catch (ruleUpsertErr) {
-      console.warn('[api/shipments] customer_product_rules 自動保存警告:', ruleUpsertErr)
+      noteSideEffectFailure(null, '[api/shipments] customer_product_rules の自動保存で例外', ruleUpsertErr)
     }
   }
 
@@ -636,21 +695,23 @@ export async function POST(req: Request) {
         learnedMistake = true
       }
     } catch (err) {
-      console.warn('[api/shipments] AI学習ループ蓄積警告:', err)
+      console.error('[api/shipments] AI学習ループ蓄積に失敗:', err)
     }
   }
 
   // 📸 現場スマート追加からの添付写真・ファイルを order_receipts に自動保存（複数明細時は1レコード共有）
   let savedReceiptId: string | null = clientReceiptId ?? null
+  const RECEIPT_WARN = '注文は保存しましたが、添付した写真・ファイルの保存に失敗しました。必要なら注文の画面から添付し直してください'
   const targetOrderId = (finalItem?.['order_id'] as string | undefined) ?? null
   if (targetOrderId) {
     try {
       if (savedReceiptId) {
-        const { data: existingRec } = await supabase
+        const { data: existingRec, error: recFindErr } = await supabase
           .from('order_receipts')
           .select('id, order_id, raw_payload')
           .eq('id', savedReceiptId)
           .maybeSingle()
+        if (recFindErr) noteSideEffectFailure(warnings, '[api/shipments] order_receipts の取得に失敗', recFindErr, RECEIPT_WARN)
         if (existingRec) {
           const rp = ((existingRec.raw_payload ?? {}) as Record<string, unknown>)
           const prevIds = Array.isArray(rp['created_order_ids'])
@@ -659,16 +720,23 @@ export async function POST(req: Request) {
             ? [existingRec.order_id]
             : []
           const nextIds = Array.from(new Set([...prevIds, targetOrderId]))
-          await supabase
-            .from('order_receipts')
-            .update({
-              order_id: existingRec.order_id ?? targetOrderId,
-              raw_payload: { ...rp, created_order_ids: nextIds },
-            })
-            .eq('id', savedReceiptId)
+          const recId = savedReceiptId
+          await runSideEffect(
+            warnings,
+            '[api/shipments] order_receipts の注文紐付け更新に失敗',
+            RECEIPT_WARN,
+            () =>
+              supabase
+                .from('order_receipts')
+                .update({
+                  order_id: existingRec.order_id ?? targetOrderId,
+                  raw_payload: { ...rp, created_order_ids: nextIds },
+                })
+                .eq('id', recId),
+          )
         }
       } else if (original_file?.base64) {
-        const { data: newRec } = await supabase
+        const { data: newRec, error: newRecErr } = await supabase
           .from('order_receipts')
           .insert({
             order_id: targetOrderId,
@@ -686,25 +754,31 @@ export async function POST(req: Request) {
           })
           .select('id')
           .single()
+        if (newRecErr) noteSideEffectFailure(warnings, '[api/shipments] order_receipts の保存に失敗', newRecErr, RECEIPT_WARN)
         if (newRec?.id) savedReceiptId = newRec.id
       }
       // 納品日経過+7日超の古い画像base64を非同期クリーンアップ（DB容量ゼロ維持）
-      purgeOldReceiptBase64(supabase, 7).catch(() => {})
+      purgeOldReceiptBase64(supabase, 7).catch((e) =>
+        console.error('[api/shipments] 古い受信画像の片付けに失敗:', e),
+      )
     } catch (recErr) {
-      console.warn('[api/shipments] order_receipts アーカイブ警告:', recErr)
+      noteSideEffectFailure(warnings, '[api/shipments] order_receipts アーカイブで例外', recErr, RECEIPT_WARN)
     }
   }
 
   return NextResponse.json(
-    {
-      item: finalItem,
-      mode,
-      learnedMistake,
-      receiptId: savedReceiptId,
-      previousQty: existingItem ? Number(existingItem.quantity) || 0 : 0,
-      wasNewItem: !existingItem,
-      effectivePacksPerCase,
-    },
+    withWarnings(
+      {
+        item: finalItem,
+        mode,
+        learnedMistake,
+        receiptId: savedReceiptId,
+        previousQty: existingItem ? Number(existingItem.quantity) || 0 : 0,
+        wasNewItem: !existingItem,
+        effectivePacksPerCase,
+      },
+      warnings,
+    ),
     { status: 201 },
   )
 }

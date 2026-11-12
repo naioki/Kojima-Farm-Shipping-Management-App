@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { productUpdateSchema } from '@/types/database'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { logSettledWriteFailures } from '@/lib/api/side-effects'
 
 export const runtime = 'nodejs'
 
@@ -73,7 +74,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
 
   if ((orderItemCount ?? 0) === 0) {
     // 注文履歴が無い場合は、付随するマスタ・設定テーブルの参照をクリーンアップして完全物理削除を試みる
-    await Promise.allSettled([
+    const cleanup = await Promise.allSettled([
       admin.from('price_rules').delete().eq('product_id', id),
       admin.from('pack_configs').delete().eq('product_id', id),
       admin.from('customer_product_rules').delete().eq('product_id', id),
@@ -84,6 +85,11 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
       admin.from('print_jobs').update({ product_id: null }).eq('product_id', id),
       admin.from('app_settings').delete().eq('key', `v5_container_inv:${id}`),
     ])
+    logSettledWriteFailures(
+      '[products/[id] DELETE] 子テーブルの片付けに失敗（品目の物理削除は外部キーで止まりアーカイブに切り替わる）',
+      ['price_rules.delete', 'pack_configs.delete', 'customer_product_rules.delete', 'harvest_tasks.delete', 'harvest_estimates.delete', 'ai_learning_examples.update', 'spec_reports.update', 'print_jobs.update', 'app_settings.delete'],
+      cleanup,
+    )
 
     const { data, error } = await admin
       .from('products')

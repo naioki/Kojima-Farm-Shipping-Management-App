@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import type { OrderDetailItem } from '@/lib/orders/list'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { ConfirmModal } from '@/components/ui/Modal'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface OrderDetailEditorProps {
   orderId: string
@@ -99,6 +100,7 @@ export function OrderDetailEditor({
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
       setSavedHeader({ deliveryDate, destinationId, note })
+      showResponseWarnings(json)
       toast.success('納品日・納入先・備考を保存しました')
       router.refresh()
     } catch (e) {
@@ -145,6 +147,7 @@ export function OrderDetailEditor({
         version: json.item?.version ?? it.version + 1,
         saving: false,
       })
+      showResponseWarnings(json)
       toast.success(`「${it.productName}」の変更を保存しました`)
       router.refresh()
     } catch (e) {
@@ -161,6 +164,7 @@ export function OrderDetailEditor({
       if (!res.ok) throw new Error(json.error ?? `削除に失敗 (${res.status})`)
       setItems((prev) => prev.filter((x) => x.id !== it.id))
       toast.success('明細を削除しました')
+      showResponseWarnings(json)
       router.refresh()
     } catch (e) {
       patchItem(it.id, { saving: false })

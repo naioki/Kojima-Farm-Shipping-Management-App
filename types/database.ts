@@ -801,6 +801,8 @@ export const matrixCellSchema = z.object({
   product_id: z.string().uuid(),
   delivery_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   quantity_raw: z.string(), // 空文字＝削除
+  /** 新しい注文を作るときの受注経路（電話・LINE・紙・その他）。既存の注文への追加・変更では使わない */
+  intake_channel: intakeChannelSchema.optional(),
 })
 export type MatrixCellInput = z.infer<typeof matrixCellSchema>
 

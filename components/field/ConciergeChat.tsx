@@ -28,6 +28,14 @@ import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { findBestMatchingCustomer, findBestMatchingDestination } from '@/lib/orders/natural-parser'
 import type { ConciergeAction, ConciergeResponse } from '@/lib/concierge/schema'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
+import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
+import {
+  INTAKE_CHANNEL_REQUIRED_MESSAGE,
+  existingOrderKnownFromLookup,
+  requiresIntakeChannel,
+} from '@/lib/orders/intake-channel'
+import { parseQuantity } from '@/lib/calculations/parse-quantity'
 
 interface ConciergeChatProps {
   defaultDate: string
@@ -277,6 +285,9 @@ export function ConciergeChat({
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [executingKey, setExecutingKey] = useState<string | null>(null)
+  // 注文の登録（add_shipment）の受注経路。提案カードごとに選ぶ（未選択のままは登録しない）
+  const [intakeByKey, setIntakeByKey] = useState<Record<string, ManualIntakeChannel>>({})
+  const [intakeMissingKey, setIntakeMissingKey] = useState<string | null>(null)
   const [undoingReceiptId, setUndoingReceiptId] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
   const [receiptsByKey, setReceiptsByKey] = useState<Record<string, ExecutionReceipt>>({})
@@ -301,7 +312,9 @@ export function ConciergeChat({
         const parsed = JSON.parse(saved) as ExecutionReceipt[]
         if (Array.isArray(parsed)) setHistoryReceipts(parsed)
       }
-    } catch {}
+    } catch {
+      // 端末に残した実行履歴（表示用の控え）が読めないだけ。履歴なしで始める
+    }
   }, [])
 
   useEffect(() => {
@@ -355,7 +368,9 @@ export function ConciergeChat({
       const next = [receipt, ...prev.filter((r) => r.id !== receipt.id)].slice(0, 25)
       try {
         window.localStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(next))
-      } catch {}
+      } catch {
+        // 端末への控えの保存だけ失敗（実行結果そのものはサーバーに保存済み）。画面の表示は続ける
+      }
       return next
     })
   }
@@ -374,7 +389,9 @@ export function ConciergeChat({
       const next = prev.map((r) => (r.id === receiptId ? { ...r, undone: true } : r))
       try {
         window.localStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(next))
-      } catch {}
+      } catch {
+        // 端末への控えの保存だけ失敗（実行結果そのものはサーバーに保存済み）。画面の表示は続ける
+      }
       return next
     })
   }
@@ -516,6 +533,41 @@ export function ConciergeChat({
         }
 
         const targetDate = p.delivery_date || defaultDate
+
+        // 新しい注文を作りうる操作は受注経路を必ず埋める（CLAUDE.md・評価指標④）。既存の注文への加算・減量・
+        // 上書き・0取消は経路なしで通す。既存かどうかは登録前に照会し、確実に分からなければ経路を求める
+        if (!intakeByKey[key]) {
+          const mode = p.mode || 'create'
+          const pq = parseQuantity(p.quantity_raw, { packsPerCase: p.packs_per_case ?? null })
+          const qty = pq.type === 'ok' ? pq.total.toNumber() : null
+          let existingKnown = false
+          if (mode !== 'create' && qty !== 0) {
+            const q = new URLSearchParams({
+              customerId: matchedCust.id,
+              deliveryDate: targetDate,
+              productId: matchedProd.id,
+              ...(matchedDest?.id ? { destinationId: matchedDest.id } : {}),
+            })
+            const lookup = await fetch(`/api/shipments?${q.toString()}`, { cache: 'no-store' })
+            if (lookup.ok) {
+              const lj = (await lookup.json().catch(() => null)) as { existingShipment?: unknown } | null
+              existingKnown = existingOrderKnownFromLookup({
+                existingFound: Boolean(lj?.existingShipment),
+                destinationId: matchedDest?.id ?? null,
+                customerHasDestinations: destinations.some((d) => d.customer_id === matchedCust.id),
+              })
+            } else {
+              // 照会できないときは新規かもしれないので経路を求める（下の判定で止まる）
+              console.error('[ConciergeChat] 既存の出荷の照会に失敗:', lookup.status)
+            }
+          }
+          if (requiresIntakeChannel({ mode, quantity: qty, existingOrderKnown: existingKnown })) {
+            setIntakeMissingKey(key)
+            toast.error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+            return
+          }
+        }
+
         const res = await fetch('/api/shipments', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -534,10 +586,12 @@ export function ConciergeChat({
             bag_type: p.bag_type ?? undefined,
             mode: p.mode || 'create',
             note: p.note ?? undefined,
+            intake_channel: intakeByKey[key] ?? undefined,
           }),
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error ?? '注文の登録に失敗しました')
+        showResponseWarnings(j)
 
         const savedItem = (j.item ?? {}) as Record<string, unknown>
         const itemId = String(savedItem.id ?? '')
@@ -639,6 +693,7 @@ export function ConciergeChat({
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error ?? '取引先の登録に失敗しました')
+        showResponseWarnings(j)
 
         const custId = String(j.customer?.id ?? '')
         const existed = Boolean(j.existed)
@@ -786,6 +841,7 @@ export function ConciergeChat({
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error ?? '出発時間の更新に失敗しました')
+        showResponseWarnings(j)
 
         const receipt: ExecutionReceipt = {
           id: `rec-${Date.now()}`,
@@ -885,6 +941,7 @@ export function ConciergeChat({
       if (up.kind === 'delete_order_item') {
         const res = await fetch(`/api/order-items/${up.itemId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('注文の取り消しに失敗しました')
+        showResponseWarnings(await res.json().catch(() => null))
       } else if (up.kind === 'restore_order_item_qty') {
         const res = await fetch(`/api/order-items/${up.itemId}`, {
           method: 'PATCH',
@@ -892,6 +949,7 @@ export function ConciergeChat({
           body: JSON.stringify({ quantity: up.previousQty, version: up.version }),
         })
         if (!res.ok) throw new Error('注文数量の復元に失敗しました')
+        showResponseWarnings(await res.json().catch(() => null))
       } else if (up.kind === 'delete_product') {
         const res = await fetch(`/api/products/${up.productId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('品目の取り消しに失敗しました')
@@ -1229,6 +1287,18 @@ export function ConciergeChat({
                           </div>
                         )}
                       </div>
+
+                      {prop.type === 'add_shipment' && (
+                        <IntakeChannelPicker
+                          idPrefix={`intake-channel-${key}`}
+                          value={intakeByKey[key] ?? null}
+                          onChange={(v) => {
+                            setIntakeByKey((prev) => ({ ...prev, [key]: v }))
+                            if (intakeMissingKey === key) setIntakeMissingKey(null)
+                          }}
+                          showRequiredError={intakeMissingKey === key}
+                        />
+                      )}
 
                       <button
                         type="button"

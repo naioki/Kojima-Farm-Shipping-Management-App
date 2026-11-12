@@ -110,6 +110,8 @@ export const THAI_LABELS = {
   filterNotLoaded: 'ยังไม่ขึ้นรถ',
   revertLoad: 'ยกเลิก',
   loadedDone: 'ขึ้นรถแล้ว',
+  // 受注経路（電話・LINE・紙・その他）の選択を促す
+  intakeChannelRequired: 'กรุณาเลือกช่องทางที่รับออร์เดอร์ (โทรศัพท์・LINE・กระดาษ・อื่นๆ) ก่อนบันทึก',
 }
 
 /** 品目名（野菜名）のタイ語訳を返す */

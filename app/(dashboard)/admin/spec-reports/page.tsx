@@ -31,11 +31,18 @@ export default async function SpecReportsPage() {
   const customerIds = [...new Set((reports ?? []).map((r) => r.customer_id).filter(Boolean))] as string[]
   const productIds = [...new Set((reports ?? []).map((r) => r.product_id).filter(Boolean))] as string[]
   const reporterIds = [...new Set((reports ?? []).map((r) => r.reported_by).filter(Boolean))] as string[]
-  const [{ data: custs }, { data: prods }, { data: reporters }] = await Promise.all([
-    customerIds.length ? supabase.from('customers').select('id, name').in('id', customerIds) : Promise.resolve({ data: [] }),
-    productIds.length ? supabase.from('products').select('id, name').in('id', productIds) : Promise.resolve({ data: [] }),
-    reporterIds.length ? supabase.from('users').select('id, full_name, email').in('id', reporterIds) : Promise.resolve({ data: [] }),
+  const [
+    { data: custs, error: custsErr },
+    { data: prods, error: prodsErr },
+    { data: reporters, error: reportersErr },
+  ] = await Promise.all([
+    customerIds.length ? supabase.from('customers').select('id, name').in('id', customerIds) : Promise.resolve({ data: [], error: null }),
+    productIds.length ? supabase.from('products').select('id, name').in('id', productIds) : Promise.resolve({ data: [], error: null }),
+    reporterIds.length ? supabase.from('users').select('id, full_name, email').in('id', reporterIds) : Promise.resolve({ data: [], error: null }),
   ])
+  // 名前の解決に失敗しても報告一覧は出す（名前だけ欠ける）。無言にはしない。
+  const nameErr = custsErr ?? prodsErr ?? reportersErr
+  if (nameErr) console.error('[admin/spec-reports] 取引先・品目・報告者名の取得に失敗:', nameErr.message)
   const custName = new Map((custs ?? []).map((c) => [c.id, c.name]))
   const prodName = new Map((prods ?? []).map((p) => [p.id, p.name]))
   const reporterName = new Map((reporters ?? []).map((u) => [u.id, u.full_name || u.email || '不明']))

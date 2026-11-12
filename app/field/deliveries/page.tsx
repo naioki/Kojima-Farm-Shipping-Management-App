@@ -3,9 +3,10 @@ import { findPreflightIssues } from '@/lib/deliveries/preflight'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getRouteOverrides } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { EmptyState, ErrorState } from '@/components/ui/States'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { DateNav } from '@/components/field/DateNav'
 import { GuideTourLauncher } from '@/components/guide/GuideTourLauncher'
 import { DELIVERIES_TOUR } from '@/lib/guide/tours'
@@ -16,11 +17,10 @@ import {
 } from '@/components/field/CustomerDeliveryCard'
 import { DeliveriesBoardView } from '@/components/field/DeliveriesBoardView'
 import { ShipmentAddForm } from '@/components/field/ShipmentAddForm'
-import { jstTodayStr, shiftDateStr, formatJpDateShort } from '@/lib/dates'
+import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { resolveDefaultRouteInfo, parseDeparturePriority } from '@/lib/field/shipment-sort'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
-import { cn } from '@/lib/cn'
 import type { DeliveryStatus } from '@/types/database'
 import { getStaffFeatures } from '@/lib/field/features'
 
@@ -79,6 +79,8 @@ export default async function DeliveriesPage({
 
   if (ordersRes.error) return <ErrorState message={ordersRes.error.message} />
   const orders = ordersRes.data ?? []
+  // 未承認件数は補助表示。取れなくても配送リストは出す。
+  if (pendingRes.error) console.error('[field/deliveries] 未承認件数の取得に失敗:', pendingRes.error.message)
   const pendingReviewCount = (pendingRes.data ?? []).filter((po) => {
     const rawItems = Array.isArray(po.order_items) ? po.order_items : []
     return rawItems.some((it: { quantity?: number | null }) => (Number(it.quantity) || 0) > 0)
@@ -122,7 +124,7 @@ export default async function DeliveriesPage({
 
   type ProductPackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
-  const [custRes, destRes, prodRes, packRes, productPackRes, deliveryRes, rulesRes, routeOverrides, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
+  const [custRes, destRes, prodRes, packRes, productPackRes, deliveryRes, rulesRes, routeRes, allCustsRes, allProdsRes, allDestsRes] = await Promise.all([
     customerIds.length
       ? admin.from('customers').select('id, name, display_color').in('id', customerIds)
       : Promise.resolve({ data: [] as { id: string; name: string; display_color?: string | null }[], error: null }),
@@ -152,7 +154,7 @@ export default async function DeliveriesPage({
       : Promise.resolve({ data: [] as ProductPackRow[], error: null }),
     admin.from('deliveries').select('id, customer_id, destination_id, status, photo_url, note').eq('delivery_date', date),
     customerIds.length
-      ? (async (): Promise<{ data: RuleRow[]; error: null }> => {
+      ? (async (): Promise<{ data: RuleRow[]; error: { message: string } | null }> => {
           const r1 = await admin
             .from('customer_product_rules')
             .select('customer_id, product_id, packs_per_case, default_container_type')
@@ -162,13 +164,34 @@ export default async function DeliveriesPage({
             .from('customer_product_rules')
             .select('customer_id, product_id, packs_per_case, container_type')
             .in('customer_id', customerIds)
+          // 1回目は未適用列で失敗しうる。エラー扱いは基本列での取り直しも失敗したときだけ。
+          if (r2.error) return { data: [], error: r2.error }
           return { data: (r2.data ?? []) as RuleRow[], error: null }
         })()
       : Promise.resolve({ data: [] as RuleRow[], error: null }),
-    getRouteOverrides(admin).catch(() => ({} as Record<string, import('@/lib/field/destination-routes-store').RouteOverride>)),
+    loadRouteOverrides(admin),
     admin.from('customers').select('id, name').eq('is_active', true).order('name'),
     admin.from('products').select('id, name, unit, category').eq('is_active', true).order('name'),
-    admin.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).order('sort_order'),
+    // 追加フォームの納入先候補。規定コンテナ（default_container_type）は本番に列が無いので、無ければ基本列で取り直し、
+    // 値は出荷一覧と同じく「列の値 → 退避ストアの値」で解決する（下の resolveDestDefaultContainer）
+    (async (): Promise<{
+      data: { id: string; customer_id: string | null; code: string | null; full_name: string; default_container_type?: string | null }[] | null
+      error: { message: string } | null
+    }> => {
+      const r1 = await admin
+        .from('delivery_destinations')
+        .select('id, customer_id, code, full_name, default_container_type')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (!r1.error) return { data: r1.data ?? [], error: null }
+      const r2 = await admin
+        .from('delivery_destinations')
+        .select('id, customer_id, code, full_name')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (r2.error) return { data: null, error: r2.error }
+      return { data: r2.data ?? [], error: null }
+    })(),
   ])
 
   if (custRes.error) return <ErrorState message="取引先名を読み込めませんでした。" detail={custRes.error.message} />
@@ -177,9 +200,23 @@ export default async function DeliveriesPage({
   if (packRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={packRes.error.message} />
   if (productPackRes.error) return <ErrorState message="荷姿情報を読み込めませんでした。" detail={productPackRes.error.message} />
   if (deliveryRes.error) return <ErrorState message="配送チェック状態を読み込めませんでした。" detail={deliveryRes.error.message} />
+  // 取引先別の入数は納入先ごと・全体の箱数と容器の判定に効く（荷姿・品目と同じ扱い）。
+  if (rulesRes.error) return <ErrorState message="取引先別の入数を読み込めませんでした。" detail={rulesRes.error.message} />
+
+  // 出発時刻・便名は便のまとまりと積込の並び順に効く。配送リストは止めず、画面に警告を出す。
+  const routeOverrides = routeRes.overrides
+  const routeLoadError = routeRes.error
+  // 追加フォームの選択肢。取れないと候補が空で選べず原因も分からないため、フォームの位置にエラーを出す。
+  const addFormError = allCustsRes.error ?? allProdsRes.error ?? allDestsRes.error
 
   const custById = new Map((custRes.data ?? []).map((c) => [c.id, { name: c.name, display_color: c.display_color }]))
-  const destById = new Map((destRes.data ?? []).map((d) => [d.id, d]))
+  // 規定コンテナは「列の値 → 退避ストアの値」で解決する（列が無い本番では退避ストアが唯一の保存先）
+  const destById = new Map(
+    (destRes.data ?? []).map((d) => [
+      d.id,
+      { ...d, default_container_type: resolveDestDefaultContainer(d.id, d.default_container_type, routeRes.containers) },
+    ]),
+  )
   const capacityById = new Map((prodRes.data ?? []).map((p) => [p.id, p.container_capacity]))
   const packById = new Map((packRes.data ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]))
   const ruleByPair = new Map((rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r]))
@@ -463,8 +500,6 @@ export default async function DeliveriesPage({
       }
     }),
   )
-  const todayStr = jstTodayStr()
-  const tomorrowStr = shiftDateStr(todayStr, 1)
 
   return (
     <div className="mx-auto max-w-2xl space-y-3 pb-24">
@@ -497,6 +532,13 @@ export default async function DeliveriesPage({
             確認する →
           </Link>
         </div>
+      )}
+
+      {routeLoadError && (
+        <LoadWarning
+          message="出発時刻・便名を読み込めませんでした。便の締め時刻と積込の並び順が正しくない可能性があります。再読み込みしてください。"
+          detail={routeLoadError}
+        />
       )}
 
       {preflight.length > 0 && !packingStarted && (
@@ -534,30 +576,39 @@ export default async function DeliveriesPage({
       )}
 
       {/* 配送リスト画面からも直接新規追加・数量変更が可能（#20） */}
-      <ShipmentAddForm
-        deliveryDate={date}
-        defaultProductId={selectedProduct}
-        allowAiRead={allowAiRead}
-        customers={(allCustsRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
-        products={(allProdsRes.data ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
-        destinations={(allDestsRes.data ?? []).map((d) => ({
-          id: d.id,
-          customerId: d.customer_id ?? '',
-          label: d.code?.trim() || d.full_name,
-        }))}
-        packsByPair={Object.fromEntries(
-          (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),
-        )}
-        rulesByPair={Object.fromEntries(
-          (rulesRes.data ?? []).map((r) => [
-            `${r.customer_id}:${r.product_id}`,
-            {
-              packsPerCase: r.packs_per_case ?? null,
-              containerType: (r as { container_type?: string | null }).container_type ?? r.default_container_type ?? null,
-            },
-          ]),
-        )}
-      />
+      {addFormError ? (
+        <ErrorState
+          title="追加フォームを表示できません"
+          message="取引先・品目・納入先の候補を読み込めませんでした。配送リストはそのまま使えます。再読み込みしてください。"
+          detail={addFormError.message}
+        />
+      ) : (
+        <ShipmentAddForm
+          deliveryDate={date}
+          defaultProductId={selectedProduct}
+          allowAiRead={allowAiRead}
+          customers={(allCustsRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          products={(allProdsRes.data ?? []).map((p) => ({ id: p.id, name: p.name, unit: p.unit, category: p.category }))}
+          destinations={(allDestsRes.data ?? []).map((d) => ({
+            id: d.id,
+            customerId: d.customer_id ?? '',
+            label: d.code?.trim() || d.full_name,
+            defaultContainerType: resolveDestDefaultContainer(d.id, d.default_container_type, routeRes.containers),
+          }))}
+          packsByPair={Object.fromEntries(
+            (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),
+          )}
+          rulesByPair={Object.fromEntries(
+            (rulesRes.data ?? []).map((r) => [
+              `${r.customer_id}:${r.product_id}`,
+              {
+                packsPerCase: r.packs_per_case ?? null,
+                containerType: (r as { container_type?: string | null }).container_type ?? r.default_container_type ?? null,
+              },
+            ]),
+          )}
+        />
+      )}
     </div>
   )
 }

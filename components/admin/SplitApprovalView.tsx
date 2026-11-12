@@ -35,6 +35,7 @@ import { pendingReasons, quantityAnomalyFor, itemsMissingPack } from '@/lib/orde
 import { formatJpDateShort } from '@/lib/dates'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { determineContainerType } from '@/lib/pipeline/schemas'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 interface EditableRow extends PendingOrderItem {
   draftQty: string
@@ -156,6 +157,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           const j = (await res.json().catch(() => ({}))) as { error?: string }
           throw new Error(j.error ?? '承認に失敗しました')
         }
+        showResponseWarnings(await res.json().catch(() => null))
         router.refresh()
       } catch (e) {
         setOptimisticApprovedIds((prev) => {
@@ -262,6 +264,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
       if (!res.ok) throw new Error(json.error ?? `一括承認失敗 (${res.status})`)
 
       toast.success(`${json.successCount ?? bulkTargetOrders.length}件の注文を一括承認しました！`)
+      showResponseWarnings(json)
       setSelectedIdsForBulk(new Set())
       setBulkConfirmModalOpen(false)
       router.refresh()
@@ -336,6 +339,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
         version: json.item?.version ?? row.version + 1,
         saving: false,
       })
+      showResponseWarnings(json)
       toast.success('数量を修正しました')
 
       const breakdown = calcBoxBreakdown(updatedQty, order.customerName, order.destinationName)
@@ -400,6 +404,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
         [order.id]: (prev[order.id] ?? []).filter((r) => r.id !== row.id),
       }))
       toast.success('明細行を削除しました')
+      showResponseWarnings(await res.json().catch(() => null))
       setLastModification({
         clientName: !order.customerId ? '共通' : order.customerName,
         suggestedRuleText: `【${order.customerName}】「${row.productName}」の行は小島農園のチンゲン菜受注対象外のため抽出から除外（スキップ）する。`,
@@ -476,6 +481,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
       } else {
         toast.success(json.revisionSummary || 'AIで修正指示を反映しました')
       }
+      showResponseWarnings(json)
       setAiInstruction('')
       router.refresh()
     } catch (e) {

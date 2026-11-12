@@ -6,6 +6,7 @@ import { Plus, Trash2, Save, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface Destination {
   id: string
@@ -22,6 +23,11 @@ interface Props {
   customerId: string
   customerName: string
   initial: Destination[]
+  /**
+   * 出発時刻・便名・規定コンテナ（退避データ）を読めなかったとき true。表示中の値が実際と違いうるため、
+   * 既存の納入先ではこの3項目の欄を無効化し、保存でも送らない（API は送られない項目を上書きしない）。
+   */
+  routesUnavailable?: boolean
 }
 
 const fieldCls =
@@ -30,7 +36,7 @@ const fieldCls =
 /**
  * 納入先の登録・編集（#48 出荷時間・便名に加え、納入先ごとの規定コンテナ種別 default_container_type も管理）。
  */
-export function DestinationManager({ customerId, customerName, initial }: Props) {
+export function DestinationManager({ customerId, customerName, initial, routesUnavailable = false }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<Destination[]>(initial)
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -55,8 +61,9 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           code: code.trim() || null,
           full_name: fullName.trim(),
           aliases: aliases.split(/[,、\s]+/).map((s) => s.trim()).filter(Boolean),
-          departure_time: departureTime.trim() || null,
-          shipping_route_name: shippingRouteName.trim() || null,
+          // 読めていないときは送らない（undefined は JSON から落ちる）
+          departure_time: routesUnavailable ? undefined : departureTime.trim() || null,
+          shipping_route_name: routesUnavailable ? undefined : shippingRouteName.trim() || null,
           default_container_type: defaultContainerType.trim() || null,
         }),
       })
@@ -65,6 +72,7 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
       setRows((p) => [...p, json.destination!])
       setCode(''); setFullName(''); setAliases(''); setDepartureTime(''); setShippingRouteName(''); setDefaultContainerType('')
       toast.success('納入先を登録しました')
+      showResponseWarnings(json)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '登録に失敗しました')
     } finally {
@@ -88,14 +96,17 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           full_name: row.full_name.trim(),
           aliases: row.aliases,
           is_active: row.is_active,
-          departure_time: row.departure_time?.trim() || null,
-          shipping_route_name: row.shipping_route_name?.trim() || null,
-          default_container_type: row.default_container_type?.trim() || null,
+          // 読めていないときは送らない（空のまま保存して既存の出発時刻・便名を消さない）
+          departure_time: routesUnavailable ? undefined : row.departure_time?.trim() || null,
+          shipping_route_name: routesUnavailable ? undefined : row.shipping_route_name?.trim() || null,
+          // 規定コンテナも本番では同じ退避データに入っているため、読めていないときは送らない
+          default_container_type: routesUnavailable ? undefined : row.default_container_type?.trim() || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error ?? `保存失敗 (${res.status})`)
       toast.success('保存しました')
+      showResponseWarnings(json)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
@@ -168,7 +179,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                   <input
                     value={r.default_container_type ?? ''}
                     onChange={(e) => patchRow(r.id, 'default_container_type', e.target.value)}
-                    className={fieldCls}
+                    className={cn(fieldCls, 'disabled:opacity-60')}
+                    disabled={routesUnavailable}
                     placeholder="青コン / 茶コン"
                   />
                 </label>
@@ -178,7 +190,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                     type="time"
                     value={r.departure_time ?? ''}
                     onChange={(e) => patchRow(r.id, 'departure_time', e.target.value)}
-                    className={fieldCls}
+                    className={cn(fieldCls, 'disabled:opacity-60')}
+                    disabled={routesUnavailable}
                   />
                 </label>
                 <label className="block sm:col-span-1">
@@ -186,7 +199,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                   <input
                     value={r.shipping_route_name ?? ''}
                     onChange={(e) => patchRow(r.id, 'shipping_route_name', e.target.value)}
-                    className={fieldCls}
+                    className={cn(fieldCls, 'disabled:opacity-60')}
+                    disabled={routesUnavailable}
                     placeholder="例: 16時便"
                   />
                 </label>
@@ -239,13 +253,15 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
               type="time"
               value={departureTime}
               onChange={(e) => setDepartureTime(e.target.value)}
-              className={fieldCls}
+              className={cn(fieldCls, 'disabled:opacity-60')}
+              disabled={routesUnavailable}
               title="出荷時間"
             />
             <input
               value={shippingRouteName}
               onChange={(e) => setShippingRouteName(e.target.value)}
-              className={fieldCls}
+              className={cn(fieldCls, 'disabled:opacity-60')}
+              disabled={routesUnavailable}
               placeholder="便名（例: 岩槻便）"
             />
           </div>

@@ -1,10 +1,10 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
-import { getAuthedUser } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { specReportCreateSchema } from '@/types/database'
 import { getStaffFeatures } from '@/lib/field/features'
 import { putReceiptOriginal } from '@/lib/r2'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -16,17 +16,14 @@ export const maxDuration = 30
  * 写真は任意。R2 未設定でもメモのみで報告できる（写真は保存できない旨を warning で返す）。
  */
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-
+  // 社内ユーザーのみ（行なし・ロール取得失敗は 403）。staff は設定「規格報告」がオンのときだけ
+  const guard = await requireStaffApi('規格報告の利用が許可されていません')
+  if (!guard.ok) return guard.response
+  const { user, role } = guard
   const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/spec-reports/route.ts] ロールの取得に失敗:', profileErr.message)
-  const role = profile?.role
   if (role !== 'admin') {
     const features = await getStaffFeatures()
-    if (role !== 'staff' || !features.reportSpec) {
+    if (!features.reportSpec) {
       return NextResponse.json({ error: '規格報告の利用が許可されていません' }, { status: 403 })
     }
   }

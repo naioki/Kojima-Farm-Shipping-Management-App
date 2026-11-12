@@ -106,8 +106,9 @@ export async function PUT(req: Request) {
             channels,
           )
         }
-      } catch {
-        // 通知失敗は無視（規格保存は成功扱い）
+      } catch (notifyErr) {
+        // 通知失敗で規格保存は失敗扱いにしない（保存は済んでいる）が、サーバーログには残す
+        console.error('[api/customer-product-rules] 規格変更の通知に失敗:', notifyErr)
       }
     }
   }

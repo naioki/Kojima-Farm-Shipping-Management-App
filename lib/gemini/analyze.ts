@@ -2,6 +2,7 @@ import 'server-only'
 import { GoogleGenerativeAI, type GenerateContentResult, type Part } from '@google/generative-ai'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { runSideEffect } from '@/lib/api/side-effects'
 import { getSetting } from '@/lib/settings'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { foldKana } from '@/lib/normalize/kana'
@@ -819,13 +820,13 @@ async function getDiffInstruction(): Promise<string> {
 }
 
 async function logUsage(mode: string, channel: string, success: boolean, tokens?: number) {
-  try {
-    await createAdminClient()
+  // 記録失敗で解析本体は止めないが、無料枠の残数判定（lib/gemini/quota.ts）がこの件数を数えるため、
+  // 失敗（{ error } の返却・例外とも）は必ずサーバーログに残す
+  await runSideEffect(null, '[gemini/analyze] gemini_usage_log への記録に失敗（無料枠の残数がずれる）', undefined, () =>
+    createAdminClient()
       .from('gemini_usage_log')
-      .insert({ mode, channel, success, tokens_used: tokens ?? null })
-  } catch {
-    // 記録失敗で本処理は止めない（無料枠管理は best-effort）
-  }
+      .insert({ mode, channel, success, tokens_used: tokens ?? null }),
+  )
 }
 
 /**
@@ -1101,8 +1102,9 @@ export async function analyzeOrders(
             finalUsedModel = `${usedModel} → ${highModel}`
           }
         }
-      } catch {
-        // 高精度モデルの再検証が一時エラーの場合はメインモデルの結果を維持
+      } catch (highErr) {
+        // 高精度モデルの再検証が一時エラーの場合はメインモデルの結果を維持（失敗はログに残す）
+        console.warn('[gemini/analyze] 高精度モデルでの再検証に失敗。メインモデルの結果を使います:', highErr)
       }
     }
 

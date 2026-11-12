@@ -77,11 +77,16 @@ export async function POST(req: NextRequest) {
     '現場スタッフ'
 
   // 現在のレポートリストを取得
-  const { data: setting } = await admin
+  const { data: setting, error: settingErr } = await admin
     .from('app_settings')
     .select('value')
     .eq('key', SETTING_KEY)
     .maybeSingle()
+  if (settingErr) {
+    // 読めないまま保存すると、これまでの報告を空のリストで上書きしてしまう
+    console.error('[feedback] 報告一覧の読み込みに失敗:', settingErr.message)
+    return NextResponse.json({ error: '報告一覧を読み込めませんでした。もう一度お試しください' }, { status: 500 })
+  }
 
   let reports: FeedbackReport[] = []
   if (setting?.value) {
@@ -109,12 +114,16 @@ export async function POST(req: NextRequest) {
 
   // app_settings にアトミック保存
   const payloadValue = JSON.stringify(reports)
-  await admin.from('app_settings').upsert({
+  const { error: saveErr } = await admin.from('app_settings').upsert({
     key: SETTING_KEY,
     value: payloadValue,
     is_secret: false,
     updated_at: new Date().toISOString(),
   })
+  if (saveErr) {
+    console.error('[feedback] 報告の保存に失敗:', saveErr.message)
+    return NextResponse.json({ error: '保存できませんでした。もう一度お試しください' }, { status: 500 })
+  }
 
   // 管理者へ通知（LINE / Discord）
   sendMultiChannelAlert({
@@ -136,11 +145,16 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'IDが必要です' }, { status: 400 })
 
   const admin = createAdminClient()
-  const { data: setting } = await admin
+  const { data: setting, error: settingErr } = await admin
     .from('app_settings')
     .select('value')
     .eq('key', SETTING_KEY)
     .maybeSingle()
+  if (settingErr) {
+    // 読めないまま保存すると、これまでの報告を空のリストで上書きしてしまう
+    console.error('[feedback] 報告一覧の読み込みに失敗:', settingErr.message)
+    return NextResponse.json({ error: '報告一覧を読み込めませんでした。もう一度お試しください' }, { status: 500 })
+  }
 
   let reports: FeedbackReport[] = []
   if (setting?.value) {
@@ -164,12 +178,16 @@ export async function PATCH(req: NextRequest) {
   }
 
   const payloadValue = JSON.stringify(reports)
-  await admin.from('app_settings').upsert({
+  const { error: saveErr } = await admin.from('app_settings').upsert({
     key: SETTING_KEY,
     value: payloadValue,
     is_secret: false,
     updated_at: new Date().toISOString(),
   })
+  if (saveErr) {
+    console.error('[feedback] 報告の保存に失敗:', saveErr.message)
+    return NextResponse.json({ error: '保存できませんでした。もう一度お試しください' }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true, report: target })
 }

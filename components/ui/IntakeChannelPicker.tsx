@@ -3,6 +3,9 @@
 import { useEffect } from 'react'
 import { Phone, MessageCircle, FileText, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { useFieldLang } from '@/lib/field/lang-context'
+import { THAI_LABELS } from '@/lib/field/thai-dict'
+import { INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
 
 export type ManualIntakeChannel = 'phone' | 'line' | 'paper' | 'other'
 
@@ -33,11 +36,21 @@ export function IntakeChannelPicker({
   value,
   onChange,
   className,
+  showRequiredError = false,
+  idPrefix = 'intake-channel',
 }: {
   value: ManualIntakeChannel | null
   onChange: (v: ManualIntakeChannel) => void
   className?: string
+  /** 未選択のまま登録しようとしたとき true（欄の下に選ぶよう案内を出す） */
+  showRequiredError?: boolean
+  /** 同じ画面に複数置くときの id の接頭辞 */
+  idPrefix?: string
 }) {
+  const { isThaiMode } = useFieldLang()
+  const labelId = `${idPrefix}-label`
+  const errorId = `${idPrefix}-error`
+  const showError = showRequiredError && value == null
   // 初回のみ前回の選択を復元
   useEffect(() => {
     if (value == null) {
@@ -58,10 +71,17 @@ export function IntakeChannelPicker({
 
   return (
     <div className={cn('space-y-1', className)}>
-      <span id="intake-channel-label" className="block text-sm font-medium text-ink">
-        受注経路<span className="ml-1 text-xs text-ink-soft">（どこから来た注文か）</span>
+      <span id={labelId} className="block text-sm font-medium text-ink">
+        受注経路<span className="ml-1 text-xs text-ink-soft">（どこから来た注文か・必須）</span>
       </span>
-      <div role="radiogroup" aria-labelledby="intake-channel-label" className="flex flex-wrap gap-2">
+      <div
+        role="radiogroup"
+        aria-labelledby={labelId}
+        aria-required="true"
+        aria-invalid={showError || undefined}
+        aria-describedby={showError ? errorId : undefined}
+        className="flex flex-wrap gap-2"
+      >
         {OPTIONS.map(({ value: v, label, Icon }) => {
           const selected = value === v
           return (
@@ -84,6 +104,12 @@ export function IntakeChannelPicker({
           )
         })}
       </div>
+      {showError && (
+        <p id={errorId} role="alert" className="text-sm font-bold text-alert">
+          ⚠️ {INTAKE_CHANNEL_REQUIRED_MESSAGE}
+          {isThaiMode && <span className="block text-xs">{THAI_LABELS.intakeChannelRequired}</span>}
+        </p>
+      )}
     </div>
   )
 }

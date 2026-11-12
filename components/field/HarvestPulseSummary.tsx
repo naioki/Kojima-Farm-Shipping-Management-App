@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { useFieldLang } from '@/lib/field/lang-context'
 import { getThaiContainer, getContainerColorEmoji, THAI_LABELS } from '@/lib/field/thai-dict'
+import { carryoverPacksEstimate } from '@/lib/field/progress-boxes'
 
 export interface ContainerBreakdownItem {
   type: string
@@ -42,6 +43,7 @@ export interface HarvestPulseSummaryProps {
 }
 
 export function HarvestPulseSummary({
+  productName,
   productId,
   date,
   totalPacks,
@@ -125,7 +127,13 @@ export function HarvestPulseSummary({
               <span>
                 {isThaiMode
                   ? `${THAI_LABELS.inheritedCarryover}: ${prevCarryover} ลัง`
-                  : `前日からの持ち越し: ${prevCarryover} 箱（約 ${prevCarryover * 20} P）`}
+                  : (() => {
+                      // パック数の目安は進捗と同じ規則（青梗菜は20P/箱）。入数を確定できない品目は箱数だけ出す
+                      const approxPacks = carryoverPacksEstimate(productName, prevCarryover)
+                      return approxPacks != null
+                        ? `前日からの持ち越し: ${prevCarryover} 箱（約 ${approxPacks} P）`
+                        : `前日からの持ち越し: ${prevCarryover} 箱`
+                    })()}
               </span>
             </span>
             <span className="whitespace-nowrap rounded bg-warning-bg text-ink border border-warning px-1.5 py-0.5 text-xs font-black shrink-0">

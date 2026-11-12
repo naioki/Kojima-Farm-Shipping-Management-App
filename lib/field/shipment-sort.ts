@@ -95,14 +95,52 @@ export function parseDeparturePriority(departureTime: string | null | undefined)
   return isNextDay ? 24 * 60 + 12 * 60 : 23 * 60 + 59
 }
 
+/** 時刻の表記（「16:30」「16時」「12時30分」「当日16:30」「翌午前」など） */
+const ROUTE_TIME = '(?:翌(?:日)?\\s*(?:午前|午後|\\d{1,2}:\\d{2}|\\d{1,2}時(?:\\d{1,2}分)?)|当日\\s*(?:\\d{1,2}:\\d{2}|\\d{1,2}時(?:\\d{1,2}分)?)?|\\d{1,2}:\\d{2}|\\d{1,2}時(?:\\d{1,2}分)?)'
+/** 時刻のあとの区切りになる語（「発」「迄」など） */
+const ROUTE_TIME_SUFFIX = '(?:迄に出荷|まで|迄|発|出荷)'
+/** 時刻 ＋ 区切り（「発」「迄」などの語、または空白・記号）。区切りが無い「17時便」「当日便」には当たらない */
+const ROUTE_TIME_PREFIX_RE = new RegExp(`^${ROUTE_TIME}\\s*(?:${ROUTE_TIME_SUFFIX}[\\s・:：、,]*|[\\s・:：、,]+)`)
+/** 時刻の表記だけ（区切りなし）。「16:30岩槻便」「16時NSK便」のように時刻の直後に便名が続く表記の判定に使う */
+const ROUTE_TIME_BARE_RE = new RegExp(`^${ROUTE_TIME}`)
 /**
- * 便名に含まれる重複時刻プレフィックスや絵文字（例: "⏰ 当日18:00迄 岩槻便", "11:30発 岩槻便"）を除去して純粋な便名のみを返す
+ * 時刻の直後がこれで始まるなら、時刻を含めて1つの便名（「17時便」「2時間便」「12時30分便」「16時台便」など）。
+ * 数字で始まるもの（時刻の一部）も除かない。
+ */
+const ROUTE_NAME_CONTINUES_TIME_RE = /^[便間分台\d]/
+/** 時刻だけ（便名なし）の表記。例「当日 18:00迄に出荷」「11:30発」 */
+const ROUTE_TIME_ONLY_RE = new RegExp(`^(?:${ROUTE_TIME}\\s*${ROUTE_TIME_SUFFIX}?\\s*)+$`)
+
+/**
+ * 便名に重ねて書かれた出発時刻や絵文字（例: "⏰ 当日18:00迄 岩槻便", "11:30発 岩槻便", "16:30 岩槻便"）を除いて、
+ * 便名だけを返す。
+ * - 時刻の表記のあとに区切り（空白・「迄」・「発」・記号）があり、さらに便名が続く場合は時刻部分を除く。
+ * - 区切りが無くても、時刻の直後に便名（「便」「間」「分」「台」・数字で始まらないもの）が続く「16:30岩槻便」
+ *   「16時NSK便」は時刻部分を除く。
+ * - 便名そのものが時刻で始まる「17時便」「11:30便」「当日便」「翌午前便」「2時間便」「12時30分便」は触らない。
+ * - 時刻だけの表記（「当日 18:00迄に出荷」など）や「一般配送・時間未指定」は便名なし（null）。
  */
 export function cleanShippingRouteName(routeName: string | null | undefined): string | null {
   if (!routeName) return null
-  const cleaned = routeName
-    .replace(/^[⏰🌅🚚📦⏳\s]+/g, '')
-    .replace(/^(?:(?:翌(?:日)?(?:午前|\d{1,2}:\d{2}|\d{1,2}時)|当日\s*(?:\d{1,2}:\d{2}|\d{1,2}時)?|\d{1,2}:\d{2}|\d{1,2}時)(?:発|出荷|迄に出荷|迄|まで)?[\s・:：]*)+/g, '')
+  let cleaned = routeName.replace(/^[⏰🌅🚚📦⏳\s]+/g, '').trim()
+  if (ROUTE_TIME_ONLY_RE.test(cleaned)) return null
+  for (;;) {
+    const m = cleaned.match(ROUTE_TIME_PREFIX_RE)
+    if (m) {
+      const rest = cleaned.slice(m[0].length).trim()
+      // 時刻を除くと何も残らない／「便」だけになるなら、時刻を含めて便名として扱う（「11:30発便」など）
+      if (!rest || rest === '便') break
+      cleaned = rest
+      continue
+    }
+    // 区切りなしで時刻の直後に便名が続く（「16:30岩槻便」→「岩槻便」）。「17時便」「2時間便」などは除かない
+    const bare = cleaned.match(ROUTE_TIME_BARE_RE)
+    if (!bare) break
+    const rest = cleaned.slice(bare[0].length).trim()
+    if (!rest || ROUTE_NAME_CONTINUES_TIME_RE.test(rest)) break
+    cleaned = rest
+  }
+  cleaned = cleaned
     .replace(/^一般配送・時間未指定$/, '')
     .replace(/^時間指定なし（一般便）$/, '')
     .trim()

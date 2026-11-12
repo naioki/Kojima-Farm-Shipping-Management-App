@@ -1,14 +1,13 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { analyzeOrders, type OrdersResult } from '@/lib/gemini/analyze'
-import { isStaffUser } from '@/lib/auth/is-staff-user'
 import { parseSpreadsheetToText } from '@/lib/excel/parse'
 import { buildClarificationQuestions } from '@/lib/orders/clarifications'
 import { parseNaturalOrderTextDeterministic } from '@/lib/orders/natural-parser'
 import { getStaffFeatures } from '@/lib/field/features'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -39,11 +38,13 @@ const bodySchema = z
  * さらに該当日の既存出荷状況（差分比較用）を一括で返す。
  */
 export async function POST(req: Request) {
-  const [user, rawBody] = await Promise.all([
-    getAuthedUser(),
+  // 社内ユーザー（admin/staff）のみ。ロール取得失敗・行なし（取引先ポータル等）は 403
+  const [guard, rawBody] = await Promise.all([
+    requireStaffApi('OCRの利用が許可されていません'),
     req.json().catch(() => null),
   ])
-  if (!user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  if (!guard.ok) return guard.response
+  const { role } = guard
 
   const parsed = bodySchema.safeParse(rawBody)
   if (!parsed.success) {
@@ -55,9 +56,8 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
-  // ロール確認とDBマスタ取得を完全並列で1往復に集約（直列DB往復の遅延を削減）
-  const [profileRes, custRes, destRes, prodRes] = await Promise.all([
-    admin.from('users').select('role').eq('id', user.id).maybeSingle(),
+  // DBマスタ取得を並列で1往復に集約（直列DB往復の遅延を削減）
+  const [custRes, destRes, prodRes] = await Promise.all([
     admin.from('customers').select('id, name, channel_identifiers').eq('is_active', true),
     admin
       .from('delivery_destinations')
@@ -65,13 +65,6 @@ export async function POST(req: Request) {
       .eq('is_active', true),
     admin.from('products').select('id, name, unit, aliases').eq('is_active', true),
   ])
-  if (profileRes.error) console.error('[app/api/ocr/analyze/route.ts] ロールの取得に失敗:', profileRes.error.message)
-
-  const jwtRole = (user.app_metadata as { role?: string } | undefined)?.role
-  const role = profileRes.data?.role ?? jwtRole
-  if (role !== 'admin' && role !== 'staff' && !(await isStaffUser(user.id))) {
-    return NextResponse.json({ error: 'OCRの利用が許可されていません' }, { status: 403 })
-  }
   // 現場スタッフは設定「現場スタッフの写真・FAX自動読取（OCR）を許可」がオンのときだけ（管理者は常に可）
   if (role !== 'admin' && !(await getStaffFeatures()).ocr) {
     return NextResponse.json({ error: '写真・FAXの読み取りは管理者が許可していません（設定 → 現場スタッフに任せること）' }, { status: 403 })

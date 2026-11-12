@@ -39,6 +39,9 @@ export default async function PortalOrderPage() {
   ])
 
   if (rulesRes.error) return <ErrorState message={rulesRes.error.message} />
+  // 品目・納入先が取れないまま「発注可能な品目がありません」と出すと誤解を招くため、エラーとして出す
+  if (allProductsRes.error) return <ErrorState message={allProductsRes.error.message} />
+  if (destinationsRes.error) return <ErrorState message={destinationsRes.error.message} />
 
   const allRules = rulesRes.data ?? []
   const defaultRules = allRules.filter((r) => r.is_default_set)

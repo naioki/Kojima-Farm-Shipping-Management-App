@@ -15,6 +15,7 @@ import { formatJpDateShort } from '@/lib/dates'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { quantityAnomalyFor } from '@/lib/orders/pending-types'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface PackConfigOption {
   id: string
@@ -204,6 +205,7 @@ export function EditableOrderCard({
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
       const q = json.item ? Number(json.item.quantity) : n
       patch(row.id, { quantity: q, draft: String(q), version: json.item?.version ?? row.version + 1, saving: false })
+      showResponseWarnings(json)
       toast.success('数量を直しました')
       setSuggestedRule(
         `【${customerName}】${row.productName}の数量読取で「${oldQty}」と誤読された場合は総パック数「${q}P」として解釈する。`,
@@ -224,6 +226,7 @@ export function EditableOrderCard({
       }
       setRows((rs) => rs.filter((r) => r.id !== row.id))
       toast.success('明細を消しました')
+      showResponseWarnings(await res.json().catch(() => null))
       router.refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '削除に失敗しました')

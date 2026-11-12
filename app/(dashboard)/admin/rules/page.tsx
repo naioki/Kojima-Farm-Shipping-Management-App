@@ -50,6 +50,13 @@ export default async function AdminAiRulesPage() {
     )
   }
 
+  // 取引先の選択肢が空のままルールを作らせない（空表示に化けさせない）
+  if (custsRes.error) {
+    return (
+      <ErrorState message="取引先の一覧を読み込めませんでした。時間をおいて再度お試しください。" detail={custsRes.error.message} />
+    )
+  }
+
   const rules = (rulesRes.data ?? []) as AiRule[]
   const customers = (custsRes.data ?? []) as { id: string; name: string }[]
 

@@ -151,7 +151,7 @@ export async function recordMistakeFeedback(
           input.correctedField,
           input.correctedValue,
         )
-        await admin
+        const { error: mergeErr } = await admin
           .from('ai_rules')
           .update({
             rule_text: mergedText,
@@ -159,13 +159,19 @@ export async function recordMistakeFeedback(
             updated_at: new Date().toISOString(),
           })
           .eq('id', primaryRule.id)
+        if (mergeErr) {
+          // 決定版を書けていないので、散乱した auto_loop 行も消さない（学習内容を失わない）
+          console.error('[learning-loop] 決定版ルールへの統合更新に失敗:', mergeErr.message)
+          return { success: false }
+        }
 
-        // もし過去に散乱した auto_loop の別行が残っていれば自動クリーンアップ
+        // もし過去に散乱した auto_loop の別行が残っていれば自動クリーンアップ（失敗しても学習は済んでいるのでログのみ）
         const redundantAutoIds = rules
           .filter((r) => r.id !== primaryRule.id && r.source === 'auto_loop')
           .map((r) => r.id)
         if (redundantAutoIds.length > 0) {
-          await admin.from('ai_rules').delete().in('id', redundantAutoIds)
+          const { error: cleanupErr } = await admin.from('ai_rules').delete().in('id', redundantAutoIds)
+          if (cleanupErr) console.error('[learning-loop] 散乱した auto_loop ルールの片付けに失敗:', cleanupErr.message)
         }
 
         invalidateAiRulesCache()
@@ -215,7 +221,7 @@ export async function recordMistakeFeedback(
         return { success: true, ruleId: primaryRule.id, isNew: false }
       }
       const nextText = `${primaryRule.rule_text.trim()} ${compactAddon}`
-      await admin
+      const { error: addErr } = await admin
         .from('ai_rules')
         .update({
           rule_text: nextText,
@@ -223,6 +229,10 @@ export async function recordMistakeFeedback(
           updated_at: new Date().toISOString(),
         })
         .eq('id', primaryRule.id)
+      if (addErr) {
+        console.error('[learning-loop] ルールへの学習内容の追記に失敗:', addErr.message)
+        return { success: false }
+      }
       invalidateAiRulesCache()
       return { success: true, ruleId: primaryRule.id, isNew: false }
     }

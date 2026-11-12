@@ -19,27 +19,33 @@ export type ApiGuardResult =
   | { ok: true; user: User; role: 'admin' | 'staff' }
   | { ok: false; response: NextResponse }
 
-async function resolve(allowed: ReadonlyArray<'admin' | 'staff'>): Promise<ApiGuardResult> {
+async function resolve(
+  allowed: ReadonlyArray<'admin' | 'staff'>,
+  forbiddenMessage = '権限がありません',
+): Promise<ApiGuardResult> {
   const user = await getAuthedUser()
   if (!user) {
-    return { ok: false, response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) }
+    return { ok: false, response: NextResponse.json({ error: 'ログインが必要です' }, { status: 401 }) }
   }
   const admin = createAdminClient()
   const { data, error } = await admin.from('users').select('role').eq('id', user.id).maybeSingle()
   if (error) console.error('[api-guard] ロールの取得に失敗:', error.message)
   const role = data?.role
   if ((role !== 'admin' && role !== 'staff') || !allowed.includes(role)) {
-    return { ok: false, response: NextResponse.json({ error: '権限がありません' }, { status: 403 }) }
+    return { ok: false, response: NextResponse.json({ error: forbiddenMessage }, { status: 403 }) }
   }
   return { ok: true, user, role }
 }
 
-/** 社内ユーザー（admin / staff）のみ許可。取引先ポータルのユーザーは 403。 */
-export function requireStaffApi(): Promise<ApiGuardResult> {
-  return resolve(['admin', 'staff'])
+/**
+ * 社内ユーザー（admin / staff）のみ許可。取引先ポータルのユーザーは 403。
+ * forbiddenMessage: 403 時に画面へ出す文言（省略時「権限がありません」）。
+ */
+export function requireStaffApi(forbiddenMessage?: string): Promise<ApiGuardResult> {
+  return resolve(['admin', 'staff'], forbiddenMessage)
 }
 
-/** 管理者（経営）のみ許可。 */
-export function requireAdminApi(): Promise<ApiGuardResult> {
-  return resolve(['admin'])
+/** 管理者（経営）のみ許可。forbiddenMessage は requireStaffApi と同じ。 */
+export function requireAdminApi(forbiddenMessage?: string): Promise<ApiGuardResult> {
+  return resolve(['admin'], forbiddenMessage)
 }

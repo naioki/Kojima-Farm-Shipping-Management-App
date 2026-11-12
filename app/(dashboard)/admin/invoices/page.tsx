@@ -3,11 +3,12 @@ import { ChevronRight } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { GenerateInvoiceForm } from '@/components/admin/GenerateInvoiceForm'
 import { InvoiceCsvExport } from '@/components/admin/InvoiceCsvExport'
 import { formatYen } from '@/lib/calculations/tax'
 import { formatJpMonth, formatJpDateShort, jstTodayStr } from '@/lib/dates'
-import { dueDateOf, receivableState, summarizeReceivables } from '@/lib/invoices/receivables'
+import { dueDateOf, receivableState, summarizeReceivablesWithUndetermined } from '@/lib/invoices/receivables'
 import { fetchBilledOrderItemIds } from '@/lib/invoices/generate'
 import { paymentScheduleOf } from '@/lib/customers/settings'
 import type { PaymentSchedule } from '@/lib/customers/payment-terms'
@@ -34,7 +35,7 @@ export default async function InvoicesPage() {
   if (guard) return guard
 
   const supabase = createAdminClient()
-  const [{ data: invoices, error }, { count: pendingCount }, shippedRes] = await Promise.all([
+  const [{ data: invoices, error }, { count: pendingCount, error: pendingErr }, shippedRes] = await Promise.all([
     supabase
       .from('invoices')
       .select('id, invoice_number, customer_id, billing_month, period_end, total_amount, status, issue_date, due_date')
@@ -50,6 +51,9 @@ export default async function InvoicesPage() {
       .eq('orders.status', 'shipped'),
   ])
   if (error) return <ErrorState message="請求書の一覧を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
+
+  // 未承認件数は補助表示。失敗しても一覧は出す（無言にはしない）。
+  if (pendingErr) console.error('[invoices] 未承認件数の取得に失敗:', pendingErr.message)
 
   // 未請求の明細数は補助表示。失敗しても一覧は出し、件数は出さない（0件と誤表示しない）。
   let uninvoicedCount: number | null = null
@@ -68,19 +72,33 @@ export default async function InvoicesPage() {
   const { data: custRows, error: custErr } = customerIds.length
     ? await supabase.from('customers').select('id, name, channel_identifiers').in('id', customerIds)
     : { data: [] as { id: string; name: string; channel_identifiers: unknown }[], error: null }
-  // 取引先の解決は補助（名前・支払条件）。失敗しても一覧は出し、期日は既定（月末締め・翌月末払い）で判定する
+  // 取引先の解決は補助（名前・支払条件）。失敗しても一覧は出すが、既定の支払条件で期日超過を判定しない
+  // （取引先ごとの支払条件と違う期日で「期日超過」と出すと、督促の誤りにつながる）。
+  // 請求書に due_date があればそれで判定し、無い請求書は「判定できない」として警告帯で示す。
   if (custErr) console.error('[invoices] 取引先名の解決に失敗:', custErr.message)
+  const termsUnavailable = Boolean(custErr)
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
   const termsByCustomer = new Map<string, PaymentSchedule>(
     (custRows ?? []).map((c) => [c.id, paymentScheduleOf(c.channel_identifiers)]),
   )
   const termsOf = (inv: { customer_id: string }) => termsByCustomer.get(inv.customer_id)
   const today = jstTodayStr()
-  const ar = summarizeReceivables(invoices ?? [], today, termsOf)
+  const ar = summarizeReceivablesWithUndetermined(invoices ?? [], today, termsOf, termsUnavailable)
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">請求</h1>
+
+      {custErr && (
+        <LoadWarning
+          message={
+            ar.undeterminedCount > 0
+              ? `取引先（名前・支払条件）を読み込めませんでした。支払期日の入っていない請求書${ar.undeterminedCount}件（${formatYen(ar.undeterminedAmount)}）は期日超過かどうか判定できないため、「支払期日超過」の合計に含めていません。時間をおいて再読み込みしてください。`
+              : '取引先（名前・支払条件）を読み込めませんでした。請求書の一覧は表示できますが、取引先名が「—」になっています。時間をおいて再読み込みしてください。'
+          }
+          detail={`customers: ${custErr.message}`}
+        />
+      )}
 
       {((pendingCount ?? 0) > 0 || (uninvoicedCount ?? 0) > 0) && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning bg-warning-bg px-3.5 py-2.5 text-sm text-ink">
@@ -119,7 +137,10 @@ export default async function InvoicesPage() {
           <p className={`num text-xl font-bold tabular-nums ${ar.overdueCount > 0 ? 'text-alert' : 'text-ink'}`}>
             {formatYen(ar.overdueAmount)}
           </p>
-          <p className="text-xs text-ink-faint">{ar.overdueCount}件（取引先の支払条件で判定）</p>
+          <p className="text-xs text-ink-faint">
+            {ar.overdueCount}件（取引先の支払条件で判定）
+            {ar.undeterminedCount > 0 && <span className="block font-bold text-ink-soft">ほか判定できない {ar.undeterminedCount}件</span>}
+          </p>
         </Card>
       </div>
 
@@ -146,8 +167,10 @@ export default async function InvoicesPage() {
         <div className="space-y-2">
           {invoices.map((inv) => {
             const s = STATUS_LABEL[inv.status as InvoiceStatus]
-            const rs = receivableState(inv, today, termsOf(inv))
-            const due = dueDateOf(inv, termsOf(inv))
+            // 支払条件が読めず due_date も無い請求書は期日を判定しない（既定条件で「期日超過」と出さない）
+            const undetermined = termsUnavailable && !inv.due_date
+            const rs = undetermined ? null : receivableState(inv, today, termsOf(inv))
+            const due = undetermined ? null : dueDateOf(inv, termsOf(inv))
             return (
               <Link key={inv.id} href={`/admin/invoices/${inv.id}`}>
                 <Card
@@ -174,6 +197,9 @@ export default async function InvoicesPage() {
                       <p className={`text-xs ${rs === 'overdue' ? 'font-bold text-alert' : 'text-ink-soft'}`}>
                         支払期日 {formatJpDateShort(due)}
                       </p>
+                    )}
+                    {undetermined && (inv.status === 'finalized' || inv.status === 'sent') && (
+                      <p className="text-xs text-ink-soft">支払期日 判定できません（取引先の支払条件を読み込めませんでした）</p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

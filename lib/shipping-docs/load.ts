@@ -2,6 +2,7 @@ import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { formatSupplyDestination } from '@/lib/format/destination'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 import {
   aggregateEntries,
   decomposeQty,
@@ -97,7 +98,23 @@ export async function loadShippingDocEntries(q: ShippingDocsQuery): Promise<Ship
   const productPacks = productPacksRes.data ?? []
 
   const customerName = new Map((custRows ?? []).map((c) => [c.id, c.name]))
-  const destById = new Map((destRows ?? []).map((dr) => [dr.id, dr]))
+  // 規定コンテナは「列の値 → 退避ストアの値」（列が無い本番では退避ストアが唯一の保存先）。
+  // 退避データが読めなくても帳票は止めない（明細の container_type が優先され、規定コンテナは最後の手がかり）。
+  const routeLoad = destinationIds.length ? await loadRouteOverrides(supabase) : null
+  if (routeLoad?.error) console.error('[shipping-docs/load] 規定コンテナの退避データを読めませんでした:', routeLoad.error)
+  const destById = new Map(
+    (destRows ?? []).map((dr) => [
+      dr.id,
+      {
+        ...dr,
+        default_container_type: resolveDestDefaultContainer(
+          dr.id,
+          (dr as { default_container_type?: string | null }).default_container_type,
+          routeLoad?.containers,
+        ),
+      },
+    ]),
+  )
   const capacityById = new Map((prodRows ?? []).map((p) => [p.id, p.container_capacity]))
   const packById = new Map((packRows ?? []).map((p) => [p.id, p]))
   const ruleByPair = new Map((ruleRows ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r]))

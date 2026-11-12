@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStaffFeatures, canStaffUse } from '@/lib/field/features'
+import { requireStaffApi } from '@/lib/auth/api-guard'
 import { enqueuePrintJob } from '@/lib/shipping-docs/queue'
 
 export const runtime = 'nodejs'
@@ -21,14 +21,12 @@ const bodySchema = z.object({
 })
 
 export async function POST(req: Request) {
-  const user = await getAuthedUser()
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 社内ユーザーのみ。ロール取得失敗・行なし（取引先ポータル等）は 403（fail closed）
+  const guard = await requireStaffApi()
+  if (!guard.ok) return guard.response
+  const { user, role } = guard
 
   const supabase = createAdminClient()
-  const { data: profile, error: profileErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
-  // ロール解決の失敗は admin として扱わない（fail closed）。無言にせずログに残す。
-  if (profileErr) console.error('[app/api/print-jobs/route.ts] ロールの取得に失敗:', profileErr.message)
-  const role = (profile?.role as 'admin' | 'staff') ?? 'staff'
   const features = await getStaffFeatures()
   if (!canStaffUse('printDocs', role, features)) {
     return NextResponse.json({ error: '帳票印刷は解放されていません' }, { status: 403 })
