@@ -369,7 +369,20 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
       raw_payload: { ingest_review_hold?: boolean; slip_data: { alerts: { message: string; alert_type: string }[] } }
     }
 
-  it.each(['approved', 'shipped', 'invoiced'])(
+  it('元から承認済みの注文に追加FAXが来て明細追加に失敗したら、承認待ちに戻し、受信票を要確認（印つき）にする', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = base({ message: 'insert denied' }, 'approved')
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+    expect(result.status).toBe('pending_review')
+    // 欠けた明細のまま出荷一覧に出さない: 最後に書いた状態は承認待ち
+    expect((statusWrites().at(-1)!.payload as { status: string }).status).toBe('pending_review')
+    const p = lastReceiptUpdate()
+    expect(p.status).toBe('pending_review')
+    expect(p.raw_payload.ingest_review_hold).toBe(true)
+  })
+
+  it.each(['shipped', 'invoiced'])(
     '元から %s の注文に追加FAXが来て明細追加に失敗しても、注文の状態は変えず、受信票を要確認（印つき）にする',
     async (existingStatus) => {
       analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
@@ -386,7 +399,22 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
     },
   )
 
-  it.each(['approved', 'shipped', 'invoiced'])('元から %s の注文は、取り込みが成功しても状態を上書きしない', async (existingStatus) => {
+  it('元から承認済みの注文は、従来どおり取り込みの判定で状態を書く（要確認の判定なら承認待ちに戻る確認ゲート）', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+      return base({ message: 'unused' }, 'approved')(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+    const writes = statusWrites()
+    expect(writes.length).toBeGreaterThan(0)
+    // 書いた状態は取り込みの判定そのもの（自動承認なら approved、要確認なら pending_review）
+    expect((writes[0].payload as { status: string }).status).toBe(result.status)
+    expect(lastReceiptUpdate().raw_payload.ingest_review_hold).toBeUndefined()
+  })
+
+  it.each(['shipped', 'invoiced'])('元から %s の注文は、取り込みが成功しても状態を上書きしない', async (existingStatus) => {
     analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
     scenario = (c) => {
       if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }

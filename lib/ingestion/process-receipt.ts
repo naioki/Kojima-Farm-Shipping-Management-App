@@ -1031,9 +1031,11 @@ export async function processReceipt(
 
     if (existingOrder) {
       targetOrderId = existingOrder.id
-      // 状態を書き換えてよいのは、取り込み前の状態が承認待ち（pending_review）の注文だけ。
-      // 承認済み・出荷済み・請求済みなどの注文の状態は、取り込みの判定で上書きしない（出荷・請求の進行を巻き戻さない）。
-      const mayChangeStatus = existingOrder.status === 'pending_review'
+      // 状態を書き換えてよいのは、取り込み前の状態が承認待ち（pending_review）か承認済み（approved）の注文だけ。
+      // 承認済みの注文に「確認が必要」と判定された追加・訂正FAXが来たら、従来どおり承認待ちに戻す
+      // （人が再承認するまで、書き換わった数量を出荷一覧に出さないための確認ゲート）。
+      // 出荷済み・請求済みなどの注文の状態は、取り込みの判定で上書きしない（出荷・請求の進行を巻き戻さない）。
+      const mayChangeStatus = existingOrder.status === 'pending_review' || existingOrder.status === 'approved'
       const updatePayload: Record<string, unknown> = {
         ...(mayChangeStatus ? { status: orderStatus } : {}),
         note: safeNoteParts.length > 0 ? safeNoteParts.join('\n') : existingOrder.note,
@@ -1238,8 +1240,8 @@ export async function processReceipt(
       if (itemWriteFailed && orderStatus === 'approved') {
         // この注文の収穫タスクの同期（下）は行わない
         orderStatus = 'pending_review'
-        // 取り込み前から承認待ちだった注文だけ、承認待ちに戻す（自動承認のまま現場ボードに出すと欠けた明細に
-        // 誰も気づかないため）。元から承認済み・出荷済み・請求済みの注文は状態を変えず、受信票の要確認
+        // 取り込み前が承認待ち・承認済みだった注文は、承認待ちに戻す（そのまま現場ボードに出すと欠けた明細に
+        // 誰も気づかないため）。元から出荷済み・請求済みの注文は状態を変えず、受信票の要確認
         // （noteIngestIssue で error_message・alerts に記録済み）で人に知らせる。
         if (mayChangeStatus) {
           const { error: backErr } = await admin
