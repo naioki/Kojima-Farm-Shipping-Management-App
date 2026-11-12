@@ -23,6 +23,7 @@ let fake = createFakeSupabase(resolve)
 
 vi.mock('@/lib/supabase/server', () => ({ getAuthedUser: async () => ({ id: 'u-1' }) }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }))
+vi.mock('@/lib/ai/learning-loop', () => ({ recordMistakeFeedback: async () => undefined }))
 
 let errorSpy: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
@@ -293,27 +294,136 @@ describe('受注経路の決め方（画面の共通規則）', () => {
   })
 })
 
-describe('saveDestDefaultContainer（明細のコンテナ変更からの自動更新）', () => {
-  it('列が無ければ退避ストアへ保存する', async () => {
-    scenario = noColumns()
-    const { saveDestDefaultContainer } = await import('@/lib/field/destination-routes-store')
-    const r = await saveDestDefaultContainer(fake.client as never, DEST, '青コン')
-    expect(r.error).toBeNull()
-    expect(savedStore()[`dest:${DEST}`]).toEqual({ defaultContainerType: '青コン' })
+describe('PATCH /api/order-items/[id]：本番（列なし）での明細の変更', () => {
+  const ITEM = '66666666-6666-4666-8666-666666666666'
+  const ORDER = '77777777-7777-4777-8777-777777777777'
+  /** 本番の order_items に無い列 */
+  const ITEM_MISSING = ['bag_type', 'seal_text', 'has_seal', 'is_manual_modified']
+  /** 本番の customer_product_rules に無い列 */
+  const RULE_MISSING = ['has_seal', 'bag_type', 'seal_text']
+  const colErr = (table: string, col: string) => ({
+    error: { code: 'PGRST204', message: `Could not find the '${col}' column of '${table}' in the schema cache` },
+  })
+  // 本番の明細は has_seal / bag_type / seal_text の列が無いので、読み込んだ行にも項目が無い
+  const current = {
+    id: ITEM,
+    order_id: ORDER,
+    product_id: PROD,
+    product_name: '小松菜',
+    quantity: 40,
+    unit_price: 100,
+    tax_rate: 8,
+    version: 3,
+    field_status: 'not_started',
+    spec: '20入',
+    container_type: '青コン',
+    has_card: true,
+    line_note: null,
+  }
+  const prodScenario =
+    (opts: { existingRule: boolean }) =>
+    (c: FakeCall): FakeResult | undefined => {
+      const p = (c.payload ?? {}) as Record<string, unknown>
+      if (c.table === 'order_items' && c.op === 'select') return { data: current }
+      if (c.table === 'order_items' && c.op === 'update') {
+        const miss = ITEM_MISSING.find((k) => k in p)
+        return miss ? colErr('order_items', miss) : { data: { ...current, ...p } }
+      }
+      if (c.table === 'orders' && c.op === 'select') return { data: { customer_id: CUST, destination_id: DEST } }
+      if (c.table === 'customers' && c.op === 'select') return { data: { name: 'テスト青果' } }
+      if (c.table === 'delivery_destinations' && c.op === 'select') return { data: BASE_ROW }
+      if (c.table === 'delivery_destinations' && c.op === 'update') {
+        return 'default_container_type' in p ? { error: MISSING_COL } : { data: null }
+      }
+      if (c.table === 'customer_product_rules' && c.op === 'select') {
+        return { data: opts.existingRule ? { id: 'rule-1' } : null }
+      }
+      if (c.table === 'customer_product_rules' && (c.op === 'update' || c.op === 'insert')) {
+        // 空の update は PostgREST でエラーになる（投げてはいけない）
+        if (Object.keys(p).length === 0) return { error: { message: 'empty update' } }
+        const miss = RULE_MISSING.find((k) => k in p)
+        return miss ? colErr('customer_product_rules', miss) : { data: null }
+      }
+      return undefined
+    }
+
+  /** 出荷一覧の「注文数・仕様を保存」（executeSaveAllSpecsAndQty）が送る形 */
+  const bulkSaveBody = {
+    spec: '20入',
+    container_type: '青コン',
+    has_card: true,
+    has_seal: false,
+    seal_text: null,
+    bag_type: null,
+    line_note: null,
+    field_note: null,
+    version: 3,
+  }
+
+  it.each([true, false])(
+    '取引先ルールに has_seal / bag_type / seal_text が無い環境で、明細の一括保存が 200・警告なし（既存ルール=%s）',
+    async (existingRule) => {
+      scenario = prodScenario({ existingRule })
+      const { PATCH } = await import('@/app/api/order-items/[id]/route')
+      const res = await PATCH(req(bulkSaveBody, 'PATCH'), { params: { id: ITEM } })
+      expect(res.status).toBe(200)
+      expect(await res.json()).not.toHaveProperty('warnings')
+      const ruleWrites = fake.calls.filter(
+        (c) => c.table === 'customer_product_rules' && (c.op === 'update' || c.op === 'insert'),
+      )
+      // 空の update・取引先と品目だけの insert は投げていない
+      for (const w of ruleWrites) {
+        const keys = Object.keys(w.payload as object).filter((k) => k !== 'customer_id' && k !== 'product_id')
+        expect(keys.length).toBeGreaterThan(0)
+      }
+      // has_seal に null を送らない
+      expect(ruleWrites.some((w) => (w.payload as Record<string, unknown>).has_seal === null)).toBe(false)
+    },
+  )
+
+  it('シールあり・文言ありの保存でも、列が無い環境では 200・警告なし', async () => {
+    scenario = prodScenario({ existingRule: true })
+    const { PATCH } = await import('@/app/api/order-items/[id]/route')
+    const res = await PATCH(req({ ...bulkSaveBody, has_seal: true, seal_text: '特売' }, 'PATCH'), { params: { id: ITEM } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).not.toHaveProperty('warnings')
   })
 
-  it('退避保存に失敗したら error を返す（呼び出し側が警告にする）', async () => {
-    scenario = noColumns({ upsertError: 'settings write failed' })
-    const { saveDestDefaultContainer } = await import('@/lib/field/destination-routes-store')
-    const r = await saveDestDefaultContainer(fake.client as never, DEST, '青コン')
-    expect(r.error?.message).toMatch(/settings write failed/)
+  it('has_seal が null の保存は取引先ルールに has_seal を送らない', async () => {
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'select') return { data: { ...current, has_seal: true } }
+      return prodScenario({ existingRule: true })(c)
+    }
+    const { PATCH } = await import('@/app/api/order-items/[id]/route')
+    const res = await PATCH(req({ ...bulkSaveBody, has_seal: null, container_type: '茶コン' }, 'PATCH'), { params: { id: ITEM } })
+    expect(res.status).toBe(200)
+    const ruleWrites = fake.calls.filter((c) => c.table === 'customer_product_rules' && c.op === 'update')
+    expect(ruleWrites.length).toBeGreaterThan(0)
+    expect(ruleWrites.every((w) => !('has_seal' in (w.payload as object)))).toBe(true)
   })
 
-  it('列があれば列だけに保存する', async () => {
-    scenario = (c) => (c.table === 'delivery_destinations' && c.op === 'update' ? { data: null } : undefined)
-    const { saveDestDefaultContainer } = await import('@/lib/field/destination-routes-store')
-    const r = await saveDestDefaultContainer(fake.client as never, DEST, '青コン')
-    expect(r.error).toBeNull()
+  it('列が無い環境で明細のコンテナを変えても、納入先の規定コンテナ（退避ストア）は書き換えない・警告なし', async () => {
+    scenario = prodScenario({ existingRule: true })
+    const { PATCH } = await import('@/app/api/order-items/[id]/route')
+    const res = await PATCH(req({ container_type: '茶コン', version: 3 }, 'PATCH'), { params: { id: ITEM } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).not.toHaveProperty('warnings')
+    expect(fake.calls.some((c) => c.table === 'app_settings')).toBe(false)
+    // 取引先×品目のルール（実在する container_type 列）には記憶する
+    const rule = fake.calls.find((c) => c.table === 'customer_product_rules' && c.op === 'update')
+    expect(rule?.payload).toMatchObject({ container_type: '茶コン' })
+  })
+
+  it('列がある環境では、明細のコンテナ変更で納入先の列を更新する（退避ストアには書かない）', async () => {
+    scenario = (c) => {
+      if (c.table === 'delivery_destinations' && c.op === 'update') return { data: null }
+      return prodScenario({ existingRule: true })(c)
+    }
+    const { PATCH } = await import('@/app/api/order-items/[id]/route')
+    const res = await PATCH(req({ container_type: '茶コン', version: 3 }, 'PATCH'), { params: { id: ITEM } })
+    expect(res.status).toBe(200)
+    const upd = fake.calls.find((c) => c.table === 'delivery_destinations' && c.op === 'update')
+    expect(upd?.payload).toEqual({ default_container_type: '茶コン' })
     expect(fake.calls.some((c) => c.table === 'app_settings')).toBe(false)
   })
 })

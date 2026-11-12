@@ -743,10 +743,13 @@ export function ShipmentRow({
         return
       }
       if (!res.ok) throw new Error(`保存に失敗 (${res.status})`)
-      const json = (await res.json()) as { item: { version: number } }
+      const json = (await res.json()) as { item: { version: number }; warnings?: string[] }
       setVersion(json.item.version)
       onDetailsChange?.(itemId, nextSpec || null, nextCont || null, nextCard)
-      toast.success('設定を即時反映しました（次回から自動適用）', { id: `quick-attr-${itemId}`, duration: 1800 })
+      // 明細は保存済みでも、取引先ルールの記憶などの付随更新に失敗したときは警告を出す（成功トーストだけにしない）
+      if (showResponseWarnings(json) === 0) {
+        toast.success('設定を即時反映しました（次回から自動適用）', { id: `quick-attr-${itemId}`, duration: 1800 })
+      }
       router.refresh()
     } catch (e) {
       const isOfflineErr = (typeof navigator !== 'undefined' && !navigator.onLine) || e instanceof TypeError

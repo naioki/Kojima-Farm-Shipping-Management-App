@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { cleanShippingRouteName, resolveDefaultRouteInfo } from '@/lib/field/shipment-sort'
 
 describe('cleanShippingRouteName：時刻で始まる便名はそのまま', () => {
-  it.each(['17時便', '16時便', '11:30便', '当日便', '翌午前便', '2時間便', '12時30分便', '岩槻便', '1便', 'NSK便'])(
+  it.each(['17時便', '16時便', '11:30便', '当日便', '翌午前便', '2時間便', '12時30分便', '岩槻便', '1便', 'NSK便', '16時台便', '17時便（岩槻）'])(
     '%s',
     (name) => {
       expect(cleanShippingRouteName(name)).toBe(name)
@@ -24,6 +24,19 @@ describe('cleanShippingRouteName：重ねて書かれた時刻だけを除く（
     ['翌午前発 農業総研便', '農業総研便'],
     ['16時発 17時便', '17時便'],
     ['当日 18:00迄・岩槻便', '岩槻便'],
+  ])('%s → %s', (input, expected) => {
+    expect(cleanShippingRouteName(input)).toBe(expected)
+  })
+})
+
+describe('cleanShippingRouteName：区切りなしで時刻の直後に便名が続く表記も時刻を除く', () => {
+  it.each([
+    ['16:30岩槻便', '岩槻便'],
+    ['16時NSK便', 'NSK便'],
+    ['当日16:30岩槻便', '岩槻便'],
+    ['⏰ 16:30岩槻便', '岩槻便'],
+    ['翌午前農業総研便', '農業総研便'],
+    ['12時30分岩槻便', '岩槻便'],
   ])('%s → %s', (input, expected) => {
     expect(cleanShippingRouteName(input)).toBe(expected)
   })

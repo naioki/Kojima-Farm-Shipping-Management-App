@@ -48,7 +48,7 @@ export default async function InboxPage({
   const showApproved = filter === 'approved'
 
   const parsingReceipts = receipts.filter((r) => r.status === 'pending_ai')
-  const reviewReceipts = receipts.filter((r) => r.status === 'ai_failed' || r.status === 'unmatched')
+  const reviewReceipts = receipts.filter((r) => r.status === 'ai_failed' || r.status === 'unmatched' || r.reviewHold)
   // 対応が必要なもの（失敗・取引先不明）を先に出す
   const visibleReceipts = [...(showReview ? reviewReceipts : []), ...(showParsing ? parsingReceipts : [])]
 

@@ -6,7 +6,6 @@ import { runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/s
 import { nextFieldStatus } from '@/lib/field/tap-loop'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { requireStaffApi } from '@/lib/auth/api-guard'
-import { saveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -173,15 +172,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         const destLabel = destRow?.code || destRow?.full_name || ''
 
         // 【#3-02 解消】納入先（destination_id）が紐づいている場合、納入先ごとの既定コンテナ（default_container_type）も自動更新
+        // 列がある環境でだけ列を更新する。列が無い本番では何もしない（退避ストアには書かない・警告も出さない）。
+        // その日だけの明細の変更を以後の既定値にしないため。退避ストアへの保存は取引先詳細での明示的な保存
+        // （/api/destinations の PATCH / POST）だけが行う。
         if (ord.destination_id && input.container_type && input.container_type !== current.container_type) {
-          // 列が無い本番では退避ストア（v5_destination_routes の dest:<id>）へ保存する（黙って捨てない）
           const destId = ord.destination_id
           const containerType = input.container_type
           await runSideEffect(
             patchWarnings,
             '[order-items/[id]] 納入先の規定コンテナの自動更新に失敗',
             '明細のコンテナは保存しましたが、納入先の規定コンテナの更新に失敗しました',
-            () => saveDestDefaultContainer(admin, destId, containerType),
+            () =>
+              writeDroppingMissingColumns({ default_container_type: containerType }, (p) =>
+                admin.from('delivery_destinations').update(p).eq('id', destId),
+              ),
           )
         }
 
@@ -203,10 +207,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         if (input.has_card !== undefined && input.has_card !== current.has_card && input.has_card !== null) {
           rulePatch.has_card = input.has_card
         }
-        if (input.has_seal !== undefined && input.has_seal !== current.has_seal) {
+        // 値が null / undefined の項目は送らない（has_seal が NOT NULL の環境に null を書かない）。
+        // 本番の customer_product_rules には has_seal / seal_text / bag_type が無い。列を外して書く列が残らなければ
+        // writeDroppingMissingColumns が書き込みを投げずに成功で返すので、一括保存のたびに警告は出ない。
+        if (typeof input.has_seal === 'boolean' && input.has_seal !== current.has_seal) {
           rulePatch.has_seal = input.has_seal
         }
-        if (input.seal_text !== undefined) {
+        if (typeof input.seal_text === 'string') {
           rulePatch.seal_text = input.seal_text
         }
         if (input.bag_type && input.bag_type !== current.bag_type) {
@@ -239,6 +246,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
                   ...rulePatch,
                 },
                 (p) => admin.from('customer_product_rules').insert(p as never),
+                5,
+                // 取引先・品目だけの空のルール行は作らない
+                { keyColumns: ['customer_id', 'product_id'] },
               ),
             )
           }

@@ -406,6 +406,15 @@ export async function POST(req: Request) {
       .single()
     if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
     orderId = order.id
+    if (!parsed.data.intake_channel) {
+      // 受注経路なしで新しい注文を作った。拒否はしない（デプロイ前にオフラインで溜まった注文の再送を
+      // 4xx で捨てさせないため。hooks/useOutbox.ts は 4xx で一時保存を消す）。画面側は新規になりうる操作で
+      // 経路を必須にしている（lib/orders/intake-channel.ts requiresIntakeChannel）ので、ここに来たら記録して追う
+      console.warn('[api/shipments] 受注経路なしで新しい注文を作成しました（intake_channel は NULL）:', {
+        orderId: order.id,
+        source: 'manual',
+      })
+    }
   } else if (shipping_time && orderId) {
     const orderIdForTime = orderId
     await runSideEffect(

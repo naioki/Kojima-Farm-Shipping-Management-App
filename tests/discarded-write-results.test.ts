@@ -284,7 +284,7 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
       ],
     },
   ]
-  const base = (insertError: { message: string; code?: string }) => (c: FakeCall): FakeResult | undefined => {
+  const base = (insertError: { message: string; code?: string }, existingStatus = 'pending_review') => (c: FakeCall): FakeResult | undefined => {
     if (c.table === 'order_receipts' && c.op === 'select') {
       return {
         data: {
@@ -309,14 +309,14 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
       }
     }
     if (c.table === 'orders' && c.op === 'select') {
-      return { data: [{ id: ORDER, status: 'approved', note: null, destination_id: null }] }
+      return { data: [{ id: ORDER, status: existingStatus, note: null, destination_id: null }] }
     }
     if (c.table === 'order_items' && c.op === 'select') return { data: [prevItem] }
     if (c.table === 'order_items' && c.op === 'insert') return { error: insertError }
     return undefined
   }
 
-  it('明細を黙って欠落させない：受信票を要確認にし、error_message と alerts に残し、注文も要確認に戻す', async () => {
+  it('明細を黙って欠落させない：受信票を要確認にし、error_message と alerts に残し、取り込み前から承認待ちだった注文は承認待ちに戻す', async () => {
     analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
     scenario = base({ message: 'insert denied' })
     const { processReceipt } = await import('@/lib/ingestion/process-receipt')
@@ -358,4 +358,158 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
     expect((receiptUpd.payload as { error_message: unknown }).error_message).toBeNull()
     expect(fake.calls.some((c) => c.table === 'harvest_tasks' && c.op === 'insert')).toBe(true)
   })
+
+  /** orders への update のうち status を書いたもの */
+  const statusWrites = () =>
+    fake.calls.filter((c) => c.table === 'orders' && c.op === 'update' && 'status' in (c.payload as object))
+  const lastReceiptUpdate = () =>
+    fake.calls.filter((c) => c.table === 'order_receipts' && c.op === 'update').at(-1)!.payload as {
+      status: string
+      error_message: string | null
+      raw_payload: { ingest_review_hold?: boolean; slip_data: { alerts: { message: string; alert_type: string }[] } }
+    }
+
+  it.each(['approved', 'shipped', 'invoiced'])(
+    '元から %s の注文に追加FAXが来て明細追加に失敗しても、注文の状態は変えず、受信票を要確認（印つき）にする',
+    async (existingStatus) => {
+      analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+      scenario = base({ message: 'insert denied' }, existingStatus)
+      const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+      const result = await processReceipt(RECEIPT)
+      expect(result.status).toBe('pending_review')
+      expect(statusWrites()).toHaveLength(0)
+      const p = lastReceiptUpdate()
+      expect(p.status).toBe('pending_review')
+      expect(p.error_message).toMatch(/明細を注文に追加できませんでした/)
+      expect(p.raw_payload.ingest_review_hold).toBe(true)
+      expect(p.raw_payload.slip_data.alerts.some((a) => /ほうれん草/.test(a.message))).toBe(true)
+    },
+  )
+
+  it.each(['approved', 'shipped', 'invoiced'])('元から %s の注文は、取り込みが成功しても状態を上書きしない', async (existingStatus) => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+      return base({ message: 'unused' }, existingStatus)(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    await processReceipt(RECEIPT)
+    expect(statusWrites()).toHaveLength(0)
+    // 備考などのヘッダー更新は行う
+    expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'update' && 'note' in (c.payload as object))).toBe(true)
+    expect(lastReceiptUpdate().raw_payload.ingest_review_hold).toBeUndefined()
+  })
+
+  it('取り込み前から承認待ちの注文は、判定どおり状態を更新する（従来どおり）', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+      return base({ message: 'unused' }, 'pending_review')(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    await processReceipt(RECEIPT)
+    expect(statusWrites().length).toBeGreaterThan(0)
+  })
 })
+
+describe('processReceipt：既存注文・既存明細の読み込みに失敗したとき（二重登録の防止）', () => {
+  const RECEIPT = 'rcpt-2'
+  const parsed = [
+    {
+      customer_name: 'テスト青果',
+      destination_name: null,
+      delivery_date: '2026-11-13',
+      slip_no: null,
+      note: null,
+      items: [{ raw_name: '小松菜', product_name: '小松菜', quantity: '20', unit: 'P', confidence: 0.95 }],
+    },
+  ]
+  const base = (c: FakeCall): FakeResult | undefined => {
+    if (c.table === 'order_receipts' && c.op === 'select') {
+      return {
+        data: {
+          id: RECEIPT,
+          channel: 'email',
+          r2_key: null,
+          raw_payload: { text: '小松菜20P' },
+          sender_date_key: null,
+          customer_id: CUST,
+          is_revision: false,
+          status: 'pending_ai',
+          retry_count: 0,
+        },
+      }
+    }
+    if (c.table === 'customers') return { data: [{ id: CUST, name: 'テスト青果', channel_identifiers: null }] }
+    if (c.table === 'products' && c.op === 'select') {
+      return { data: [{ id: PROD, name: '小松菜', unit: 'P', aliases: [], default_tax_rate: 8, default_unit_price: 100 }] }
+    }
+    return undefined
+  }
+  const noNewOrderOrItems = () => {
+    expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'insert')).toBe(false)
+    expect(fake.calls.some((c) => c.table === 'order_items' && c.op === 'insert')).toBe(false)
+  }
+
+  it('既存注文の読み込みに失敗したら新規作成に進まず、受信票を再試行待ち（ai_failed）にする', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = (c) => {
+      if (c.table === 'orders' && c.op === 'select') return { error: { message: 'orders read failed' } }
+      return base(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+    expect(result.status).toBe('ai_failed')
+    noNewOrderOrItems()
+    const upd = fake.calls.filter((c) => c.table === 'order_receipts' && c.op === 'update').at(-1)!.payload as {
+      status: string
+      next_retry_at: string | null
+      error_message: string
+    }
+    expect(upd.status).toBe('ai_failed')
+    expect(upd.next_retry_at).not.toBeNull()
+    expect(upd.error_message).toMatch(/既存注文の読み込みに失敗/)
+    expect(loggedText()).toMatch(/orders read failed/)
+  })
+
+  it('既存明細の読み込みに失敗したら明細を足さず、受信票を再試行待ち（ai_failed）にする', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = (c) => {
+      if (c.table === 'orders' && c.op === 'select') return { data: [{ id: ORDER, status: 'approved', note: null, destination_id: null }] }
+      if (c.table === 'order_items' && c.op === 'select') return { error: { message: 'items read failed' } }
+      return base(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+    expect(result.status).toBe('ai_failed')
+    noNewOrderOrItems()
+    expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'update')).toBe(false)
+    expect(loggedText()).toMatch(/items read failed/)
+  })
+
+  it('未登録の納入先の自動登録に失敗したら、console.error と受信票の alerts に残す', async () => {
+    analyzeOrdersMock.mockResolvedValue({
+      is_order: true,
+      orders: [{ ...parsed[0], destination_name: '新しい店' }],
+      skip_reason: null,
+      slip_no: null,
+    })
+    scenario = (c) => {
+      if (c.table === 'delivery_destinations' && c.op === 'insert') return { error: { message: 'dest insert denied' } }
+      if (c.table === 'orders' && c.op === 'insert') return { data: { id: ORDER } }
+      if (c.table === 'order_items' && c.op === 'insert') return { data: [{ id: 'it-1', product_id: PROD, quantity: 20 }] }
+      return base(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    await processReceipt(RECEIPT)
+    expect(loggedText()).toMatch(/dest insert denied/)
+    const p = fake.calls.filter((c) => c.table === 'order_receipts' && c.op === 'update').at(-1)!.payload as {
+      status: string
+      raw_payload: { ingest_review_hold?: boolean; slip_data: { alerts: { message: string }[] } }
+    }
+    expect(p.status).toBe('pending_review')
+    expect(p.raw_payload.ingest_review_hold).toBe(true)
+    expect(p.raw_payload.slip_data.alerts.some((a) => /新しい店/.test(a.message) && /自動登録できませんでした/.test(a.message))).toBe(true)
+  })
+})
+

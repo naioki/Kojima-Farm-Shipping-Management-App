@@ -152,6 +152,15 @@ export function InboxReceiptCard({ receipt: r, email = null }: { receipt: InboxR
             </p>
           )}
           {r.status === 'pending_ai' && <p className="text-xs text-ink-muted">AIが読み取り中、または順番待ちです。</p>}
+          {r.reviewHold && r.errorMessage && (
+            // 取り込み側が現場・事務向けに作った文言なので、要約せずそのまま出す
+            <p className="rounded-lg bg-warning-bg p-2.5 text-xs font-bold text-warning">{r.errorMessage}</p>
+          )}
+          {r.reviewHold && (
+            <p className="text-xs text-ink-soft">
+              取り込みは終わっていますが、確認が必要な点があります。上の内容と「受注を見る」で注文を確かめ、済んだら「却下」で一覧から消してください（注文は消えません）。
+            </p>
+          )}
 
           {/* メールの差出人・件名・本文（取引先が分からないときの判断材料） */}
           {email && (email.from || email.subject || email.text) && (

@@ -1,7 +1,6 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { truncateForLog } from '@/lib/log/truncate'
-import { isMissingColumnError } from '@/lib/supabase/missing-column'
 
 export type RouteOverride = {
   departureTime: string | null
@@ -174,6 +173,8 @@ export async function saveDestinationOverride(
   const validKeys = keys.filter((k) => typeof k === 'string' && k.trim().length > 0)
   if (validKeys.length === 0) return
 
+  // 同時保存への備え: 書き込み直前に読み直し、項目単位でマージしてすぐ書く（読み→マージ→書きの間に他の await を
+  // 挟まない）。それでも別の保存が「読み〜書き」の間に割り込むと、その保存の変更は消えうる（排他は未実装）。
   // 読み込み失敗（通信・DBエラー）を空扱いにすると、他の納入先の退避データを上書きで消してしまうため throw する。
   // 読めたが JSON として壊れている値は自然に直らないので、元の値をログに残して作り直す。
   const read = await readRouteOverridesStrict(admin)
@@ -224,24 +225,4 @@ export async function loadDestDefaultContainer(
   const r = await loadRouteOverrides(admin)
   if (r.error) console.error('[destination-routes-store] 規定コンテナの退避データを読めませんでした（未設定として扱います）:', r.error)
   return resolveDestDefaultContainer(destId, columnValue, r.containers)
-}
-
-/**
- * 納入先の規定コンテナを保存する（列があれば列へ、列が無い本番では退避ストアの `dest:<id>` エントリへ）。
- * supabase-js と同じく失敗は `{ error }` で返す（runSideEffect に渡せる形）。
- */
-export async function saveDestDefaultContainer(
-  admin: SupabaseClient,
-  destId: string,
-  value: string | null,
-): Promise<{ error: { message: string; code?: string } | null }> {
-  const r = await admin.from('delivery_destinations').update({ default_container_type: value }).eq('id', destId)
-  if (!r.error) return { error: null }
-  if (!isMissingColumnError(r.error)) return { error: r.error }
-  try {
-    await saveDestinationOverride(admin, [`dest:${destId}`], { defaultContainerType: value })
-    return { error: null }
-  } catch (e) {
-    return { error: { message: e instanceof Error ? e.message : String(e) } }
-  }
 }

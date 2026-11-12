@@ -30,7 +30,12 @@ import { findBestMatchingCustomer, findBestMatchingDestination } from '@/lib/ord
 import type { ConciergeAction, ConciergeResponse } from '@/lib/concierge/schema'
 import { showResponseWarnings } from '@/lib/client/show-warnings'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
-import { INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
+import {
+  INTAKE_CHANNEL_REQUIRED_MESSAGE,
+  existingOrderKnownFromLookup,
+  requiresIntakeChannel,
+} from '@/lib/orders/intake-channel'
+import { parseQuantity } from '@/lib/calculations/parse-quantity'
 
 interface ConciergeChatProps {
   defaultDate: string
@@ -502,12 +507,6 @@ export function ConciergeChat({
     }
 
     const key = `${msgId}-${propIdx}`
-    // 手入力の注文は受注経路を必ず埋める（CLAUDE.md・評価指標④）。未選択なら実行しない
-    if (action.type === 'add_shipment' && !intakeByKey[key]) {
-      setIntakeMissingKey(key)
-      toast.error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
-      return
-    }
     setExecutingKey(key)
     const nowTimeStr = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
 
@@ -534,6 +533,41 @@ export function ConciergeChat({
         }
 
         const targetDate = p.delivery_date || defaultDate
+
+        // 新しい注文を作りうる操作は受注経路を必ず埋める（CLAUDE.md・評価指標④）。既存の注文への加算・減量・
+        // 上書き・0取消は経路なしで通す。既存かどうかは登録前に照会し、確実に分からなければ経路を求める
+        if (!intakeByKey[key]) {
+          const mode = p.mode || 'create'
+          const pq = parseQuantity(p.quantity_raw, { packsPerCase: p.packs_per_case ?? null })
+          const qty = pq.type === 'ok' ? pq.total.toNumber() : null
+          let existingKnown = false
+          if (mode !== 'create' && qty !== 0) {
+            const q = new URLSearchParams({
+              customerId: matchedCust.id,
+              deliveryDate: targetDate,
+              productId: matchedProd.id,
+              ...(matchedDest?.id ? { destinationId: matchedDest.id } : {}),
+            })
+            const lookup = await fetch(`/api/shipments?${q.toString()}`, { cache: 'no-store' })
+            if (lookup.ok) {
+              const lj = (await lookup.json().catch(() => null)) as { existingShipment?: unknown } | null
+              existingKnown = existingOrderKnownFromLookup({
+                existingFound: Boolean(lj?.existingShipment),
+                destinationId: matchedDest?.id ?? null,
+                customerHasDestinations: destinations.some((d) => d.customer_id === matchedCust.id),
+              })
+            } else {
+              // 照会できないときは新規かもしれないので経路を求める（下の判定で止まる）
+              console.error('[ConciergeChat] 既存の出荷の照会に失敗:', lookup.status)
+            }
+          }
+          if (requiresIntakeChannel({ mode, quantity: qty, existingOrderKnown: existingKnown })) {
+            setIntakeMissingKey(key)
+            toast.error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+            return
+          }
+        }
+
         const res = await fetch('/api/shipments', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -552,7 +586,7 @@ export function ConciergeChat({
             bag_type: p.bag_type ?? undefined,
             mode: p.mode || 'create',
             note: p.note ?? undefined,
-            intake_channel: intakeByKey[key],
+            intake_channel: intakeByKey[key] ?? undefined,
           }),
         })
         const j = await res.json().catch(() => ({}))

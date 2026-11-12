@@ -350,6 +350,11 @@ export async function POST(req: NextRequest) {
    * 本体（注文・明細）の保存後の付随更新の失敗（lib/api/side-effects.ts）。
    * この応答の `warnings` は既に「数量の異常値（品目ID→比率）」として使われているため、
    * 文字列の警告は `side_effect_warnings` で返す。
+   *
+   * 2026-11 時点で POST /api/orders を呼ぶ画面はリポジトリに無い（注文の受付・追加フォームは
+   * /api/shipments 等を使う）。読む側が無いことを承知で応答のキーは残す。将来の呼び出し元は応答 JSON を
+   * そのまま `showResponseWarnings`（lib/client/show-warnings.ts）に渡せば、この警告が表示される
+   * （`warnings` は配列でないので無視され、`side_effect_warnings` だけが出る）。
    */
   const sideEffectWarnings: string[] = []
 

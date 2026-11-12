@@ -40,6 +40,60 @@ describe('writeDroppingMissingColumns', () => {
     expect(res.droppedColumns).toEqual(['is_manual_modified'])
     expect(calls[1]).toEqual({ quantity: 300 })
   })
+  it('列を外した結果 update が空になったら、書き込みを投げずに成功（skipped）で返す', async () => {
+    const calls: Record<string, unknown>[] = []
+    const res = await writeDroppingMissingColumns({ has_seal: false, seal_text: 'x' }, async (p) => {
+      calls.push(p)
+      const col = Object.keys(p)[0]
+      return { data: null, error: { code: 'PGRST204', message: `Could not find the '${col}' column of 'customer_product_rules' in the schema cache` } }
+    })
+    expect(res.error).toBeNull()
+    expect(res.skipped).toBe(true)
+    expect(res.droppedColumns).toEqual(['has_seal', 'seal_text'])
+    // 空 {} の update は投げていない
+    expect(calls.every((c) => Object.keys(c).length > 0)).toBe(true)
+    expect(calls).toHaveLength(2)
+  })
+  it('最初から空の payload は一度も投げない', async () => {
+    let n = 0
+    const res = await writeDroppingMissingColumns({}, async () => {
+      n++
+      return { data: null, error: null }
+    })
+    expect(n).toBe(0)
+    expect(res.skipped).toBe(true)
+    expect(res.error).toBeNull()
+  })
+  it('insert で keyColumns しか残らないときは投げない（取引先・品目だけの空ルールを作らない）', async () => {
+    const calls: Record<string, unknown>[] = []
+    const res = await writeDroppingMissingColumns(
+      { customer_id: 'c', product_id: 'p', has_seal: true },
+      async (p) => {
+        calls.push(p)
+        return 'has_seal' in p
+          ? { data: null, error: { code: 'PGRST204', message: "Could not find the 'has_seal' column of 'customer_product_rules' in the schema cache" } }
+          : { data: null, error: null }
+      },
+      5,
+      { keyColumns: ['customer_id', 'product_id'] },
+    )
+    expect(calls).toHaveLength(1)
+    expect(res.skipped).toBe(true)
+    expect(res.error).toBeNull()
+  })
+  it('keyColumns 以外の実在する列が残れば書き込む', async () => {
+    const calls: Record<string, unknown>[] = []
+    await writeDroppingMissingColumns(
+      { customer_id: 'c', product_id: 'p', container_type: '青コン' },
+      async (p) => {
+        calls.push(p)
+        return { data: null, error: null }
+      },
+      5,
+      { keyColumns: ['customer_id', 'product_id'] },
+    )
+    expect(calls).toEqual([{ customer_id: 'c', product_id: 'p', container_type: '青コン' }])
+  })
   it('欠落列以外のエラーは再試行せずそのまま返す', async () => {
     let n = 0
     const res = await writeDroppingMissingColumns({ quantity: 1 }, async () => {

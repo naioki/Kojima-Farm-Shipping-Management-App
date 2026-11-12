@@ -3,7 +3,7 @@
  * 青梗菜は品目全体で一律 Math.ceil(総パック数/20)、それ以外の品目は各明細の実際の入数で数えた箱数の合計。
  */
 import { describe, expect, it } from 'vitest'
-import { computeProgressBoxes, isBokChoyProduct } from '@/lib/field/progress-boxes'
+import { carryoverPacksEstimate, computeProgressBoxes, isBokChoyProduct } from '@/lib/field/progress-boxes'
 import { buildDeterministicConciergeResponse } from '@/lib/concierge/schema'
 
 describe('isBokChoyProduct', () => {
@@ -88,5 +88,16 @@ describe('AI相談窓口の合計箱数', () => {
     }
     const r = buildDeterministicConciergeResponse('明日の注文状況を教えて', ctx as never)
     expect(r?.reply).toContain('合計 4箱（90パック）')
+  })
+})
+
+describe('carryoverPacksEstimate（前日からの持ち越しのパック数の目安）', () => {
+  it('青梗菜は進捗と同じく 20P/箱で換算する', () => {
+    expect(carryoverPacksEstimate('青梗菜', 3)).toBe(60)
+    expect(carryoverPacksEstimate('チンゲン菜', 0)).toBe(0)
+  })
+  it('青梗菜以外は入数を確定できないので換算しない（×20 固定で誤った目安を出さない）', () => {
+    expect(carryoverPacksEstimate('キュウリ', 2)).toBeNull()
+    expect(carryoverPacksEstimate('小松菜', 5)).toBeNull()
   })
 })

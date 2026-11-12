@@ -2,6 +2,7 @@ import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPendingOrders, type PendingOrder } from '@/lib/orders/pending'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { INGEST_REVIEW_HOLD_KEY, hasIngestReviewHold } from '@/lib/ingestion/review-hold'
 
 /**
  * 受注ボックス（/admin/inbox）の一括データ取得。
@@ -57,6 +58,12 @@ export interface InboxReceipt {
   slipNo?: string | null
   items: InboxReceiptItem[]
   alerts: InboxReceiptAlert[]
+  /**
+   * 取り込みで一部の保存に失敗した等で「人の確認が要る」印が立った受信票（status は pending_review のまま。
+   * lib/ingestion/review-hold.ts）。注文が承認待ちでない（承認済み・出荷済みなど）ので承認待ちの注文カードには
+   * 出ない。受信リストの「要確認」に出し、人が確認して「却下」で片付ける。
+   */
+  reviewHold: boolean
 }
 
 export interface ApprovedOrderItem {
@@ -111,12 +118,28 @@ export async function getInboxData(): Promise<InboxData> {
       const cancelledIds = nonPendingOrders.filter((o) => o.status === 'cancelled').map((o) => o.id)
       // 受信箱の表示を片付ける自動同期。失敗しても表示が古いだけなので一覧は出し、ログに残す（次回の表示で再試行）
       if (approvedIds.length) {
-        const { error: syncApprovedErr } = await admin
+        // 取り込みが「人の確認が要る」と印を立てた受信票（一部の保存に失敗した等。lib/ingestion/review-hold.ts）は
+        // 注文が承認済みでも片付けない。人が受信箱の「却下」で片付ける。
+        const { data: syncCandidates, error: syncReadErr } = await admin
           .from('order_receipts')
-          .update({ status: 'approved' })
+          .select(`id, raw_payload->${INGEST_REVIEW_HOLD_KEY}`)
           .in('order_id', approvedIds)
           .eq('status', 'pending_review')
-        if (syncApprovedErr) console.error('[inbox] 承認済み注文の受信票を approved に同期できませんでした:', syncApprovedErr.message)
+        if (syncReadErr) {
+          console.error('[inbox] 承認済み注文の受信票の読み込みに失敗（同期しません）:', syncReadErr.message)
+        } else {
+          const syncIds = ((syncCandidates ?? []) as unknown as Record<string, unknown>[])
+            .filter((r) => r[INGEST_REVIEW_HOLD_KEY] !== true)
+            .map((r) => r.id as string)
+          if (syncIds.length) {
+            const { error: syncApprovedErr } = await admin
+              .from('order_receipts')
+              .update({ status: 'approved' })
+              .in('id', syncIds)
+              .eq('status', 'pending_review')
+            if (syncApprovedErr) console.error('[inbox] 承認済み注文の受信票を approved に同期できませんでした:', syncApprovedErr.message)
+          }
+        }
       }
       if (cancelledIds.length) {
         const { error: syncCancelledErr } = await admin
@@ -140,12 +163,12 @@ export async function getInboxData(): Promise<InboxData> {
     console.error('[inbox] auto sync receipts failed', e)
   }
 
-  const [receiptsRes, pendingOrders, approvedRes] = await Promise.all([
+  const RECEIPT_COLUMNS =
+    'id, channel, status, received_at, sender_date_key, is_revision, ocr_confidence, r2_key, raw_payload, order_id, customer_id, error_message'
+  const [receiptsRes, pendingOrders, approvedRes, heldRes] = await Promise.all([
     supabase
       .from('order_receipts')
-      .select(
-        'id, channel, status, received_at, sender_date_key, is_revision, ocr_confidence, r2_key, raw_payload, order_id, customer_id, error_message',
-      )
+      .select(RECEIPT_COLUMNS)
       .in('status', RECEIPT_STATUSES as unknown as string[])
       .order('received_at', { ascending: false }),
     getPendingOrders(),
@@ -155,12 +178,27 @@ export async function getInboxData(): Promise<InboxData> {
       .eq('status', 'approved')
       .gte('updated_at', jstMidnight)
       .order('updated_at', { ascending: false }),
+    // 取り込みが要確認の印を立てた受信票（承認待ちでも、注文側が承認済みなら注文カードに出ないため受信リストに出す）
+    supabase
+      .from('order_receipts')
+      .select(RECEIPT_COLUMNS)
+      .eq('status', 'pending_review')
+      .eq(`raw_payload->>${INGEST_REVIEW_HOLD_KEY}`, 'true')
+      .order('received_at', { ascending: false }),
   ])
 
   if (receiptsRes.error) throw new Error(receiptsRes.error.message)
   if (approvedRes.error) throw new Error(approvedRes.error.message)
+  if (heldRes.error) throw new Error(heldRes.error.message)
 
-  const receiptRows = receiptsRes.data ?? []
+  // 注文が承認待ちのもの（承認待ちの注文カードに出る）は二重に出さない
+  const pendingOrderIds = new Set(pendingOrders.map((o) => o.id))
+  const heldRows = (heldRes.data ?? []).filter(
+    (r) => hasIngestReviewHold(r.raw_payload) && !(r.order_id && pendingOrderIds.has(r.order_id)),
+  )
+  const receiptRows = [...(receiptsRes.data ?? []), ...heldRows].sort((a, b) =>
+    String(b.received_at).localeCompare(String(a.received_at)),
+  )
   const approvedRows = approvedRes.data ?? []
 
   // 取引先名・カラーをまとめて解決（受信＋今日承認済みの両方）。
@@ -261,6 +299,7 @@ export async function getInboxData(): Promise<InboxData> {
       slipNo,
       items,
       alerts,
+      reviewHold: r.status === 'pending_review' && hasIngestReviewHold(payload),
     }
   })
 
@@ -279,7 +318,7 @@ export async function getInboxData(): Promise<InboxData> {
   })
 
   const parsing = receipts.filter((r) => r.status === 'pending_ai').length
-  const review = receipts.filter((r) => r.status === 'ai_failed' || r.status === 'unmatched').length
+  const review = receipts.filter((r) => r.status === 'ai_failed' || r.status === 'unmatched' || r.reviewHold).length
   const pending = pendingOrders.length
   const approved = approvedOrders.length
 

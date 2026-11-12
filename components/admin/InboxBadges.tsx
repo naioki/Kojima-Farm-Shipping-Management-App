@@ -52,6 +52,15 @@ export function ReceiptStatusBadge({ status }: { status: string }) {
       </span>
     )
   }
+  if (status === 'pending_review') {
+    // 取り込みが要確認の印を立てた受信票（lib/ingestion/review-hold.ts）だけが受信リストに出る
+    return (
+      <span className="inline-flex items-center gap-1 rounded bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
+        <AlertTriangle className="h-3 w-3" aria-hidden />
+        要確認
+      </span>
+    )
+  }
   return null
 }
 

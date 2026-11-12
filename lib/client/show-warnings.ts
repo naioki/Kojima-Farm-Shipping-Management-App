@@ -11,10 +11,17 @@ export function showResponseWarnings(json: unknown): number {
   return list.length
 }
 
-/** 応答から warnings（文字列のみ・重複なし）を取り出す。テスト用に分けてある。 */
+/**
+ * 応答から警告（文字列のみ・重複なし）を取り出す。テスト用に分けてある。
+ * `warnings`（配列のときだけ）と `side_effect_warnings`（POST /api/orders。そちらの `warnings` は
+ * 数量の異常値のオブジェクトなので配列でなく無視される）の両方を読む。
+ */
 export function extractWarnings(json: unknown): string[] {
   if (!json || typeof json !== 'object') return []
-  const w = (json as { warnings?: unknown }).warnings
-  if (!Array.isArray(w)) return []
-  return Array.from(new Set(w.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)))
+  const o = json as { warnings?: unknown; side_effect_warnings?: unknown }
+  const all: unknown[] = [
+    ...(Array.isArray(o.warnings) ? o.warnings : []),
+    ...(Array.isArray(o.side_effect_warnings) ? o.side_effect_warnings : []),
+  ]
+  return Array.from(new Set(all.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)))
 }

@@ -172,7 +172,26 @@ export default async function DeliveriesPage({
     loadRouteOverrides(admin),
     admin.from('customers').select('id, name').eq('is_active', true).order('name'),
     admin.from('products').select('id, name, unit, category').eq('is_active', true).order('name'),
-    admin.from('delivery_destinations').select('id, customer_id, code, full_name').eq('is_active', true).order('sort_order'),
+    // 追加フォームの納入先候補。規定コンテナ（default_container_type）は本番に列が無いので、無ければ基本列で取り直し、
+    // 値は出荷一覧と同じく「列の値 → 退避ストアの値」で解決する（下の resolveDestDefaultContainer）
+    (async (): Promise<{
+      data: { id: string; customer_id: string | null; code: string | null; full_name: string; default_container_type?: string | null }[] | null
+      error: { message: string } | null
+    }> => {
+      const r1 = await admin
+        .from('delivery_destinations')
+        .select('id, customer_id, code, full_name, default_container_type')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (!r1.error) return { data: r1.data ?? [], error: null }
+      const r2 = await admin
+        .from('delivery_destinations')
+        .select('id, customer_id, code, full_name')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (r2.error) return { data: null, error: r2.error }
+      return { data: r2.data ?? [], error: null }
+    })(),
   ])
 
   if (custRes.error) return <ErrorState message="取引先名を読み込めませんでした。" detail={custRes.error.message} />
@@ -574,6 +593,7 @@ export default async function DeliveriesPage({
             id: d.id,
             customerId: d.customer_id ?? '',
             label: d.code?.trim() || d.full_name,
+            defaultContainerType: resolveDestDefaultContainer(d.id, d.default_container_type, routeRes.containers),
           }))}
           packsByPair={Object.fromEntries(
             (rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r.packs_per_case ?? null]),

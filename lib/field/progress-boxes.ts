@@ -87,3 +87,14 @@ export function computeProgressBoxes(lines: readonly ProgressLine[]): ProgressBo
     remainingBoxes: Math.max(0, totalBoxes - completedBoxes),
   }
 }
+
+/**
+ * 前日からの持ち越し（箱数）をパック数の目安に換算する。進捗の箱数と同じ規則に合わせ、青梗菜は一律
+ * 20P/箱で換算できる。それ以外の品目は明細ごとに入数が違い、持ち越しの箱の入数を確定できないので null
+ * （「約 N P」の表示を出さない）。
+ */
+export function carryoverPacksEstimate(productName: string | null | undefined, carryoverBoxes: number): number | null {
+  const boxes = Math.max(0, Number(carryoverBoxes) || 0)
+  if (!isBokChoyProduct(productName)) return null
+  return boxes * BOK_CHOY_PROGRESS_PACKS_PER_BOX
+}

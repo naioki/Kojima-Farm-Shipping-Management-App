@@ -14,6 +14,7 @@ import { shiftDateStr } from '@/lib/dates'
 import { foldKana } from '@/lib/normalize/kana'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
+import { INGEST_REVIEW_HOLD_KEY } from '@/lib/ingestion/review-hold'
 import {
   calculateContainerBoxes,
   determineContainerType,
@@ -517,6 +518,21 @@ export async function processReceipt(
    * console.error に残し、受信票を「要確認」にして error_message と alerts（受信箱・ビューアに出る）に記録する。
    */
   const ingestIssues: string[] = []
+  /**
+   * 保存の失敗ではないが、人の確認が要るため受信票を要確認に残す理由（受信箱の自動同期で消さない。
+   * lib/ingestion/review-hold.ts）。例: 承認済みの注文に確認が必要な再送を反映した。
+   */
+  const reviewHoldReasons: string[] = []
+  const noteReviewHold = (alertMessage: string) => {
+    reviewHoldReasons.push(alertMessage)
+    changeAlerts.push({
+      alert_id: `ALT-${Date.now().toString(36).toUpperCase()}-H${reviewHoldReasons.length}`,
+      created_at: formatJstShortTimestamp(),
+      alert_type: '要確認',
+      message: alertMessage,
+      resolved: false,
+    })
+  }
   const noteIngestIssue = (logTag: string, err: { message?: string } | string | null | undefined, alertMessage: string) => {
     const detail = typeof err === 'string' ? err : (err?.message ?? 'unknown')
     console.error(`[process-receipt] ${logTag}:`, detail.slice(0, 300))
@@ -546,7 +562,7 @@ export async function processReceipt(
       // 納品先もAIが追加判別してくれるため、未登録の納入先は自動でマスタ追加して即時バインド
       try {
         // code は帳票・画面に表示される名称。切り詰めると「相模セ」のように途切れるため必ず全文を保存する。
-        const { data: newDest } = await admin
+        const { data: newDest, error: newDestErr } = await admin
           .from('delivery_destinations')
           .insert({
             customer_id: orderCustomerId,
@@ -556,13 +572,24 @@ export async function processReceipt(
           })
           .select('id, code, full_name, aliases')
           .single()
-        if (newDest) {
+        if (newDestErr) {
+          // 納入先なしで続ける（注文は「納入先要確認」で残る）。登録できなかったことは受信票に残す
+          noteIngestIssue(
+            '未登録の納入先の自動登録に失敗',
+            newDestErr,
+            `納入先「${po.destination_name}」を自動登録できませんでした。取引先の納入先を確認してください`,
+          )
+        } else if (newDest) {
           destinationId = newDest.id
           custDests.push({ ...newDest, customer_id: orderCustomerId, aliases: [] })
           allDests.push({ ...newDest, customer_id: orderCustomerId, aliases: [] })
         }
       } catch (err) {
-        console.warn('[process-receipt] 自動納入先登録スキップ:', err)
+        noteIngestIssue(
+          '未登録の納入先の自動登録で例外',
+          err instanceof Error ? err.message : String(err),
+          `納入先「${po.destination_name}」を自動登録できませんでした。取引先の納入先を確認してください`,
+        )
       }
     }
     const needsDestination = custDests.length > 0 && destinationId === null
@@ -796,13 +823,21 @@ export async function processReceipt(
       const effectiveSlip = po.slip_no || slipNo
 
       // 同一顧客・同一出荷日の既存未キャンセル注文を取得（宛先誤読込修正・伝票No一致を漏らさず照合）
-      const { data: candidateOrders } = await admin
+      const { data: candidateOrders, error: candidateErr } = await admin
         .from('orders')
         .select('id, status, note, destination_id')
         .eq('customer_id', orderCustomerId)
         .eq('delivery_date', po.delivery_date)
         .neq('status', 'cancelled')
         .limit(20)
+      if (candidateErr) {
+        // 読めないまま「既存なし」として新規作成に進むと注文が二重になる。取り込み失敗として後で再試行する
+        console.error('[process-receipt] 既存注文の読み込みに失敗:', candidateErr.message.slice(0, 300))
+        return await failReceipt(
+          receiptId,
+          `既存注文の読み込みに失敗したため取り込みを中断しました（自動で再試行します）: ${candidateErr.message}`,
+        )
+      }
 
       if (candidateOrders && candidateOrders.length > 0) {
         // 1. 完全一致: destination_id が一致し、かつサンプル種別も一致（サンプル注文は伝票Noが異なる別サンプルを上書きしない #11-04）
@@ -847,10 +882,18 @@ export async function processReceipt(
       }
 
       if (existingOrder) {
-        const { data: pItems } = await admin
+        const { data: pItems, error: pItemsErr } = await admin
           .from('order_items')
           .select('*')
           .eq('order_id', existingOrder.id)
+        if (pItemsErr) {
+          // 読めないまま「明細なし」として進むと、既存の明細と同じ品目を新規行で足して二重になる
+          console.error('[process-receipt] 既存明細の読み込みに失敗:', pItemsErr.message.slice(0, 300))
+          return await failReceipt(
+            receiptId,
+            `既存注文の明細の読み込みに失敗したため取り込みを中断しました（自動で再試行します）: ${pItemsErr.message}`,
+          )
+        }
         prevItems = (pItems ?? []) as PrevItemRow[]
 
         for (const eItem of enriched) {
@@ -988,9 +1031,18 @@ export async function processReceipt(
 
     if (existingOrder) {
       targetOrderId = existingOrder.id
+      // 状態を書き換えてよいのは、取り込み前の状態が承認待ち（pending_review）の注文だけ。
+      // 承認済み・出荷済み・請求済みなどの注文の状態は、取り込みの判定で上書きしない（出荷・請求の進行を巻き戻さない）。
+      const mayChangeStatus = existingOrder.status === 'pending_review'
       const updatePayload: Record<string, unknown> = {
-        status: orderStatus,
+        ...(mayChangeStatus ? { status: orderStatus } : {}),
         note: safeNoteParts.length > 0 ? safeNoteParts.join('\n') : existingOrder.note,
+      }
+      if (!mayChangeStatus && orderStatus === 'pending_review') {
+        // 以前は承認待ちに戻して人に見せていた内容。状態は変えない代わりに受信票を要確認に残す
+        noteReviewHold(
+          `${po.delivery_date ?? ''}の注文（${existingOrder.status}）: 確認が必要な内容の再送を反映しました。注文の内容をFAXと見比べてください`,
+        )
       }
       if (destinationId && existingOrder.destination_id !== destinationId) {
         updatePayload.destination_id = destinationId
@@ -1184,14 +1236,19 @@ export async function processReceipt(
       }
 
       if (itemWriteFailed && orderStatus === 'approved') {
-        // 自動承認のまま現場ボードに出すと欠けた明細に誰も気づかないため、要確認（承認待ち）に戻す
+        // この注文の収穫タスクの同期（下）は行わない
         orderStatus = 'pending_review'
-        const { error: backErr } = await admin
-          .from('orders')
-          .update({ status: 'pending_review' })
-          .eq('id', targetOrderId)
-        if (backErr) {
-          noteIngestIssue('明細の失敗後に注文を要確認へ戻せなかった', backErr, `${po.delivery_date ?? ''}の注文: 要確認に戻せませんでした。注文を確認してください`)
+        // 取り込み前から承認待ちだった注文だけ、承認待ちに戻す（自動承認のまま現場ボードに出すと欠けた明細に
+        // 誰も気づかないため）。元から承認済み・出荷済み・請求済みの注文は状態を変えず、受信票の要確認
+        // （noteIngestIssue で error_message・alerts に記録済み）で人に知らせる。
+        if (mayChangeStatus) {
+          const { error: backErr } = await admin
+            .from('orders')
+            .update({ status: 'pending_review' })
+            .eq('id', targetOrderId)
+          if (backErr) {
+            noteIngestIssue('明細の失敗後に注文を要確認へ戻せなかった', backErr, `${po.delivery_date ?? ''}の注文: 要確認に戻せませんでした。注文を確認してください`)
+          }
         }
       }
       if (itemWriteFailed) anyPendingReview = true
@@ -1461,8 +1518,14 @@ export async function processReceipt(
   cleanPayload['slip_data'] = slipData
   cleanPayload['created_order_ids'] = createdOrderIds
 
-  // 書き込みの失敗があった受信票は、自動承認でも「要確認」に残す（受信箱で人が気づけるように）
-  if (ingestIssues.length > 0) anyPendingReview = true
+  // 書き込みの失敗があった受信票は、自動承認でも「要確認」に残す（受信箱で人が気づけるように）。
+  // 受信箱の自動同期（注文が承認済みなら受信票を approved にする）で消えないよう、明示の印を立てる。
+  if (ingestIssues.length > 0 || reviewHoldReasons.length > 0) {
+    anyPendingReview = true
+    cleanPayload[INGEST_REVIEW_HOLD_KEY] = true
+  } else {
+    delete cleanPayload[INGEST_REVIEW_HOLD_KEY]
+  }
   const finalReceiptStatus: 'pending_review' | 'approved' = anyPendingReview
     ? 'pending_review'
     : 'approved'
@@ -1477,7 +1540,11 @@ export async function processReceipt(
       ocr_confidence: minOverallConfidence,
       status: finalReceiptStatus,
       error_message:
-        ingestIssues.length > 0 ? `取り込み中に一部の保存に失敗しました: ${ingestIssues.join(' / ')}`.slice(0, 500) : null,
+        ingestIssues.length > 0
+          ? `取り込み中に一部の保存に失敗しました: ${[...ingestIssues, ...reviewHoldReasons].join(' / ')}`.slice(0, 500)
+          : reviewHoldReasons.length > 0
+            ? `確認が必要です: ${reviewHoldReasons.join(' / ')}`.slice(0, 500)
+            : null,
       raw_payload: cleanPayload,
     })
     .eq('id', receiptId)

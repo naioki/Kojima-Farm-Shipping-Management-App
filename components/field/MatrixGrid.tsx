@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, Fragment } from 'react'
+import { useState, useMemo, useCallback, useRef, Fragment } from 'react'
 import Link from 'next/link'
 import { Download, Filter, ChevronRight, ChevronDown, Box, Layers, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -12,6 +12,8 @@ import { fieldErrorMessage } from '@/lib/field/net-error'
 import { showResponseWarnings } from '@/lib/client/show-warnings'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
 import { INTAKE_CHANNEL_REQUIRED_ERROR, INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
+import { useFieldLang } from '@/lib/field/lang-context'
+import { THAI_LABELS } from '@/lib/field/thai-dict'
 
 export interface MatrixDestinationItem {
   id: string
@@ -58,6 +60,14 @@ export function MatrixGrid({
   // 新しい注文になるセル（その日・その取引先に注文が無い）を保存するときの受注経路。未選択だと API が止める
   const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
   const [intakeChannelMissing, setIntakeChannelMissing] = useState(false)
+  const { isThaiMode } = useFieldLang()
+  /** 受注経路の欄（未選択で止まったときにここまで画面を寄せる） */
+  const intakePickerRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * 受注経路が未選択のため保存が止まったセル（キー → 保存に必要な引数）。経路を選んだら自動で保存し直す
+   * （選び直しのために各セルをもう一度確定させない）。
+   */
+  const blockedCellsRef = useRef<Map<string, { customerId: string; date: string; destinationId: string | null }>>(new Map())
   const [expandedCustomers, setExpandedCustomers] = useState<Set<string>>(new Set())
 
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -87,6 +97,9 @@ export function MatrixGrid({
     return dv
   })
   const [destSaved, setDestSaved] = useState<Record<string, string>>(() => ({ ...destValues }))
+  // 連続して保存し直すとき（経路を選んだ後の自動再保存）に、直前の保存結果を親行の合計へ確実に反映するための最新値
+  const destValuesRef = useRef(destValues)
+  destValuesRef.current = destValues
 
   const [states, setStates] = useState<Record<string, CellState>>({})
   const [focused, setFocused] = useState<{ customerId: string; destId?: string; date: string } | null>(null)
@@ -204,7 +217,13 @@ export function MatrixGrid({
   /**
    * 親行または納入先サブ行のセル保存（#22 箱数モード直感入力 ＆ #25 destination_id 対応）
    */
-  async function saveCell(customerId: string, date: string, destinationId?: string | null) {
+  async function saveCell(
+    customerId: string,
+    date: string,
+    destinationId?: string | null,
+    /** 経路を選んだ直後の自動再保存では、state の反映を待たずに選んだ値を使う */
+    channelOverride?: ManualIntakeChannel | null,
+  ) {
     const isDestRow = Boolean(destinationId)
     const k = isDestRow ? destKey(customerId, destinationId!, date) : key(customerId, date)
     const raw = isDestRow ? (destValues[k] ?? '') : (values[k] ?? '')
@@ -236,7 +255,7 @@ export function MatrixGrid({
           product_id: productId,
           delivery_date: date,
           quantity_raw: effectiveRaw,
-          intake_channel: intakeChannel ?? undefined,
+          intake_channel: (channelOverride ?? intakeChannel) ?? undefined,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as {
@@ -246,17 +265,29 @@ export function MatrixGrid({
       }
       if (!res.ok) {
         if (json.error === INTAKE_CHANNEL_REQUIRED_ERROR) {
+          // 新しい注文になるセル。経路を選んだら自動で保存し直すので、入力した値はそのまま残す
+          blockedCellsRef.current.set(k, { customerId, date, destinationId: destinationId ?? null })
           setIntakeChannelMissing(true)
-          throw new Error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+          setState(k, 'error')
+          intakePickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          toast.error(
+            isThaiMode
+              ? `${INTAKE_CHANNEL_REQUIRED_MESSAGE}（選ぶと自動で保存します）\n${THAI_LABELS.intakeChannelRequired}`
+              : `${INTAKE_CHANNEL_REQUIRED_MESSAGE}（選ぶと自動で保存します）`,
+            { id: 'matrix-intake-required', duration: 6000 },
+          )
+          return
         }
         throw new Error(json.error ?? `保存に失敗 (${res.status})`)
       }
+      blockedCellsRef.current.delete(k)
       showResponseWarnings(json)
       const normalized = json.deleted ? '' : json.item != null ? String(json.item.quantity) : effectiveRaw
 
       if (isDestRow) {
-        const nextDestVals = { ...destValues, [k]: normalized }
-        setDestValues(nextDestVals)
+        const nextDestVals = { ...destValuesRef.current, [k]: normalized }
+        destValuesRef.current = nextDestVals
+        setDestValues((prev) => ({ ...prev, [k]: normalized }))
         setDestSaved((prev) => ({ ...prev, [k]: normalized }))
         const dests = destinationsByCustomer[customerId] ?? []
         const newParentSum = dests.reduce((acc, dItem) => {
@@ -280,6 +311,16 @@ export function MatrixGrid({
     } catch (e) {
       setState(k, 'error')
       toast.error(fieldErrorMessage(e, '保存に失敗しました'))
+    }
+  }
+
+  /** 経路が未選択で止まっていたセルを、選んだ経路で順に保存し直す */
+  async function retryBlockedCells(channel: ManualIntakeChannel) {
+    const pending = Array.from(blockedCellsRef.current.values())
+    if (pending.length === 0) return
+    blockedCellsRef.current.clear()
+    for (const cell of pending) {
+      await saveCell(cell.customerId, cell.date, cell.destinationId, channel)
     }
   }
 
@@ -317,15 +358,18 @@ export function MatrixGrid({
   return (
     <div className="space-y-3">
       {/* 受注経路（新しい注文を作るセルの保存に必要。既存の注文の数量変更には使わない） */}
-      <IntakeChannelPicker
-        idPrefix="matrix-intake-channel"
-        value={intakeChannel}
-        onChange={(v) => {
-          setIntakeChannel(v)
-          setIntakeChannelMissing(false)
-        }}
-        showRequiredError={intakeChannelMissing}
-      />
+      <div ref={intakePickerRef} className="scroll-mt-4">
+        <IntakeChannelPicker
+          idPrefix="matrix-intake-channel"
+          value={intakeChannel}
+          onChange={(v) => {
+            setIntakeChannel(v)
+            setIntakeChannelMissing(false)
+            void retryBlockedCells(v)
+          }}
+          showRequiredError={intakeChannelMissing}
+        />
+      </div>
       {/* 上部コントロールバー */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
