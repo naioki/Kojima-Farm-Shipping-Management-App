@@ -174,7 +174,10 @@ async function autoUpsertDeliveryNoteSnapshot(params: {
       if (itemsErr) {
         // 明細の無い納品書を残さない
         console.error('[delivery-notes/pdf] 納品書明細の保存に失敗:', itemsErr.message)
-        await supabase.from('delivery_notes').delete().eq('id', noteId)
+        const { error: rollbackErr } = await supabase.from('delivery_notes').delete().eq('id', noteId)
+        if (rollbackErr) {
+          console.error('[delivery-notes/pdf] 巻き戻し（納品書の削除）に失敗。明細の無い納品書の履歴が残っています:', noteId, rollbackErr.message)
+        }
       }
     }
   } catch (err) {

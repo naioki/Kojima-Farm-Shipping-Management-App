@@ -10,6 +10,8 @@ import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { formatJpDateShort, jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { fieldErrorMessage } from '@/lib/field/net-error'
 import { showResponseWarnings } from '@/lib/client/show-warnings'
+import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
+import { INTAKE_CHANNEL_REQUIRED_ERROR, INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
 
 export interface MatrixDestinationItem {
   id: string
@@ -53,6 +55,9 @@ export function MatrixGrid({
   packsByCustomer,
 }: MatrixGridProps) {
   const [unitMode, setUnitMode] = useState<'boxes' | 'packs'>('boxes')
+  // 新しい注文になるセル（その日・その取引先に注文が無い）を保存するときの受注経路。未選択だと API が止める
+  const [intakeChannel, setIntakeChannel] = useState<ManualIntakeChannel | null>(null)
+  const [intakeChannelMissing, setIntakeChannelMissing] = useState(false)
   const [expandedCustomers, setExpandedCustomers] = useState<Set<string>>(new Set())
 
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -231,6 +236,7 @@ export function MatrixGrid({
           product_id: productId,
           delivery_date: date,
           quantity_raw: effectiveRaw,
+          intake_channel: intakeChannel ?? undefined,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as {
@@ -238,7 +244,13 @@ export function MatrixGrid({
         deleted?: boolean
         error?: string
       }
-      if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
+      if (!res.ok) {
+        if (json.error === INTAKE_CHANNEL_REQUIRED_ERROR) {
+          setIntakeChannelMissing(true)
+          throw new Error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+        }
+        throw new Error(json.error ?? `保存に失敗 (${res.status})`)
+      }
       showResponseWarnings(json)
       const normalized = json.deleted ? '' : json.item != null ? String(json.item.quantity) : effectiveRaw
 
@@ -304,6 +316,16 @@ export function MatrixGrid({
 
   return (
     <div className="space-y-3">
+      {/* 受注経路（新しい注文を作るセルの保存に必要。既存の注文の数量変更には使わない） */}
+      <IntakeChannelPicker
+        idPrefix="matrix-intake-channel"
+        value={intakeChannel}
+        onChange={(v) => {
+          setIntakeChannel(v)
+          setIntakeChannelMissing(false)
+        }}
+        showRequiredError={intakeChannelMissing}
+      />
       {/* 上部コントロールバー */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">

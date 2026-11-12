@@ -36,6 +36,7 @@ import { cn } from '@/lib/cn'
 import { useOutbox } from '@/hooks/useOutbox'
 import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
 import { inputKindOf, suggestIntakeChannel } from '@/lib/orders/intake-suggest'
+import { INTAKE_CHANNEL_REQUIRED_MESSAGE, resolveIntakeChannel } from '@/lib/orders/intake-channel'
 import { extractWarnings, showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface CustomerProductRuleSummary {
@@ -269,6 +270,20 @@ export function ShipmentAddForm({
     intakeChannelRef.current = intakeChannel
   }, [intakeChannel])
   /** AI読み取りの入力から受注経路を推定して初期値にする（違えば画面で選び直せる） */
+  // 受注経路が未選択のまま登録しようとしたとき true（欄の下に案内を出す）
+  const [intakeChannelMissing, setIntakeChannelMissing] = useState(false)
+  /**
+   * 受注経路が決まっているか確かめる（CLAUDE.md: 手入力の注文は intake_channel を必ず埋める）。
+   * 未選択なら登録を止め、入力画面に戻して欄の近くで選ぶよう促す。
+   */
+  function ensureIntakeChannel(): boolean {
+    if (resolveIntakeChannel(fixedIntakeChannel, intakeChannelRef.current ?? intakeChannel)) return true
+    setIntakeChannelMissing(true)
+    setStep('input')
+    toast.error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+    return false
+  }
+
   function applyIntakeSuggestion(suggested: ManualIntakeChannel | null) {
     if (!suggested || intakeChannelRef.current === suggested) return
     intakeChannelRef.current = suggested
@@ -1848,6 +1863,8 @@ export function ShipmentAddForm({
       return
     }
 
+    if (!ensureIntakeChannel()) return
+
     setBatchRegistering(true)
     let successCount = 0
     let sharedReceiptId: string | null = null
@@ -1997,7 +2014,7 @@ export function ShipmentAddForm({
           has_seal: cand.has_seal ?? ruleObj?.hasSeal ?? undefined,
           seal_text: cand.seal_text ?? ruleObj?.sealText ?? undefined,
           bag_type: cand.bag_type ?? ruleObj?.bagType ?? undefined,
-          intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
+          intake_channel: resolveIntakeChannel(fixedIntakeChannel, intakeChannel) ?? undefined,
           note: cand.note ?? undefined,
           destination_id: matchedDest?.id || null,
           mode: rowMode,
@@ -2089,13 +2106,14 @@ export function ShipmentAddForm({
   // ステップ2: 最終確定・DB保存
   // -------------------------------------------------------------
   async function submitFinal() {
+    if (!ensureIntakeChannel()) return
     setSubmitting(true)
     const shipmentPayload = {
       customer_id: customerId,
       product_id: productId,
       delivery_date: targetDate,
       shipping_time: shippingTime || undefined,
-      intake_channel: fixedIntakeChannel ?? intakeChannel ?? undefined,
+      intake_channel: resolveIntakeChannel(fixedIntakeChannel, intakeChannel) ?? undefined,
       quantity_raw: qtyRaw,
       packs_per_case: inputPacksPerCase > 0 ? inputPacksPerCase : undefined,
       spec: spec.trim() || undefined,
@@ -2523,7 +2541,14 @@ export function ShipmentAddForm({
                   受注経路: {fixedIntakeChannel === 'fax' ? 'FAX' : 'メール'}（受信ボックスの原本から読み取り）
                 </p>
               ) : (
-                <IntakeChannelPicker value={intakeChannel} onChange={setIntakeChannel} />
+                <IntakeChannelPicker
+                  value={intakeChannel}
+                  onChange={(v) => {
+                    setIntakeChannel(v)
+                    setIntakeChannelMissing(false)
+                  }}
+                  showRequiredError={intakeChannelMissing}
+                />
               )}
 
               <div className="flex items-center justify-between gap-2">

@@ -220,18 +220,26 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             .eq('customer_id', ord.customer_id)
             .eq('product_id', current.product_id)
             .maybeSingle()
+          // 取引先×品目ルールへの記憶は付随更新（列が無いだけの失敗は writeDroppingMissingColumns が外して再試行する）
+          const RULE_WARNING = '明細は保存しましたが、次回からの自動適用（取引先×品目の設定）の記憶に失敗しました'
+          const productId = current.product_id
+          const customerId = ord.customer_id
           if (existingRule) {
-            await writeDroppingMissingColumns(rulePatch, (p) =>
-              admin.from('customer_product_rules').update(p).eq('id', existingRule.id),
+            await runSideEffect(patchWarnings, '[order-items/[id]] customer_product_rules の更新に失敗', RULE_WARNING, () =>
+              writeDroppingMissingColumns(rulePatch, (p) =>
+                admin.from('customer_product_rules').update(p).eq('id', existingRule.id),
+              ),
             )
           } else {
-            await writeDroppingMissingColumns(
-              {
-                customer_id: ord.customer_id,
-                product_id: current.product_id,
-                ...rulePatch,
-              },
-              (p) => admin.from('customer_product_rules').insert(p as never),
+            await runSideEffect(patchWarnings, '[order-items/[id]] customer_product_rules の作成に失敗', RULE_WARNING, () =>
+              writeDroppingMissingColumns(
+                {
+                  customer_id: customerId,
+                  product_id: productId,
+                  ...rulePatch,
+                },
+                (p) => admin.from('customer_product_rules').insert(p as never),
+              ),
             )
           }
         }

@@ -109,29 +109,33 @@ export async function getInboxData(): Promise<InboxData> {
     if (nonPendingOrders?.length) {
       const approvedIds = nonPendingOrders.filter((o) => o.status !== 'cancelled').map((o) => o.id)
       const cancelledIds = nonPendingOrders.filter((o) => o.status === 'cancelled').map((o) => o.id)
+      // 受信箱の表示を片付ける自動同期。失敗しても表示が古いだけなので一覧は出し、ログに残す（次回の表示で再試行）
       if (approvedIds.length) {
-        await admin
+        const { error: syncApprovedErr } = await admin
           .from('order_receipts')
           .update({ status: 'approved' })
           .in('order_id', approvedIds)
           .eq('status', 'pending_review')
+        if (syncApprovedErr) console.error('[inbox] 承認済み注文の受信票を approved に同期できませんでした:', syncApprovedErr.message)
       }
       if (cancelledIds.length) {
-        await admin
+        const { error: syncCancelledErr } = await admin
           .from('order_receipts')
           .update({ status: 'dismissed' })
           .in('order_id', cancelledIds)
           .eq('status', 'pending_review')
+        if (syncCancelledErr) console.error('[inbox] 却下済み注文の受信票を dismissed に同期できませんでした:', syncCancelledErr.message)
       }
     }
 
     // 過去の開発テスト時等に残存した古い未照合・AI失敗受信（3日以上前）を一括アーカイブ
     const oldReceiptThreshold = `${shiftDateStr(jstTodayStr(), -3)}T00:00:00+09:00`
-    await admin
+    const { error: archiveErr } = await admin
       .from('order_receipts')
       .update({ status: 'dismissed' })
       .in('status', ['unmatched', 'ai_failed'])
       .lt('received_at', oldReceiptThreshold)
+    if (archiveErr) console.error('[inbox] 古い未照合・AI失敗の受信票の片付けに失敗:', archiveErr.message)
   } catch (e) {
     console.error('[inbox] auto sync receipts failed', e)
   }

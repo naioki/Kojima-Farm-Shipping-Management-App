@@ -323,7 +323,7 @@ export async function POST(req: NextRequest) {
   let receiptId: string
   if (existingExact && existingExact.status === 'ai_failed') {
     receiptId = existingExact.id as string
-    await admin
+    const { error: reopenErr } = await admin
       .from('order_receipts')
       .update({
         status: 'pending_ai',
@@ -331,6 +331,17 @@ export async function POST(req: NextRequest) {
         raw_payload: initialPayload,
       })
       .eq('id', receiptId)
+    if (reopenErr) {
+      // 受信票を再受付できないまま解析すると、古い原本情報のまま処理してしまう
+      console.error('[POST /api/receipts] order_receipts の再受付（pending_ai への更新）に失敗:', reopenErr.message)
+      return NextResponse.json(
+        {
+          detail: `受信レコードの再登録に失敗しました: ${reopenErr.message}`,
+          error: reopenErr.message,
+        },
+        { status: 500 },
+      )
+    }
   } else {
     const { data: newReceipt, error: insertErr } = await admin
       .from('order_receipts')

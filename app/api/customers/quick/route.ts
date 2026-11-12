@@ -4,6 +4,7 @@ import { customerCreateSchema } from '@/types/database'
 import { normalizeOrgName } from '@/lib/normalize/org-name'
 import { resolveContainerType } from '@/lib/pipeline/schemas'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { noteSideEffectFailure, withWarnings } from '@/lib/api/side-effects'
 
 export const runtime = 'nodejs'
 
@@ -93,6 +94,8 @@ export async function POST(req: Request) {
 
   // 入数（packs_per_case）が指定されている場合は品目ルールを自動生成
   let ruleCreated = false
+  // 取引先の登録（本体）後の付随（入数ルール・AIルール）の失敗は 500 にせず warnings で返す
+  const warnings: string[] = []
   if (customerId && parsed.data.packs_per_case && parsed.data.packs_per_case > 0) {
     let targetProductId = parsed.data.product_id
     if (!targetProductId) {
@@ -117,26 +120,33 @@ export async function POST(req: Request) {
         clientName: customerName,
         destination: parsed.data.destination_name ?? null,
       })
-      if (existingRule) {
-        await admin
-          .from('customer_product_rules')
-          .update({
+      const { error: ruleErr } = existingRule
+        ? await admin
+            .from('customer_product_rules')
+            .update({
+              packs_per_case: parsed.data.packs_per_case,
+              container_type: safeContainer,
+              label_spec: `${parsed.data.packs_per_case}入`,
+            })
+            .eq('id', existingRule.id)
+        : await admin.from('customer_product_rules').insert({
+            customer_id: customerId,
+            product_id: targetProductId,
             packs_per_case: parsed.data.packs_per_case,
             container_type: safeContainer,
             label_spec: `${parsed.data.packs_per_case}入`,
+            has_card: false,
           })
-          .eq('id', existingRule.id)
+      if (ruleErr) {
+        noteSideEffectFailure(
+          warnings,
+          '[customers/quick] 入数ルール（customer_product_rules）の保存に失敗',
+          ruleErr,
+          '取引先は登録しましたが、入数・容器の設定を保存できませんでした。取引先の設定で入数を登録してください',
+        )
       } else {
-        await admin.from('customer_product_rules').insert({
-          customer_id: customerId,
-          product_id: targetProductId,
-          packs_per_case: parsed.data.packs_per_case,
-          container_type: safeContainer,
-          label_spec: `${parsed.data.packs_per_case}入`,
-          has_card: false,
-        })
+        ruleCreated = true
       }
-      ruleCreated = true
     }
   }
 
@@ -173,20 +183,32 @@ export async function POST(req: Request) {
         source: 'quick_customer',
         is_active: true,
       })
-      if (!aiErr) aiRuleCreated = true
+      if (aiErr) {
+        noteSideEffectFailure(
+          warnings,
+          '[customers/quick] AIルール（ai_rules）の保存に失敗',
+          aiErr,
+          '取引先は登録しましたが、FAX読み取り用のルールを保存できませんでした。AIルールの画面で登録してください',
+        )
+      } else {
+        aiRuleCreated = true
+      }
     }
   }
 
   return NextResponse.json(
-    {
-      id: customerId,
-      name: customerName,
-      existed,
-      destination: createdDestination,
-      packs_per_case: parsed.data.packs_per_case,
-      rule_created: ruleCreated,
-      ai_rule_created: aiRuleCreated,
-    },
+    withWarnings(
+      {
+        id: customerId,
+        name: customerName,
+        existed,
+        destination: createdDestination,
+        packs_per_case: parsed.data.packs_per_case,
+        rule_created: ruleCreated,
+        ai_rule_created: aiRuleCreated,
+      },
+      warnings,
+    ),
     { status: existed ? 200 : 201 },
   )
 }

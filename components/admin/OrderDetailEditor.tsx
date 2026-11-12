@@ -100,6 +100,7 @@ export function OrderDetailEditor({
       const json = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
       setSavedHeader({ deliveryDate, destinationId, note })
+      showResponseWarnings(json)
       toast.success('納品日・納入先・備考を保存しました')
       router.refresh()
     } catch (e) {

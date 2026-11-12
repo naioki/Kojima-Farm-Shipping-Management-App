@@ -77,26 +77,52 @@ export async function reviseDeliveryNote(
   if (hdrErr) return { ok: false, message: `納品書の訂正に失敗しました: ${hdrErr.message}` }
 
   // 3) 明細差し替え（失敗時は旧明細・旧ヘッダーへ戻す）
-  const restore = async () => {
-    await supabase.from('delivery_note_items').delete().eq('delivery_note_id', noteId)
-    if (oldItems.length) {
-      await supabase.from('delivery_note_items').insert(oldItems.map((it) => ({ ...it, delivery_note_id: noteId })))
+  /** 巻き戻し。すべて戻せたら true（失敗は console.error に残し、応答の文言で「一部が残っている可能性」を伝える） */
+  const restore = async (): Promise<boolean> => {
+    let ok = true
+    const { error: rDelErr } = await supabase.from('delivery_note_items').delete().eq('delivery_note_id', noteId)
+    if (rDelErr) {
+      ok = false
+      console.error('[delivery-notes/revise] 巻き戻し: 明細の削除に失敗:', noteId, rDelErr.message)
+    } else if (oldItems.length) {
+      // 削除できなかったときに旧明細を入れ直すと二重になるので、削除できたときだけ戻す
+      const { error: rInsErr } = await supabase
+        .from('delivery_note_items')
+        .insert(oldItems.map((it) => ({ ...it, delivery_note_id: noteId })))
+      if (rInsErr) {
+        ok = false
+        console.error('[delivery-notes/revise] 巻き戻し: 旧明細の復元に失敗:', noteId, rInsErr.message)
+      }
     }
     const restoreHeader: Record<string, unknown> = {}
     for (const k of [...Object.keys(header), 'issued_at', 'issued_by']) restoreHeader[k] = oldHeader[k]
-    await supabase.from('delivery_notes').update(restoreHeader).eq('id', noteId)
+    const { error: rHdrErr } = await supabase.from('delivery_notes').update(restoreHeader).eq('id', noteId)
+    if (rHdrErr) {
+      ok = false
+      console.error('[delivery-notes/revise] 巻き戻し: ヘッダーの復元に失敗:', noteId, rHdrErr.message)
+    }
+    return ok
   }
+  const PARTIAL = '元に戻す処理も一部失敗したため、訂正途中の内容の一部が残っている可能性があります。納品書を開いて内容を確認してください'
   const { error: delErr } = await supabase.from('delivery_note_items').delete().eq('delivery_note_id', noteId)
   if (delErr) {
-    await restore()
-    return { ok: false, message: `納品書明細の訂正に失敗しました: ${delErr.message}` }
+    const restored = await restore()
+    return {
+      ok: false,
+      message: `納品書明細の訂正に失敗しました: ${delErr.message}${restored ? '' : `。${PARTIAL}`}`,
+    }
   }
   const { error: insErr } = await supabase
     .from('delivery_note_items')
     .insert(items.map((it) => ({ ...it, delivery_note_id: noteId })))
   if (insErr) {
-    await restore()
-    return { ok: false, message: `納品書明細の訂正に失敗したため元に戻しました: ${insErr.message}` }
+    const restored = await restore()
+    return {
+      ok: false,
+      message: restored
+        ? `納品書明細の訂正に失敗したため元に戻しました: ${insErr.message}`
+        : `納品書明細の訂正に失敗しました: ${insErr.message}。${PARTIAL}`,
+    }
   }
 
   return { ok: true, revision }

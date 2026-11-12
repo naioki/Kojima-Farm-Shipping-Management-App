@@ -29,6 +29,8 @@ import { cn } from '@/lib/cn'
 import { findBestMatchingCustomer, findBestMatchingDestination } from '@/lib/orders/natural-parser'
 import type { ConciergeAction, ConciergeResponse } from '@/lib/concierge/schema'
 import { showResponseWarnings } from '@/lib/client/show-warnings'
+import { IntakeChannelPicker, type ManualIntakeChannel } from '@/components/ui/IntakeChannelPicker'
+import { INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
 
 interface ConciergeChatProps {
   defaultDate: string
@@ -278,6 +280,9 @@ export function ConciergeChat({
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [executingKey, setExecutingKey] = useState<string | null>(null)
+  // 注文の登録（add_shipment）の受注経路。提案カードごとに選ぶ（未選択のままは登録しない）
+  const [intakeByKey, setIntakeByKey] = useState<Record<string, ManualIntakeChannel>>({})
+  const [intakeMissingKey, setIntakeMissingKey] = useState<string | null>(null)
   const [undoingReceiptId, setUndoingReceiptId] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
   const [receiptsByKey, setReceiptsByKey] = useState<Record<string, ExecutionReceipt>>({})
@@ -497,6 +502,12 @@ export function ConciergeChat({
     }
 
     const key = `${msgId}-${propIdx}`
+    // 手入力の注文は受注経路を必ず埋める（CLAUDE.md・評価指標④）。未選択なら実行しない
+    if (action.type === 'add_shipment' && !intakeByKey[key]) {
+      setIntakeMissingKey(key)
+      toast.error(INTAKE_CHANNEL_REQUIRED_MESSAGE)
+      return
+    }
     setExecutingKey(key)
     const nowTimeStr = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
 
@@ -541,6 +552,7 @@ export function ConciergeChat({
             bag_type: p.bag_type ?? undefined,
             mode: p.mode || 'create',
             note: p.note ?? undefined,
+            intake_channel: intakeByKey[key],
           }),
         })
         const j = await res.json().catch(() => ({}))
@@ -647,6 +659,7 @@ export function ConciergeChat({
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error ?? '取引先の登録に失敗しました')
+        showResponseWarnings(j)
 
         const custId = String(j.customer?.id ?? '')
         const existed = Boolean(j.existed)
@@ -1240,6 +1253,18 @@ export function ConciergeChat({
                           </div>
                         )}
                       </div>
+
+                      {prop.type === 'add_shipment' && (
+                        <IntakeChannelPicker
+                          idPrefix={`intake-channel-${key}`}
+                          value={intakeByKey[key] ?? null}
+                          onChange={(v) => {
+                            setIntakeByKey((prev) => ({ ...prev, [key]: v }))
+                            if (intakeMissingKey === key) setIntakeMissingKey(null)
+                          }}
+                          showRequiredError={intakeMissingKey === key}
+                        />
+                      )}
 
                       <button
                         type="button"

@@ -1,0 +1,361 @@
+/**
+ * 結果を確認していなかった書き込みを直したルートの挙動を固定する（engineering.md §5）。
+ * - 本体の書き込みの失敗は 500
+ * - 本体が成功した後の付随更新の失敗は 200＋warnings（詳細は console.error）
+ * - 巻き戻しの失敗は console.error に残し、応答に「一部が残っている可能性」を含める
+ * - 取り込み（process-receipt）は画面が無いので、受信票を要確認にして error_message と alerts に残す
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createFakeSupabase, filterValue, type FakeCall, type FakeResult } from './support/fake-supabase'
+
+const CUST = '11111111-1111-4111-8111-111111111111'
+const PROD = '22222222-2222-4222-8222-222222222222'
+const DEST = '33333333-3333-4333-8333-333333333333'
+const ORDER = '44444444-4444-4444-8444-444444444444'
+const PROD2 = '55555555-5555-4555-8555-555555555555'
+
+let currentUser: { id: string } | null = { id: 'u-1' }
+let scenario: (c: FakeCall) => FakeResult | undefined = () => undefined
+
+const resolve = (c: FakeCall): FakeResult | undefined => {
+  const r = scenario(c)
+  if (r) return r
+  if (c.table === 'users') return { data: { role: 'admin', id: 'u-1' } }
+  return { data: null }
+}
+let fake = createFakeSupabase(resolve)
+
+const analyzeOrdersMock = vi.fn()
+
+vi.mock('@/lib/supabase/server', () => ({ getAuthedUser: async () => currentUser }))
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }))
+vi.mock('@/lib/gemini/analyze', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/gemini/analyze')>()),
+  analyzeOrders: (...args: unknown[]) => analyzeOrdersMock(...args),
+}))
+vi.mock('@/lib/settings', () => ({ getSetting: async () => null }))
+vi.mock('@/lib/notifications/multi-channel', () => ({ sendMultiChannelAlert: async () => ({}) }))
+
+let errorSpy: ReturnType<typeof vi.spyOn>
+let warnSpy: ReturnType<typeof vi.spyOn>
+let logSpy: ReturnType<typeof vi.spyOn>
+beforeEach(() => {
+  fake = createFakeSupabase(resolve)
+  currentUser = { id: 'u-1' }
+  scenario = () => undefined
+  analyzeOrdersMock.mockReset()
+  errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+})
+afterEach(() => {
+  errorSpy.mockRestore()
+  warnSpy.mockRestore()
+  logSpy.mockRestore()
+})
+
+function loggedText(): string {
+  return errorSpy.mock.calls.map((args: unknown[]) => args.map(String).join(' ')).join('\n')
+}
+
+function json(body: unknown, method = 'POST'): Request {
+  return new Request('http://localhost/api/x', {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+describe('POST /api/deliveries/confirm-customer（積込チェック）', () => {
+  const body = { delivery_date: '2026-11-12', customer_id: CUST, destination_ids: [DEST], action: 'loaded' }
+  const base = (over: (c: FakeCall) => FakeResult | undefined) => (c: FakeCall): FakeResult | undefined => {
+    const r = over(c)
+    if (r) return r
+    if (c.table === 'deliveries' && c.op === 'select') return { data: [{ id: 'dlv-1', status: 'planned' }] }
+    if (c.table === 'orders' && c.op === 'select') return { data: [{ id: ORDER }] }
+    if (c.table === 'order_items' && c.op === 'select') return { data: [{ id: 'item-1', version: 3, field_status: 'packed' }] }
+    return undefined
+  }
+
+  it('本体（deliveries の更新）が失敗したら 500 で返し、成功扱いにしない', async () => {
+    scenario = base((c) => (c.table === 'deliveries' && c.op === 'update' ? { error: { message: 'deliveries locked' } } : undefined))
+    const { POST } = await import('@/app/api/deliveries/confirm-customer/route')
+    const res = await POST(json(body))
+    expect(res.status).toBe(500)
+    const j = (await res.json()) as { ok?: boolean; error?: string }
+    expect(j.ok).toBeUndefined()
+    expect(j.error).toMatch(/積込状態を保存できませんでした/)
+    expect(loggedText()).toMatch(/deliveries locked/)
+    // 本体が失敗したら付随の同期に進まない
+    expect(fake.calls.some((c) => c.table === 'order_items' && c.op === 'update')).toBe(false)
+  })
+
+  it('付随（order_items の同期）が失敗しても 200＋警告。詳細はサーバーログ', async () => {
+    scenario = base((c) => (c.table === 'order_items' && c.op === 'update' ? { error: { message: 'items timeout' } } : undefined))
+    const { POST } = await import('@/app/api/deliveries/confirm-customer/route')
+    const res = await POST(json(body))
+    expect(res.status).toBe(200)
+    const j = (await res.json()) as { ok?: boolean; warnings?: string[] }
+    expect(j.ok).toBe(true)
+    expect(j.warnings).toEqual([
+      '積込状態は保存しましたが、出荷状況（パック・出荷の表示）の同期に失敗しました。画面を読み込み直して確認してください',
+    ])
+    expect(loggedText()).toMatch(/items timeout/)
+    // orders.status の同期は続けて行う
+    expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'update')).toBe(true)
+  })
+
+  it('すべて成功なら warnings キーを付けない', async () => {
+    scenario = base(() => undefined)
+    const { POST } = await import('@/app/api/deliveries/confirm-customer/route')
+    const res = await POST(json(body))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, action: 'loaded' })
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/orders/[id]/reject（承認しない）', () => {
+  const base = (over: (c: FakeCall) => FakeResult | undefined) => (c: FakeCall): FakeResult | undefined => {
+    const r = over(c)
+    if (r) return r
+    if (c.table === 'orders' && c.op === 'select') return { data: { id: ORDER, status: 'pending_review', customer_id: CUST, note: null } }
+    if (c.table === 'order_items' && c.op === 'select') return { data: [{ id: 'item-1' }, { id: 'item-2' }] }
+    return undefined
+  }
+
+  it('収穫タスクの削除・受信票の更新に失敗しても却下は成功のまま、警告を返す', async () => {
+    scenario = base((c) => {
+      if (c.table === 'harvest_tasks' && c.op === 'delete') return { error: { message: 'ht denied' } }
+      if (c.table === 'order_receipts' && c.op === 'update') return { error: { message: 'receipt denied' } }
+      return undefined
+    })
+    const { POST } = await import('@/app/api/orders/[id]/reject/route')
+    const res = await POST(json({ reason: '重複' }), { params: { id: ORDER } })
+    expect(res.status).toBe(200)
+    const j = (await res.json()) as { ok?: boolean; warnings?: string[] }
+    expect(j.ok).toBe(true)
+    expect(j.warnings).toHaveLength(2)
+    expect(j.warnings?.[0]).toMatch(/収穫・パックの作業一覧から外せませんでした/)
+    expect(j.warnings?.[1]).toMatch(/受信箱の表示を片付けられませんでした/)
+    expect(loggedText()).toMatch(/ht denied/)
+    expect(loggedText()).toMatch(/receipt denied/)
+    const ordUpd = fake.calls.find((c) => c.table === 'orders' && c.op === 'update')!
+    expect((ordUpd.payload as { status: string }).status).toBe('cancelled')
+  })
+
+  it('本体（注文の却下）が失敗したら 500。付随には進まない', async () => {
+    scenario = base((c) => (c.table === 'orders' && c.op === 'update' ? { error: { message: 'orders locked' } } : undefined))
+    const { POST } = await import('@/app/api/orders/[id]/reject/route')
+    const res = await POST(json({}), { params: { id: ORDER } })
+    expect(res.status).toBe(500)
+    expect(fake.calls.some((c) => c.table === 'harvest_tasks')).toBe(false)
+  })
+})
+
+describe('PATCH /api/order-items/[id]（数量変更）', () => {
+  const current = {
+    id: 'item-1',
+    order_id: ORDER,
+    product_id: PROD,
+    product_name: '小松菜',
+    quantity: 20,
+    unit_price: 100,
+    tax_rate: 8,
+    version: 2,
+    field_status: 'not_started',
+    spec: null,
+    container_type: null,
+    has_card: null,
+    has_seal: null,
+    bag_type: null,
+  }
+  const base = (harvestError: string | null) => (c: FakeCall): FakeResult | undefined => {
+    if (c.table === 'order_items' && c.op === 'select') return { data: current }
+    if (c.table === 'order_items' && c.op === 'update') return { data: { ...current, ...(c.payload as object) } }
+    if (c.table === 'harvest_tasks' && c.op === 'update') return harvestError ? { error: { message: harvestError } } : { data: null }
+    return undefined
+  }
+
+  it('収穫数の同期に失敗しても数量は保存済みとして 200＋警告', async () => {
+    scenario = base('ht write failed')
+    const { PATCH } = await import('@/app/api/order-items/[id]/route')
+    const res = await PATCH(json({ quantity: 30, version: 2 }, 'PATCH'), { params: { id: 'item-1' } })
+    expect(res.status).toBe(200)
+    const j = (await res.json()) as { item?: { quantity: number }; warnings?: string[] }
+    expect(j.item?.quantity).toBe(30)
+    expect(j.warnings).toEqual(['数量は保存しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください'])
+    expect(loggedText()).toMatch(/ht write failed/)
+  })
+
+  it('収穫数を新しい数量で同期する（成功時は warnings なし）', async () => {
+    scenario = base(null)
+    const { PATCH } = await import('@/app/api/order-items/[id]/route')
+    const res = await PATCH(json({ quantity: 30, version: 2 }, 'PATCH'), { params: { id: 'item-1' } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).not.toHaveProperty('warnings')
+    const ht = fake.calls.find((c) => c.table === 'harvest_tasks' && c.op === 'update')!
+    expect(ht.payload).toEqual({ required_qty: 30 })
+    expect(filterValue(ht, 'eq', 'order_item_id')).toBe('item-1')
+  })
+})
+
+describe('POST /api/orders（手入力の新規登録）', () => {
+  const body = {
+    customer_id: CUST,
+    delivery_date: '2026-11-13',
+    confirm_duplicate: true,
+    items: [{ product_id: PROD, product_name: '小松菜', quantity: 20, unit: 'P' }],
+  }
+  const base = (rollbackError: string | null) => (c: FakeCall): FakeResult | undefined => {
+    if (c.table === 'customers') return { data: { id: CUST, name: 'テスト青果' } }
+    if (c.table === 'orders' && c.op === 'insert') return { data: { id: ORDER } }
+    if (c.table === 'order_items' && c.op === 'insert') return { error: { message: 'items insert failed' } }
+    if (c.table === 'orders' && c.op === 'delete') return rollbackError ? { error: { message: rollbackError } } : { data: null }
+    return undefined
+  }
+
+  it('明細の登録に失敗し、巻き戻し（注文の削除）も失敗したら、一部が残っている可能性を伝えてログに残す', async () => {
+    scenario = base('rollback denied')
+    const { POST } = await import('@/app/api/orders/route')
+    const res = await POST(json(body) as never)
+    expect(res.status).toBe(500)
+    const j = (await res.json()) as { error?: string; orderId?: string }
+    expect(j.error).toMatch(/明細の登録に失敗しました/)
+    expect(j.error).toMatch(/一部が残っている可能性/)
+    expect(j.orderId).toBe(ORDER)
+    expect(loggedText()).toMatch(/rollback denied/)
+  })
+
+  it('巻き戻しが成功したら、従来どおり明細の失敗だけを返す', async () => {
+    scenario = base(null)
+    const { POST } = await import('@/app/api/orders/route')
+    const res = await POST(json(body) as never)
+    expect(res.status).toBe(500)
+    const j = (await res.json()) as { error?: string }
+    expect(j.error).toBe('明細の登録に失敗しました: items insert failed')
+    const del = fake.calls.find((c) => c.table === 'orders' && c.op === 'delete')!
+    expect(filterValue(del, 'eq', 'id')).toBe(ORDER)
+  })
+
+  it('本体が成功し、収穫タスクの生成に失敗したら 200＋side_effect_warnings（数量の異常値 warnings とは別キー）', async () => {
+    scenario = (c) => {
+      if (c.table === 'customers') return { data: { id: CUST, name: 'テスト青果' } }
+      if (c.table === 'orders' && c.op === 'insert') return { data: { id: ORDER } }
+      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'item-1' } }
+      if (c.table === 'order_items' && c.op === 'select') return { data: [{ id: 'item-1', product_id: PROD, quantity: 20 }] }
+      if (c.table === 'harvest_tasks' && c.op === 'insert') return { error: { message: 'ht insert failed' } }
+      return undefined
+    }
+    const { POST } = await import('@/app/api/orders/route')
+    const res = await POST(json(body) as never)
+    expect(res.status).toBe(200)
+    const j = (await res.json()) as { orderId?: string; warnings?: unknown; side_effect_warnings?: string[] }
+    expect(j.orderId).toBe(ORDER)
+    expect(j.warnings).toEqual({})
+    expect(j.side_effect_warnings?.[0]).toMatch(/収穫・パックの作業一覧の更新に失敗/)
+    expect(loggedText()).toMatch(/ht insert failed/)
+  })
+})
+
+describe('processReceipt：既存注文への統合で新規明細の追加に失敗したとき', () => {
+  const RECEIPT = 'rcpt-1'
+  const prevItem = {
+    id: 'prev-1',
+    order_id: ORDER,
+    product_id: PROD,
+    product_name: '小松菜',
+    quantity: 20,
+    field_status: 'not_started',
+    shipped_qty: null,
+    version: 1,
+    line_note: null,
+  }
+  const parsed = [
+    {
+      customer_name: 'テスト青果',
+      destination_name: null,
+      delivery_date: '2026-11-13',
+      slip_no: null,
+      note: null,
+      items: [
+        { raw_name: '小松菜', product_name: '小松菜', quantity: '20', unit: 'P', confidence: 0.95 },
+        { raw_name: 'ほうれん草', product_name: 'ほうれん草', quantity: '30', unit: 'P', confidence: 0.95 },
+      ],
+    },
+  ]
+  const base = (insertError: { message: string; code?: string }) => (c: FakeCall): FakeResult | undefined => {
+    if (c.table === 'order_receipts' && c.op === 'select') {
+      return {
+        data: {
+          id: RECEIPT,
+          channel: 'email',
+          r2_key: null,
+          raw_payload: { text: '小松菜20P ほうれん草30P' },
+          sender_date_key: null,
+          customer_id: CUST,
+          is_revision: false,
+          status: 'pending_ai',
+        },
+      }
+    }
+    if (c.table === 'customers') return { data: [{ id: CUST, name: 'テスト青果', channel_identifiers: null }] }
+    if (c.table === 'products' && c.op === 'select') {
+      return {
+        data: [
+          { id: PROD, name: '小松菜', unit: 'P', aliases: [], default_tax_rate: 8, default_unit_price: 100 },
+          { id: PROD2, name: 'ほうれん草', unit: 'P', aliases: [], default_tax_rate: 8, default_unit_price: 120 },
+        ],
+      }
+    }
+    if (c.table === 'orders' && c.op === 'select') {
+      return { data: [{ id: ORDER, status: 'approved', note: null, destination_id: null }] }
+    }
+    if (c.table === 'order_items' && c.op === 'select') return { data: [prevItem] }
+    if (c.table === 'order_items' && c.op === 'insert') return { error: insertError }
+    return undefined
+  }
+
+  it('明細を黙って欠落させない：受信票を要確認にし、error_message と alerts に残し、注文も要確認に戻す', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    scenario = base({ message: 'insert denied' })
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+
+    expect(result.status).toBe('pending_review')
+    const receiptUpd = fake.calls.filter((c) => c.table === 'order_receipts' && c.op === 'update').at(-1)!
+    const p = receiptUpd.payload as { status: string; error_message: string | null; raw_payload: { slip_data: { alerts: { message: string; alert_type: string }[] } } }
+    expect(p.status).toBe('pending_review')
+    expect(p.error_message).toMatch(/ほうれん草/)
+    expect(p.error_message).toMatch(/明細を注文に追加できませんでした/)
+    expect(p.raw_payload.slip_data.alerts.some((a) => a.alert_type === '要確認' && /ほうれん草/.test(a.message))).toBe(true)
+    // 自動承認のまま現場ボードに出さない（承認待ちに戻す）
+    const backToReview = fake.calls.find(
+      (c) => c.table === 'orders' && c.op === 'update' && (c.payload as { status?: string }).status === 'pending_review' && Object.keys(c.payload as object).length === 1,
+    )
+    expect(backToReview).toBeDefined()
+    // 収穫タスクは作らない（承認待ちのため）
+    expect(fake.calls.some((c) => c.table === 'harvest_tasks' && c.op === 'insert')).toBe(false)
+    expect(loggedText()).toMatch(/insert denied/)
+  })
+
+  it('列が無いだけ（42703）なら基本列で再試行し、成功すれば要確認にも警告にもしない', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    const missingCol = { message: 'column "bag_type" of relation "order_items" does not exist', code: '42703' }
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'insert') {
+        return 'bag_type' in (c.payload as object) ? { error: missingCol } : { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+      }
+      if (c.table === 'order_items' && c.op === 'update') {
+        return 'bag_type' in (c.payload as object) ? { error: missingCol } : { data: null }
+      }
+      return base(missingCol)(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+    expect(result.status).toBe('approved')
+    const receiptUpd = fake.calls.filter((c) => c.table === 'order_receipts' && c.op === 'update').at(-1)!
+    expect((receiptUpd.payload as { error_message: unknown }).error_message).toBeNull()
+    expect(fake.calls.some((c) => c.table === 'harvest_tasks' && c.op === 'insert')).toBe(true)
+  })
+})

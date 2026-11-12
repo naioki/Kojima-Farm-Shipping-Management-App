@@ -179,7 +179,9 @@ export async function pollEmailOnce(): Promise<PollEmailResult> {
 
     const retryIds = (retryRows ?? []).map((r) => r.id as string)
     if (retryIds.length > 0) {
-      await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+      const { error: reopenErr } = await supabase.from('order_receipts').update({ status: 'pending_ai' }).in('id', retryIds)
+      // 戻せなかった受信票は ai_failed のまま残り、次回のポーリングで再び拾う（下の pending_ai 取得には入らない）
+      if (reopenErr) console.error('[poll-email] 再試行対象を pending_ai に戻せませんでした（次回に再試行）:', reopenErr.message)
     }
 
     // pending_ai を DB から直接拾う。今回取り込んだ分（pendingReceiptIds）だけでなく、

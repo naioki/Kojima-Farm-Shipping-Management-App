@@ -62,7 +62,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const { error: delErr } = await supabase.from('products').delete().eq('id', sourceId)
     if (delErr) {
       // 物理削除に失敗したら無効化にフォールバック
-      await supabase.from('products').update({ is_active: false }).eq('id', sourceId)
+      console.error('[products/merge] 重複品目の物理削除に失敗（無効化に切り替え）:', delErr.message)
+      const { error: deactErr } = await supabase.from('products').update({ is_active: false }).eq('id', sourceId)
+      if (deactErr) {
+        console.error('[products/merge] 重複品目の無効化に失敗:', deactErr.message)
+        return NextResponse.json(
+          { error: `荷姿は作成しましたが、重複品目の削除・無効化に失敗しました: ${deactErr.message}` },
+          { status: 500 },
+        )
+      }
     } else {
       deleted = true
     }

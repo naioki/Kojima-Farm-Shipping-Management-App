@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { writeAudit } from '@/lib/audit/log'
 import { shiftDateStr } from '@/lib/dates'
 import { requireAdminApi, requireStaffApi } from '@/lib/auth/api-guard'
+import { noteSideEffectFailure, runSideEffect, withWarnings } from '@/lib/api/side-effects'
 
 export const runtime = 'nodejs'
 
@@ -59,19 +60,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .single()
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-  // 納品日が変更された場合は紐づく harvest_tasks の task_date（出荷日前日）も自動同期
+  // 納品日が変更された場合は紐づく harvest_tasks の task_date（出荷日前日）も自動同期（付随更新。失敗は警告で返す）
+  const warnings: string[] = []
   if (d.delivery_date && d.delivery_date !== current.delivery_date) {
-    try {
-      const { data: items } = await admin.from('order_items').select('id').eq('order_id', params.id)
-      const itemIds = (items ?? []).map((i) => i.id)
-      if (itemIds.length > 0) {
-        await admin
-          .from('harvest_tasks')
-          .update({ task_date: shiftDateStr(d.delivery_date, -1) })
-          .in('order_item_id', itemIds)
-      }
-    } catch (e) {
-      console.warn('[api/orders/[id]] harvest_tasks 日付同期警告:', e)
+    const HARVEST_DATE_WARNING = '納品日は変更しましたが、収穫・パックの作業日を移せませんでした。収穫一覧の日付を確認してください'
+    const taskDate = shiftDateStr(d.delivery_date, -1)
+    const { data: items, error: itemsErr } = await admin.from('order_items').select('id').eq('order_id', params.id)
+    if (itemsErr) {
+      noteSideEffectFailure(warnings, '[api/orders/[id]] harvest_tasks 日付同期用の明細読み込みに失敗', itemsErr, HARVEST_DATE_WARNING)
+    }
+    const itemIds = (items ?? []).map((i) => i.id)
+    if (itemIds.length > 0) {
+      await runSideEffect(warnings, '[api/orders/[id]] harvest_tasks の日付同期に失敗', HARVEST_DATE_WARNING, () =>
+        admin.from('harvest_tasks').update({ task_date: taskDate }).in('order_item_id', itemIds),
+      )
     }
   }
 
@@ -84,7 +86,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     userId: user.id,
   })
 
-  return NextResponse.json({ order: updated })
+  return NextResponse.json(withWarnings({ order: updated }, warnings))
 }
 
 /**

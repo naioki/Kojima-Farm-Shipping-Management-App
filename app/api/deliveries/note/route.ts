@@ -40,20 +40,30 @@ export async function POST(req: Request) {
   }
 
   // もし deliveries レコードがまだ無い場合は作成
-  const { count } = await admin
+  const { count, error: countErr } = await admin
     .from('deliveries')
     .select('id', { count: 'exact', head: true })
     .eq('delivery_date', delivery_date)
     .eq('customer_id', customer_id)
+  if (countErr) {
+    // 件数が分からないまま作ると配送レコードが二重になるので作らない
+    console.error('[deliveries/note] deliveries の件数確認に失敗:', countErr.message)
+    return NextResponse.json({ error: 'メモを保存できたか確認できませんでした。もう一度お試しください' }, { status: 500 })
+  }
 
   if (!count) {
-    await admin.from('deliveries').insert({
+    // レコードが無い日は、ここで作るのがメモの保存そのもの（本体）
+    const { error: insErr } = await admin.from('deliveries').insert({
       delivery_date,
       customer_id,
       destination_id: null,
       status: 'planned',
       note: note?.trim() || null,
     })
+    if (insErr) {
+      console.error('[deliveries/note] deliveries の作成に失敗:', insErr.message)
+      return NextResponse.json({ error: 'メモを保存できませんでした。もう一度お試しください' }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ ok: true, note: note?.trim() || null })

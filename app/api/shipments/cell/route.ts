@@ -9,6 +9,7 @@ import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
+import { INTAKE_CHANNEL_REQUIRED_ERROR, INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
 
 export const runtime = 'nodejs'
 
@@ -217,6 +218,14 @@ export async function PUT(req: Request) {
 
   let orderId = order?.id
   if (!orderId) {
+    // 手入力で新しい注文を作るときは受注経路を必ず埋める（CLAUDE.md・評価指標④）。
+    // 勝手な既定値は入れず、画面で選んでもらう（この API の呼び出し元は週の管理の表だけで、端末への一時保存は無い）
+    if (!parsed.data.intake_channel) {
+      return NextResponse.json(
+        { error: INTAKE_CHANNEL_REQUIRED_ERROR, message: INTAKE_CHANNEL_REQUIRED_MESSAGE },
+        { status: 400 },
+      )
+    }
     const { data: newOrder, error: createOrderErr } = await supabase
       .from('orders')
       .insert({
@@ -227,6 +236,7 @@ export async function PUT(req: Request) {
         order_date: jstTodayStr(),
         delivery_date,
         delivery_date_source: 'manual',
+        intake_channel: parsed.data.intake_channel,
         approved_at: new Date().toISOString(),
       })
       .select('id')

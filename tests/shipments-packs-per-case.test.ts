@@ -68,7 +68,7 @@ async function putCell(quantity_raw: string) {
   const res = await PUT(
     new Request('http://x/api/shipments/cell', {
       method: 'PUT',
-      body: JSON.stringify({ customer_id: CUST, product_id: PROD, delivery_date: '2026-11-10', quantity_raw }),
+      body: JSON.stringify({ customer_id: CUST, product_id: PROD, delivery_date: '2026-11-10', quantity_raw, intake_channel: 'phone' }),
     }),
   )
   return res.status
