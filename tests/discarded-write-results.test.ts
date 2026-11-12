@@ -410,7 +410,7 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
     const writes = statusWrites()
     expect(writes.length).toBeGreaterThan(0)
     // 書いた状態は取り込みの判定そのもの（自動承認なら approved、要確認なら pending_review）
-    expect((writes[0].payload as { status: string }).status).toBe(result.status)
+    expect((writes[0]!.payload as { status: string }).status).toBe(result.status)
     expect(lastReceiptUpdate().raw_payload.ingest_review_hold).toBeUndefined()
   })
 
