@@ -24,8 +24,8 @@ interface Props {
   customerName: string
   initial: Destination[]
   /**
-   * 出発時刻・便名（退避データ）を読めなかったとき true。表示中の値が実際と違いうるため、
-   * 出発時刻・便名の欄を無効化し、保存・登録でもこの2項目を送らない（API は送られない項目を上書きしない）。
+   * 出発時刻・便名・規定コンテナ（退避データ）を読めなかったとき true。表示中の値が実際と違いうるため、
+   * 既存の納入先ではこの3項目の欄を無効化し、保存でも送らない（API は送られない項目を上書きしない）。
    */
   routesUnavailable?: boolean
 }
@@ -99,7 +99,8 @@ export function DestinationManager({ customerId, customerName, initial, routesUn
           // 読めていないときは送らない（空のまま保存して既存の出発時刻・便名を消さない）
           departure_time: routesUnavailable ? undefined : row.departure_time?.trim() || null,
           shipping_route_name: routesUnavailable ? undefined : row.shipping_route_name?.trim() || null,
-          default_container_type: row.default_container_type?.trim() || null,
+          // 規定コンテナも本番では同じ退避データに入っているため、読めていないときは送らない
+          default_container_type: routesUnavailable ? undefined : row.default_container_type?.trim() || null,
         }),
       })
       const json = (await res.json().catch(() => ({}))) as { error?: string }
@@ -178,7 +179,8 @@ export function DestinationManager({ customerId, customerName, initial, routesUn
                   <input
                     value={r.default_container_type ?? ''}
                     onChange={(e) => patchRow(r.id, 'default_container_type', e.target.value)}
-                    className={fieldCls}
+                    className={cn(fieldCls, 'disabled:opacity-60')}
+                    disabled={routesUnavailable}
                     placeholder="青コン / 茶コン"
                   />
                 </label>

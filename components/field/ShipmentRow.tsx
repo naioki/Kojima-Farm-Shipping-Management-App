@@ -678,6 +678,7 @@ export function ShipmentRow({
       const json = (await res.json()) as {
         item: { version: number; field_status: FieldStatus; shipped_qty: number | null; line_note?: string | null }
       }
+      showResponseWarnings(json)
       setVersion(json.item.version)
       if (json.item.line_note !== undefined) {
         setCurrentLineNote(json.item.line_note)

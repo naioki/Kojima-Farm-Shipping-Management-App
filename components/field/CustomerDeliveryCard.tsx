@@ -18,6 +18,7 @@ import { ColorDot } from '@/components/ui/ColorDot'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { fieldErrorMessage } from '@/lib/field/net-error'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 import { getContainerColorStyle } from '@/lib/field/container-style'
 import { QuickDepartureTimeEditor } from '@/components/field/QuickDepartureTimeEditor'
 import { extractActionableNote } from '@/lib/field/clean-note'
@@ -207,6 +208,7 @@ export function CustomerDeliveryCard({
       if (!res.ok) {
         throw new Error('積込ステータスの更新に失敗しました')
       }
+      showResponseWarnings(await res.json().catch(() => null))
       toast.success(prevCompleted ? '未積込に戻しました' : '🚚 積込チェックを完了しました')
       router.refresh()
     } catch (e) {
@@ -251,6 +253,7 @@ export function CustomerDeliveryCard({
       if (!res.ok) {
         throw new Error('納品先ステータスの更新に失敗しました')
       }
+      showResponseWarnings(await res.json().catch(() => null))
       toast.success(nextAction === 'loaded' ? '納品先の積込をOKにしました' : '未積込に戻しました')
       router.refresh()
     } catch (e) {

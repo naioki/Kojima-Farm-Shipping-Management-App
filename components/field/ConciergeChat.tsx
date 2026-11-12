@@ -902,6 +902,7 @@ export function ConciergeChat({
           body: JSON.stringify({ quantity: up.previousQty, version: up.version }),
         })
         if (!res.ok) throw new Error('注文数量の復元に失敗しました')
+        showResponseWarnings(await res.json().catch(() => null))
       } else if (up.kind === 'delete_product') {
         const res = await fetch(`/api/products/${up.productId}`, { method: 'DELETE' })
         if (!res.ok) throw new Error('品目の取り消しに失敗しました')

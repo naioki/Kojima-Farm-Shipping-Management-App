@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { writeAudit } from '@/lib/audit/log'
+import { noteSideEffectFailure, runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 
 export const runtime = 'nodejs'
@@ -58,37 +58,48 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   if (orderUpdateErr) return NextResponse.json({ error: orderUpdateErr.message }, { status: 500 })
 
+  // 2〜4 は本体（注文の却下）成功後の付随更新。失敗しても 500 にせず警告で返す
+  const warnings: string[] = []
+
   // 2. 収穫タスクのクリーンアップ（現場のゴースト収穫作業を防止）
-  try {
-    const { data: cancelledItems } = await admin
-      .from('order_items')
-      .select('id')
-      .eq('order_id', params.id)
-    if (cancelledItems && cancelledItems.length > 0) {
-      await admin
+  const { data: cancelledItems, error: itemsErr } = await admin
+    .from('order_items')
+    .select('id')
+    .eq('order_id', params.id)
+  const HARVEST_WARNING =
+    '注文は却下しましたが、収穫・パックの作業一覧から外せませんでした。収穫一覧に残っていないか確認してください'
+  if (itemsErr) {
+    noteSideEffectFailure(warnings, '[reject] 収穫タスク削除対象の order_items の読み込みに失敗', itemsErr, HARVEST_WARNING)
+  } else if (cancelledItems && cancelledItems.length > 0) {
+    await runSideEffect(warnings, '[reject] harvest_tasks の削除に失敗', HARVEST_WARNING, () =>
+      admin
         .from('harvest_tasks')
         .delete()
-        .in('order_item_id', cancelledItems.map((i) => i.id))
-    }
-  } catch (cleanErr) {
-    console.warn('[reject] harvest_tasks cleanup warning:', cleanErr)
+        .in('order_item_id', cancelledItems.map((i) => i.id)),
+    )
   }
 
   // 3. 紐づく order_receipts を dismissed に更新（受信ボックスに残らないようにする）
-  await admin
-    .from('order_receipts')
-    .update({ status: 'dismissed' })
-    .eq('order_id', params.id)
+  await runSideEffect(
+    warnings,
+    '[reject] order_receipts を dismissed に更新できませんでした',
+    '注文は却下しましたが、受信箱の表示を片付けられませんでした。受信箱に残っている場合は手動で片付けてください',
+    () => admin.from('order_receipts').update({ status: 'dismissed' }).eq('order_id', params.id),
+  )
 
   // 4. 監査ログ
-  await writeAudit(admin, {
-    entityType: 'orders',
-    entityId: params.id,
-    action: 'UPDATE',
-    oldValues: { status: order.status, note: order.note },
-    newValues: { status: 'cancelled', note: newNote, reject_reason: reasonText },
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    admin,
+    {
+      entityType: 'orders',
+      entityId: params.id,
+      action: 'UPDATE',
+      oldValues: { status: order.status, note: order.note },
+      newValues: { status: 'cancelled', note: newNote, reject_reason: reasonText },
+      userId: user.id,
+    },
+    '[reject] 監査ログの記録に失敗',
+  )
 
-  return NextResponse.json({ ok: true, orderId: params.id })
+  return NextResponse.json(withWarnings({ ok: true, orderId: params.id }, warnings))
 }

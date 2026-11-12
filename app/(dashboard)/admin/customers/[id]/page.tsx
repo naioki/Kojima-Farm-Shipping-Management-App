@@ -11,7 +11,7 @@ import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHis
 import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
 import { DestinationManager, type Destination } from '@/components/admin/DestinationManager'
 import { getSetting } from '@/lib/settings'
-import { loadRouteOverrides } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 import { LoadWarning } from '@/components/ui/LoadWarning'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
@@ -176,6 +176,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       ...d,
       departure_time: (d.departure_time as string | null) ?? ov?.departureTime ?? null,
       shipping_route_name: (d.shipping_route_name as string | null) ?? ov?.shippingRouteName ?? null,
+      // 規定コンテナ: 列の値 → 退避ストアの値（列が無い本番では退避ストアが唯一の保存先）
+      default_container_type: resolveDestDefaultContainer(destId, d.default_container_type, routeRes.containers),
     }
   })
 
@@ -233,7 +235,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
         </div>
         {routeLoadError && (
           <LoadWarning
-            message="出発時刻・便名を読み込めませんでした。誤って消さないよう、出発時刻・便名の欄は変更できない状態にしています（略称・正式名などの保存、追加・削除はできます）。出発時刻・便名を変えるときは、ページを再読み込みしてください。"
+            message="出発時刻・便名・規定コンテナを読み込めませんでした。誤って消さないよう、出発時刻・便名・規定コンテナの欄は変更できない状態にしています（略称・正式名などの保存、追加・削除はできます）。これらを変えるときは、ページを再読み込みしてください。"
             detail={routeLoadError}
           />
         )}

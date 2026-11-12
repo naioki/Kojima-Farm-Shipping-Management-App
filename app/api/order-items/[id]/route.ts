@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { orderItemPatchSchema, fieldStatusPatchSchema } from '@/types/database'
-import { writeAudit } from '@/lib/audit/log'
 import { runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/side-effects'
 import { nextFieldStatus } from '@/lib/field/tap-loop'
 import { recordMistakeFeedback } from '@/lib/ai/learning-loop'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { saveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -135,15 +135,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
   }
 
+  // 本体（明細の更新）は保存済み。以降の付随更新の失敗は 500 にせず warnings で返す
+  const patchWarnings: string[] = []
   if ('quantity' in input && input.quantity != null && input.quantity !== current.quantity) {
-    try {
-      await admin
-        .from('harvest_tasks')
-        .update({ required_qty: input.quantity })
-        .eq('order_item_id', params.id)
-    } catch (htErr) {
-      console.warn('[order-items] harvest_tasks 数量同期警告:', htErr)
-    }
+    const newQty = input.quantity
+    await runSideEffect(
+      patchWarnings,
+      '[order-items/[id]] PATCH の harvest_tasks 数量同期に失敗',
+      '数量は保存しましたが、収穫数の更新に失敗しました。画面を読み込み直して確認してください',
+      () => admin.from('harvest_tasks').update({ required_qty: newQty }).eq('order_item_id', params.id),
+    )
   }
 
   // ⚡ 現場カードでの「規格」「荷姿（コンテナ）」「カード有無」「シール」「袋」手動修正を自動学習ループ & 取引先×品目ルール＋納入先マスタへ自動蓄積（#3-01〜#3-05）
@@ -173,9 +174,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
         // 【#3-02 解消】納入先（destination_id）が紐づいている場合、納入先ごとの既定コンテナ（default_container_type）も自動更新
         if (ord.destination_id && input.container_type && input.container_type !== current.container_type) {
-          await writeDroppingMissingColumns(
-            { default_container_type: input.container_type },
-            (p) => admin.from('delivery_destinations').update(p).eq('id', ord.destination_id!),
+          // 列が無い本番では退避ストア（v5_destination_routes の dest:<id>）へ保存する（黙って捨てない）
+          const destId = ord.destination_id
+          const containerType = input.container_type
+          await runSideEffect(
+            patchWarnings,
+            '[order-items/[id]] 納入先の規定コンテナの自動更新に失敗',
+            '明細のコンテナは保存しましたが、納入先の規定コンテナの更新に失敗しました',
+            () => saveDestDefaultContainer(admin, destId, containerType),
           )
         }
 
@@ -282,16 +288,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  await writeAudit(admin, {
-    entityType: 'order_items',
-    entityId: params.id,
-    action: 'UPDATE',
-    oldValues: current,
-    newValues: updated,
-    userId: user.id,
-  })
+  await writeAuditAfterSuccess(
+    admin,
+    {
+      entityType: 'order_items',
+      entityId: params.id,
+      action: 'UPDATE',
+      oldValues: current,
+      newValues: updated,
+      userId: user.id,
+    },
+    '[order-items/[id]] PATCH の監査ログ記録に失敗',
+  )
 
-  return NextResponse.json({ item: updated })
+  return NextResponse.json(withWarnings({ item: updated }, patchWarnings))
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {

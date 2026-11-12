@@ -3,7 +3,7 @@ import { findPreflightIssues } from '@/lib/deliveries/preflight'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { loadRouteOverrides } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 import { extractActionableNote } from '@/lib/field/clean-note'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { LoadWarning } from '@/components/ui/LoadWarning'
@@ -191,7 +191,13 @@ export default async function DeliveriesPage({
   const addFormError = allCustsRes.error ?? allProdsRes.error ?? allDestsRes.error
 
   const custById = new Map((custRes.data ?? []).map((c) => [c.id, { name: c.name, display_color: c.display_color }]))
-  const destById = new Map((destRes.data ?? []).map((d) => [d.id, d]))
+  // 規定コンテナは「列の値 → 退避ストアの値」で解決する（列が無い本番では退避ストアが唯一の保存先）
+  const destById = new Map(
+    (destRes.data ?? []).map((d) => [
+      d.id,
+      { ...d, default_container_type: resolveDestDefaultContainer(d.id, d.default_container_type, routeRes.containers) },
+    ]),
+  )
   const capacityById = new Map((prodRes.data ?? []).map((p) => [p.id, p.container_capacity]))
   const packById = new Map((packRes.data ?? []).map((p) => [p.id, { base: Number(p.base_per_selling), unit: p.selling_unit_label }]))
   const ruleByPair = new Map((rulesRes.data ?? []).map((r) => [`${r.customer_id}:${r.product_id}`, r]))

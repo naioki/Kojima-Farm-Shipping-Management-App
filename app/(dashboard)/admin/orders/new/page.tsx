@@ -7,6 +7,7 @@ import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { loadReceiptAttachment } from '@/lib/ocr/receipt-original'
 import { isMissingColumnError } from '@/lib/supabase/missing-column'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
 
   // RLSによるマスタ取得漏れを防ぐため createAdminClient() を使用（.claude/rules/engineering.md §1）
   const admin = createAdminClient()
-  const [customersRes, productsRes, rulesRes, destinationsRes] = await Promise.all([
+  const [customersRes, productsRes, rulesRes, destinationsRes, routeRes] = await Promise.all([
     admin.from('customers').select('id, name, channel_identifiers').eq('is_active', true).order('name'),
     admin
       .from('products')
@@ -44,7 +45,7 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
         .eq('is_active', true)
         .order('sort_order')
       if (!r1.error || !isMissingColumnError(r1.error)) return r1
-      // default_container_type が無い環境（0026 未適用の本番）: 基本列で取り直す（規定コンテナは未設定扱い）
+      // default_container_type が無い環境（0026 未適用の本番）: 基本列で取り直す（規定コンテナは退避データから解決）
       const r2 = await admin
         .from('delivery_destinations')
         .select('id, customer_id, code, full_name')
@@ -52,7 +53,10 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
         .order('sort_order')
       return { ...r2, data: (r2.data ?? null) as Array<{ id: string; customer_id: string | null; code: string | null; full_name: string; default_container_type?: string | null }> | null }
     })(),
+    // 規定コンテナの退避データ（列が無い本番では唯一の保存先）。読めなくても受付は止めず、規定コンテナは未設定扱い。
+    loadRouteOverrides(admin),
   ])
+  if (routeRes.error) console.error('[admin/orders/new] 規定コンテナの退避データを読めませんでした:', routeRes.error)
 
   // マスタ取得の失敗を「空」に化けさせない（CLAUDE.md）
   const masterErr = customersRes.error ?? productsRes.error ?? rulesRes.error ?? destinationsRes.error
@@ -110,7 +114,11 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
           id: d.id,
           customerId: d.customer_id ?? '',
           label: d.code?.trim() || d.full_name,
-          defaultContainerType: (d as { default_container_type?: string | null }).default_container_type ?? null,
+          defaultContainerType: resolveDestDefaultContainer(
+            d.id,
+            (d as { default_container_type?: string | null }).default_container_type,
+            routeRes.containers,
+          ),
         }))}
         packsByPair={packsByPair}
         rulesByPair={rulesByPair}

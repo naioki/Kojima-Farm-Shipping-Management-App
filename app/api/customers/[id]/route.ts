@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { customerUpdateSchema } from '@/types/database'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { logSettledWriteFailures } from '@/lib/api/side-effects'
 import { parsePaymentSchedule, paymentScheduleLabel } from '@/lib/customers/payment-terms'
 
 export const runtime = 'nodejs'
@@ -98,7 +99,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   ])
 
   if ((ord.count ?? 0) === 0 && (inv.count ?? 0) === 0) {
-    await Promise.allSettled([
+    const cleanup = await Promise.allSettled([
       admin.from('customer_product_rules').delete().eq('customer_id', id),
       admin.from('customer_parse_hints').delete().eq('customer_id', id),
       admin.from('price_rules').delete().eq('customer_id', id),
@@ -108,6 +109,11 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
       admin.from('ai_learning_examples').update({ customer_id: null }).eq('customer_id', id),
       admin.from('order_receipts').update({ customer_id: null }).eq('customer_id', id),
     ])
+    logSettledWriteFailures(
+      '[customers/[id] DELETE] 子テーブルの片付けに失敗（取引先の物理削除は外部キーで止まりアーカイブに切り替わる）',
+      ['customer_product_rules.delete', 'customer_parse_hints.delete', 'price_rules.delete', 'pack_configs.delete', 'deliveries.delete', 'delivery_destinations.delete', 'ai_learning_examples.update', 'order_receipts.update'],
+      cleanup,
+    )
 
     const { data, error } = await admin.from('customers').delete().eq('id', id).select('id').maybeSingle()
     if (!error && data) {

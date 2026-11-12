@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/States'
 import { GEMINI_HIGH_MODEL_OPTIONS, GEMINI_MODEL_OPTIONS, normalizeModelId } from '@/lib/gemini/models'
 import type { AiRule } from '@/types/database'
 import { formatJpDateTime } from '@/lib/dates'
+import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 const STANDARD_CLIENTS = [
   '共通',
@@ -447,7 +448,9 @@ export function AiRulesManager({
         `取引先 ${json.updatedCount ?? proposals.length} 社分のルールを整理しました（重複 ${json.deletedCount ?? 0} 件を整理）`,
       )
       setConsolidateOpen(false)
-      window.location.reload()
+      // 警告があるときは再読み込みでトーストが消えないよう、画面の再取得だけにする
+      if (showResponseWarnings(json) > 0) router.refresh()
+      else window.location.reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '統合の反映に失敗しました')
     } finally {

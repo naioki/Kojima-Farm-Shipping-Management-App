@@ -146,6 +146,7 @@ export function OrderDetailEditor({
         version: json.item?.version ?? it.version + 1,
         saving: false,
       })
+      showResponseWarnings(json)
       toast.success(`「${it.productName}」の変更を保存しました`)
       router.refresh()
     } catch (e) {

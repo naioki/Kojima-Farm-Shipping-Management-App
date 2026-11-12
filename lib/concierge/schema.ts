@@ -6,6 +6,7 @@ import {
   parseQuantityFromNaturalText,
 } from '@/lib/orders/natural-parser'
 import { shiftDateStr } from '@/lib/dates'
+import { computeProgressBoxes } from '@/lib/field/progress-boxes'
 
 export const conciergeActionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -177,7 +178,7 @@ export function buildConciergeSystemPrompt(ctx: ConciergeContextData): string {
    - そのため、「今日パック作業する分」＝「明日納品分（${ctx.tomorrowStr}）」です。
    - お客様が「明日の注文」「今日作業する分」と言ったら、納品日は原則として **明日（${ctx.tomorrowStr}）** です。
 2. **主な画面の役割**:
-   - **収穫・パックボード（/field/shipments）**: 今日パックする野菜の目標箱数・残り箱数と、出荷先ごとのカード一覧。上部コックピットの箱数は一律「総パック数 ÷ 20」で計算されます。
+   - **収穫・パックボード（/field/shipments）**: 今日パックする野菜の目標箱数・残り箱数と、出荷先ごとのカード一覧。上部コックピットの箱数は、青梗菜は一律20パックで1箱、それ以外の品目は各明細の入数で数えます。
    - **積込・配送リスト（/field/deliveries）**: トラックへの積み込みチェック画面。早い便（16:00 NSK便 → 18:00 和郷園便 → 翌午前 農業総研便）の順に並びます。
    - **週の管理・週間表（/field/matrix）**: 1週間分の出荷予定を箱数またはパック数で一覧・直接入力できる表。
    - **帳票・ラベル印刷（/field/print）**: 現場の出荷指示書やコンテナラベルの印刷画面。
@@ -373,8 +374,10 @@ export function buildDeterministicConciergeResponse(
 
   // 4. 明日の注文状況の確認
   if (/(明日|本日作業|今日).*(注文|出荷|予定|状況|何箱|いくつ).*(教えて|見せて|確認|は[？?])/i.test(norm)) {
-    const totalPacks = ctx.tomorrowOrderSummary.reduce((a, b) => a + b.quantity, 0)
-    const totalBoxes = totalPacks > 0 ? Math.ceil(totalPacks / 20) : 0
+    // 合計箱数は出荷一覧の上部の進捗と同じ数え方（青梗菜は一律20入、それ以外は明細の入数）
+    const { totalPacks, totalBoxes } = computeProgressBoxes(
+      ctx.tomorrowOrderSummary.map((o) => ({ productName: o.productName, qty: o.quantity, packsPerCase: o.packsPerCase })),
+    )
     const lines = ctx.tomorrowOrderSummary
       .map(
         (o) =>

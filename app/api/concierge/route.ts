@@ -7,6 +7,7 @@ import { conciergeToolDeclarations, runConciergeTool, getTodayWork, type ToolCon
 import { sanitizeProposals, parseLooseJson, buildBriefing } from '@/lib/concierge/guard'
 import { DEFAULT_MAIN_GEMINI_MODEL, modelTryOrder } from '@/lib/gemini/models'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import {
   buildConciergeSystemPrompt,
   buildDeterministicConciergeResponse,
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
   }
 
   // マスタ・明日の注文・現在の設定を並列で取得
-  const [custRes, destRes, prodRes, settingsRes, ordersRes, rulesRes, apiKey, configuredModel] =
+  const [custRes, destRes, prodRes, settingsRes, ordersRes, rulesRes, apiKey, configuredModel, packsRes] =
     await Promise.all([
       (async () => {
         const r1 = await admin
@@ -105,12 +106,14 @@ export async function POST(req: Request) {
       admin.from('app_settings').select('key, value'),
       admin
         .from('orders')
-        .select('id, customer_id, destination_id, order_items(product_name, quantity)')
+        .select('id, customer_id, destination_id, order_items(product_id, product_name, quantity, pack_config_id)')
         .eq('delivery_date', tomorrowStr)
         .in('status', ['approved', 'shipped', 'invoiced']),
       admin.from('customer_product_rules').select('customer_id, product_id, packs_per_case'),
       getSetting('GEMINI_API_KEY'),
       getSetting('GEMINI_MODEL'),
+      // 入数の解決用（出荷一覧のカードと同じ lib/masters/packs-per-case.ts の材料）
+      admin.from('pack_configs').select('id, product_id, customer_id, base_per_selling, is_active'),
     ])
 
   const customers = (custRes.data ?? []).map((c) => {
@@ -141,30 +144,50 @@ export async function POST(req: Request) {
 
   const custMap = new Map(customers.map((c) => [c.id, c.name]))
   const destMap = new Map(destinations.map((d) => [d.id, d.code || d.full_name]))
+  // 読み取りツール（lib/concierge/tools.ts）用の取引先単位の入数（従来どおり）
   const rulePpcMap = new Map<string, number>()
   for (const r of (rulesRes.data ?? []) as Array<{ customer_id: string; packs_per_case?: number | null }>) {
     if (r.packs_per_case && r.packs_per_case > 0) {
       rulePpcMap.set(r.customer_id, r.packs_per_case)
     }
   }
+  // 明日の注文の要約の入数はカード・コンテナ内訳と同じ解決（取引先別の設定 → 荷姿 → 品目の標準 → 既定20）
+  const ruleByPair = new Map(
+    ((rulesRes.data ?? []) as Array<{ customer_id: string; product_id: string; packs_per_case?: number | null }>).map((r) => [
+      `${r.customer_id}:${r.product_id}`,
+      r,
+    ]),
+  )
+  if (packsRes.error) console.error('[api/concierge] 入数用の荷姿の取得に失敗（品目の標準・既定で数えます）:', packsRes.error.message)
+  const packRows = (packsRes.data ?? []) as Array<{
+    id: string
+    product_id: string
+    customer_id: string | null
+    base_per_selling: number | null
+    is_active: boolean | null
+  }>
+  const packById = new Map(packRows.map((p) => [p.id, p]))
+  const capacityById = new Map(
+    ((prodRes.data ?? []) as Array<{ id: string; container_capacity?: number | null }>).map((p) => [p.id, p.container_capacity]),
+  )
 
   const tomorrowOrderSummary: ConciergeContextData['tomorrowOrderSummary'] = []
   for (const o of ordersRes.data ?? []) {
     const cName = custMap.get(o.customer_id) ?? '—'
     const dName = o.destination_id ? destMap.get(o.destination_id) ?? cName : cName
-    const ppc =
-      rulePpcMap.get(o.customer_id) ??
-      (cName.includes('農業総合研究所') || cName.includes('NSK')
-        ? 24
-        : cName.includes('オレンジファーム')
-        ? 25
-        : cName.includes('ランドローム') || cName.includes('やなぎさわ')
-        ? 10
-        : 20)
     const rawItems = Array.isArray(o.order_items) ? o.order_items : []
-    for (const it of rawItems as Array<{ product_name?: string; quantity?: number }>) {
+    for (const it of rawItems as Array<{ product_id?: string; product_name?: string; quantity?: number; pack_config_id?: string | null }>) {
       const q = Number(it.quantity) || 0
       if (q > 0) {
+        const pid = it.product_id ?? ''
+        const { customerPacks, sharedPacks } = splitPacksForCustomer(packRows, o.customer_id, pid)
+        const ppc = resolvePacksPerCase({
+          rule: ruleByPair.get(`${o.customer_id}:${pid}`) ?? null,
+          packConfig: it.pack_config_id ? packById.get(it.pack_config_id) ?? null : null,
+          customerPacks,
+          sharedPacks,
+          product: { container_capacity: capacityById.get(pid) },
+        }).value
         tomorrowOrderSummary.push({
           customerName: cName,
           destinationName: dName,

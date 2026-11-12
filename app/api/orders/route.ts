@@ -14,6 +14,7 @@ import {
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { noteSideEffectFailure, runSideEffect } from '@/lib/api/side-effects'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -345,6 +346,12 @@ export async function POST(req: NextRequest) {
   let orderId: string
   let replaced = false
   let merged = false
+  /**
+   * 本体（注文・明細）の保存後の付随更新の失敗（lib/api/side-effects.ts）。
+   * この応答の `warnings` は既に「数量の異常値（品目ID→比率）」として使われているため、
+   * 文字列の警告は `side_effect_warnings` で返す。
+   */
+  const sideEffectWarnings: string[] = []
 
   if (merge_order_id) {
     // 既存注文への合算（追加・マージ）
@@ -364,10 +371,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { data: existingItems } = await admin
+    const { data: existingItems, error: existingItemsErr } = await admin
       .from('order_items')
       .select('*')
       .eq('order_id', merge_order_id)
+    if (existingItemsErr) {
+      // 読めないまま進むと合算すべき明細を新規追加してしまう（二重登録）。書き込み前なので 500 で止める
+      console.error('[POST /api/orders] merge: 既存明細の読み込みに失敗', existingItemsErr.message)
+      return NextResponse.json({ error: '合算先の明細を読み込めなかったため、登録しませんでした。もう一度お試しください' }, { status: 500 })
+    }
 
     for (const it of items) {
       const payload = buildItemPayload(merge_order_id, it)
@@ -418,13 +430,19 @@ export async function POST(req: NextRequest) {
 
     if (shipping_time || note) {
       const combinedNote = [existingOrder.note, note].filter(Boolean).join(' / ') || null
-      await admin
-        .from('orders')
-        .update({
-          ...(shipping_time ? { shipping_time } : {}),
-          ...(combinedNote ? { note: combinedNote } : {}),
-        })
-        .eq('id', merge_order_id)
+      await runSideEffect(
+        sideEffectWarnings,
+        '[POST /api/orders] merge: orders の出荷時間・備考の更新に失敗',
+        '明細は合算しましたが、出荷時間・備考の更新に失敗しました。注文の詳細で確認してください',
+        () =>
+          admin
+            .from('orders')
+            .update({
+              ...(shipping_time ? { shipping_time } : {}),
+              ...(combinedNote ? { note: combinedNote } : {}),
+            })
+            .eq('id', merge_order_id),
+      )
     }
 
     orderId = merge_order_id
@@ -459,10 +477,13 @@ export async function POST(req: NextRequest) {
       .eq('order_id', replace_order_id)
     if (oldItemsErr) console.error('[api/orders] 差し替え前明細の取得に失敗（監査）:', oldItemsErr.message)
 
-    // 先に harvest_tasks を削除してから order_items を削除
-    await admin.from('harvest_tasks').delete().in(
-      'order_item_id',
-      ((oldItems ?? []) as { id?: string }[]).map((x) => x.id).filter((x): x is string => Boolean(x)),
+    // 先に harvest_tasks を削除してから order_items を削除。
+    // harvest_tasks.order_item_id は ON DELETE CASCADE なので、ここが失敗しても次の明細削除で消える（ログのみ）
+    await runSideEffect(null, '[POST /api/orders] replace: 旧明細の harvest_tasks 削除に失敗（明細削除のカスケードで消える）', undefined, () =>
+      admin.from('harvest_tasks').delete().in(
+        'order_item_id',
+        ((oldItems ?? []) as { id?: string }[]).map((x) => x.id).filter((x): x is string => Boolean(x)),
+      ),
     )
 
     const { error: delErr } = await admin.from('order_items').delete().eq('order_id', replace_order_id)
@@ -551,7 +572,18 @@ export async function POST(req: NextRequest) {
       )
       if (itemsErr) {
         console.error('[POST /api/orders] items insert error', itemsErr)
-        await admin.from('orders').delete().eq('id', order.id)
+        // 巻き戻し（order_items は orders の ON DELETE CASCADE で一緒に消える）
+        const { error: rollbackErr } = await admin.from('orders').delete().eq('id', order.id)
+        if (rollbackErr) {
+          console.error('[POST /api/orders] 巻き戻し（注文の削除）に失敗。注文が残っています:', order.id, rollbackErr.message)
+          return NextResponse.json(
+            {
+              error: `明細の登録に失敗しました: ${itemsErr.message}。登録途中の注文の一部が残っている可能性があります。注文一覧で確認してください`,
+              orderId: order.id,
+            },
+            { status: 500 },
+          )
+        }
         return NextResponse.json({ error: `明細の登録に失敗しました: ${itemsErr.message}` }, { status: 500 })
       }
     }
@@ -564,60 +596,74 @@ export async function POST(req: NextRequest) {
   if (withPacks.length > 0) {
     for (const it of withPacks) {
       const rule = ruleByProduct.get(it.product_id)
-      try {
-        if (!rule) {
-          await admin.from('customer_product_rules').insert({
+      const PACKS_WARNING = '注文は登録しましたが、入り数(P/C)を規格マスタに保存できませんでした。必要なら取引先の設定で登録してください'
+      if (!rule) {
+        await runSideEffect(sideEffectWarnings, '[POST /api/orders] packs_per_case の規格登録に失敗', PACKS_WARNING, () =>
+          admin.from('customer_product_rules').insert({
             customer_id,
             product_id: it.product_id,
             packs_per_case: it.packs_per_case,
-          })
-        } else if (rule.packs_per_case == null) {
-          await admin
+          }),
+        )
+      } else if (rule.packs_per_case == null) {
+        await runSideEffect(sideEffectWarnings, '[POST /api/orders] packs_per_case の規格更新に失敗', PACKS_WARNING, () =>
+          admin
             .from('customer_product_rules')
             .update({ packs_per_case: it.packs_per_case })
             .eq('customer_id', customer_id)
-            .eq('product_id', it.product_id)
-        }
-      } catch (e) {
-        console.error('[POST /api/orders] packs_per_case upsert skipped', e)
+            .eq('product_id', it.product_id),
+        )
       }
     }
   }
 
   // アップロードされた原本ファイルがある場合、order_receipts にアーカイブして現場FAX原本と紐付ける
   if (original_file && orderId) {
-    try {
-      await admin.from('order_receipts').insert({
-        order_id: orderId,
-        customer_id: customer_id,
-        delivery_date: delivery_date,
-        channel: 'manual',
-        status: 'approved',
-        received_at: new Date().toISOString(),
-        raw_payload: {
-          filename: original_file.fileName,
-          content_type: original_file.mimeType,
-          file_base64: original_file.base64,
-          created_order_ids: [orderId],
-        },
-      })
+    const savedOriginal = await runSideEffect(
+      sideEffectWarnings,
+      '[POST /api/orders] 原本ファイルの order_receipts 保存に失敗',
+      '注文は登録しましたが、原本ファイルの保存に失敗しました。原本が必要なら取り込み直してください',
+      () =>
+        admin.from('order_receipts').insert({
+          order_id: orderId,
+          customer_id: customer_id,
+          delivery_date: delivery_date,
+          channel: 'manual',
+          status: 'approved',
+          received_at: new Date().toISOString(),
+          raw_payload: {
+            filename: original_file.fileName,
+            content_type: original_file.mimeType,
+            file_base64: original_file.base64,
+            created_order_ids: [orderId],
+          },
+        }),
+    )
+    if (savedOriginal) {
       purgeOldReceiptBase64(admin, 7).catch((e) => console.error('[api/orders] 古い受信画像の片付けに失敗:', e))
-    } catch (e) {
-      console.error('[POST /api/orders] original_file receipt insert error', e)
     }
   }
 
   // 全品目「出荷日の前日に収穫・パック」の原則に従い harvest_tasks を自動同期
   if (delivery_date && orderId) {
+    const HARVEST_WARNING = '注文は登録しましたが、収穫・パックの作業一覧の更新に失敗しました。収穫一覧で確認してください'
     try {
-      const { data: dbItems } = await admin
+      const { data: dbItems, error: dbItemsErr } = await admin
         .from('order_items')
         .select('id, product_id, quantity')
         .eq('order_id', orderId)
+      if (dbItemsErr) {
+        noteSideEffectFailure(sideEffectWarnings, '[POST /api/orders] harvest_tasks 同期用の明細読み込みに失敗', dbItemsErr, HARVEST_WARNING)
+      }
 
-      if (dbItems && dbItems.length > 0) {
-        const itemIds = dbItems.map((i) => i.id)
-        await admin.from('harvest_tasks').delete().in('order_item_id', itemIds)
+      // 古いタスクを消せなかったときは作り直さない（収穫タスクの二重登録を防ぐ）
+      const cleared =
+        dbItems && dbItems.length > 0
+          ? await runSideEffect(sideEffectWarnings, '[POST /api/orders] 既存 harvest_tasks の削除に失敗', HARVEST_WARNING, () =>
+              admin.from('harvest_tasks').delete().in('order_item_id', dbItems.map((i) => i.id)),
+            )
+          : false
+      if (dbItems && dbItems.length > 0 && cleared) {
 
         const harvestTaskDate = shiftDateStr(delivery_date, -1)
         const taskRows = dbItems
@@ -632,13 +678,19 @@ export async function POST(req: NextRequest) {
 
         if (taskRows.length > 0) {
           const { error: htErr } = await admin.from('harvest_tasks').insert(taskRows)
-          if (htErr) console.error('[POST /api/orders] harvest_tasks 自動生成エラー:', htErr.message)
+          if (htErr) noteSideEffectFailure(sideEffectWarnings, '[POST /api/orders] harvest_tasks 自動生成エラー', htErr, HARVEST_WARNING)
         }
       }
     } catch (htEx) {
-      console.error('[POST /api/orders] harvest_tasks 生成失敗 (続行):', htEx)
+      noteSideEffectFailure(sideEffectWarnings, '[POST /api/orders] harvest_tasks 生成失敗 (続行)', htEx, HARVEST_WARNING)
     }
   }
 
-  return NextResponse.json({ orderId, replaced, merged, warnings })
+  return NextResponse.json({
+    orderId,
+    replaced,
+    merged,
+    warnings,
+    ...(sideEffectWarnings.length > 0 ? { side_effect_warnings: sideEffectWarnings } : {}),
+  })
 }

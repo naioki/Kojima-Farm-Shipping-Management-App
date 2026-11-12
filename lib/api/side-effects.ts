@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { writeAudit, type AuditEntry } from '@/lib/audit/log'
+import { isMissingColumnError, isMissingRelationError } from '@/lib/supabase/missing-column'
 
 /**
  * 本体の書き込みに付随する更新（収穫数の同期・配送チェックの戻し・受信票の付け替え・退避保存など）の
@@ -80,4 +81,26 @@ export async function writeAuditAfterSuccess(
 /** 成功応答に warnings を足す（警告が無いときは応答の形を変えない）。 */
 export function withWarnings<T extends object>(body: T, warnings: string[]): T & { warnings?: string[] } {
   return warnings.length > 0 ? { ...body, warnings } : body
+}
+
+/**
+ * Promise.allSettled でまとめて実行した付随の片付け（子テーブルの削除など）の失敗をログに残す。
+ * 未適用マイグレーションでテーブル・列が無いだけの失敗（42P01 / PGRST205 / 42703 / PGRST204）は想定内なので記録しない。
+ * labels は results と同じ順の名前（ログ用）。失敗した名前を返す。
+ */
+export function logSettledWriteFailures(
+  logTag: string,
+  labels: string[],
+  results: PromiseSettledResult<SideEffectResult>[],
+): string[] {
+  const failed: string[] = []
+  results.forEach((r, i) => {
+    const label = labels[i] ?? `#${i}`
+    const err = r.status === 'rejected' ? r.reason : r.value?.error
+    if (!err) return
+    if (typeof err === 'object' && (isMissingRelationError(err as never) || isMissingColumnError(err as never))) return
+    failed.push(label)
+    console.error(`${logTag} (${label}):`, errorText(err))
+  })
+  return failed
 }

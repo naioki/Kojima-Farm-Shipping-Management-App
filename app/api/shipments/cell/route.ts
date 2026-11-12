@@ -8,6 +8,7 @@ import { runSideEffect, withWarnings, writeAuditAfterSuccess } from '@/lib/api/s
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -255,7 +256,12 @@ export async function PUT(req: Request) {
       ? `${baseSpec} (入数${defaultPpc})`
       : baseSpec || `入数${defaultPpc}`
 
-  const destDefaultContainer = (destRes.data as { default_container_type?: string | null } | null)?.default_container_type ?? null
+  // 規定コンテナは「列の値 → 退避ストアの値」（列が無い本番では退避ストアが唯一の保存先）
+  const destDefaultContainer = await loadDestDefaultContainer(
+    supabase,
+    destination_id,
+    (destRes.data as { default_container_type?: string | null } | null)?.default_container_type,
+  )
   const effectiveContainer = resolveContainerType({
     ruleContainer:
       (typeof rule?.container_type === 'string' && rule.container_type) ||

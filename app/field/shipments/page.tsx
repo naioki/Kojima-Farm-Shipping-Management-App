@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { loadRouteOverrides } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides, resolveDestDefaultContainer } from '@/lib/field/destination-routes-store'
 import { ErrorState } from '@/components/ui/States'
 import { LoadWarning } from '@/components/ui/LoadWarning'
 import { formatQty } from '@/lib/calculations/format-qty'
@@ -303,7 +303,11 @@ export default async function ShipmentsPage({
     channel_identifiers?: { aliases?: string[] } | null
   }>
   const activeCustomers = allCustomers.filter((c) => c.is_active !== false)
-  const allDestinations = destRows
+  // 規定コンテナは「列の値 → 退避ストアの値」で解決する（列が無い本番では退避ストアが唯一の保存先）
+  const allDestinations = destRows.map((d) => ({
+    ...d,
+    default_container_type: resolveDestDefaultContainer(d.id, d.default_container_type, routeRes.containers),
+  }))
   const customerName = new Map(allCustomers.map((c) => [c.id, c.name]))
   const customerColor = new Map(allCustomers.map((c) => [c.id, c.display_color ?? null]))
   const capacityById = new Map((prodCapRes.data ?? []).map((p) => [p.id, p.container_capacity]))

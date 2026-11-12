@@ -1,10 +1,70 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { truncateForLog } from '@/lib/log/truncate'
+import { isMissingColumnError } from '@/lib/supabase/missing-column'
 
 export type RouteOverride = {
   departureTime: string | null
   shippingRouteName: string | null
+  /**
+   * 納入先の規定コンテナ（`dest:<id>` のエントリだけが持つ）。`delivery_destinations.default_container_type`
+   * 列が無い環境（本番）での唯一の保存先。古いデータには項目が無い（＝未設定）。
+   */
+  defaultContainerType?: string | null
+}
+
+/**
+ * 退避ストアに保存されている1エントリの形。規定コンテナだけを保存した納入先は
+ * departureTime / shippingRouteName の項目自体を持たない（出発時刻・便名の解決では「エントリ無し」と同じに扱い、
+ * 取引先単位の出発時刻・便名を隠さないため）。
+ */
+type StoredEntry = {
+  departureTime?: string | null
+  shippingRouteName?: string | null
+  defaultContainerType?: string | null
+}
+
+/** 出発時刻・便名のエントリか（規定コンテナだけのエントリは除く） */
+function hasRouteFields(e: StoredEntry): boolean {
+  return 'departureTime' in e || 'shippingRouteName' in e
+}
+
+/** 保存データを「出発時刻・便名」と「納入先ID → 規定コンテナ」に分ける */
+function splitStored(stored: Record<string, StoredEntry>): {
+  overrides: Record<string, RouteOverride>
+  containers: Record<string, string>
+} {
+  const overrides: Record<string, RouteOverride> = {}
+  const containers: Record<string, string> = {}
+  for (const [k, raw] of Object.entries(stored)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const e = raw as StoredEntry
+    if (hasRouteFields(e)) {
+      overrides[k] = {
+        ...e,
+        departureTime: e.departureTime ?? null,
+        shippingRouteName: e.shippingRouteName ?? null,
+      }
+    }
+    if (k.startsWith('dest:') && typeof e.defaultContainerType === 'string' && e.defaultContainerType.trim()) {
+      containers[k.slice('dest:'.length)] = e.defaultContainerType.trim()
+    }
+  }
+  return { overrides, containers }
+}
+
+/**
+ * 納入先の規定コンテナを「列の値 → 退避ストアの値」の順で解決する（列が無い本番では退避ストアだけが効く）。
+ * 規定コンテナを使う画面・API はすべてこれを通す。
+ */
+export function resolveDestDefaultContainer(
+  destId: string | null | undefined,
+  columnValue: unknown,
+  containers: Record<string, string> | null | undefined,
+): string | null {
+  if (typeof columnValue === 'string' && columnValue.trim()) return columnValue
+  if (!destId || !containers) return null
+  return containers[destId] ?? null
 }
 
 const SETTING_KEY = 'v5_destination_routes'
@@ -13,10 +73,10 @@ const SETTING_KEY = 'v5_destination_routes'
  * 退避データの文字列を読む。JSON として壊れている（または中身がオブジェクトでない）ときは null。
  * 壊れた値は自然には直らないので、呼び出し側で記録したうえで作り直す。
  */
-function parseRouteOverrides(raw: string): Record<string, RouteOverride> | null {
+function parseRouteOverrides(raw: string): Record<string, StoredEntry> | null {
   try {
     const v: unknown = JSON.parse(raw)
-    if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, RouteOverride>
+    if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, StoredEntry>
     return null
   } catch {
     // 壊れた JSON は null を返して呼び出し側に任せる（記録・作り直しは呼び出し側）
@@ -24,7 +84,7 @@ function parseRouteOverrides(raw: string): Record<string, RouteOverride> | null 
   }
 }
 
-type ReadResult = { overrides: Record<string, RouteOverride>; broken: string | null }
+type ReadResult = { overrides: Record<string, StoredEntry>; broken: string | null }
 
 /**
  * 退避データを読む。通信・DBエラーは throw する（空として上書きすると他の納入先の値を消すため）。
@@ -46,6 +106,8 @@ async function readRouteOverridesStrict(admin: SupabaseClient): Promise<ReadResu
 
 export type RouteOverridesLoad = {
   overrides: Record<string, RouteOverride>
+  /** 納入先ID → 規定コンテナ（退避ストアの値。列の値との解決は resolveDestDefaultContainer） */
+  containers: Record<string, string>
   /** 通信・DBエラーのときだけ入る（利用者向けではない詳細。画面では警告帯の詳細欄に出す） */
   error: string | null
 }
@@ -62,7 +124,7 @@ export async function loadRouteOverrides(admin: SupabaseClient): Promise<RouteOv
   try {
     r = await readRouteOverridesStrict(admin)
   } catch (e) {
-    return { overrides: {}, error: e instanceof Error ? e.message : String(e) }
+    return { overrides: {}, containers: {}, error: e instanceof Error ? e.message : String(e) }
   }
   if (r.broken !== null) {
     console.error(
@@ -70,7 +132,7 @@ export async function loadRouteOverrides(admin: SupabaseClient): Promise<RouteOv
       truncateForLog(r.broken),
     )
   }
-  return { overrides: r.overrides, error: null }
+  return { ...splitStored(r.overrides), error: null }
 }
 
 /**
@@ -84,12 +146,30 @@ export async function getRouteOverrides(admin: SupabaseClient): Promise<Record<s
 }
 
 /**
- * 指定されたキー群（納入先ID、取引先+納入先名、取引先デフォルト等）すべてに RouteOverride を記録・保存する
+ * 指定されたキー群（納入先ID、取引先+納入先名、取引先デフォルト等）すべてに RouteOverride を記録・保存する。
+ * 同じエントリに保存済みの規定コンテナは残す。
  */
 export async function saveRouteOverride(
   admin: SupabaseClient,
   keys: string[],
   override: RouteOverride,
+): Promise<void> {
+  await saveDestinationOverride(admin, keys, {
+    departureTime: override.departureTime ?? null,
+    shippingRouteName: override.shippingRouteName ?? null,
+    ...(override.defaultContainerType !== undefined ? { defaultContainerType: override.defaultContainerType ?? null } : {}),
+  })
+}
+
+/**
+ * 退避ストアのエントリを項目単位で更新する（undefined の項目は既存の値を残す）。
+ * 規定コンテナだけを保存するときは { defaultContainerType } だけを渡す。
+ * 失敗（読み込みの通信・DBエラー、保存エラー）は throw する。
+ */
+export async function saveDestinationOverride(
+  admin: SupabaseClient,
+  keys: string[],
+  fields: StoredEntry,
 ): Promise<void> {
   const validKeys = keys.filter((k) => typeof k === 'string' && k.trim().length > 0)
   if (validKeys.length === 0) return
@@ -105,10 +185,16 @@ export async function saveRouteOverride(
   }
   const existing = read.overrides
   for (const k of validKeys) {
-    existing[k] = {
-      departureTime: override.departureTime ?? null,
-      shippingRouteName: override.shippingRouteName ?? null,
+    const prev = existing[k] && typeof existing[k] === 'object' && !Array.isArray(existing[k]) ? existing[k] : {}
+    const next: StoredEntry = { ...prev }
+    if (fields.departureTime !== undefined) next.departureTime = fields.departureTime ?? null
+    if (fields.shippingRouteName !== undefined) next.shippingRouteName = fields.shippingRouteName ?? null
+    if (fields.defaultContainerType !== undefined) {
+      const v = fields.defaultContainerType?.trim() || null
+      if (v) next.defaultContainerType = v
+      else delete next.defaultContainerType
     }
+    existing[k] = next
   }
 
   const { error } = await admin.from('app_settings').upsert(
@@ -121,5 +207,41 @@ export async function saveRouteOverride(
     { onConflict: 'key' },
   )
   // 保存できていないのに成功扱いにしない（呼び出し側が警告として返す）
-  if (error) throw new Error(`出荷時間・便名の退避データの保存に失敗: ${error.message}`)
+  if (error) throw new Error(`出荷時間・便名・規定コンテナの退避データの保存に失敗: ${error.message}`)
+}
+
+/**
+ * 1つの納入先の規定コンテナを「列の値 → 退避ストアの値」で解決する（注文の登録 API など1件だけ使う側向け）。
+ * 列に値があれば退避ストアは読まない。退避ストアが読めないときは未設定扱い（ログに残す）で、登録自体は止めない。
+ */
+export async function loadDestDefaultContainer(
+  admin: SupabaseClient,
+  destId: string | null | undefined,
+  columnValue: unknown,
+): Promise<string | null> {
+  if (typeof columnValue === 'string' && columnValue.trim()) return columnValue
+  if (!destId) return null
+  const r = await loadRouteOverrides(admin)
+  if (r.error) console.error('[destination-routes-store] 規定コンテナの退避データを読めませんでした（未設定として扱います）:', r.error)
+  return resolveDestDefaultContainer(destId, columnValue, r.containers)
+}
+
+/**
+ * 納入先の規定コンテナを保存する（列があれば列へ、列が無い本番では退避ストアの `dest:<id>` エントリへ）。
+ * supabase-js と同じく失敗は `{ error }` で返す（runSideEffect に渡せる形）。
+ */
+export async function saveDestDefaultContainer(
+  admin: SupabaseClient,
+  destId: string,
+  value: string | null,
+): Promise<{ error: { message: string; code?: string } | null }> {
+  const r = await admin.from('delivery_destinations').update({ default_container_type: value }).eq('id', destId)
+  if (!r.error) return { error: null }
+  if (!isMissingColumnError(r.error)) return { error: r.error }
+  try {
+    await saveDestinationOverride(admin, [`dest:${destId}`], { defaultContainerType: value })
+    return { error: null }
+  } catch (e) {
+    return { error: { message: e instanceof Error ? e.message : String(e) } }
+  }
 }

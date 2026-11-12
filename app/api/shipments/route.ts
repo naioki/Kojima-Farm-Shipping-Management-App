@@ -10,6 +10,7 @@ import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
 import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
+import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 type PerCasePackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
@@ -270,7 +271,8 @@ export async function POST(req: Request) {
   const effectiveContainerType = resolveContainerType({
     explicitContainer: clientContainerType?.trim() || null,
     ruleContainer: (typeof rule?.container_type === 'string' && rule.container_type) || (typeof rule?.default_container_type === 'string' ? rule.default_container_type : null),
-    destDefaultContainer: destRow?.default_container_type ?? null,
+    // 規定コンテナは「列の値 → 退避ストアの値」（列が無い本番では退避ストアが唯一の保存先）
+    destDefaultContainer: await loadDestDefaultContainer(supabase, destRow?.id, destRow?.default_container_type),
     clientName: confirmedCustName,
     destination: confirmedDestName,
     rawText: `${rawNote ?? ''} ${clientSpec ?? ''}`,

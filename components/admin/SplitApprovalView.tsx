@@ -339,6 +339,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
         version: json.item?.version ?? row.version + 1,
         saving: false,
       })
+      showResponseWarnings(json)
       toast.success('数量を修正しました')
 
       const breakdown = calcBoxBreakdown(updatedQty, order.customerName, order.destinationName)

@@ -6,6 +6,7 @@ import { highModelTryOrder } from '@/lib/gemini/models'
 import { invalidateAiRulesCache } from '@/lib/gemini/analyze'
 import type { AiRule } from '@/types/database'
 import { requireAdminApi } from '@/lib/auth/api-guard'
+import { runSideEffect, withWarnings } from '@/lib/api/side-effects'
 
 export const runtime = 'nodejs'
 
@@ -84,6 +85,9 @@ export async function POST(req: Request) {
 
     let updatedCount = 0
     let deletedCount = 0
+    /** ルール本体を書けなかった取引先（本体の失敗） */
+    const failedClients: string[] = []
+    const warnings: string[] = []
 
     for (const item of items) {
       const client = item.client_name.trim()
@@ -95,7 +99,7 @@ export async function POST(req: Request) {
         clientRules.find((r) => r.source !== 'auto_loop') ?? clientRules[0]
 
       if (primary) {
-        await admin
+        const { error: updErr } = await admin
           .from('ai_rules')
           .update({
             rule_text: text,
@@ -105,17 +109,28 @@ export async function POST(req: Request) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', primary.id)
+        if (updErr) {
+          // 決定版を書けていないのに重複を消すと、その取引先のルールが失われるので消さない
+          console.error('[ai-rules/consolidate] 決定版ルールの更新に失敗:', client, updErr.message)
+          failedClients.push(client)
+          continue
+        }
         updatedCount++
 
         const redundantIds = clientRules
           .filter((r) => r.id !== primary.id)
           .map((r) => r.id)
         if (redundantIds.length > 0) {
-          await admin.from('ai_rules').delete().in('id', redundantIds)
-          deletedCount += redundantIds.length
+          const ok = await runSideEffect(
+            warnings,
+            `[ai-rules/consolidate] 重複ルールの削除に失敗 (${client})`,
+            `「${client}」のルールは更新しましたが、重複していた古いルールを消せませんでした。ルール一覧で確認してください`,
+            () => admin.from('ai_rules').delete().in('id', redundantIds),
+          )
+          if (ok) deletedCount += redundantIds.length
         }
       } else {
-        await admin.from('ai_rules').insert({
+        const { error: insErr } = await admin.from('ai_rules').insert({
           client_name: client,
           rule_text: text,
           priority: item.priority ?? 10,
@@ -123,16 +138,35 @@ export async function POST(req: Request) {
           source: 'admin_gui',
           is_active: true,
         })
+        if (insErr) {
+          console.error('[ai-rules/consolidate] 決定版ルールの登録に失敗:', client, insErr.message)
+          failedClients.push(client)
+          continue
+        }
         updatedCount++
       }
     }
 
-    invalidateAiRulesCache()
-    return NextResponse.json({
-      success: true,
-      updatedCount,
-      deletedCount,
-    })
+    if (updatedCount > 0 || deletedCount > 0) invalidateAiRulesCache()
+    if (failedClients.length > 0 && updatedCount === 0) {
+      return NextResponse.json(
+        { error: `ルールを保存できませんでした（${failedClients.join('、')}）。もう一度お試しください` },
+        { status: 500 },
+      )
+    }
+    if (failedClients.length > 0) {
+      warnings.push(`次の取引先のルールは保存できませんでした: ${failedClients.join('、')}。もう一度「反映」してください`)
+    }
+    return NextResponse.json(
+      withWarnings(
+        {
+          success: true,
+          updatedCount,
+          deletedCount,
+        },
+        warnings,
+      ),
+    )
   }
 
   // ── 2. AI（Gemini 3.8 Flash）による矛盾診断＆決定版カルテ生成（diagnose） ──

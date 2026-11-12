@@ -38,7 +38,7 @@ describe('loadRouteOverrides', () => {
 
   it('行が無いときは空・error なし', async () => {
     const r = await loadRouteOverrides(clientWith({ data: null }))
-    expect(r).toEqual({ overrides: {}, error: null })
+    expect(r).toEqual({ overrides: {}, containers: {}, error: null })
   })
 
   it.each([
@@ -50,7 +50,7 @@ describe('loadRouteOverrides', () => {
   ])('%s は例外を出さず空・error なし（console.error には300文字以内で残す）', async (_label, value) => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const r = await loadRouteOverrides(clientWith({ data: { value } }))
-    expect(r).toEqual({ overrides: {}, error: null })
+    expect(r).toEqual({ overrides: {}, containers: {}, error: null })
     expect(spy).toHaveBeenCalledTimes(1)
   })
 

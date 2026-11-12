@@ -205,6 +205,7 @@ export function EditableOrderCard({
       if (!res.ok) throw new Error(json.error ?? `保存に失敗 (${res.status})`)
       const q = json.item ? Number(json.item.quantity) : n
       patch(row.id, { quantity: q, draft: String(q), version: json.item?.version ?? row.version + 1, saving: false })
+      showResponseWarnings(json)
       toast.success('数量を直しました')
       setSuggestedRule(
         `【${customerName}】${row.productName}の数量読取で「${oldQty}」と誤読された場合は総パック数「${q}P」として解釈する。`,

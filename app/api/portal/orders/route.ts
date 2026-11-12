@@ -6,6 +6,7 @@ import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
 import { portalOrderInputSchema } from '@/types/database'
 import { jstTodayStr } from '@/lib/dates'
 import { determineHasCard, resolveContainerType } from '@/lib/pipeline/schemas'
+import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
 
 export const runtime = 'nodejs'
 
@@ -56,6 +57,8 @@ export async function POST(req: Request) {
   const { data: custRow } = await admin.from('customers').select('name').eq('id', customerId).maybeSingle()
   const custName = custRow?.name ?? ''
   const destName = destRow?.full_name || destRow?.code || ''
+  // 規定コンテナは「列の値 → 退避ストアの値」（列が無い本番では退避ストアが唯一の保存先）
+  const destDefaultContainer = await loadDestDefaultContainer(admin, destRow?.id, destRow?.default_container_type)
 
   // 商品マスタおよび取引ルールから単価・税率・規格・荷姿を確定（税率は注文時に冗長保持・tax.md）
   const productIds = parsed.data.items.map((i) => i.product_id)
@@ -116,7 +119,7 @@ export async function POST(req: Request) {
         spec: rule?.spec ?? rule?.label_spec ?? null,
         container_type: resolveContainerType({
           ruleContainer: rule?.container_type ?? null,
-          destDefaultContainer: destRow?.default_container_type ?? null,
+          destDefaultContainer,
           clientName: custName,
           destination: destName,
           rawText: parsed.data.note ?? '',

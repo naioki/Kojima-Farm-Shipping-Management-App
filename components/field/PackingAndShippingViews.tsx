@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/cn'
 import { isSampleOrderText, isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
+import { computeProgressBoxes, type ProgressLine } from '@/lib/field/progress-boxes'
 import { showResponseWarnings } from '@/lib/client/show-warnings'
 
 export interface ShipmentItemData extends ShipmentRowProps {
@@ -191,10 +192,10 @@ export function PackingAndShippingViews({
 
   const sortedPackItems = [...items].sort((a, b) => comparePackItems(a, b, sortMode))
 
-  // 上部進捗コックピット（目標箱数・完成箱数・残り箱数）は取引先別の個別入数にかかわらず一律「総パック数 ÷ 20」で算出
+  // 上部進捗コックピット（目標・完成・残り・翌日分）は lib/field/progress-boxes.ts で数える
+  // （青梗菜は品目全体で一律20入、それ以外は各行の実入数。engineering.md §3）。
   // コンテナ別・規格別の内訳は各行の実入数（NSK=24入、オレンジファーム=25入、やなぎさわ=10入、標準=20入等）で算出
-  let totalPacks = 0
-  let completedPacks = 0
+  const progressLines: ProgressLine[] = []
   const liveContainerMap = new Map<string, number>()
   const liveSpecMap = new Map<string, { packs: number; boxes: number }>()
 
@@ -203,15 +204,11 @@ export function PackingAndShippingViews({
     const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
     const isSmallSample = isSample && it.orderedQty < perCase
     const boxCount = isSmallSample ? 0 : Math.ceil(it.orderedQty / perCase)
-    totalPacks += it.orderedQty
-    if (it.initialStatus === 'packed' || it.initialStatus === 'shipped') {
-      completedPacks += it.orderedQty
-    } else {
-      const partialPacks = Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
-      if (partialPacks > 0) {
-        completedPacks += partialPacks
-      }
-    }
+    const donePacks =
+      it.initialStatus === 'packed' || it.initialStatus === 'shipped'
+        ? it.orderedQty
+        : Math.max(0, Math.min(it.orderedQty, it.initialShippedQty ?? 0))
+    progressLines.push({ productName, qty: it.orderedQty, donePacks, packsPerCase: perCase, isSmallSample })
 
     if (!isSmallSample && boxCount > 0) {
       const cType =
@@ -229,13 +226,23 @@ export function PackingAndShippingViews({
   }
 
   // 完成箱数は「満杯になった箱」だけ数える（切り捨て）。カードの途中経過「1箱+5P完了」と同じ規則。
-  // 残り箱数 = 目標 − 完成 =「まだ満杯になっていない箱」の数（青梗菜のニコイチ20入で一律）
-  const totalBoxes = totalPacks > 0 ? Math.ceil(totalPacks / 20) : 0
-  const completedBoxes = completedCaseCount(completedPacks, totalPacks, 20)
-  const remainingBoxesTotal = Math.max(0, totalBoxes - completedBoxes)
+  // 残り箱数 = 目標 − 完成 =「まだ満杯になっていない箱」の数
+  const progress = computeProgressBoxes(progressLines)
+  const totalPacks = progress.totalPacks
+  const completedPacks = progress.completedPacks
+  const totalBoxes = progress.totalBoxes
+  const completedBoxes = progress.completedBoxes
+  const remainingBoxesTotal = progress.remainingBoxes
 
-  const nextDayTotalPacks = nextItems.reduce((acc, it) => acc + it.orderedQty, 0)
-  const nextDayTotalBoxes = nextDayTotalPacks > 0 ? Math.ceil(nextDayTotalPacks / 20) : 0
+  const nextDayProgress = computeProgressBoxes(
+    nextItems.map((it) => {
+      const perCase = packsPerCaseOf(it)
+      const isSample = isSampleOrderText(it.destinationName, it.initialLineNote, it.initialFieldNote, it.initialSpec)
+      return { productName, qty: it.orderedQty, packsPerCase: perCase, isSmallSample: isSample && it.orderedQty < perCase }
+    }),
+  )
+  const nextDayTotalPacks = nextDayProgress.totalPacks
+  const nextDayTotalBoxes = nextDayProgress.totalBoxes
 
   const liveContainerBreakdown: ContainerBreakdownItem[] =
     items.length > 0
