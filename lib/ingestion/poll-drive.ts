@@ -176,7 +176,9 @@ async function driveAuth() {
       return new google.auth.GoogleAuth({ credentials: JSON.parse(saJson), scopes })
     } catch (jsonErr) {
       // 不正な JSON は ADC にフォールバック（設定ミスに気づけるようログに残す。値そのものは秘密なので出さない）
-      console.error('[poll-drive] GOOGLE_SERVICE_ACCOUNT_JSON が JSON として読めません。ADC で続行します:', String(jsonErr))
+      // JSON.parse のエラー文には入力の前後の文字（鍵の断片）が含まれうるため、エラーの種類（name）だけを出す
+      const kind = jsonErr instanceof Error ? jsonErr.name : typeof jsonErr
+      console.error(`[poll-drive] GOOGLE_SERVICE_ACCOUNT_JSON が JSON として読めません（${kind}）。ADC で続行します`)
     }
   }
   return new google.auth.GoogleAuth({ scopes })

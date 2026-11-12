@@ -11,7 +11,8 @@ import { RulesHistory, type RuleHistoryEntry } from '@/components/admin/RulesHis
 import { CustomerColorPicker } from '@/components/admin/CustomerColorPicker'
 import { DestinationManager, type Destination } from '@/components/admin/DestinationManager'
 import { getSetting } from '@/lib/settings'
-import type { RouteOverride } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides } from '@/lib/field/destination-routes-store'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { canEditRules, parseMasterEmails } from '@/lib/rules/permission'
 import { formatRuleChanges } from '@/lib/rules/format'
 import type { FractionPolicy } from '@/types/database'
@@ -76,18 +77,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     })(),
     getSetting('RULES_EDIT_LOCK'),
     getSetting('RULES_MASTER_EMAILS'),
-    // 出発時刻・便名の退避データ（app_settings `v5_destination_routes`。本番では納入先の列が未適用のため唯一の保存先）。
-    // lib の getRouteOverrides は読めないとき空を返し失敗が見えないため、ここで直接読んで失敗を残す。
-    (async (): Promise<{ data: Record<string, RouteOverride>; error: string | null }> => {
-      const r = await supabase.from('app_settings').select('value').eq('key', 'v5_destination_routes').maybeSingle()
-      if (r.error) return { data: {}, error: r.error.message }
-      if (!r.data?.value) return { data: {}, error: null }
-      try {
-        return { data: JSON.parse(r.data.value) as Record<string, RouteOverride>, error: null }
-      } catch (e) {
-        return { data: {}, error: `app_settings v5_destination_routes が壊れています: ${String(e)}` }
-      }
-    })(),
+    // 出発時刻・便名の退避データ（本番では納入先の列が未適用のため唯一の保存先）。読めないときは error が入る。
+    loadRouteOverrides(supabase),
     // 「使われる入数」の表示用（取引先別の設定が未入力のときの 荷姿 → 品目の標準）
     supabase.from('pack_configs').select('id, product_id, customer_id, base_per_selling, is_active').eq('is_active', true),
   ])
@@ -168,9 +159,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     }
   })
 
-  // 出発時刻・便名が読めないまま納入先の編集欄を出すと「未設定」に見え、そのまま保存すると上書きしうる。
-  // 取引先の他の情報は使えるよう、納入先の欄だけエラーにする。
-  const routeOverrides = routeRes.data
+  // 出発時刻・便名が読めないときは、納入先の一覧・追加・削除は出したまま、出発時刻・便名の欄だけ止める
+  // （「未設定」に見えたまま保存して上書きしないよう、DestinationManager は2項目を送らない）。
+  const routeOverrides = routeRes.overrides
   const routeLoadError = routeRes.error
   const mergedDestinations = ((destinations ?? []) as Array<Record<string, unknown>>).map((d) => {
     const destId = d.id as string
@@ -240,19 +231,18 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
             「<strong className="text-ink">{customer.name} ＞ 納入先</strong>」。略称は普段の表示、正式名は伝票、表記ゆれはOCRの名寄せに使います。
           </p>
         </div>
-        {routeLoadError ? (
-          <ErrorState
-            title="納入先を表示できません"
-            message="納入先の出発時刻・便名を読み込めませんでした。誤って空のまま保存しないよう、編集欄を止めています。再読み込みしてください。"
+        {routeLoadError && (
+          <LoadWarning
+            message="出発時刻・便名を読み込めませんでした。誤って消さないよう、出発時刻・便名の欄は変更できない状態にしています（略称・正式名などの保存、追加・削除はできます）。出発時刻・便名を変えるときは、ページを再読み込みしてください。"
             detail={routeLoadError}
           />
-        ) : (
-          <DestinationManager
-            customerId={customer.id}
-            customerName={customer.name}
-            initial={mergedDestinations as unknown as Destination[]}
-          />
         )}
+        <DestinationManager
+          customerId={customer.id}
+          customerName={customer.name}
+          initial={mergedDestinations as unknown as Destination[]}
+          routesUnavailable={Boolean(routeLoadError)}
+        />
       </Card>
 
       <Card className="space-y-3">

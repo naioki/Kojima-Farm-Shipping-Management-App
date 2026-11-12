@@ -23,6 +23,11 @@ interface Props {
   customerId: string
   customerName: string
   initial: Destination[]
+  /**
+   * 出発時刻・便名（退避データ）を読めなかったとき true。表示中の値が実際と違いうるため、
+   * 出発時刻・便名の欄を無効化し、保存・登録でもこの2項目を送らない（API は送られない項目を上書きしない）。
+   */
+  routesUnavailable?: boolean
 }
 
 const fieldCls =
@@ -31,7 +36,7 @@ const fieldCls =
 /**
  * 納入先の登録・編集（#48 出荷時間・便名に加え、納入先ごとの規定コンテナ種別 default_container_type も管理）。
  */
-export function DestinationManager({ customerId, customerName, initial }: Props) {
+export function DestinationManager({ customerId, customerName, initial, routesUnavailable = false }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<Destination[]>(initial)
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -56,8 +61,9 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           code: code.trim() || null,
           full_name: fullName.trim(),
           aliases: aliases.split(/[,、\s]+/).map((s) => s.trim()).filter(Boolean),
-          departure_time: departureTime.trim() || null,
-          shipping_route_name: shippingRouteName.trim() || null,
+          // 読めていないときは送らない（undefined は JSON から落ちる）
+          departure_time: routesUnavailable ? undefined : departureTime.trim() || null,
+          shipping_route_name: routesUnavailable ? undefined : shippingRouteName.trim() || null,
           default_container_type: defaultContainerType.trim() || null,
         }),
       })
@@ -90,8 +96,9 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
           full_name: row.full_name.trim(),
           aliases: row.aliases,
           is_active: row.is_active,
-          departure_time: row.departure_time?.trim() || null,
-          shipping_route_name: row.shipping_route_name?.trim() || null,
+          // 読めていないときは送らない（空のまま保存して既存の出発時刻・便名を消さない）
+          departure_time: routesUnavailable ? undefined : row.departure_time?.trim() || null,
+          shipping_route_name: routesUnavailable ? undefined : row.shipping_route_name?.trim() || null,
           default_container_type: row.default_container_type?.trim() || null,
         }),
       })
@@ -181,7 +188,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                     type="time"
                     value={r.departure_time ?? ''}
                     onChange={(e) => patchRow(r.id, 'departure_time', e.target.value)}
-                    className={fieldCls}
+                    className={cn(fieldCls, 'disabled:opacity-60')}
+                    disabled={routesUnavailable}
                   />
                 </label>
                 <label className="block sm:col-span-1">
@@ -189,7 +197,8 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
                   <input
                     value={r.shipping_route_name ?? ''}
                     onChange={(e) => patchRow(r.id, 'shipping_route_name', e.target.value)}
-                    className={fieldCls}
+                    className={cn(fieldCls, 'disabled:opacity-60')}
+                    disabled={routesUnavailable}
                     placeholder="例: 16時便"
                   />
                 </label>
@@ -242,13 +251,15 @@ export function DestinationManager({ customerId, customerName, initial }: Props)
               type="time"
               value={departureTime}
               onChange={(e) => setDepartureTime(e.target.value)}
-              className={fieldCls}
+              className={cn(fieldCls, 'disabled:opacity-60')}
+              disabled={routesUnavailable}
               title="出荷時間"
             />
             <input
               value={shippingRouteName}
               onChange={(e) => setShippingRouteName(e.target.value)}
-              className={fieldCls}
+              className={cn(fieldCls, 'disabled:opacity-60')}
+              disabled={routesUnavailable}
               placeholder="便名（例: 岩槻便）"
             />
           </div>

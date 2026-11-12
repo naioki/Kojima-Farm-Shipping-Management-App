@@ -82,6 +82,46 @@ export function summarizeReceivables<T extends ReceivableInvoice>(
   return s
 }
 
+export interface ReceivableSummaryWithUndetermined extends ReceivableSummary {
+  /** 支払期日を判定できなかった入金待ち（請求書に due_date が無く、取引先の支払条件も読めなかった） */
+  undeterminedCount: number
+  undeterminedAmount: number
+}
+
+/**
+ * 取引先の支払条件が読めなかったとき（termsUnavailable=true）に、既定の支払条件で期日超過を
+ * 判定・集計しないための集計。due_date を持つ請求書はそれで判定し、持たない請求書は「判定できない」に数え、
+ * 期日超過の合計には含めない（入金待ちの件数・金額には含める）。termsUnavailable=false なら summarizeReceivables と同じ。
+ */
+export function summarizeReceivablesWithUndetermined<T extends ReceivableInvoice>(
+  invoices: T[],
+  todayJst: string,
+  termsOf: TermsOf<T> | undefined,
+  termsUnavailable: boolean,
+): ReceivableSummaryWithUndetermined {
+  if (!termsUnavailable) {
+    return { ...summarizeReceivables(invoices, todayJst, termsOf), undeterminedCount: 0, undeterminedAmount: 0 }
+  }
+  const s: ReceivableSummaryWithUndetermined = {
+    unpaidCount: 0, unpaidAmount: 0, overdueCount: 0, overdueAmount: 0, undeterminedCount: 0, undeterminedAmount: 0,
+  }
+  for (const inv of invoices) {
+    const st = receivableState(inv, todayJst, termsOf?.(inv))
+    if (!st) continue
+    const amt = Number(inv.total_amount) || 0
+    s.unpaidCount++
+    s.unpaidAmount += amt
+    if (!inv.due_date) {
+      s.undeterminedCount++
+      s.undeterminedAmount += amt
+    } else if (st === 'overdue') {
+      s.overdueCount++
+      s.overdueAmount += amt
+    }
+  }
+  return s
+}
+
 /**
  * 請求書ステータスの許される遷移。確定後は下書きに戻さない（発行済みの帳票の内容を変えない: tax.md）。
  * 無効は戻せない。入金済だけは押し間違いの取消として送付済へ戻せる。

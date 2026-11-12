@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 import { noteSideEffectFailure, runSideEffect, withWarnings } from '@/lib/api/side-effects'
+import { truncateForLog } from '@/lib/log/truncate'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
           map = parsedMap
         } else {
           // 壊れた値は読み直せないので作り直す（元の値をログに残す）
-          console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します。壊れていた値:', settingRow.value)
+          console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します。壊れていた値:', truncateForLog(settingRow.value))
         }
       }
 
@@ -127,7 +128,7 @@ export async function POST(req: NextRequest) {
     let map = parsePackSortMap(settingRow.value)
     let changed = false
     if (!map) {
-      console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します。壊れていた値:', settingRow.value)
+      console.error('[order-items/reorder] v5_pack_sort_order が壊れているため作り直します。壊れていた値:', truncateForLog(settingRow.value))
       map = {}
       changed = true
     }

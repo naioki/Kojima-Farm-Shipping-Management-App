@@ -63,10 +63,18 @@ export async function POST(req: Request) {
       const destFullName = destinationName?.trim() || '標準納入先'
       const norm = normalizeOrgName(destFullName)
 
-      const { data: siblings } = await admin
+      const { data: siblings, error: siblingsErr } = await admin
         .from('delivery_destinations')
         .select('id, full_name')
         .eq('customer_id', customerId)
+      if (siblingsErr) {
+        // 既存の納入先が読めないまま作成に進むと、同じ納入先を二重に登録してしまう
+        console.error('[departure-time] 既存の納入先（delivery_destinations）の読み込みに失敗:', siblingsErr.message)
+        return NextResponse.json(
+          { error: '納入先の一覧を読み込めなかったため、出発時刻・便名を保存していません。時間をおいてもう一度保存してください' },
+          { status: 500 },
+        )
+      }
 
       const existing = (siblings ?? []).find((d) => normalizeOrgName(d.full_name) === norm)
       if (existing) {

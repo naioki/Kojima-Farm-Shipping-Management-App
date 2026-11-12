@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { EmptyState, ErrorState } from '@/components/ui/States'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { MatrixGrid, type MatrixDestinationItem } from '@/components/field/MatrixGrid'
@@ -266,13 +267,10 @@ export default async function MatrixPage({
       )}
 
       {perCaseLoadError && (
-        <div role="alert" className="rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink print:hidden">
-          <p>⚠️ 入数（1箱あたりの数）を読み込めませんでした。箱数の表示・合計箱数が正しくない可能性があります。数量の入力・保存はそのまま使えます。</p>
-          <details className="mt-1 font-normal text-ink-faint">
-            <summary className="cursor-pointer select-none text-ink-soft hover:text-ink">詳細を表示</summary>
-            <p className="mt-1 whitespace-pre-wrap break-words font-mono">{perCaseLoadError}</p>
-          </details>
-        </div>
+        <LoadWarning
+          message="入数（1箱あたりの数）を読み込めませんでした。箱数の表示・合計箱数が正しくない可能性があります。数量の入力・保存はそのまま使えます。"
+          detail={perCaseLoadError}
+        />
       )}
 
       {!customers?.length ? (

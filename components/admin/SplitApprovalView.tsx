@@ -480,6 +480,7 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
       } else {
         toast.success(json.revisionSummary || 'AIで修正指示を反映しました')
       }
+      showResponseWarnings(json)
       setAiInstruction('')
       router.refresh()
     } catch (e) {

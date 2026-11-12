@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, ErrorState } from '@/components/ui/States'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { AddCustomerForm } from '@/components/admin/AddCustomerForm'
 import { ColorDot } from '@/components/ui/ColorDot'
 import { requireAdmin } from '@/lib/auth/require-admin'
@@ -24,7 +25,7 @@ export default async function CustomersPage() {
     .order('name')
   if (error) return <ErrorState message="取引先を読み込めませんでした。時間をおいて再度お試しください。" detail={error.message} />
 
-  // 納入先の件数（取引先ごと）。取得できなくても一覧は出す
+  // 納入先の件数（取引先ごと）。取得できなくても一覧は出すが、件数欄は「未登録」と出さず「読み込めませんでした」にする
   const destCount = new Map<string, number>()
   const { data: dests, error: destsErr } = await admin.from('delivery_destinations').select('customer_id').eq('is_active', true)
   if (destsErr) console.error('[admin/customers] 納入先件数の取得に失敗:', destsErr.message)
@@ -38,6 +39,13 @@ export default async function CustomersPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">取引先・納入先</h1>
+
+      {destsErr && (
+        <LoadWarning
+          message="納入先の件数を読み込めませんでした。取引先の一覧と各取引先の設定はそのまま使えます。納入先の有無は各取引先を開いて確認するか、時間をおいて再読み込みしてください。"
+          detail={`delivery_destinations: ${destsErr.message}`}
+        />
+      )}
 
       <Card className="space-y-3">
         <h2 className="font-display text-base font-bold text-ink">取引先を追加</h2>
@@ -61,7 +69,11 @@ export default async function CustomersPage() {
                       <p className="font-medium text-ink">{c.name}</p>
                       {c.name_kana && <p className="text-xs text-ink-faint">{c.name_kana}</p>}
                       <p className="text-xs text-ink-soft">
-                        {destCount.get(c.id) ? `納入先 ${destCount.get(c.id)}件` : '納入先 未登録'}
+                        {destsErr
+                          ? '納入先 件数を読み込めませんでした'
+                          : destCount.get(c.id)
+                            ? `納入先 ${destCount.get(c.id)}件`
+                            : '納入先 未登録'}
                       </p>
                     </div>
                   </div>

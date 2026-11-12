@@ -2,8 +2,9 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getAuthedUser } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { RouteOverride } from '@/lib/field/destination-routes-store'
+import { loadRouteOverrides } from '@/lib/field/destination-routes-store'
 import { ErrorState } from '@/components/ui/States'
+import { LoadWarning } from '@/components/ui/LoadWarning'
 import { formatQty } from '@/lib/calculations/format-qty'
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { DateNav } from '@/components/field/DateNav'
@@ -35,36 +36,6 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 const PATH = '/field/shipments'
-
-/**
- * 出発時刻・便名の退避データ（app_settings `v5_destination_routes`。本番では納入先の列が未適用のため唯一の保存先）。
- * lib の getRouteOverrides は読めないとき空を返し、画面から失敗が見えないため、ここで直接読んで失敗を返す。
- */
-async function readRouteOverrides(
-  admin: ReturnType<typeof createAdminClient>,
-): Promise<{ data: Record<string, RouteOverride>; error: string | null }> {
-  const r = await admin.from('app_settings').select('value').eq('key', 'v5_destination_routes').maybeSingle()
-  if (r.error) return { data: {}, error: r.error.message }
-  if (!r.data?.value) return { data: {}, error: null }
-  try {
-    return { data: JSON.parse(r.data.value) as Record<string, RouteOverride>, error: null }
-  } catch (e) {
-    return { data: {}, error: `app_settings v5_destination_routes が壊れています: ${String(e)}` }
-  }
-}
-
-/** 一部のデータが読めなかったことを知らせる帯（未承認件数の通知バーと同じ見た目。技術的な詳細は折りたたみ） */
-function LoadWarning({ message, detail }: { message: string; detail: string }) {
-  return (
-    <div role="alert" className="rounded-xl border border-warning bg-warning-bg/90 px-3.5 py-2 text-xs font-bold text-ink print:hidden">
-      <p>⚠️ {message}</p>
-      <details className="mt-1 font-normal text-ink-faint">
-        <summary className="cursor-pointer select-none text-ink-soft hover:text-ink">詳細を表示</summary>
-        <p className="mt-1 whitespace-pre-wrap break-words font-mono">{detail}</p>
-      </details>
-    </div>
-  )
-}
 
 export default async function ShipmentsPage({
   searchParams,
@@ -291,7 +262,7 @@ export default async function ShipmentsPage({
       return (r2.data ?? []) as DestRow[]
     })(),
     admin.from('customer_product_rules').select('*'),
-    readRouteOverrides(admin),
+    loadRouteOverrides(admin),
     (async (): Promise<Record<string, number>> => {
       try {
         const r = await admin
@@ -319,7 +290,7 @@ export default async function ShipmentsPage({
   if (rulesRes.error)
     return <ErrorState message="取引先別の入数・荷姿の設定を読み込めませんでした。時間をおいて再度お試しください。" detail={rulesRes.error.message} />
   // 出発時刻・便名は各カードの締め時刻と並び順に効く。読めなくても作業は止めず、画面に警告を出す。
-  const routeOverrides = routeRes.data
+  const routeOverrides = routeRes.overrides
   const routeLoadError = routeRes.error
 
   const ruleRows = rulesRes.data

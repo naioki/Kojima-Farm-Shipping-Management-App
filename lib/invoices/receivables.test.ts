@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { defaultDueDate, dueDateOf, receivableState, summarizeReceivables, canTransitionInvoice } from './receivables'
+import {
+  defaultDueDate,
+  dueDateOf,
+  receivableState,
+  summarizeReceivables,
+  summarizeReceivablesWithUndetermined,
+  canTransitionInvoice,
+} from './receivables'
 
 describe('売掛金の判定', () => {
   it('支払期日の既定は請求月の翌月末（年またぎ・うるう年）', () => {
@@ -69,5 +76,29 @@ describe('売掛金の判定', () => {
     // 確定後は下書きに戻せない
     expect(canTransitionInvoice('finalized', 'draft')).toBe(false)
     expect(canTransitionInvoice('sent', 'finalized')).toBe(false)
+  })
+})
+
+describe('取引先の支払条件が読めないときの売掛金集計', () => {
+  const invs = [
+    // due_date あり・期日超過 → 判定できる
+    { status: 'sent', billing_month: '2026-08', due_date: '2026-09-30', total_amount: 1000 },
+    // due_date あり・期日前
+    { status: 'finalized', billing_month: '2026-10', due_date: '2026-12-31', total_amount: 2000 },
+    // due_date なし → 既定条件なら期日超過だが、条件が読めないので「判定できない」
+    { status: 'sent', billing_month: '2026-07', due_date: null, total_amount: 4000 },
+    // 入金済は対象外
+    { status: 'paid', billing_month: '2026-07', due_date: null, total_amount: 8000 },
+  ]
+  it('due_date を持たない請求書は期日超過に含めず、判定できない件数に数える', () => {
+    const s = summarizeReceivablesWithUndetermined(invs, '2026-11-12', () => undefined, true)
+    expect(s).toEqual({
+      unpaidCount: 3, unpaidAmount: 7000, overdueCount: 1, overdueAmount: 1000, undeterminedCount: 1, undeterminedAmount: 4000,
+    })
+  })
+  it('読めているときは summarizeReceivables と同じ（判定できない 0）', () => {
+    const s = summarizeReceivablesWithUndetermined(invs, '2026-11-12', () => undefined, false)
+    expect(s).toEqual({ ...summarizeReceivables(invs, '2026-11-12', () => undefined), undeterminedCount: 0, undeterminedAmount: 0 })
+    expect(s.overdueCount).toBe(2)
   })
 })

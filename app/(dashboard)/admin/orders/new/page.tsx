@@ -6,6 +6,7 @@ import { ShipmentAddForm, type CustomerProductRuleSummary } from '@/components/f
 import { jstTodayStr, shiftDateStr } from '@/lib/dates'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { loadReceiptAttachment } from '@/lib/ocr/receipt-original'
+import { isMissingColumnError } from '@/lib/supabase/missing-column'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,11 +37,21 @@ export default async function OrderNewPage({ searchParams }: { searchParams: { r
     admin
       .from('customer_product_rules')
       .select('customer_id, product_id, packs_per_case, container_type, spec, label_spec, has_card'),
-    admin
-      .from('delivery_destinations')
-      .select('id, customer_id, code, full_name, default_container_type')
-      .eq('is_active', true)
-      .order('sort_order'),
+    (async () => {
+      const r1 = await admin
+        .from('delivery_destinations')
+        .select('id, customer_id, code, full_name, default_container_type')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (!r1.error || !isMissingColumnError(r1.error)) return r1
+      // default_container_type が無い環境（0026 未適用の本番）: 基本列で取り直す（規定コンテナは未設定扱い）
+      const r2 = await admin
+        .from('delivery_destinations')
+        .select('id, customer_id, code, full_name')
+        .eq('is_active', true)
+        .order('sort_order')
+      return { ...r2, data: (r2.data ?? null) as Array<{ id: string; customer_id: string | null; code: string | null; full_name: string; default_container_type?: string | null }> | null }
+    })(),
   ])
 
   // マスタ取得の失敗を「空」に化けさせない（CLAUDE.md）

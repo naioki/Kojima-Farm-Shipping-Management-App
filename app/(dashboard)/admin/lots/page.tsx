@@ -34,8 +34,15 @@ export default async function LotsPage() {
   const { data: itemRows, error: itemRowsErr } = lotIds.length
     ? await supabase.from('order_items').select('lot_id').in('lot_id', lotIds)
     : { data: [] as { lot_id: string | null }[], error: null }
-  // 紐付け明細数は補助表示。失敗しても本体（ロット一覧）は殺さず0件扱いにする。
-  if (itemRowsErr) console.error('[lots] 紐付け明細数の集計に失敗:', itemRowsErr.message)
+  // 紐付け明細数はリコール範囲の判断に使う数字。読めないまま 0 と出すと「出荷先なし」と誤認するため、エラーにする。
+  if (itemRowsErr) {
+    return (
+      <ErrorState
+        message="ロットに紐付いた出荷明細の数を読み込めませんでした。リコール範囲を判断する数字のため、表示を止めています。時間をおいて再読み込みしてください。"
+        detail={`order_items: ${itemRowsErr.message}`}
+      />
+    )
+  }
   const countByLot = new Map<string, number>()
   for (const r of itemRows ?? []) {
     if (r.lot_id) countByLot.set(r.lot_id, (countByLot.get(r.lot_id) ?? 0) + 1)
