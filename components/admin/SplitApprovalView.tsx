@@ -427,6 +427,8 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           destination_name: selectedOrder.destinationName,
           delivery_date: selectedOrder.deliveryDate,
           items: currentRows.map((r) => ({
+            // 明細を特定する鍵（AI はそのまま返す。サーバーはこの鍵で DB の明細に対応付ける）
+            line_key: r.id,
             raw_name: r.productName,
             product_name: r.productName,
             quantity: r.draftQty,

@@ -10,6 +10,7 @@ import {
 import { isGenericOrInvalidContainer } from '@/lib/pipeline/schemas'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 import { writeDroppingMissingColumns } from '@/lib/supabase/missing-column'
+import { matchRevisedLines, RevisionMismatchError } from '@/lib/orders/revise-match'
 import { runSideEffect, withWarnings } from '@/lib/api/side-effects'
 
 export const runtime = 'nodejs'
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
     }
     existingItems = (data ?? []) as typeof existingItems
     // 楽観ロック（CLAUDE.md: WHERE id=$ AND version=$expected、0件なら409）。
-    // 明細は id 順の位置で対応付けるので、画面が知らない明細がある／画面の明細が消えている場合も 409。
+    // 明細は鍵（id）で対応付けるが、画面が知らない明細がある／画面の明細が消えている場合も 409。
     if (clientVersions) {
       const dbIds = new Set(existingItems.map((i) => i.id))
       const clientIds = Object.keys(clientVersions)
@@ -99,6 +100,21 @@ export async function POST(req: NextRequest) {
       userInstruction: instruction,
       clientNameHint: body.clientName ?? currentOrders[0]?.customer_name ?? null,
     })
+
+    // 明細は鍵（line_key = order_items.id）で対応付ける。並べ替え・増減・品目の取り違えがあれば
+    // 何も書かずに止める（ai_rules の自己更新も含めて、ここより前には書き込みをしない）
+    let matched: Array<{ db: (typeof existingItems)[number]; ai: ParsedOrder['items'][number] }> = []
+    if (body.orderId) {
+      try {
+        matched = matchRevisedLines(existingItems, result.orders[0]?.items ?? [])
+      } catch (e) {
+        if (e instanceof RevisionMismatchError) {
+          console.warn('[orders/revise] AI の明細を対応付けられず保存しません:', e.detail)
+          return NextResponse.json({ error: e.message, savedCount: 0, deliveryDateSaved: false }, { status: 422 })
+        }
+        throw e
+      }
+    }
 
     let ruleSaved = false
 
@@ -141,9 +157,7 @@ export async function POST(req: NextRequest) {
     if (body.orderId && result.orders[0]) {
       const revOrder = result.orders[0]
       let savedCount = 0
-      for (let i = 0; i < Math.min(existingItems.length, revOrder.items.length); i++) {
-        const dbItem = existingItems[i]!
-        const newItem = revOrder.items[i]!
+      for (const { db: dbItem, ai: newItem } of matched) {
         const newQty = Number(newItem.quantity)
         if (Number.isFinite(newQty) && newQty > 0) {
           const expectedVersion = expectedVersionOf(dbItem)
@@ -253,6 +267,10 @@ export async function POST(req: NextRequest) {
       ),
     )
   } catch (e) {
+    if (e instanceof RevisionMismatchError) {
+      // AI の応答に鍵が無い等（スキーマ不一致）。何も書いていない
+      return NextResponse.json({ error: e.message, savedCount: 0, deliveryDateSaved: false }, { status: 422 })
+    }
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: `AI対話修正に失敗しました: ${msg}` }, { status: 502 })
   }

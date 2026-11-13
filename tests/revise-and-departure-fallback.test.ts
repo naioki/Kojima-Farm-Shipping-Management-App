@@ -28,7 +28,7 @@ vi.mock('@/lib/gemini/analyze', () => ({
       {
         customer_name: 'テスト',
         delivery_date: null,
-        items: [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG', has_card: false }],
+        items: [{ line_key: ITEM, product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG', has_card: false }],
       },
     ],
     aiLearnedRuleCandidate: null,

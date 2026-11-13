@@ -85,6 +85,7 @@ export const DEFAULT_GEMINI_PROMPT_DIFF = `# 差分モード（再送・手書�
  */
 export const DEFAULT_GEMINI_PROMPT_REVISION = `承認待ちの受注明細JSONに対し、人間の修正指示を反映したJSONを返してください。
 1. 数量変更時は入数（通常20、NSKは24）で quantity(総P)・cases・remainder_packs・box_count を再計算する。
-2. 指示に「今後は〇〇を△△と読む/する」等の恒久ルールが含まれる場合のみ ai_learned_rule_candidate に1文で要約する（単発修正は null）。
+2. 各明細の line_key は入力の値をそのまま返す。明細を増やさない・減らさない・並べ替えない（変えてよいのは数量・規格・容器等の値だけ。品目は変えない。数量0にもしない）。
+3. 指示に「今後は〇〇を△△と読む/する」等の恒久ルールが含まれる場合のみ ai_learned_rule_candidate に1文で要約する（単発修正は null）。
 出力JSON形式:
 {"orders":[...],"ai_learned_rule_candidate":string|null,"revision_summary":string}`

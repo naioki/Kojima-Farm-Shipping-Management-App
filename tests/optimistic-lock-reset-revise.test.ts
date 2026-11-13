@@ -19,7 +19,7 @@ let fake = createFakeSupabase(resolve)
 
 vi.mock('@/lib/supabase/server', () => ({ getAuthedUser: async () => ({ id: 'u-1' }) }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }))
-let aiItems: Array<Record<string, unknown>> = [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }]
+let aiItems: Array<Record<string, unknown>> = [{ line_key: ITEM, product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }]
 const geminiCalls = { n: 0 }
 vi.mock('@/lib/gemini/analyze', () => ({
   invalidateAiRulesCache: () => {},
@@ -44,7 +44,7 @@ beforeEach(() => {
   fake = createFakeSupabase(resolve)
   scenario = () => undefined
   geminiCalls.n = 0
-  aiItems = [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }]
+  aiItems = [{ line_key: ITEM, product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }]
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
@@ -236,7 +236,7 @@ describe('POST /api/orders/revise の照合順序・明細集合・納品日の�
   })
 
   it('2件目の明細で 409 なら納品日も収穫日も書かず、1件保存済みと伝える', async () => {
-    aiItems = [{ product_name: '青梗菜', quantity: 40 }, { product_name: '小松菜', quantity: 40 }]
+    aiItems = [{ line_key: ITEM, product_name: '青梗菜', quantity: 40 }, { line_key: ITEM2, product_name: '小松菜', quantity: 40 }]
     scenario = (c) => {
       if (c.table === 'order_items' && c.op === 'select') return two
       if (c.table === 'order_items' && c.op === 'update') {
