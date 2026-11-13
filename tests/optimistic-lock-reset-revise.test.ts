@@ -19,14 +19,17 @@ let fake = createFakeSupabase(resolve)
 
 vi.mock('@/lib/supabase/server', () => ({ getAuthedUser: async () => ({ id: 'u-1' }) }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }))
+let aiItems: Array<Record<string, unknown>> = [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }]
+const geminiCalls = { n: 0 }
 vi.mock('@/lib/gemini/analyze', () => ({
   invalidateAiRulesCache: () => {},
   reviseOrdersWithInstruction: async () => ({
+    ...(geminiCalls.n++, {}),
     orders: [
       {
         customer_name: 'テスト',
         delivery_date: '2026-11-20',
-        items: [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }],
+        items: aiItems,
       },
     ],
     aiLearnedRuleCandidate: null,
@@ -40,6 +43,8 @@ let warnSpy: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
   fake = createFakeSupabase(resolve)
   scenario = () => undefined
+  geminiCalls.n = 0
+  aiItems = [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG' }]
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
@@ -148,7 +153,8 @@ describe('POST /api/orders/revise の楽観ロック', () => {
     const { POST } = await import('@/app/api/orders/revise/route')
     const res = await POST(post(body(3)) as never)
     expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({ error: 'conflict', currentVersion: 3, savedCount: 0 })
+    expect(await res.json()).toEqual({ error: 'conflict', currentVersion: 3, savedCount: 0, deliveryDateSaved: false })
+    expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'update')).toBe(false)
     expect(fake.calls.some((c) => c.table === 'harvest_tasks')).toBe(false)
   })
 
@@ -170,5 +176,79 @@ describe('POST /api/orders/revise の楽観ロック', () => {
     expect(last).not.toHaveProperty('has_seal')
     expect(last).not.toHaveProperty('bag_type')
     expect(last).toMatchObject({ quantity: 40, version: 4 })
+  })
+})
+
+describe('POST /api/orders/revise の照合順序・明細集合・納品日の保存順', () => {
+  const ITEM2 = '77777777-7777-4777-8777-777777777777'
+  const two = { data: [
+    { id: ITEM, product_name: '青梗菜', quantity: 20, version: 3 },
+    { id: ITEM2, product_name: '小松菜', quantity: 10, version: 1 },
+  ] }
+  const body2 = (versions: Record<string, number>) => ({
+    orderId: ORDER,
+    instruction: '両方40に',
+    currentOrders: [{ customer_name: 'テスト', items: [{ product_name: '青梗菜', quantity: 20 }] }],
+    itemVersions: versions,
+  })
+
+  it('成功応答に保存後の各明細の version と数量を返し、納品日は明細のあとに保存する', async () => {
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'select') return { data: [{ id: ITEM, product_name: '青梗菜', quantity: 20, version: 3 }] }
+      return casUpdate(3)(c)
+    }
+    const { POST } = await import('@/app/api/orders/revise/route')
+    const res = await POST(post({ ...body2({ [ITEM]: 3 }) }) as never)
+    expect(res.status).toBe(200)
+    const j = (await res.json()) as { items: unknown }
+    expect(j.items).toEqual([{ id: ITEM, quantity: 40, version: 4 }])
+    const idxItem = fake.calls.findIndex((c) => c.table === 'order_items' && c.op === 'update')
+    const idxDate = fake.calls.findIndex((c) => c.table === 'orders' && c.op === 'update')
+    expect(idxDate).toBeGreaterThan(idxItem)
+    const ht = fake.calls.find((c) => c.table === 'harvest_tasks' && (c.payload as Record<string, unknown>).task_date)
+    expect((ht!.payload as Record<string, unknown>).task_date).toBe('2026-11-19')
+  })
+
+  it('version 不一致なら Gemini を呼ばずに 409', async () => {
+    scenario = (c) => (c.table === 'order_items' && c.op === 'select' ? two : undefined)
+    const { POST } = await import('@/app/api/orders/revise/route')
+    const res = await POST(post(body2({ [ITEM]: 2, [ITEM2]: 1 })) as never)
+    expect(res.status).toBe(409)
+    expect(geminiCalls.n).toBe(0)
+  })
+
+  it('画面が知らない明細が DB にあれば 409（Gemini も書き込みもなし）', async () => {
+    scenario = (c) => (c.table === 'order_items' && c.op === 'select' ? two : undefined)
+    const { POST } = await import('@/app/api/orders/revise/route')
+    const res = await POST(post(body2({ [ITEM]: 3 })) as never)
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { reason: string }).reason).toBe('items_changed')
+    expect(geminiCalls.n).toBe(0)
+    expect(fake.calls.some((c) => c.op === 'update')).toBe(false)
+  })
+
+  it('画面の明細が DB から消えていれば 409', async () => {
+    scenario = (c) => (c.table === 'order_items' && c.op === 'select' ? two : undefined)
+    const { POST } = await import('@/app/api/orders/revise/route')
+    const res = await POST(post(body2({ [ITEM]: 3, [ITEM2]: 1, 'gone-id': 1 })) as never)
+    expect(res.status).toBe(409)
+    expect(fake.calls.some((c) => c.op === 'update')).toBe(false)
+  })
+
+  it('2件目の明細で 409 なら納品日も収穫日も書かず、1件保存済みと伝える', async () => {
+    aiItems = [{ product_name: '青梗菜', quantity: 40 }, { product_name: '小松菜', quantity: 40 }]
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'select') return two
+      if (c.table === 'order_items' && c.op === 'update') {
+        return filterValue(c, 'eq', 'id') === ITEM ? { data: { id: ITEM } } : { data: null }
+      }
+      return undefined
+    }
+    const { POST } = await import('@/app/api/orders/revise/route')
+    const res = await POST(post(body2({ [ITEM]: 3, [ITEM2]: 1 })) as never)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ savedCount: 1, deliveryDateSaved: false })
+    expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'update')).toBe(false)
+    expect(fake.calls.some((c) => c.table === 'harvest_tasks' && (c.payload as Record<string, unknown>)?.task_date)).toBe(false)
   })
 })
