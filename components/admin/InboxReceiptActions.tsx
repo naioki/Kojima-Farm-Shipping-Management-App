@@ -10,9 +10,11 @@ interface Props {
   receiptId: string
   status: string
   hasR2Key: boolean
+  /** 取り込みが「要確認」の印を付けた受信票。片付けは「却下」ではなく「確認済みにする」（注文は消えない） */
+  reviewHold?: boolean
 }
 
-export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
+export function InboxReceiptActions({ receiptId, status, hasR2Key, reviewHold = false }: Props) {
   const router = useRouter()
   const [dismissing, setDismissing] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -24,13 +26,13 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
       const res = await fetch(`/api/receipts/${receiptId}/dismiss`, { method: 'POST' })
       if (!res.ok) {
         const j = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(j.error ?? `却下失敗 (${res.status})`)
+        throw new Error(j.error ?? `${reviewHold ? '確認済みにできませんでした' : '却下失敗'} (${res.status})`)
       }
-      toast.success('受信を却下しました')
+      toast.success(reviewHold ? '確認済みにしました' : '受信を却下しました')
       setConfirmOpen(false)
       router.refresh()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '却下に失敗しました')
+      toast.error(e instanceof Error ? e.message : reviewHold ? '確認済みにできませんでした' : '却下に失敗しました')
     } finally {
       setDismissing(false)
     }
@@ -87,15 +89,19 @@ export function InboxReceiptActions({ receiptId, status, hasR2Key }: Props) {
         className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-bg-card px-3 text-xs font-medium text-ink-soft hover:bg-bg-soft disabled:opacity-50"
       >
         <X className="h-3.5 w-3.5" aria-hidden />
-        {dismissing ? '処理中…' : '却下'}
+        {dismissing ? '処理中…' : reviewHold ? '確認済みにする' : '却下'}
       </button>
       <ConfirmModal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         onConfirm={handleDismiss}
-        title="この受信を却下しますか？"
-        message="リストから消えます（原本の画像・PDFは保持されます。取り消せません）。"
-        confirmLabel="却下する"
+        title={reviewHold ? 'この受信を確認済みにしますか？' : 'この受信を却下しますか？'}
+        message={
+          reviewHold
+            ? '受信リストから消えます。注文は消えません（原本の画像・PDFも保持されます）。'
+            : 'リストから消えます（原本の画像・PDFは保持されます。取り消せません）。'
+        }
+        confirmLabel={reviewHold ? '確認済みにする' : '却下する'}
         isLoading={dismissing}
       />
     </>

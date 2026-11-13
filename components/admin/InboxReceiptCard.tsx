@@ -158,7 +158,7 @@ export function InboxReceiptCard({ receipt: r, email = null }: { receipt: InboxR
           )}
           {r.reviewHold && (
             <p className="text-xs text-ink-soft">
-              取り込みは終わっていますが、確認が必要な点があります。上の内容と「受注を見る」で注文を確かめ、済んだら「却下」で一覧から消してください（注文は消えません）。
+              取り込みは終わっていますが、確認が必要な点があります。上の内容と「受注を見る」で注文を確かめ、済んだら「確認済みにする」で一覧から消してください（注文は消えません）。
             </p>
           )}
 
@@ -373,7 +373,7 @@ export function InboxReceiptCard({ receipt: r, email = null }: { receipt: InboxR
           )}
         </div>
 
-        <InboxReceiptActions receiptId={r.id} status={r.status} hasR2Key={r.hasR2Key} />
+        <InboxReceiptActions receiptId={r.id} status={r.status} hasR2Key={r.hasR2Key} reviewHold={r.reviewHold} />
       </div>
     </Card>
   )

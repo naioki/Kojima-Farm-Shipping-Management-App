@@ -109,6 +109,16 @@ export interface AppSetting {
   updated_by: UUID | null
 }
 
+/**
+ * RPC `patch_destination_route`（migrations/0033）の引数。app_settings `v5_destination_routes` の
+ * 指定キーのエントリに p_set の項目を上書きし、p_unset の項目を消す（1文の部分更新）。戻り値なし。
+ */
+export interface PatchDestinationRouteArgs {
+  p_keys: string[]
+  p_set: Record<string, string | null>
+  p_unset: string[]
+}
+
 export interface Order {
   id: UUID
   customer_id: UUID

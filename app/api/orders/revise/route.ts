@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
     currentOrders?: ParsedOrder[]
     instruction?: string
     clientName?: string
+    /** 画面が見ていた明細の version（order_item id → version）。楽観ロックの期待値に使う */
+    itemVersions?: Record<string, number>
   }
   try {
     body = await req.json()
@@ -94,6 +96,36 @@ export async function POST(req: NextRequest) {
     const warnings: string[] = []
     if (body.orderId && result.orders[0]) {
       const revOrder = result.orders[0]
+      const { data: existingItems, error: itemsErr } = await admin
+        .from('order_items')
+        .select('id, product_name, quantity, version')
+        .eq('order_id', body.orderId)
+        .order('id', { ascending: true })
+      if (itemsErr) {
+        console.error('[orders/revise] order_items の読み込みに失敗:', itemsErr.message)
+        return NextResponse.json(
+          {
+            error: '注文の明細を読み込めず、修正を保存できませんでした。もう一度お試しください',
+          },
+          { status: 500 },
+        )
+      }
+
+      // 楽観ロック（CLAUDE.md: WHERE id=$ AND version=$expected、0件なら409）。
+      // 期待 version は画面が送った値（無ければ直前に読んだ値）。書き込み前に全明細を照合し、
+      // 1件でも食い違えば納品日も含めて何も書かずに 409 を返す。
+      const clientVersions = body.itemVersions && typeof body.itemVersions === 'object' ? body.itemVersions : {}
+      const expectedVersionOf = (item: { id: string; version?: number | null }): number => {
+        const v = clientVersions[item.id]
+        return typeof v === 'number' && Number.isFinite(v) ? v : Number(item.version) || 1
+      }
+      for (const item of existingItems ?? []) {
+        const dbVersion = Number(item.version) || 1
+        if (expectedVersionOf(item) !== dbVersion) {
+          return NextResponse.json({ error: 'conflict', currentVersion: dbVersion }, { status: 409 })
+        }
+      }
+
       if (revOrder.delivery_date) {
         const { error: dateErr } = await admin
           .from('orders')
@@ -107,23 +139,6 @@ export async function POST(req: NextRequest) {
           )
         }
       }
-      const { data: existingItems, error: itemsErr } = await admin
-        .from('order_items')
-        .select('id, product_name, quantity, version')
-        .eq('order_id', body.orderId)
-        .order('id', { ascending: true })
-      if (itemsErr) {
-        console.error('[orders/revise] order_items の読み込みに失敗:', itemsErr.message)
-        return NextResponse.json(
-          {
-            error: revOrder.delivery_date
-              ? '注文の明細を読み込めず、数量の修正を保存できませんでした（納品日は保存済みです）。画面を再読み込みして確認してください'
-              : '注文の明細を読み込めず、数量の修正を保存できませんでした。もう一度お試しください',
-          },
-          { status: 500 },
-        )
-      }
-
       if (existingItems && existingItems.length > 0) {
         let savedCount = 0
         for (let i = 0; i < Math.min(existingItems.length, revOrder.items.length); i++) {
@@ -131,9 +146,10 @@ export async function POST(req: NextRequest) {
           const newItem = revOrder.items[i]!
           const newQty = Number(newItem.quantity)
           if (Number.isFinite(newQty) && newQty > 0) {
+            const expectedVersion = expectedVersionOf(dbItem)
             const payload: Record<string, unknown> = {
               quantity: newQty,
-              version: (Number((dbItem as { version?: number }).version) || 1) + 1,
+              version: expectedVersion + 1,
               quantity_raw: newItem.quantity_case_text ?? newItem.quantity,
               spec: newItem.spec ?? undefined,
               container_type:
@@ -148,7 +164,13 @@ export async function POST(req: NextRequest) {
             }
             for (const k of Object.keys(payload)) if (payload[k] === undefined) delete payload[k]
             const upd = await writeDroppingMissingColumns(payload, (p) =>
-              admin.from('order_items').update(p).eq('id', dbItem.id),
+              admin
+                .from('order_items')
+                .update(p)
+                .eq('id', dbItem.id)
+                .eq('version', expectedVersion)
+                .select('id')
+                .maybeSingle(),
             )
             if (upd.droppedColumns.length > 0) {
               console.warn('[orders/revise] 未適用の列を除いて保存しました:', upd.droppedColumns.join(', '))
@@ -163,6 +185,14 @@ export async function POST(req: NextRequest) {
                       : '修正内容を注文に保存できませんでした。もう一度お試しください',
                 },
                 { status: 500 },
+              )
+            }
+            if (!upd.data) {
+              // 照合後〜書き込みの間に別の更新が入った（0件）。それまでの明細・納品日は保存済みのまま残し、
+              // 他の編集APIと同じ形の 409 で再読込を促す（savedCount で一部保存済みかを画面に伝える）。
+              return NextResponse.json(
+                { error: 'conflict', currentVersion: expectedVersion, savedCount },
+                { status: 409 },
               )
             }
             savedCount++

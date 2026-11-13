@@ -11,6 +11,7 @@
  *   - 式が `<client>.rpc(` の呼び出し
  *   - 式が `Promise.all( / Promise.allSettled(` で、中に書き込みを含む（まとめて待って結果を捨てる）
  *   - 式が `writeDroppingMissingColumns(` の呼び出し（戻り値の error を捨てる）
+ * さらに `void <書き込み>`（送信されない）と、await も代入もしない裸の書き込み文も検知する。
  * 通す形（文の先頭でない await）: `const { error } = await ...` / `return await ...` /
  * `x = await ...` / 関数の引数・配列の要素 / `runSideEffect(..., () => admin.from(...).update(...))`
  * （await しない書き込みはこの関数に渡される）/ `.then(...)` で結果を受けているもの。
@@ -105,6 +106,45 @@ function isStatementStart(src: string, index: number): boolean {
   return true
 }
 
+/** `void <式>` の式（文の先頭にある void） */
+function findVoidWrites(src: string, hits: DiscardedWrite[]): void {
+  const re = /\bvoid\s+/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    if (!isStatementStart(src, m.index)) continue
+    const expr = expressionAfter(src, m.index + m[0].length).trim()
+    if (/\.then\(/.test(expr)) continue
+    if (!isDiscardedWrite(expr)) continue
+    hits.push({
+      line: src.slice(0, m.index).split('\n').length,
+      text: `void ${expr}`.replace(/\s+/g, ' ').slice(0, 120),
+    })
+  }
+}
+
+/**
+ * await も代入もしない裸の書き込み文（`admin.from('x').update(...)` だけの文）。
+ * supabase-js のクエリは then されるまで送信されないので、この形は書き込みが実行されない。
+ * 文の先頭が supabase のチェーン / rpc / writeDroppingMissingColumns で始まるものを探す。
+ */
+function findBareWrites(src: string, hits: DiscardedWrite[]): void {
+  const re = /(?:^|[;{}\n])[ \t]*([A-Za-z_$][\w$]*)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    const word = m[1] ?? ''
+    const start = m.index + m[0].length - word.length
+    if (/^(?:const|let|var|return|await|void|yield|throw|if|for|while|else|do|new|typeof|case|export|import|function|async|type|interface)$/.test(word)) continue
+    if (!isStatementStart(src, start)) continue
+    const expr = expressionAfter(src, start).trim()
+    if (/\.then\(/.test(expr)) continue
+    if (!isDiscardedWrite(expr)) continue
+    hits.push({
+      line: src.slice(0, start).split('\n').length,
+      text: expr.replace(/\s+/g, ' ').slice(0, 120),
+    })
+  }
+}
+
 export interface DiscardedWrite {
   line: number
   text: string
@@ -125,5 +165,7 @@ export function findDiscardedWrites(src: string): DiscardedWrite[] {
       text: `await ${expr}`.replace(/\s+/g, ' ').slice(0, 120),
     })
   }
-  return hits
+  findVoidWrites(src, hits)
+  findBareWrites(src, hits)
+  return hits.sort((a, b) => a.line - b.line)
 }

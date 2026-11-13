@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * 読み取り失敗（FAX・メールの受信状況と、読み取り失敗・取引先不明の処理）。
  * 承認は「承認待ち」（/admin/approvals）に一本化した（オーナーの実運用に合わせ、入口の重複を解消）。
  * ここでは注文を承認しない。承認待ちがあれば件数と導線だけを出す。
- *  - 受信（order_receipts）は InboxReceiptCard（読み取り・再解析・却下）
+ *  - 受信（order_receipts）は InboxReceiptCard（読み取り・再解析・却下。要確認の印付きは「確認済みにする」）
  *  - 「今日承認済み」は実績の確認用（読み取り専用）
  */
 export default async function InboxPage({

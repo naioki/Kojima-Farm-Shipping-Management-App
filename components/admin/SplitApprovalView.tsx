@@ -449,6 +449,8 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           currentOrders: currentOrderPayload,
           instruction: aiInstruction.trim(),
           clientName: !selectedOrder.customerId ? '共通' : selectedOrder.customerName,
+          // 楽観ロック: 画面が見ていた明細の version（他の人の更新を上書きしない）
+          itemVersions: Object.fromEntries(currentRows.map((r) => [r.id, r.version])),
         }),
       })
       const json = (await res.json().catch(() => ({}))) as {
@@ -458,6 +460,16 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
         ruleSaved?: boolean
         revisionSummary?: string
         error?: string
+        savedCount?: number
+      }
+      if (res.status === 409) {
+        toast.error(
+          json.savedCount
+            ? '他の人が編集しました（一部の明細は保存済みです）。画面を更新します'
+            : '他の人が編集しました。画面を更新します',
+        )
+        router.refresh()
+        return
       }
       if (!res.ok) throw new Error(json.error ?? `AI修正失敗 (${res.status})`)
 

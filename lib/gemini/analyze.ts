@@ -198,6 +198,17 @@ function normalizeClientKey(s: string): string {
 }
 
 /**
+ * 旧ルール文を決定版へ置き換えた内容を ai_rules に書き戻す（解析は待たせない）。
+ * supabase-js のクエリは then / await されるまで送信されないため、runSideEffect の中で実行して
+ * 必ず送信し、失敗（{ error } の返却・例外）は console.error に残す。解析本体は止めない。
+ */
+function persistUpgradedRule(admin: ReturnType<typeof createAdminClient>, id: string, ruleText: string): void {
+  void runSideEffect(null, `[gemini/analyze] ai_rules(${id}) の自動アップグレードの書き戻しに失敗`, undefined, () =>
+    admin.from('ai_rules').update({ rule_text: ruleText, updated_at: new Date().toISOString() }).eq('id', id),
+  )
+}
+
+/**
  * Supabase の `ai_rules` テーブルから現在有効（is_active = true）なルールを取得する（60秒キャッシュ付き）。
  * 発信元FAX番号や宛先帳名から `clientName` が特定できている場合は、「共通」＋該当取引先のルールのみに絞り込み、
  * 不要な他社ルールのトークン消費を削減しつつAIの注意力を該当取引先に集中させる。
@@ -229,10 +240,7 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
           r.source === 'seed_v2.3' &&
           (r.rule_text.includes('買値¥◯◯') || !r.rule_text.includes('社名印字が無くても'))
         ) {
-          void admin
-            .from('ai_rules')
-            .update({ rule_text: NSK_UPGRADED_RULE_TEXT, updated_at: new Date().toISOString() })
-            .eq('id', r.id)
+          persistUpgradedRule(admin, r.id, NSK_UPGRADED_RULE_TEXT)
           return { ...r, rule_text: NSK_UPGRADED_RULE_TEXT }
         }
         // 旧オレンジファームルール（数値は総点数・着日そのまま）が残っている場合のみ決定版へアップグレード
@@ -240,10 +248,7 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
           r.client_name.includes('オレンジファーム') &&
           r.rule_text.includes('数値は総点数')
         ) {
-          void admin
-            .from('ai_rules')
-            .update({ rule_text: ORANGE_FARM_UPGRADED_RULE_TEXT, updated_at: new Date().toISOString() })
-            .eq('id', r.id)
+          persistUpgradedRule(admin, r.id, ORANGE_FARM_UPGRADED_RULE_TEXT)
           return { ...r, rule_text: ORANGE_FARM_UPGRADED_RULE_TEXT }
         }
         return r
