@@ -45,7 +45,8 @@ export function matchRevisedLines<D extends DbLine, A extends AiLine>(dbLines: D
   // 通って返るので、DB 側も同じ正規化をかけてから比べる。ただし同じ注文の中に、正規化すると同じ名前になる
   // 明細が2つ以上ある（例: 青梗菜 と チンゲン菜200g）ときは、正規化後の比較では取り違えを見分けられないので、
   // AI が返した元の表記（raw_name、無ければ product_name）がその明細の DB の品目名と一致することまで求める。
-  const normKey = (s: string | null | undefined) => productNameKey(normalizeItemName(s ?? ''))
+  // normalizeItemName は空の入力を「チンゲン菜」にするので、空は空のまま（何とも一致させない）
+  const normKey = (s: string | null | undefined) => (s && s.trim() ? productNameKey(normalizeItemName(s)) : '')
   const normCount = new Map<string, number>()
   for (const d of dbLines) normCount.set(normKey(d.product_name), (normCount.get(normKey(d.product_name)) ?? 0) + 1)
   return dbLines.map((db) => {
@@ -56,7 +57,7 @@ export function matchRevisedLines<D extends DbLine, A extends AiLine>(dbLines: D
         ? db.product_id === ai.product_id
         : (normCount.get(dbNorm) ?? 0) > 1
           ? productNameKey(ai.raw_name ?? ai.product_name) === productNameKey(db.product_name)
-          : normKey(ai.raw_name ?? ai.product_name) === dbNorm || normKey(ai.product_name) === dbNorm
+          : dbNorm !== '' && (normKey(ai.raw_name ?? ai.product_name) === dbNorm || normKey(ai.product_name) === dbNorm)
     if (!sameProduct) throw new RevisionMismatchError(`品目の取り違え: ${db.product_name} → ${ai.product_name ?? ai.raw_name}`)
     return { db, ai }
   })

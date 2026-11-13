@@ -44,4 +44,8 @@ describe('AI 修正の明細の照合（解析の品目名の正規化を考慮�
       /削除ボタン/,
     )
   })
+  it('品目名が空なら一致させない（空を「チンゲン菜」とみなさない）', () => {
+    expect(() => matchRevisedLines([db('a', '青梗菜')], [{ line_key: 'a' }])).toThrow(RevisionMismatchError)
+    expect(() => matchRevisedLines([db('a', '')], [{ line_key: 'a', product_name: 'チンゲン菜' }])).toThrow(RevisionMismatchError)
+  })
 })
