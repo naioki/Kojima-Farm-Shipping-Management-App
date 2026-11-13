@@ -468,6 +468,17 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
               ? '他の人が明細を追加・削除しました。何も保存していません。最新の内容に更新します'
               : '他の人が編集しました。何も保存していません。最新の内容に更新します',
         )
+        // この注文の行の編集中（打ちかけの数量）を解く。解かないと次の同期の対象外のまま古い version が残り、
+        // 次の AI 修正も 409 を繰り返す
+        setRowsByOrder((prev) => ({
+          ...prev,
+          [selectedOrder.id]: (prev[selectedOrder.id] ?? []).map((r) => ({
+            ...r,
+            saving: false,
+            confirmDelete: false,
+            draftQty: String(r.quantity),
+          })),
+        }))
         router.refresh()
         return
       }
