@@ -44,7 +44,7 @@ Drive上は編集・閲覧・git専用にする。
   の `ADMIN_GROUPS`。全ページ `lib/auth/require-admin.tsx` の `requireAdmin()` でガードする
   （未認証は `/login`、admin以外は `ErrorState`）。新しい `/admin/*` ページを追加するときは
   必ず先頭で `const guard = await requireAdmin('...'); if (guard) return guard` を呼ぶこと。
-- **staff（現場）**: `app/field/**`。下部固定バー（`FieldBottomBar`）＋ハンバーガーメニューが主動線。
+- **staff（現場）**: `app/field/**`。上部の画面切替タブ（`FieldViewSwitch`: 収穫・パック／積込・配送／週の管理）＋ヘッダーのハンバーガーメニュー（`components/layouts/MobileNav.tsx`）が主動線。
   管理者機能の解放状態は `lib/field/features.ts`（設定 → 現場機能の解放）で制御。
 - **customer（取引先ポータル）**: `app/portal/**`。Magic Link認証。RLSで自分の
   `customer_id` に紐づく注文のみ見える。

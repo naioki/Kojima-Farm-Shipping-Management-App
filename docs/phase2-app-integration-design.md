@@ -76,7 +76,7 @@ v4のPythonバックエンドを「PDFマイクロサービス」として残す
 2. 詳細機能は admin サーフェスに置き、現場に見せるかどうかは
    **既存の `lib/field/features.ts`（設定→現場機能の解放）を拡張**して制御する。
    新しいフラグ機構は発明しない。
-3. ナビは既存の `FieldBottomBar`＋ハンバーガー、admin は `ADMIN_GROUPS` に従う。
+3. ナビは既存の `FieldViewSwitch`（上部タブ）＋ハンバーガー（`MobileNav`）、admin は `ADMIN_GROUPS` に従う。
 
 ### 4-2. 具体変更
 ```
