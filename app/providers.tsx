@@ -7,7 +7,7 @@ import { Toaster } from 'react-hot-toast'
 
 /**
  * 現場画面のトーストの上端位置。
- * - ヘッダー（components/layouts/MobileNav.tsx の sticky header、h-13 = 3.25rem）
+ * - ヘッダー（components/layouts/MobileNav.tsx の sticky header、h-[3.25rem]（以前の h-13 は Tailwind の既定に無く生成されていなかった））
  * - main の上余白（app/field/layout.tsx の py-2 = 0.5rem）
  * - タブ（components/field/FieldViewSwitch.tsx: ボタン min-h-11 = 2.75rem ＋ 外枠 p-1×2 = 0.5rem ＋ 枠線 ≒ 0.125rem）
  * の合計 ≒ 7.125rem に少し余白を足し、iPhone の切り欠き（safe-area）ぶんも下げる。

@@ -16,12 +16,12 @@ describe('承認画面の編集行', () => {
     expect(next[1]).toMatchObject({ quantity: 10, version: 1 })
   })
 
-  it('新しい props で編集中でない行は props の値に同期され、編集中の行は入力を残し version だけ最新になる', () => {
+  it('新しい props で編集中でない行は props の値に同期され、編集中の行は入力も version も読んだときのまま（他の人の変更を黙って上書きしない）', () => {
     const prev = buildRows([order([item('a', 20, 3), item('b', 10, 1)])])
     prev.o1![1] = { ...prev.o1![1]!, draftQty: '15' }
     const next = syncRowsWithProps(prev, [order([item('a', 30, 5), item('b', 12, 2), item('c', 5, 1)])]).o1!
     expect(next[0]).toMatchObject({ quantity: 30, draftQty: '30', version: 5 })
-    expect(next[1]).toMatchObject({ quantity: 10, draftQty: '15', version: 2 })
+    expect(next[1]).toMatchObject({ quantity: 10, draftQty: '15', version: 1 })
     expect(next[2]).toMatchObject({ id: 'c', version: 1 })
   })
 })

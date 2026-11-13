@@ -27,7 +27,9 @@ function isEditing(row: EditableRow): boolean {
 
 /**
  * router.refresh() 後に新しい props が来たとき、編集中でない行は props の値（version 含む）で作り直す。
- * 編集中の行は入力を残し、version だけ最新にする（次の保存が古い version で 409 にならないように）。
+ * 編集中の行は入力も version も画面で読んだときのまま残す。version だけ最新にすると、他の人の変更を
+ * 見ないまま保存して黙って上書きしてしまう（楽観ロックが効かなくなる）。その行の保存は 409 になり、
+ * 409 の処理で編集中を解いて再読込すると、次の同期で最新の値になる。
  */
 export function syncRowsWithProps(prev: RowsByOrder, orders: PendingOrder[]): RowsByOrder {
   const next: RowsByOrder = {}
@@ -35,7 +37,7 @@ export function syncRowsWithProps(prev: RowsByOrder, orders: PendingOrder[]): Ro
     const prevById = new Map((prev[o.id] ?? []).map((r) => [r.id, r]))
     next[o.id] = o.items.map((it) => {
       const old = prevById.get(it.id)
-      if (old && isEditing(old)) return { ...old, version: it.version }
+      if (old && isEditing(old)) return old
       return toRow(it)
     })
   }

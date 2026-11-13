@@ -102,7 +102,7 @@ export function MobileNav({
     <>
       <header
         className={cn(
-          'sticky top-0 z-30 flex h-13 items-center justify-between gap-2 border-b border-line bg-bg-soft px-3 sm:px-4 shadow-2xs print:hidden',
+          'sticky top-0 z-30 flex h-[3.25rem] items-center justify-between gap-2 border-b border-line bg-bg-soft px-3 sm:px-4 shadow-2xs print:hidden',
           !persistent && 'lg:hidden',
         )}
       >
