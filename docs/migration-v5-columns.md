@@ -180,6 +180,20 @@ psql ... -d v3test -f 00_supabase_shim.sql
 for f in migrations/0001*.sql ... migrations/0033*.sql; do psql ... -v ON_ERROR_STOP=1 -f $f; done   # 33本すべて成功
 ```
 
+`00_supabase_shim.sql`（ローカル検証専用）:
+
+```sql
+CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;
+CREATE SCHEMA auth; CREATE SCHEMA storage;
+CREATE TABLE auth.users (id uuid PRIMARY KEY, email text, raw_app_meta_data jsonb, raw_user_meta_data jsonb);
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('request.jwt.claim.role', true) $$;
+CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT COALESCE(NULLIF(current_setting('request.jwt.claims', true),''),'{}')::jsonb $$;
+CREATE TABLE storage.buckets (id text PRIMARY KEY, name text, public boolean);
+CREATE TABLE storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text, name text, owner uuid);
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+```
+
 本番と同じ状態を作る（`10_prod_like.sql`）:
 
 - 9列（＋本番の `customer_product_rules` に無い `has_seal` / `bag_type`）を DROP COLUMN。0035 前の該当列数 = 0 を確認
