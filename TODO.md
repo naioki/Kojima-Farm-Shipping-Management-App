@@ -27,6 +27,7 @@
 - [ ] `lib/gemini/analyze.ts:232,243` の `void admin.from('ai_rules').update(...)` は実行されていない可能性が高い（supabase-js は then されるまで送らない）
 - [ ] 追加フォームの一括登録で、受注経路の未選択で止まった行がどれか分かりにくい（全行が止まっても「0 件を登録しました」と出る）
 - [ ] 便名の「16時半便」「16時頃便」が「半便」「頃便」になる（`lib/field/shipment-sort.ts` の `cleanShippingRouteName`。以前から）
+- [ ] 承認済みの注文が追加FAXの「要確認」で承認待ちに戻ったとき、既存の収穫タスクを消さないので、再承認で `lib/orders/approve.ts` が収穫タスクを追加し二重になりうる（承認待ちの間も古い数量のタスクが見える。以前から）
 - [ ] `harvest_tasks` に「1明細1件」の一意制約が無い。重複があると数量の同期が毎回警告になる（本番データの修復と制約の追加が要る）
 - [ ] `app/api/order-items/[id]/reset` と `app/api/orders/revise` が楽観ロック（`version`）を WHERE に使っていない
 - [ ] 承認時の統合は同じ品目の数量を「上書き」する（追加FAXの再送を想定した仕様、`lib/orders/approve.test.ts:113`）。手入力・ポータルの別口の追加注文でも上書きになる点が意図どおりか確認

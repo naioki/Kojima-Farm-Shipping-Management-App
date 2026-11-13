@@ -33,7 +33,8 @@ vi.mock('@/lib/gemini/analyze', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/gemini/analyze')>()),
   analyzeOrders: (...args: unknown[]) => analyzeOrdersMock(...args),
 }))
-vi.mock('@/lib/settings', () => ({ getSetting: async () => null }))
+let settings: Record<string, string | null> = {}
+vi.mock('@/lib/settings', () => ({ getSetting: async (k: string) => settings[k] ?? null }))
 vi.mock('@/lib/notifications/multi-channel', () => ({ sendMultiChannelAlert: async () => ({}) }))
 
 let errorSpy: ReturnType<typeof vi.spyOn>
@@ -43,6 +44,7 @@ beforeEach(() => {
   fake = createFakeSupabase(resolve)
   currentUser = { id: 'u-1' }
   scenario = () => undefined
+  settings = {}
   analyzeOrdersMock.mockReset()
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -380,6 +382,8 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
     const p = lastReceiptUpdate()
     expect(p.status).toBe('pending_review')
     expect(p.raw_payload.ingest_review_hold).toBe(true)
+    // 欠けた明細のまま収穫タスクを作らない
+    expect(fake.calls.some((c) => c.table === 'harvest_tasks' && c.op === 'insert')).toBe(false)
   })
 
   it.each(['shipped', 'invoiced'])(
@@ -399,19 +403,55 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
     },
   )
 
-  it('元から承認済みの注文は、従来どおり取り込みの判定で状態を書く（要確認の判定なら承認待ちに戻る確認ゲート）', async () => {
+  const approvedOrderOk = (c: FakeCall): FakeResult | undefined => {
+    if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+    return base({ message: 'unused' }, 'approved')(c)
+  }
+
+  it('元から承認済みの注文に、取り込みの判定が要確認の再送が来たら、承認待ちに戻る（確認ゲート）', async () => {
     analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
-    scenario = (c) => {
-      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
-      return base({ message: 'unused' }, 'approved')(c)
-    }
+    settings = { AUTO_APPROVE_ENABLED: 'off' } // 自動承認オフ → 判定は必ず要確認
+    scenario = approvedOrderOk
     const { processReceipt } = await import('@/lib/ingestion/process-receipt')
     const result = await processReceipt(RECEIPT)
+    expect(result.status).toBe('pending_review')
+    const writes = statusWrites()
+    expect(writes).toHaveLength(1)
+    expect((writes[0]!.payload as { status: string }).status).toBe('pending_review')
+    expect(fake.calls.some((c) => c.table === 'harvest_tasks' && c.op === 'insert')).toBe(false)
+  })
+
+  it('元から承認済みの注文に、取り込みの判定が自動承認の再送が来たら、承認済みのまま（承認待ちを書かない）', async () => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    settings = { AUTO_APPROVE_ENABLED: 'on' }
+    scenario = approvedOrderOk
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    const result = await processReceipt(RECEIPT)
+    expect(result.status).toBe('approved')
     const writes = statusWrites()
     expect(writes.length).toBeGreaterThan(0)
-    // 書いた状態は取り込みの判定そのもの（自動承認なら approved、要確認なら pending_review）
-    expect((writes[0]!.payload as { status: string }).status).toBe(result.status)
+    expect(writes.every((w) => (w.payload as { status: string }).status === 'approved')).toBe(true)
     expect(lastReceiptUpdate().raw_payload.ingest_review_hold).toBeUndefined()
+  })
+
+  it.each([
+    ['shipped', '出荷済み'],
+    ['invoiced', '請求済み'],
+  ])('元から %s の注文に要確認の再送が来たら、状態は変えず、印の文言に日本語の状態名（%s）を出す', async (existingStatus, statusJa) => {
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    settings = { AUTO_APPROVE_ENABLED: 'off' }
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+      return base({ message: 'unused' }, existingStatus)(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    await processReceipt(RECEIPT)
+    expect(statusWrites()).toHaveLength(0)
+    const p = lastReceiptUpdate()
+    expect(p.raw_payload.ingest_review_hold).toBe(true)
+    const holdMsg = p.raw_payload.slip_data.alerts.map((a) => a.message).join('\n')
+    expect(holdMsg).toContain(`（${statusJa}）`)
+    expect(holdMsg).not.toMatch(/shipped|invoiced/)
   })
 
   it.each(['shipped', 'invoiced'])('元から %s の注文は、取り込みが成功しても状態を上書きしない', async (existingStatus) => {
