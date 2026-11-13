@@ -19,7 +19,9 @@ const resolve = (c: FakeCall): FakeResult | undefined => {
   if (c.table === 'users') return { data: { role: 'staff' } }
   return { data: null }
 }
-let fake = createFakeSupabase(resolve)
+// 本番には patch_destination_route（migrations/0033）が未適用。このファイルは従来の読み→マージ→書きの経路を固定する
+const rpcMissing = () => ({ error: { code: 'PGRST202', message: 'Could not find the function public.patch_destination_route' } })
+let fake = createFakeSupabase(resolve, rpcMissing)
 
 vi.mock('@/lib/supabase/server', () => ({ getAuthedUser: async () => ({ id: 'u-1' }) }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }))
@@ -27,7 +29,7 @@ vi.mock('@/lib/ai/learning-loop', () => ({ recordMistakeFeedback: async () => un
 
 let errorSpy: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
-  fake = createFakeSupabase(resolve)
+  fake = createFakeSupabase(resolve, rpcMissing)
   scenario = () => undefined
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 })

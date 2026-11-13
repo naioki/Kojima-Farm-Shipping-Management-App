@@ -282,6 +282,8 @@ export function ShipmentAddForm({
   /** AI読み取りの入力から受注経路を推定して初期値にする（違えば画面で選び直せる） */
   // 受注経路が未選択のまま登録しようとしたとき true（欄の下に案内を出す）
   const [intakeChannelMissing, setIntakeChannelMissing] = useState(false)
+  // 一括登録で、受注経路が未選択のため止まった明細の id（該当の行に印を付ける）
+  const [intakeBlockedIds, setIntakeBlockedIds] = useState<string[]>([])
   /**
    * 受注経路が決まっているか確かめる（CLAUDE.md: 手入力の注文は intake_channel を必ず埋める）。
    * 未選択なら登録を止め、入力画面に戻して欄の近くで選ぶよう促す。
@@ -1910,6 +1912,8 @@ export function ShipmentAddForm({
     const planMode = createBatchModePlanner()
     /** 受注経路が未選択のため登録しなかった明細（新しい注文を作りうる行だけ。既存の注文への変更・0取消は登録する） */
     let blockedForIntake = 0
+    const blockedIds: string[] = []
+    setIntakeBlockedIds([])
 
     try {
       for (const { cand, idx } of targets) {
@@ -2032,6 +2036,7 @@ export function ShipmentAddForm({
           !hasIntakeChannel()
         ) {
           blockedForIntake++
+          blockedIds.push(cand.id)
           continue
         }
 
@@ -2124,6 +2129,8 @@ export function ShipmentAddForm({
       if (blockedForIntake > 0) {
         // 新しい注文になる明細は、受注経路を選んでからもう一度「一括登録」を押してもらう（選択は残したまま）
         promptIntakeChannel()
+        setIntakeBlockedIds(blockedIds)
+        toast.error(`${blockedForIntake} 件は受注経路が未選択のため登録していません（印の付いた行です）`, { duration: 8000 })
       }
       // 登録はできたが付随更新（収穫数など）に失敗した明細の警告。同じ文言は1回だけ出す
       showResponseWarnings({ warnings: Array.from(batchWarnings) })
@@ -2149,7 +2156,10 @@ export function ShipmentAddForm({
         }
       } else {
         router.refresh()
-        toast.success(`${successCount} 件を登録しました（残り ${remaining} 件を確認してください）`)
+        // 全行が止まったとき（0 件）は成功トーストを出さない
+        if (successCount > 0) {
+          toast.success(`${successCount} 件を登録しました（残り ${remaining} 件を確認してください）`)
+        }
         const nextIdx = updatedList.findIndex((c) => c.selected && !c.registered)
         if (nextIdx !== -1) selectParsedCandidate(nextIdx, updatedList)
       }
@@ -2330,7 +2340,11 @@ export function ShipmentAddForm({
             </button>
           </div>
           {/* 右下の丸ボタンがカード右端の操作（展開・戻す等）を覆わないよう、ページ末尾に余白を足す */}
-          <div className="h-20 print:hidden" aria-hidden />
+          <div
+            className="print:hidden"
+            style={{ height: 'calc(7rem + env(safe-area-inset-bottom, 0px))' }}
+            aria-hidden
+          />
 
           <div
             className="fixed right-5 z-40 print:hidden"
@@ -2948,6 +2962,10 @@ export function ShipmentAddForm({
                               {cand.registered ? (
                                 <span className="whitespace-nowrap rounded bg-harvest-600 text-white px-2 py-0.5 text-xs font-black">
                                   ✓ 反映済
+                                </span>
+                              ) : intakeBlockedIds.includes(cand.id) && !resolveIntakeChannel(fixedIntakeChannel, intakeChannel) ? (
+                                <span className="whitespace-nowrap rounded bg-alert-bg border border-alert text-alert px-2 py-0.5 text-xs font-black">
+                                  ⚠ 受注経路を選んでください
                                 </span>
                               ) : isZero ? (
                                 hasExisting ? (

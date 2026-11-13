@@ -1,3 +1,4 @@
+import { RevisionMismatchError } from '@/lib/orders/revise-match'
 import 'server-only'
 import { GoogleGenerativeAI, type GenerateContentResult, type Part } from '@google/generative-ai'
 import { z } from 'zod'
@@ -143,6 +144,8 @@ export const parsedItemSchema = z.object({
   has_card: z.boolean().nullish(),
   note: z.string().nullish(),
   needs_review_reason: z.string().nullish(),
+  /** AI 修正（revise）で明細を特定する鍵（order_items.id）。FAX 解析では使わない */
+  line_key: z.string().nullish(),
 })
 export type ParsedItem = z.infer<typeof parsedItemSchema>
 
@@ -181,8 +184,13 @@ export const diffResultSchema = z.object({
 })
 export type DiffResult = z.infer<typeof diffResultSchema>
 
+/** AI 修正の応答では明細の鍵（line_key）を必須にする（並べ替え・増減で別の明細に書かないため） */
 export const revisionResultSchema = z.object({
-  orders: z.array(parsedOrderSchema),
+  orders: z.array(
+    parsedOrderSchema.extend({
+      items: z.array(parsedItemSchema.extend({ line_key: z.string().min(1) })),
+    }),
+  ),
   ai_learned_rule_candidate: z.string().nullish(),
   revision_summary: z.string().nullish(),
 })
@@ -195,6 +203,17 @@ function normalizeClientKey(s: string): string {
     .replace(/農事組合法人|株式会社|有限会社|合同会社|\(株\)|\(有\)/g, '')
     .replace(/[\s　（）()]/g, '')
     .toLowerCase()
+}
+
+/**
+ * 旧ルール文を決定版へ置き換えた内容を ai_rules に書き戻す（解析は待たせない）。
+ * supabase-js のクエリは then / await されるまで送信されないため、runSideEffect の中で実行して
+ * 必ず送信し、失敗（{ error } の返却・例外）は console.error に残す。解析本体は止めない。
+ */
+function persistUpgradedRule(admin: ReturnType<typeof createAdminClient>, id: string, ruleText: string): void {
+  void runSideEffect(null, `[gemini/analyze] ai_rules(${id}) の自動アップグレードの書き戻しに失敗`, undefined, () =>
+    admin.from('ai_rules').update({ rule_text: ruleText, updated_at: new Date().toISOString() }).eq('id', id),
+  )
 }
 
 /**
@@ -229,10 +248,7 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
           r.source === 'seed_v2.3' &&
           (r.rule_text.includes('買値¥◯◯') || !r.rule_text.includes('社名印字が無くても'))
         ) {
-          void admin
-            .from('ai_rules')
-            .update({ rule_text: NSK_UPGRADED_RULE_TEXT, updated_at: new Date().toISOString() })
-            .eq('id', r.id)
+          persistUpgradedRule(admin, r.id, NSK_UPGRADED_RULE_TEXT)
           return { ...r, rule_text: NSK_UPGRADED_RULE_TEXT }
         }
         // 旧オレンジファームルール（数値は総点数・着日そのまま）が残っている場合のみ決定版へアップグレード
@@ -240,10 +256,7 @@ export async function fetchActiveAiRules(clientName?: string | null): Promise<Ai
           r.client_name.includes('オレンジファーム') &&
           r.rule_text.includes('数値は総点数')
         ) {
-          void admin
-            .from('ai_rules')
-            .update({ rule_text: ORANGE_FARM_UPGRADED_RULE_TEXT, updated_at: new Date().toISOString() })
-            .eq('id', r.id)
+          persistUpgradedRule(admin, r.id, ORANGE_FARM_UPGRADED_RULE_TEXT)
           return { ...r, rule_text: ORANGE_FARM_UPGRADED_RULE_TEXT }
         }
         return r
@@ -1174,7 +1187,9 @@ export async function reviseOrdersWithInstruction(params: {
 
   const { result: res, usedModel } = await generateWithFallback([{ text: prompt }], systemInstruction, undefined, 'high')
   const json = extractJson(res.response.text())
-  const parsed = revisionResultSchema.parse(json)
+  const parsedRes = revisionResultSchema.safeParse(json)
+  if (!parsedRes.success) throw new RevisionMismatchError()
+  const parsed = parsedRes.data
   await logUsage('revision', 'web', true, res.response.usageMetadata?.totalTokenCount)
 
   const normalizedOrders: ParsedOrder[] = parsed.orders.map((order) => {

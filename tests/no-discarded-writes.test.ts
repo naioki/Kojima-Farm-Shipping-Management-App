@@ -78,6 +78,12 @@ describe('supabase の書き込みの結果を捨てない', () => {
       "await Promise.allSettled([\n  admin.from('a').delete().eq('id', 1),\n  admin.from('b').delete().eq('id', 1),\n])",
       "await writeDroppingMissingColumns(p, (q) => admin.from('x').update(q).eq('id', 1))",
       "// コメント\nawait admin.from('x').delete().eq('id', 1)",
+      "void admin.from('ai_rules').update({ a: 1 }).eq('id', r.id)",
+      "if (x) {\n  void admin\n    .from('ai_rules')\n    .update({ a: 1 })\n    .eq('id', 1)\n  return 1\n}",
+      "admin.from('x').update({ a: 1 }).eq('id', 1)",
+      "const a = 1\nadmin\n  .from('x')\n  .insert({ a })\nfoo()",
+      "createAdminClient().from('x').delete().eq('id', 1)",
+      "void admin.rpc('do_something', { a: 1 })",
     ]
     for (const s of bad) expect(hit(s), s).toBe(true)
   })
@@ -99,6 +105,11 @@ describe('supabase の書き込みの結果を捨てない', () => {
       "const r = await writeDroppingMissingColumns(p, (q) => admin.from('x').update(q))",
       "const x = cond ? await admin.from('a').delete() : null",
       "foo(await admin.from('a').insert(r))",
+      "void runSideEffect(null, '[x]', undefined, () => admin.from('x').update(p).eq('id', 1))",
+      "admin.from('x').update(p).eq('id', 1).then(({ error }) => { if (error) console.error(error) })",
+      "void admin.from('x').update(p).eq('id', 1).then(({ error }) => { if (error) console.error(error) })",
+      "const q = admin.from('x').update(p).eq('id', 1)",
+      "const { data } = await admin.from('x').select('id')\nadmin.from('x').select('id')",
     ]
     for (const s of ok) expect(hit(s), s).toBe(false)
   })

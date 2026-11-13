@@ -34,6 +34,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
   if (!current) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
+  // 楽観ロック（CLAUDE.md: WHERE id=$ AND version=$expected、0件なら409）。
+  // 画面が見ていた version と一致しなければ、戻す前に 409 で再読込を促す。
+  const expectedVersion = parsed.data.version
+  if (current.version !== expectedVersion) {
+    return NextResponse.json({ error: 'conflict', currentVersion: current.version }, { status: 409 })
+  }
+
   const target = resetOneStep(current.field_status)
   if (target === current.field_status) {
     // not_started からは戻せない
@@ -49,8 +56,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const { data: updated, error: updErr } = await supabase
     .from('order_items')
-    .update({ ...updates, version: current.version + 1 })
+    .update({ ...updates, version: expectedVersion + 1 })
     .eq('id', params.id)
+    .eq('version', expectedVersion)
     .select()
     .maybeSingle()
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })

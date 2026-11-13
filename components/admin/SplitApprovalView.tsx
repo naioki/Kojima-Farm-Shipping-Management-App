@@ -30,18 +30,14 @@ import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/States'
 import { ApproveOrderButton } from '@/components/admin/ApproveOrderButton'
 import { ChannelBadge } from '@/components/admin/InboxBadges'
-import type { PendingOrder, PendingOrderItem } from '@/lib/orders/pending-types'
+import type { PendingOrder } from '@/lib/orders/pending-types'
+import { applyRevisedItems, buildRows, syncRowsWithProps, type EditableRow, type RowsByOrder } from '@/lib/orders/approval-rows'
 import { pendingReasons, quantityAnomalyFor, itemsMissingPack } from '@/lib/orders/pending-types'
 import { formatJpDateShort } from '@/lib/dates'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
 import { determineContainerType } from '@/lib/pipeline/schemas'
 import { showResponseWarnings } from '@/lib/client/show-warnings'
 
-interface EditableRow extends PendingOrderItem {
-  draftQty: string
-  saving: boolean
-  confirmDelete: boolean
-}
 
 interface SplitApprovalViewProps {
   orders: PendingOrder[]
@@ -196,18 +192,12 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
   }, [selectedOrder, visibleOrders, handleQuickApprove])
 
   // 注文ごとの編集行ステート
-  const [rowsByOrder, setRowsByOrder] = useState<Record<string, EditableRow[]>>(() => {
-    const map: Record<string, EditableRow[]> = {}
-    for (const o of orders) {
-      map[o.id] = o.items.map((it) => ({
-        ...it,
-        draftQty: String(it.quantity),
-        saving: false,
-        confirmDelete: false,
-      }))
-    }
-    return map
-  })
+  const [rowsByOrder, setRowsByOrder] = useState<RowsByOrder>(() => buildRows(orders))
+  // router.refresh() で新しい props が来たら、編集中でない行を最新の値（version 含む）に同期する。
+  // これで 409 のあとや AI 修正のあとも、ページを手で再読込しなくても次の操作が通る。
+  useEffect(() => {
+    setRowsByOrder((prev) => syncRowsWithProps(prev, orders))
+  }, [orders])
 
   // 左ペイン原本ビューアのズーム・回転・再送比較ステート
   const [zoom, setZoom] = useState<number>(100)
@@ -326,7 +316,9 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
         error?: string
       }
       if (res.status === 409) {
-        toast.error('他の人が編集しました。画面を更新します')
+        toast.error('他の人が編集しました。最新の内容に更新します')
+        // 編集中扱いを解いておくと、refresh 後の props で行（version 含む）が最新に同期される
+        patchRow(order.id, row.id, { saving: false, draftQty: String(row.quantity) })
         router.refresh()
         return
       }
@@ -364,7 +356,9 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
       })
       const json = (await res.json().catch(() => ({}))) as { item?: { version: number }; error?: string }
       if (res.status === 409) {
-        toast.error('他の人が編集しました。画面を更新します')
+        toast.error('他の人が編集しました。最新の内容に更新します')
+        // 編集中扱いを解いておくと、refresh 後の props で行（version 含む）が最新に同期される
+        patchRow(order.id, row.id, { saving: false, draftQty: String(row.quantity) })
         router.refresh()
         return
       }
@@ -433,6 +427,8 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           destination_name: selectedOrder.destinationName,
           delivery_date: selectedOrder.deliveryDate,
           items: currentRows.map((r) => ({
+            // 明細を特定する鍵（AI はそのまま返す。サーバーはこの鍵で DB の明細に対応付ける）
+            line_key: r.id,
             raw_name: r.productName,
             product_name: r.productName,
             quantity: r.draftQty,
@@ -449,30 +445,51 @@ export function SplitApprovalView({ orders }: SplitApprovalViewProps) {
           currentOrders: currentOrderPayload,
           instruction: aiInstruction.trim(),
           clientName: !selectedOrder.customerId ? '共通' : selectedOrder.customerName,
+          // 楽観ロック: 画面が見ていた明細の version（他の人の更新を上書きしない）
+          itemVersions: Object.fromEntries(currentRows.map((r) => [r.id, r.version])),
         }),
       })
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean
-        orders?: Array<{ items: Array<{ quantity: string }> }>
+        items?: Array<{ id: string; quantity: number; version: number }>
         aiLearnedRuleCandidate?: string | null
         ruleSaved?: boolean
         revisionSummary?: string
         error?: string
+        savedCount?: number
+        reason?: string
+        deliveryDateSaved?: boolean
+      }
+      if (res.status === 409) {
+        toast.error(
+          json.savedCount
+            ? `他の人が編集しました。明細は ${json.savedCount} 件だけ保存済みで、納品日は変えていません。最新の内容に更新します`
+            : json.reason === 'items_changed'
+              ? '他の人が明細を追加・削除しました。何も保存していません。最新の内容に更新します'
+              : '他の人が編集しました。何も保存していません。最新の内容に更新します',
+        )
+        // この注文の行の編集中（打ちかけの数量）を解く。解かないと次の同期の対象外のまま古い version が残り、
+        // 次の AI 修正も 409 を繰り返す
+        setRowsByOrder((prev) => ({
+          ...prev,
+          [selectedOrder.id]: (prev[selectedOrder.id] ?? []).map((r) => ({
+            ...r,
+            saving: false,
+            confirmDelete: false,
+            draftQty: String(r.quantity),
+          })),
+        }))
+        router.refresh()
+        return
       }
       if (!res.ok) throw new Error(json.error ?? `AI修正失敗 (${res.status})`)
 
-      const revisedItems = json.orders?.[0]?.items ?? []
-      if (revisedItems.length > 0) {
+      // 保存後の各明細の数量・version で行を更新（同じ注文で続けて AI 修正しても 409 にならない）
+      const savedItems = json.items ?? []
+      if (savedItems.length > 0) {
         setRowsByOrder((prev) => ({
           ...prev,
-          [selectedOrder.id]: (prev[selectedOrder.id] ?? []).map((row, idx) => {
-            const rev = revisedItems[idx]
-            const newQ = rev ? Number(rev.quantity) : row.quantity
-            if (Number.isFinite(newQ) && newQ > 0) {
-              return { ...row, quantity: newQ, draftQty: String(newQ), confidence: 1.0 }
-            }
-            return row
-          }),
+          [selectedOrder.id]: applyRevisedItems(prev[selectedOrder.id] ?? [], savedItems),
         }))
       }
 

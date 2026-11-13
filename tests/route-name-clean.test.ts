@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { cleanShippingRouteName, resolveDefaultRouteInfo } from '@/lib/field/shipment-sort'
 
 describe('cleanShippingRouteName：時刻で始まる便名はそのまま', () => {
-  it.each(['17時便', '16時便', '11:30便', '当日便', '翌午前便', '2時間便', '12時30分便', '岩槻便', '1便', 'NSK便', '16時台便', '17時便（岩槻）'])(
+  it.each(['17時便', '16時便', '11:30便', '当日便', '翌午前便', '2時間便', '12時30分便', '岩槻便', '1便', 'NSK便', '16時台便', '17時便（岩槻）', '16時半便', '16時頃便', '11時AM便', '3時PM便', '11時am便'])(
     '%s',
     (name) => {
       expect(cleanShippingRouteName(name)).toBe(name)

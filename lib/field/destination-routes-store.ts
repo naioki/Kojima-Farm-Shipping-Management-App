@@ -1,6 +1,8 @@
 import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { truncateForLog } from '@/lib/log/truncate'
+import { isMissingFunctionError } from '@/lib/supabase/missing-column'
+import type { PatchDestinationRouteArgs } from '@/types/database'
 
 export type RouteOverride = {
   departureTime: string | null
@@ -173,6 +175,39 @@ export async function saveDestinationOverride(
   const validKeys = keys.filter((k) => typeof k === 'string' && k.trim().length > 0)
   if (validKeys.length === 0) return
 
+  // DB 関数（migrations/0033 patch_destination_route）があれば、キー単位の部分更新を DB 側の1文で行う。
+  // 「いまの値」に対して指定キーの指定項目だけを足す／消すので、同時保存でも互いの変更を消さない。
+  // 関数が無い環境（未適用）だけ従来の読み→マージ→書きにフォールバックする。
+  const args = buildPatchArgs(validKeys, fields)
+  const { error: rpcError } = await admin.rpc('patch_destination_route', args)
+  if (!rpcError) return
+  if (!isMissingFunctionError(rpcError)) {
+    // 保存できていないのに成功扱いにしない（呼び出し側が警告として返す）
+    throw new Error(`出荷時間・便名・規定コンテナの退避データの保存に失敗: ${rpcError.message}`)
+  }
+  await saveDestinationOverrideByReadMergeWrite(admin, validKeys, fields)
+}
+
+/** 項目単位の更新を DB 関数の引数（上書きする項目・消す項目）にする。undefined の項目は触らない。 */
+function buildPatchArgs(keys: string[], fields: StoredEntry): PatchDestinationRouteArgs {
+  const set: Record<string, string | null> = {}
+  const unset: string[] = []
+  if (fields.departureTime !== undefined) set.departureTime = fields.departureTime ?? null
+  if (fields.shippingRouteName !== undefined) set.shippingRouteName = fields.shippingRouteName ?? null
+  if (fields.defaultContainerType !== undefined) {
+    const v = fields.defaultContainerType?.trim() || null
+    if (v) set.defaultContainerType = v
+    else unset.push('defaultContainerType')
+  }
+  return { p_keys: keys, p_set: set, p_unset: unset }
+}
+
+/** DB 関数が無い環境の従来経路（読み→マージ→書き）。 */
+async function saveDestinationOverrideByReadMergeWrite(
+  admin: SupabaseClient,
+  validKeys: string[],
+  fields: StoredEntry,
+): Promise<void> {
   // 同時保存への備え: 書き込み直前に読み直し、項目単位でマージしてすぐ書く（読み→マージ→書きの間に他の await を
   // 挟まない）。それでも別の保存が「読み〜書き」の間に割り込むと、その保存の変更は消えうる（排他は未実装）。
   // 読み込み失敗（通信・DBエラー）を空扱いにすると、他の納入先の退避データを上書きで消してしまうため throw する。

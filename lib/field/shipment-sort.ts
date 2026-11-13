@@ -105,9 +105,10 @@ const ROUTE_TIME_PREFIX_RE = new RegExp(`^${ROUTE_TIME}\\s*(?:${ROUTE_TIME_SUFFI
 const ROUTE_TIME_BARE_RE = new RegExp(`^${ROUTE_TIME}`)
 /**
  * 時刻の直後がこれで始まるなら、時刻を含めて1つの便名（「17時便」「2時間便」「12時30分便」「16時台便」など）。
- * 数字で始まるもの（時刻の一部）も除かない。
+ * 数字で始まるもの（時刻の一部）も除かない。「半」「頃」は時刻の言い回し（16時半便・16時頃便）、
+ * 「AM」「PM」は時刻の一部（11時AM便）。それ以外の区切りの無い英字（16時NSK便の NSK）は便名なので時刻を除く側。
  */
-const ROUTE_NAME_CONTINUES_TIME_RE = /^[便間分台\d]/
+const ROUTE_NAME_CONTINUES_TIME_RE = /^(?:[便間分台半頃\d]|(?:AM|PM)(?![A-Za-z]))/i
 /** 時刻だけ（便名なし）の表記。例「当日 18:00迄に出荷」「11:30発」 */
 const ROUTE_TIME_ONLY_RE = new RegExp(`^(?:${ROUTE_TIME}\\s*${ROUTE_TIME_SUFFIX}?\\s*)+$`)
 

@@ -28,7 +28,7 @@ vi.mock('@/lib/gemini/analyze', () => ({
       {
         customer_name: 'テスト',
         delivery_date: null,
-        items: [{ product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG', has_card: false }],
+        items: [{ line_key: ITEM, product_name: '青梗菜', quantity: 40, has_seal: true, bag_type: 'FG', has_card: false }],
       },
     ],
     aiLearnedRuleCandidate: null,
@@ -69,7 +69,7 @@ function missingColumnUpdate(c: FakeCall): FakeResult | undefined {
   const p = c.payload as Record<string, unknown>
   if ('has_seal' in p) return { error: { code: '42703', message: 'column "has_seal" of relation "order_items" does not exist' } }
   if ('bag_type' in p) return { error: { code: '42703', message: 'column "bag_type" of relation "order_items" does not exist' } }
-  return { data: null }
+  return { data: { id: ITEM } }
 }
 
 describe('POST /api/orders/revise', () => {

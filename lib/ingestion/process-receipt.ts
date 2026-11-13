@@ -159,6 +159,14 @@ function formatJstShortTimestamp(): string {
   return `${mm}/${dd} ${hh}:${mi}`
 }
 
+/** 印（受信票の要確認）に出す、利用者向けの注文状態名 */
+const EXISTING_STATUS_JA: Record<string, string> = {
+  pending_review: '承認待ち',
+  approved: '承認済み',
+  shipped: '出荷済み',
+  invoiced: '請求済み',
+}
+
 /**
  * 受信レコードを Gemini で解析し、`orders` / `order_items` へ反映する。
  *
@@ -1043,7 +1051,7 @@ export async function processReceipt(
       if (!mayChangeStatus && orderStatus === 'pending_review') {
         // 以前は承認待ちに戻して人に見せていた内容。状態は変えない代わりに受信票を要確認に残す
         noteReviewHold(
-          `${po.delivery_date ?? ''}の注文（${existingOrder.status}）: 確認が必要な内容の再送を反映しました。注文の内容をFAXと見比べてください`,
+          `${po.delivery_date ?? ''}の注文（${EXISTING_STATUS_JA[existingOrder.status] ?? existingOrder.status}）: 確認が必要な内容の再送を反映しました。注文の内容をFAXと見比べてください`,
         )
       }
       if (destinationId && existingOrder.destination_id !== destinationId) {
@@ -1240,9 +1248,11 @@ export async function processReceipt(
       if (itemWriteFailed && orderStatus === 'approved') {
         // この注文の収穫タスクの同期（下）は行わない
         orderStatus = 'pending_review'
-        // 取り込み前が承認待ち・承認済みだった注文は、承認待ちに戻す（そのまま現場ボードに出すと欠けた明細に
-        // 誰も気づかないため）。元から出荷済み・請求済みの注文は状態を変えず、受信票の要確認
-        // （noteIngestIssue で error_message・alerts に記録済み）で人に知らせる。
+        // orderStatus（＝戻り値 result.status・受信票の扱い）は、状態を書き換えられない出荷済み・請求済みの
+        // 注文でも pending_review にする（受信票は要確認に残る）。注文そのものの状態は別で、取り込み前が
+        // 承認待ち・承認済みだった注文だけ承認待ちに戻す（そのまま現場ボードに出すと欠けた明細に誰も気づかないため）。
+        // 元から出荷済み・請求済みの注文は状態を変えず、受信票の要確認（noteIngestIssue で error_message・alerts に
+        // 記録済み）で人に知らせる。
         if (mayChangeStatus) {
           const { error: backErr } = await admin
             .from('orders')

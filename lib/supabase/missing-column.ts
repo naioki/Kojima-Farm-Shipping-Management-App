@@ -68,3 +68,13 @@ export function isMissingRelationError(err: { code?: string; message?: string } 
   if (err.code === 'PGRST205' || err.code === '42P01') return true
   return /Could not find the table|relation "?[\w.]+"? does not exist/.test(err.message ?? '')
 }
+
+/**
+ * DB 関数（RPC）自体が無い（マイグレーション未適用）エラーか。PGRST202（schema cache に関数が無い）/
+ * 42883（function does not exist）。従来の経路へのフォールバックが用意されている「想定内の失敗」の判定に使う。
+ */
+export function isMissingFunctionError(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false
+  if (err.code === 'PGRST202' || err.code === '42883') return true
+  return /Could not find the function|function [\w.]+\(.*\) does not exist/.test(err.message ?? '')
+}
