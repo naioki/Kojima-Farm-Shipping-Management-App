@@ -296,6 +296,7 @@ export interface SpecWarning {
 export interface HarvestTask {
   id: UUID
   product_id: UUID
+  /** 1明細1件（migrations/0034 の一意インデックス。NULL は複数可）。作成・更新は lib/harvest/upsert-tasks.ts を通す */
   order_item_id: UUID | null
   required_qty: number
   task_date: ISODate
@@ -424,7 +425,7 @@ export interface CustomerProductRule {
   spec: string | null
   has_card: boolean
   bag_type?: string | null
-  has_seal?: boolean
+  has_seal?: boolean | null // migrations/0035: NULL 可（未設定＝NSK判定などで決める）
   seal_text?: string | null
   created_at: ISODateTime
 }

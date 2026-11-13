@@ -386,22 +386,58 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
     expect(fake.calls.some((c) => c.table === 'harvest_tasks' && c.op === 'insert')).toBe(false)
   })
 
-  it.each(['shipped', 'invoiced'])(
-    '元から %s の注文に追加FAXが来て明細追加に失敗しても、注文の状態は変えず、受信票を要確認（印つき）にする',
-    async (existingStatus) => {
-      analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
-      scenario = base({ message: 'insert denied' }, existingStatus)
+  /** order_items への書き込み（更新・追加） */
+  const itemWrites = () => fake.calls.filter((c) => c.table === 'order_items' && (c.op === 'update' || c.op === 'insert'))
+
+  it.each([
+    ['shipped', '出荷済み'],
+    ['invoiced', '請求済み'],
+  ])(
+    '元から %s の注文に追加・訂正FAXが来たら、明細を書き換えず・足さず、受信票を要確認（印つき）にして「今の数量 → FAXの数量」を残す',
+    async (existingStatus, statusJa) => {
+      // 小松菜 20 → 25 に訂正、ほうれん草 30 を追加
+      const changed = [{ ...parsed[0]!, items: [{ ...parsed[0]!.items[0]!, quantity: '25' }, parsed[0]!.items[1]!] }]
+      analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: changed, skip_reason: null, slip_no: null })
+      scenario = (c) => {
+        if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+        return base({ message: 'unused' }, existingStatus)(c)
+      }
       const { processReceipt } = await import('@/lib/ingestion/process-receipt')
       const result = await processReceipt(RECEIPT)
       expect(result.status).toBe('pending_review')
+      // 数量の変更も品目の追加も書かない・状態も変えない・収穫タスクも触らない
+      expect(itemWrites()).toHaveLength(0)
       expect(statusWrites()).toHaveLength(0)
+      expect(fake.calls.some((c) => c.table === 'harvest_tasks')).toBe(false)
       const p = lastReceiptUpdate()
       expect(p.status).toBe('pending_review')
-      expect(p.error_message).toMatch(/明細を注文に追加できませんでした/)
       expect(p.raw_payload.ingest_review_hold).toBe(true)
-      expect(p.raw_payload.slip_data.alerts.some((a) => /ほうれん草/.test(a.message))).toBe(true)
+      const hold = p.raw_payload.slip_data.alerts.filter((a) => a.alert_type === '要確認').map((a) => a.message).join('\n')
+      expect(hold).toContain('小松菜 20P → 25P')
+      expect(hold).toContain('追加: ほうれん草 30P')
+      expect(hold).toContain(`（${statusJa}）`)
+      expect(hold).toContain('反映していません')
+      expect(hold).toContain('新しい注文として登録してください')
+      expect(hold).not.toMatch(/shipped|invoiced/)
+      expect(p.error_message).toContain('小松菜 20P → 25P')
     },
   )
+
+  it.each(['pending_review', 'approved'])('元から %s の注文には、従来どおり数量の変更と品目の追加を反映する', async (existingStatus) => {
+    const changed = [{ ...parsed[0]!, items: [{ ...parsed[0]!.items[0]!, quantity: '25' }, parsed[0]!.items[1]!] }]
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: changed, skip_reason: null, slip_no: null })
+    scenario = (c) => {
+      if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
+      return base({ message: 'unused' }, existingStatus)(c)
+    }
+    const { processReceipt } = await import('@/lib/ingestion/process-receipt')
+    await processReceipt(RECEIPT)
+    const upd = fake.calls.find((c) => c.table === 'order_items' && c.op === 'update' && filterValue(c, 'eq', 'id') === 'prev-1')
+    expect((upd?.payload as { quantity?: number } | undefined)?.quantity).toBe(25)
+    expect(fake.calls.some((c) => c.table === 'order_items' && c.op === 'insert')).toBe(true)
+    const hold = lastReceiptUpdate().raw_payload.slip_data.alerts.map((a) => a.message).join('\n')
+    expect(hold).not.toContain('反映していません')
+  })
 
   const approvedOrderOk = (c: FakeCall): FakeResult | undefined => {
     if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
@@ -455,7 +491,9 @@ describe('processReceipt：既存注文への統合で新規明細の追加に�
   })
 
   it.each(['shipped', 'invoiced'])('元から %s の注文は、取り込みが成功しても状態を上書きしない', async (existingStatus) => {
-    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: parsed, skip_reason: null, slip_no: null })
+    // 今の注文と同じ内容の再送（差分なし）
+    const same = [{ ...parsed[0]!, items: [parsed[0]!.items[0]!] }]
+    analyzeOrdersMock.mockResolvedValue({ is_order: true, orders: same, skip_reason: null, slip_no: null })
     scenario = (c) => {
       if (c.table === 'order_items' && c.op === 'insert') return { data: { id: 'new-1', product_id: PROD2, quantity: 30 } }
       return base({ message: 'unused' }, existingStatus)(c)

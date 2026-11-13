@@ -11,6 +11,7 @@ import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
+import { upsertHarvestTasks } from '@/lib/harvest/upsert-tasks'
 
 type PerCasePackRow = { id: string; product_id: string; customer_id: string | null; base_per_selling: number; is_active: boolean }
 
@@ -575,40 +576,16 @@ export async function POST(req: Request) {
         () => supabase.from('harvest_tasks').delete().eq('order_item_id', finalItemId),
       )
     } else {
-      const { data: existingTask, error: taskFindErr } = await supabase
-        .from('harvest_tasks')
-        .select('id')
-        .eq('order_item_id', finalItemId)
-        .maybeSingle()
-
-      if (taskFindErr) {
-        noteSideEffectFailure(warnings, '[api/shipments] harvest_tasks の取得に失敗', taskFindErr, HARVEST_WARN)
-      } else if (existingTask) {
-        await runSideEffect(
-          warnings,
-          '[api/shipments] harvest_tasks の更新に失敗',
-          HARVEST_WARN,
-          () =>
-            supabase
-              .from('harvest_tasks')
-              .update({ required_qty: finalQty, task_date: harvestDate })
-              .eq('id', existingTask.id),
-        )
-      } else {
-        await runSideEffect(
-          warnings,
-          '[api/shipments] harvest_tasks の生成に失敗',
-          HARVEST_WARN,
-          () =>
-            supabase.from('harvest_tasks').insert({
-              product_id,
-              order_item_id: finalItemId,
-              required_qty: finalQty,
-              task_date: harvestDate,
-              status: 'not_started',
-            }),
-        )
-      }
+      // 1明細1件: 既存タスクは数量・日付だけ更新し、無ければ作る（lib/harvest/upsert-tasks.ts）
+      await runSideEffect(
+        warnings,
+        '[api/shipments] harvest_tasks の生成・更新に失敗',
+        HARVEST_WARN,
+        () =>
+          upsertHarvestTasks(supabase, [
+            { product_id, order_item_id: finalItemId, required_qty: finalQty, task_date: harvestDate },
+          ]),
+      )
     }
   }
 

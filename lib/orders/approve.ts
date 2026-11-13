@@ -12,6 +12,8 @@ import { foldKana } from '@/lib/normalize/kana'
 import { loadQuantityHistory } from './quantity-history'
 import { detectQuantityAnomaly } from './quantity-anomaly'
 import { skipsDestinationGate } from '@/lib/customers/settings'
+import { decideMergeMode, MERGE_MODE_JA } from './merge-mode'
+import { upsertHarvestTasks } from '@/lib/harvest/upsert-tasks'
 
 type AdminClient = SupabaseClient<Database>
 
@@ -52,7 +54,7 @@ export async function approveOrder(
 
   const { data: order, error: orderErr } = await admin
     .from('orders')
-    .select('id, customer_id, status, delivery_date, destination_id, note')
+    .select('id, customer_id, status, delivery_date, destination_id, note, source, intake_channel')
     .eq('id', orderId)
     .maybeSingle()
   if (orderErr) return { ok: false, status: 500, error: orderErr.message }
@@ -246,7 +248,12 @@ export async function approveOrder(
 
   // #36 既に同じ (customer_id, destination_id, delivery_date) の承認済み注文があるかチェックし、あれば統合する
   // ※ ただしサンプル注文（note に「サンプル」を含む場合）は別口のサンプル依頼または通常大口便と混ざらないよう自動統合しない
+  // 同じ品目の数量は、統合元（この注文）の受け方で「上書き」か「加算」かを決める（lib/orders/merge-mode.ts）:
+  //   FAX・メールの取り込み（丸ごと再送） → 上書き ／ ポータル・手入力など別口の追加注文 → 加算
+  //   判断できないとき → 統合せず、別の注文として承認する（数量を勝手に上書き・加算しない）。警告と監査記録に残す。
   const isCurrentSample = Boolean(order.note && order.note.includes('サンプル'))
+  const mergeMode = decideMergeMode({ source: order.source, intake_channel: order.intake_channel })
+  let mergeSkippedInto: string | null = null
   if (order.customer_id && !isCurrentSample) {
     let dupQuery = admin
       .from('orders')
@@ -259,10 +266,18 @@ export async function approveOrder(
     const { data: existingOrders } = await dupQuery.order('created_at', { ascending: false }).limit(1)
     const targetExistingOrder = (existingOrders ?? []).find((eo) => !(eo.note && eo.note.includes('サンプル')))
 
-    if (targetExistingOrder) {
+    if (targetExistingOrder && mergeMode === 'unknown') {
+      mergeSkippedInto = targetExistingOrder.id
+      warnings.push(
+        '同じ取引先・納入先・納品日の承認済み注文がありますが、この注文が再送なのか追加注文なのか判断できないため、まとめずに別の注文として承認しました。出荷一覧で2つの注文の数量を確認してください',
+      )
+    }
+
+    if (targetExistingOrder && mergeMode !== 'unknown') {
+      const isAdd = mergeMode === 'add'
       const { data: existingItems } = await admin
         .from('order_items')
-        .select('id, product_id, product_name, quantity, version, field_status, line_note, shipped_qty')
+        .select('id, product_id, product_name, quantity, version, field_status, line_note, shipped_qty, spec, container_type')
         .eq('order_id', targetExistingOrder.id)
 
       let tasksCreated = 0
@@ -273,35 +288,47 @@ export async function approveOrder(
       for (const it of items) {
         // 出荷済みの明細には統合しない（数量を上書きして「未着手」に戻すと出荷実績が消えるため）。
         // その場合は別行として既存注文に移す。
+        // 加算のときは規格・容器が食い違う明細には足さない（別の荷姿の数量を混ぜない）。別行として移す。
+        const sameSpec = (a: string | null | undefined, b: string | null | undefined) => !a || !b || a === b
         const matchExisting = (existingItems ?? []).find(
           (ex) =>
             ex.field_status !== 'shipped' &&
             ((it.product_id && ex.product_id === it.product_id) ||
-              (!it.product_id && ex.product_name === it.product_name)),
+              (!it.product_id && ex.product_name === it.product_name)) &&
+            (!isAdd || (sameSpec(it.spec, ex.spec) && sameSpec(it.container_type, ex.container_type))),
         )
         if (matchExisting) {
-          // 追加FAX（丸ごと再送）は数量を「上書き」する。変更履歴は2か所に残す:
-          //  - audit_log（旧値→新値。Undo で元に戻せる）
+          // 追加FAX（丸ごと再送）は数量を「上書き」、別口の追加注文は「加算」する。変更履歴は2か所に残す:
+          //  - audit_log（旧値→新値と「上書き」「加算」の別。Undo で元に戻せる）
           //  - 明細メモ（現場カードに「数量変更:50→58P」と表示。通常の数量変更と同じ表記）
-          const newQty = Number(it.quantity) || 0
+          const incomingQty = Number(it.quantity) || 0
           const oldQty = Number(matchExisting.quantity) || 0
+          const newQty = isAdd ? oldQty + incomingQty : incomingQty
           const qtyChanged = newQty !== oldQty
           const wasPacked = matchExisting.field_status === 'packed'
-          const baseNote = (it.line_note ?? matchExisting.line_note ?? '')
-            .split(/\s*\/\s*/)
-            .filter((t: string) => t && !/^(?:数量変更:|🚨パック済|★?新規追加)/.test(t.trim()))
-            .join(' / ')
+          const stripTokens = (note: string | null | undefined) =>
+            (note ?? '')
+              .split(/\s*\/\s*/)
+              .filter((t: string) => t && !/^(?:数量変更:|🚨パック済|★?新規追加)/.test(t.trim()))
+          // 上書き: 新しい明細のメモを優先。加算: 既存のメモを残し、追加注文のメモを足す
+          const baseNote = (
+            isAdd
+              ? [...new Set([...stripTokens(matchExisting.line_note), ...stripTokens(it.line_note)])]
+              : stripTokens(it.line_note ?? matchExisting.line_note)
+          ).join(' / ')
+          const addSuffix = isAdd ? `(追加注文+${incomingQty}P)` : ''
           const changeToken = !qtyChanged
             ? null
             : wasPacked && newQty > oldQty
               ? `🚨パック済(${oldQty}P)→${newQty}P(+${newQty - oldQty}P追加必要)`
-              : `数量変更:${oldQty}→${newQty}P`
+              : `数量変更:${oldQty}→${newQty}P${addSuffix}`
           const nextLineNote = [changeToken, baseNote].filter(Boolean).join(' / ') || null
           const mergePatch: Record<string, unknown> = {
             quantity: newQty,
             quantity_raw: String(newQty),
-            spec: it.spec ?? undefined,
-            container_type: it.container_type ?? undefined,
+            // 加算では既存の規格・容器をそのまま使う（上で食い違いが無いことを確かめ済み）
+            spec: isAdd ? undefined : (it.spec ?? undefined),
+            container_type: isAdd ? undefined : (it.container_type ?? undefined),
             line_note: nextLineNote,
             version: (Number(matchExisting.version) || 1) + 1,
           }
@@ -331,11 +358,17 @@ export async function approveOrder(
                 field_status: mergePatch.field_status,
                 shipped_qty: mergePatch.shipped_qty,
                 line_note: nextLineNote,
-                reason: '追加FAX（再送）による数量上書き',
+                merge_mode: MERGE_MODE_JA[mergeMode],
+                ...(isAdd ? { added_qty: incomingQty } : {}),
+                reason: isAdd
+                  ? `別口の追加注文（${order.source}）による数量加算: ${oldQty}+${incomingQty}→${newQty}`
+                  : `追加FAX（再送）による数量上書き: ${oldQty}→${newQty}`,
                 merged_from_order_id: order.id,
               },
               userId,
-            }).catch((e) => noteSideEffectFailure(warnings, '[approve] 統合（数量上書き）の監査記録 audit_log に失敗', e, AUDIT_WARN))
+            }).catch((e) =>
+              noteSideEffectFailure(warnings, `[approve] 統合（数量${MERGE_MODE_JA[mergeMode]}）の監査記録 audit_log に失敗`, e, AUDIT_WARN),
+            )
           }
           check(
             `収穫タスク更新(${it.product_name})`,
@@ -351,12 +384,9 @@ export async function approveOrder(
             await admin.from('order_items').update({ order_id: targetExistingOrder.id }).eq('id', it.id),
           )
           if (it.product_id) {
-            const taskRes = await admin.from('harvest_tasks').insert({
-              product_id: it.product_id,
-              order_item_id: it.id,
-              required_qty: it.quantity,
-              task_date: harvestTaskDate,
-            })
+            const taskRes = await upsertHarvestTasks(admin, [
+              { product_id: it.product_id, order_item_id: it.id, required_qty: it.quantity, task_date: harvestTaskDate },
+            ])
             check(`収穫タスク作成(${it.product_name})`, taskRes)
             if (!taskRes.error) tasksCreated++
           }
@@ -404,7 +434,13 @@ export async function approveOrder(
           entityId: targetExistingOrder.id,
           action: 'UPDATE',
           oldValues: { merged_from_order_id: order.id },
-          newValues: { status: 'approved', approved_by: userId },
+          newValues: {
+            status: 'approved',
+            approved_by: userId,
+            merge_mode: MERGE_MODE_JA[mergeMode],
+            merged_from_source: order.source,
+            merged_from_intake_channel: order.intake_channel ?? null,
+          },
           userId,
         },
         '[approve] 統合承認の監査記録 audit_log に失敗',
@@ -432,7 +468,8 @@ export async function approveOrder(
       task_date: harvestTaskDate,
     }))
   if (tasks.length > 0) {
-    const { error: taskErr } = await admin.from('harvest_tasks').insert(tasks)
+    // 1明細1件: 再承認（取り込みで承認待ちに戻った注文など）では既存タスクの数量・日付だけ更新し、進捗は残す
+    const { error: taskErr } = await upsertHarvestTasks(admin, tasks)
     if (taskErr) {
       await revertClaim()
       return { ok: false, status: 500, error: `収穫タスクの生成に失敗: ${taskErr.message}` }
@@ -458,6 +495,13 @@ export async function approveOrder(
         approved_by: userId,
         ...(!destinationId && input.noDestination ? { destination: '納入先なし（明示選択）' } : {}),
         ...(!destinationId && customerSkipsGate ? { destination: '納入先なし（取引先設定）' } : {}),
+        ...(mergeSkippedInto
+          ? {
+              merge_mode: MERGE_MODE_JA.unknown,
+              merge_skipped_existing_order_id: mergeSkippedInto,
+              merge_skipped_reason: `受け方（source=${order.source ?? '不明'}, intake_channel=${order.intake_channel ?? 'なし'}）から再送か追加注文か判断できないため統合しなかった`,
+            }
+          : {}),
       },
       userId,
     },

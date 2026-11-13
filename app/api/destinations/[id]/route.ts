@@ -82,7 +82,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   // 列に保存できなかった項目の扱い（本番は拡張4列が無い）:
   // - 出発時刻・便名: 退避ストア（app_settings v5_destination_routes）に常に保存（列ありでも控えとして同期）
-  // - 規定コンテナ: 列に保存できなかったときだけ退避ストアの同じ納入先エントリへ保存
+  // - 規定コンテナ: 退避ストアの同じ納入先エントリにも常に保存（列ありでも控えとして同期）。
+  //   読む側は「列の値 → 退避ストアの値」なので、列を空にしたときに退避ストアの古い値が復活しないよう、
+  //   列に保存できた場合も退避ストアの値を消す／書き換える（docs/migration-v5-columns.md §3）
   // - 並び順（pack_sort_order）: 退避先が無いので、列に保存できなければ警告で返す（黙って捨てない）
   // 退避保存の失敗:
   // - 列に保存できていない かつ 名前など他の項目も無い → ここが唯一の保存先なので 500
@@ -90,7 +92,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // - 列に保存済みで退避側の同期だけ失敗 → 成功＋警告
   const warnings: string[] = []
   const routeRequested = parsed.data.departure_time !== undefined || parsed.data.shipping_route_name !== undefined
-  const containerToStore = parsed.data.default_container_type !== undefined && !routeSavedToColumns
+  const containerToStore = parsed.data.default_container_type !== undefined
   const storeLabels = [
     ...(routeRequested ? ['出発時刻・便名'] : []),
     ...(containerToStore ? ['規定コンテナ'] : []),
@@ -120,11 +122,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       noteSideEffectFailure(
         warnings,
         routeSavedToColumns
-          ? '[api/destinations/[id]] 出発時刻・便名の退避保存（app_settings v5_destination_routes）の同期に失敗'
+          ? `[api/destinations/[id]] ${storeLabel}の退避保存（app_settings v5_destination_routes）の同期に失敗`
           : `[api/destinations/[id]] ${storeLabel}の保存（app_settings v5_destination_routes・唯一の保存先）に失敗`,
         e,
         routeSavedToColumns
-          ? '出発時刻・便名は保存しましたが、控えの更新に失敗しました。表示が古いままの場合は、もう一度保存してください'
+          ? `${storeLabel}は保存しましたが、控えの更新に失敗しました。表示が古いままの場合は、もう一度保存してください`
           : `納入先名などは保存しましたが、${storeLabel}は保存できませんでした。${storeLabel}をもう一度保存してください`,
       )
     }

@@ -15,6 +15,7 @@ import { purgeOldReceiptBase64 } from '@/lib/receipts/retention'
 import { positiveNumber, resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-per-case'
 import { requireStaffApi } from '@/lib/auth/api-guard'
 import { noteSideEffectFailure, runSideEffect } from '@/lib/api/side-effects'
+import { upsertHarvestTasks } from '@/lib/harvest/upsert-tasks'
 
 const itemSchema = z.object({
   product_id: z.string().uuid(),
@@ -661,15 +662,8 @@ export async function POST(req: NextRequest) {
         noteSideEffectFailure(sideEffectWarnings, '[POST /api/orders] harvest_tasks 同期用の明細読み込みに失敗', dbItemsErr, HARVEST_WARNING)
       }
 
-      // 古いタスクを消せなかったときは作り直さない（収穫タスクの二重登録を防ぐ）
-      const cleared =
-        dbItems && dbItems.length > 0
-          ? await runSideEffect(sideEffectWarnings, '[POST /api/orders] 既存 harvest_tasks の削除に失敗', HARVEST_WARNING, () =>
-              admin.from('harvest_tasks').delete().in('order_item_id', dbItems.map((i) => i.id)),
-            )
-          : false
-      if (dbItems && dbItems.length > 0 && cleared) {
-
+      // 1明細1件: 既存タスクは数量・日付だけ更新し、無ければ作る。進捗（status・担当）は消さない（lib/harvest/upsert-tasks.ts）
+      if (dbItems && dbItems.length > 0) {
         const harvestTaskDate = shiftDateStr(delivery_date, -1)
         const taskRows = dbItems
           .filter((it) => Boolean(it.product_id))
@@ -678,12 +672,11 @@ export async function POST(req: NextRequest) {
             order_item_id: it.id,
             required_qty: Number(it.quantity),
             task_date: harvestTaskDate,
-            status: 'not_started' as const,
           }))
 
         if (taskRows.length > 0) {
-          const { error: htErr } = await admin.from('harvest_tasks').insert(taskRows)
-          if (htErr) noteSideEffectFailure(sideEffectWarnings, '[POST /api/orders] harvest_tasks 自動生成エラー', htErr, HARVEST_WARNING)
+          const { error: htErr } = await upsertHarvestTasks(admin, taskRows)
+          if (htErr) noteSideEffectFailure(sideEffectWarnings, '[POST /api/orders] harvest_tasks 自動生成・更新エラー', htErr, HARVEST_WARNING)
         }
       }
     } catch (htEx) {

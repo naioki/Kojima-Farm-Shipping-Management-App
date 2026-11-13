@@ -10,6 +10,7 @@ import { resolvePacksPerCase, splitPacksForCustomer } from '@/lib/masters/packs-
 import { requireStaffApi } from '@/lib/auth/api-guard'
 import { loadDestDefaultContainer } from '@/lib/field/destination-routes-store'
 import { INTAKE_CHANNEL_REQUIRED_ERROR, INTAKE_CHANNEL_REQUIRED_MESSAGE } from '@/lib/orders/intake-channel'
+import { upsertHarvestTasks } from '@/lib/harvest/upsert-tasks'
 
 export const runtime = 'nodejs'
 
@@ -336,14 +337,11 @@ export async function PUT(req: Request) {
     warnings,
     '[api/shipments/cell] harvest_tasks の生成に失敗',
     '数量は保存しましたが、収穫の予定に追加できませんでした。画面を読み込み直して確認してください',
+    // 1明細1件（lib/harvest/upsert-tasks.ts）
     () =>
-      supabase.from('harvest_tasks').insert({
-        product_id,
-        order_item_id: String(item.id),
-        required_qty: quantity,
-        task_date: harvestDate,
-        status: 'not_started',
-      }),
+      upsertHarvestTasks(supabase, [
+        { product_id, order_item_id: String(item.id), required_qty: quantity, task_date: harvestDate },
+      ]),
   )
 
   return NextResponse.json(withWarnings({ item }, warnings), { status: 201 })

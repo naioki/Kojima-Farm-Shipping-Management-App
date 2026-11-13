@@ -11,6 +11,7 @@ import { decideReceiptApproval, isAutoApproveOn, parseThreshold } from '@/lib/in
 import { matchEmailCustomer } from '@/lib/ingestion/match-customer'
 import { getSetting } from '@/lib/settings'
 import { shiftDateStr } from '@/lib/dates'
+import { upsertHarvestTasks } from '@/lib/harvest/upsert-tasks'
 import { foldKana } from '@/lib/normalize/kana'
 import { sendMultiChannelAlert } from '@/lib/notifications/multi-channel'
 import { parseQuantity } from '@/lib/calculations/parse-quantity'
@@ -165,6 +166,59 @@ const EXISTING_STATUS_JA: Record<string, string> = {
   approved: '承認済み',
   shipped: '出荷済み',
   invoiced: '請求済み',
+}
+
+/**
+ * 出荷済み・請求済みの注文に届いた追加・訂正FAXの差分（反映せず、受信票の要確認に残す文言用）。
+ * 品目の照合は既存注文への統合（processReceipt の明細ループ）と同じ規則。変化の無い品目は含めない。
+ * 例: 「小松菜 20P → 25P」「小松菜 規格 2株 → 3株」「追加: ほうれん草 30P」
+ */
+export function describeFrozenOrderDiffs(
+  incoming: {
+    matchedProduct?: { id: string; name: string } | null
+    parsed: { product_name?: string | null; raw_name?: string | null; spec?: string | null }
+    resolvedQty: number | null
+    resolvedUnit?: string | null
+    containerType?: string | null
+  }[],
+  prevItems: {
+    product_id?: string | null
+    product_name: string
+    quantity: number
+    spec?: string | null
+    container_type?: string | null
+  }[],
+): string[] {
+  const diffs: string[] = []
+  for (const e of incoming) {
+    const name = e.matchedProduct?.name ?? e.parsed.product_name ?? e.parsed.raw_name ?? 'チンゲン菜'
+    const unit = e.resolvedUnit || 'P'
+    const prev = prevItems.find(
+      (p) =>
+        (e.matchedProduct && p.product_id === e.matchedProduct.id) ||
+        p.product_name === name ||
+        (name === 'チンゲン菜' && (p.product_name === '青梗菜' || p.product_name === 'チンゲン菜')),
+    )
+    if (!prev) {
+      diffs.push(`追加: ${name} ${e.resolvedQty ?? '数量不明'}${e.resolvedQty != null ? unit : ''}`)
+      continue
+    }
+    const oldQty = Number(prev.quantity)
+    if (e.resolvedQty != null && e.resolvedQty !== oldQty) {
+      diffs.push(`${name} ${oldQty}${unit} → ${e.resolvedQty}${unit}`)
+    }
+    const newSpec = e.parsed.spec?.trim() || null
+    if (newSpec && newSpec !== (prev.spec?.trim() || null)) {
+      diffs.push(`${name} 規格 ${prev.spec?.trim() || 'なし'} → ${newSpec}`)
+    }
+    // 容器は取引先の既定から補われることがあるので、今の明細に容器があって食い違うときだけ出す
+    const newContainer = e.containerType?.trim() || null
+    const oldContainer = prev.container_type?.trim() || null
+    if (newContainer && oldContainer && newContainer !== oldContainer) {
+      diffs.push(`${name} 容器 ${oldContainer} → ${newContainer}`)
+    }
+  }
+  return diffs
 }
 
 /**
@@ -809,6 +863,8 @@ export async function processReceipt(
       is_manual_modified?: boolean
       snap_total_packs?: number | null
       daily_pack_sort_order?: number | null
+      spec?: string | null
+      container_type?: string | null
     }
     let existingOrder: ExistingOrderRow | undefined
     let prevItems: PrevItemRow[] = []
@@ -1048,11 +1104,23 @@ export async function processReceipt(
         ...(mayChangeStatus ? { status: orderStatus } : {}),
         note: safeNoteParts.length > 0 ? safeNoteParts.join('\n') : existingOrder.note,
       }
-      if (!mayChangeStatus && orderStatus === 'pending_review') {
-        // 以前は承認待ちに戻して人に見せていた内容。状態は変えない代わりに受信票を要確認に残す
-        noteReviewHold(
-          `${po.delivery_date ?? ''}の注文（${EXISTING_STATUS_JA[existingOrder.status] ?? existingOrder.status}）: 確認が必要な内容の再送を反映しました。注文の内容をFAXと見比べてください`,
-        )
+      // 出荷済み・請求済みなどの注文（取り込み前の状態が承認待ち・承認済み以外）には、追加・訂正FAXの明細を
+      // 反映しない（数量・規格・容器の書き換えも、新しい明細の追加もしない）。出荷実績・請求書と注文の食い違いを作らないため。
+      // 代わりに受信票を要確認（印つき）にし、品目ごとに「今の数量 → FAXの数量」を残して人が判断する。
+      const itemsFrozen = !mayChangeStatus
+      if (itemsFrozen) {
+        const statusJa = EXISTING_STATUS_JA[existingOrder.status] ?? '処理済み'
+        const diffs = describeFrozenOrderDiffs(enriched, prevItems)
+        if (diffs.length > 0) {
+          noteReviewHold(
+            `${po.delivery_date ?? ''}の注文（${statusJa}）にFAXの変更・追加が届きました: ${diffs.join('、')}。` +
+              `${statusJa}の注文のため反映していません。追加の出荷が必要なら新しい注文として登録してください`,
+          )
+        } else if (orderStatus === 'pending_review') {
+          noteReviewHold(
+            `${po.delivery_date ?? ''}の注文（${statusJa}）に確認が必要な再送が届きました。数量は今の注文と同じですが、${statusJa}の注文のため反映していません。FAXと見比べてください`,
+          )
+        }
       }
       if (destinationId && existingOrder.destination_id !== destinationId) {
         updatePayload.destination_id = destinationId
@@ -1072,7 +1140,7 @@ export async function processReceipt(
       /** この注文で明細の更新・追加に失敗したか（失敗したら注文を要確認に戻して人が気づけるようにする） */
       let itemWriteFailed = false
 
-      for (const e of enriched) {
+      for (const e of itemsFrozen ? [] : enriched) {
         const targetName =
           e.matchedProduct?.name ?? e.parsed.product_name ?? e.parsed.raw_name ?? 'チンゲン菜'
         const prev = prevItems.find(
@@ -1355,9 +1423,7 @@ export async function processReceipt(
     // 自動承認された場合は harvest_tasks（収穫タスク）も生成・同期（全品目「出荷日の前日に収穫・パック」の原則に従い task_date は delivery_date - 1日）
     if (orderStatus === 'approved' && po.delivery_date && insertedOrUpdatedItems.length > 0) {
       const harvestTaskDate = shiftDateStr(po.delivery_date, -1)
-      const itemIdsForTasks = insertedOrUpdatedItems.map((it) => it.id)
       const HARVEST_ALERT = `${po.delivery_date}の注文: 収穫・パックの作業一覧を更新できませんでした。収穫一覧を確認してください`
-      const { error: tasksDelErr } = await admin.from('harvest_tasks').delete().in('order_item_id', itemIdsForTasks)
       const taskRows = insertedOrUpdatedItems
         .filter((it) => Boolean(it.product_id))
         .map((it) => ({
@@ -1366,12 +1432,10 @@ export async function processReceipt(
           required_qty: Number(it.quantity),
           task_date: harvestTaskDate,
         }))
-      if (tasksDelErr) {
-        // 古いタスクを消せないまま作ると二重になるので作らない
-        noteIngestIssue('harvest_tasks の削除に失敗', tasksDelErr, HARVEST_ALERT)
-      } else if (taskRows.length > 0) {
-        const { error: tasksErr } = await admin.from('harvest_tasks').insert(taskRows)
-        if (tasksErr) noteIngestIssue('harvest_tasks の自動生成に失敗', tasksErr, HARVEST_ALERT)
+      if (taskRows.length > 0) {
+        // 1明細1件: 既存タスクは数量・日付だけ更新し、進捗（status・担当）は消さない（lib/harvest/upsert-tasks.ts）
+        const { error: tasksErr } = await upsertHarvestTasks(admin, taskRows)
+        if (tasksErr) noteIngestIssue('harvest_tasks の自動生成・更新に失敗', tasksErr, HARVEST_ALERT)
       }
     }
   }

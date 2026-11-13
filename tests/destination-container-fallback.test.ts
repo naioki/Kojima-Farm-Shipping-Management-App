@@ -145,21 +145,59 @@ describe('PATCH /api/destinations/[id]：列が無い環境の規定コンテナ
     ])
   })
 
-  it('列がある環境では従来どおり列に保存し、規定コンテナは退避ストアに書かない', async () => {
-    scenario = (c) => {
+  /** 列がある環境（migrations/0035 適用後）：拡張列を含む update も成功する */
+  const withColumns =
+    (opts: { stored?: string | null; upsertError?: string | null } = {}) =>
+    (c: FakeCall): FakeResult | undefined => {
       if (c.table === 'delivery_destinations' && c.op === 'update') {
         return { data: { ...BASE_ROW, ...(c.payload as object) } }
       }
-      if (c.table === 'app_settings' && c.op === 'select') return { data: null }
+      if (c.table === 'app_settings' && c.op === 'select') return { data: opts.stored ? { value: opts.stored } : null }
+      if (c.table === 'app_settings' && c.op === 'upsert') {
+        return opts.upsertError ? { error: { message: opts.upsertError } } : { data: null }
+      }
       return undefined
     }
+
+  it('列がある環境では列に保存し、規定コンテナは退避ストアにも同期する（列と退避ストアが食い違わない）', async () => {
+    scenario = withColumns()
     const { PATCH } = await import('@/app/api/destinations/[id]/route')
     const res = await PATCH(req({ full_name: 'A店', default_container_type: '青コン', pack_sort_order: 2 }, 'PATCH'), { params: { id: DEST } })
     expect(res.status).toBe(200)
-    expect(await res.json()).not.toHaveProperty('warnings')
+    const body = (await res.json()) as { destination?: Record<string, unknown>; warnings?: string[] }
+    expect(body.warnings).toBeUndefined()
+    expect(body.destination?.default_container_type).toBe('青コン')
     const upd = fake.calls.find((c) => c.table === 'delivery_destinations' && c.op === 'update')!
     expect(upd.payload).toMatchObject({ default_container_type: '青コン', pack_sort_order: 2 })
-    expect(fake.calls.some((c) => c.table === 'app_settings' && c.op === 'upsert')).toBe(false)
+    expect(savedStore()[`dest:${DEST}`]).toEqual({ defaultContainerType: '青コン' })
+  })
+
+  it('列がある環境で規定コンテナを空にすると、退避ストアに残っていた移行前の値も消える（古い値が復活しない）', async () => {
+    // 0036 で列へ移した後も、退避ストアには移行前の値が残っている
+    scenario = withColumns({
+      stored: JSON.stringify({ [`dest:${DEST}`]: { departureTime: '16:00', shippingRouteName: '16時便', defaultContainerType: '青コン' } }),
+    })
+    const { PATCH } = await import('@/app/api/destinations/[id]/route')
+    const res = await PATCH(req({ full_name: 'A店', default_container_type: null }, 'PATCH'), { params: { id: DEST } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).not.toHaveProperty('warnings')
+    const upd = fake.calls.find((c) => c.table === 'delivery_destinations' && c.op === 'update')!
+    expect(upd.payload).toMatchObject({ default_container_type: null })
+    const s = savedStore()
+    expect(s[`dest:${DEST}`]).toEqual({ departureTime: '16:00', shippingRouteName: '16時便' })
+    // 読む側（列の値 → 退避ストアの値）でも未設定に戻る
+    const { resolveDestDefaultContainer } = await import('@/lib/field/destination-routes-store')
+    expect(resolveDestDefaultContainer(DEST, null, {})).toBeNull()
+  })
+
+  it('列がある環境で退避ストアの同期だけ失敗したら、成功＋控えの更新に失敗した警告（500 にしない）', async () => {
+    scenario = withColumns({ upsertError: 'settings write failed' })
+    const { PATCH } = await import('@/app/api/destinations/[id]/route')
+    const res = await PATCH(req({ default_container_type: '青コン' }, 'PATCH'), { params: { id: DEST } })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { warnings?: string[] }).warnings).toEqual([
+      '規定コンテナは保存しましたが、控えの更新に失敗しました。表示が古いままの場合は、もう一度保存してください',
+    ])
   })
 })
 

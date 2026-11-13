@@ -26,7 +26,7 @@ type Scenario = {
 }
 
 function setup(s: Scenario) {
-  const order = { id: ORDER, customer_id: CUST, status: 'pending_review', delivery_date: '2026-11-10', destination_id: null, note: null, ...s.order }
+  const order = { id: ORDER, customer_id: CUST, status: 'pending_review', delivery_date: '2026-11-10', destination_id: null, note: null, source: 'fax', intake_channel: null, ...s.order }
   const items = s.items ?? [
     { id: 'n1', product_id: 'p1', product_name: 'チンゲン菜', quantity: 30, confidence: 1, pack_config_id: null, spec: null, container_type: null, has_card: null, line_note: null },
   ]
@@ -137,6 +137,108 @@ describe('approveOrder（承認の通しフロー）', () => {
     expect(fake.calls.some((c) => c.table === 'order_items' && c.op === 'update' && filterValue(c, 'eq', 'id') === 'e2')).toBe(false)
     const moved = fake.calls.find((c) => c.table === 'order_items' && c.op === 'update' && filterValue(c, 'eq', 'id') === 'n2')!
     expect(moved.payload).toEqual({ order_id: 'order-old' })
+  })
+
+  describe('承認時の統合: 統合元の受け方（orders.source / intake_channel）で「上書き」か「加算」かを決める', () => {
+    const existing = {
+      existingOrder: { id: 'order-old', note: null },
+      existingItems: [
+        { id: 'e1', product_id: 'p1', product_name: 'チンゲン菜', quantity: 50, version: 3, field_status: 'not_started', line_note: null, shipped_qty: null, spec: null, container_type: null },
+      ],
+    }
+    const incoming = (over: Record<string, unknown> = {}) => [
+      { id: 'n1', product_id: 'p1', product_name: 'チンゲン菜', quantity: 8, confidence: 1, pack_config_id: null, spec: null, container_type: null, has_card: null, line_note: null, ...over },
+    ]
+    const e1Update = (fake: ReturnType<typeof setup>) =>
+      fake.calls.find((c) => c.table === 'order_items' && c.op === 'update' && filterValue(c, 'eq', 'id') === 'e1')
+    const itemAudit = (fake: ReturnType<typeof setup>) =>
+      fake.calls.find((c) => c.table === 'audit_log' && (c.payload as { entity_id?: string }).entity_id === 'e1')?.payload as
+        | { old_values: { quantity: number }; new_values: { quantity: number; merge_mode: string; reason: string } }
+        | undefined
+    const orderAudit = (fake: ReturnType<typeof setup>, id: string) =>
+      fake.calls.find((c) => c.table === 'audit_log' && (c.payload as { entity_id?: string }).entity_id === id)?.payload as
+        | { new_values: Record<string, unknown> }
+        | undefined
+
+    it.each([
+      ['fax', null],
+      ['email', null],
+    ])('source=%s（取り込みの再送）は上書き: 50 → 8、監査記録に「上書き」', async (source, ch) => {
+      const fake = setup({ ...existing, order: { source, intake_channel: ch }, items: incoming() })
+      const r = await run(fake)
+      expect(r).toMatchObject({ ok: true, mergedIntoOrderId: 'order-old' })
+      expect(e1Update(fake)!.payload).toMatchObject({ quantity: 8, line_note: '数量変更:50→8P' })
+      const a = itemAudit(fake)!
+      expect(a.old_values.quantity).toBe(50)
+      expect(a.new_values).toMatchObject({ quantity: 8, merge_mode: '上書き' })
+      expect(orderAudit(fake, 'order-old')!.new_values).toMatchObject({ merge_mode: '上書き', merged_from_source: source })
+      const task = fake.calls.find((c) => c.table === 'harvest_tasks' && c.op === 'update')!
+      expect(task.payload).toMatchObject({ required_qty: 8 })
+    })
+
+    it.each([
+      ['portal', null, 'ポータル'],
+      ['manual', 'phone', '手入力（電話）'],
+      ['manual', 'line', '手入力（LINE）'],
+      ['manual', null, '手入力（内訳なし）'],
+    ])('source=%s / intake_channel=%s（%s・別口の追加注文）は加算: 50 + 8 → 58、監査記録に「加算」', async (source, ch, _label) => {
+      const fake = setup({ ...existing, order: { source, intake_channel: ch }, items: incoming({ line_note: '追加分' }) })
+      const r = await run(fake)
+      expect(r).toMatchObject({ ok: true, mergedIntoOrderId: 'order-old' })
+      expect(r).not.toHaveProperty('warnings')
+      expect(e1Update(fake)!.payload).toMatchObject({
+        quantity: 58,
+        quantity_raw: '58',
+        line_note: '数量変更:50→58P(追加注文+8P) / 追加分',
+        field_status: 'not_started',
+      })
+      const a = itemAudit(fake)!
+      expect(a.old_values.quantity).toBe(50)
+      expect(a.new_values).toMatchObject({ quantity: 58, merge_mode: '加算', added_qty: 8 })
+      expect(a.new_values.reason).toMatch(/加算: 50\+8→58/)
+      expect(orderAudit(fake, 'order-old')!.new_values).toMatchObject({ merge_mode: '加算', merged_from_source: source })
+      // 収穫タスクも加算後の数量に合わせる
+      const task = fake.calls.find((c) => c.table === 'harvest_tasks' && c.op === 'update' && filterValue(c, 'eq', 'order_item_id') === 'e1')!
+      expect(task.payload).toMatchObject({ required_qty: 58 })
+      // 統合元の明細は削除（数量は統合先に入った）
+      expect(fake.calls.some((c) => c.table === 'order_items' && c.op === 'delete' && filterValue(c, 'eq', 'id') === 'n1')).toBe(true)
+    })
+
+    it('加算のとき、規格が食い違う明細には足さず別行として移す', async () => {
+      const fake = setup({
+        ...existing,
+        existingItems: [{ ...existing.existingItems[0]!, spec: '2株' }],
+        order: { source: 'portal', intake_channel: null },
+        items: incoming({ spec: '3株' }),
+      })
+      const r = await run(fake)
+      expect(r).toMatchObject({ ok: true, mergedIntoOrderId: 'order-old' })
+      expect(e1Update(fake)).toBeUndefined()
+      const moved = fake.calls.find((c) => c.table === 'order_items' && c.op === 'update' && filterValue(c, 'eq', 'id') === 'n1')!
+      expect(moved.payload).toEqual({ order_id: 'order-old' })
+    })
+
+    it.each([
+      ['manual', 'fax'],
+      ['manual', 'email'],
+      ['fax', 'phone'],
+      ['unknown-src', null],
+    ])('判断できない受け方（source=%s / intake_channel=%s）は統合せず別の注文として承認し、警告と監査記録に残す', async (source, ch) => {
+      const fake = setup({ ...existing, order: { source, intake_channel: ch }, items: incoming() })
+      const r = await run(fake)
+      expect(r).toMatchObject({ ok: true, tasksCreated: 1 })
+      if (!r.ok) throw new Error('unreachable')
+      expect(r.mergedIntoOrderId).toBeUndefined()
+      expect(r.warnings?.join('\n')).toMatch(/再送なのか追加注文なのか判断できない/)
+      // 既存の明細は上書きも加算もしない・統合元の注文も消さない
+      expect(e1Update(fake)).toBeUndefined()
+      expect(fake.calls.some((c) => c.table === 'orders' && c.op === 'delete')).toBe(false)
+      expect(orderAudit(fake, ORDER)!.new_values).toMatchObject({
+        status: 'approved',
+        merge_mode: '判断できない',
+        merge_skipped_existing_order_id: 'order-old',
+      })
+    })
   })
 
   describe('付随更新の失敗（承認は成功のまま、console.error と warnings で知らせる）', () => {
